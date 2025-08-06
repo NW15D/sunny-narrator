@@ -26,11 +26,7 @@ Translation is performed in four passes and may require a large number of tokens
 
 Set the translation parameters in the `.env` file and run the program:
 ```
-git clone https://github.com/neowisard/sunny_narrator
-cd sunny_narrator
-pip install -r requirements.txt (OR pip install -r requirements_ner.txt if you have CUDA GPU => 6gb RAM)
-
-python app.py
+https://github.com/neowisard/sunny_narrator/wiki/Run-It
 ```
 On the first run, test the program on a file with no more than a hundred words.
 
@@ -68,12 +64,7 @@ Sunny narrator это ранняя версия AI переводчика дли
 **Запуск**
 
 Укажите параметры для перевода в .env файле, запустите программу. 
-git clone https://github.com/neowisard/sunny_narrator
-cd sunny_narrator
-pip install -r requirements.txt
-
-python app.py
-При первом запуске проверьте работу программы на файле в котором не больше сотни слов.
+https://github.com/neowisard/sunny_narrator/wiki/Run-It
 
 
 **thx**
