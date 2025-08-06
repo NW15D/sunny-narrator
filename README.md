@@ -21,6 +21,7 @@ Translation is performed in four passes and may require a large number of tokens
 4. Try to specify a maximum chunk size of no more than 16000 bytes, and 1/3 that amount for the neural network.
    As of May 2025th, the quality of the response slightly degrades (by a few percent) at a context length of more than 8,000 tokens.
 5. The `vocabulary` feature  .The `VOCAB` parameter specifies preferred translation pairs in the form of `source_lang=target_lang`, it can be made with NER Spacy feature.
+https://github.com/neowisard/sunny_narrator/wiki/Vocabulary
 
 **Launch**
 
@@ -59,7 +60,7 @@ Sunny narrator это ранняя версия AI переводчика дли
 4. Старайтесь указывать максимальный размер чанка не более 16000 (в байтах), и при этом в 3 раза меньше максимального для данной нейросети. 
     Согласно отчетам на 05.25 качество ответа чуть (few %) деградирует на длине контекста более 8к. токенов.
 5. Словари - работают. Создаются руками в файле имя_книги.dic или с помощью NER spaCy, потом исправляются руками  . 
-
+https://github.com/neowisard/sunny_narrator/wiki/Vocabulary
 
 **Запуск**
 
