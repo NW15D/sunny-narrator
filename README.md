@@ -25,9 +25,9 @@ Translation is performed in four passes and may require a large number of tokens
 **Launch**
 
 Set the translation parameters in the `.env` file and run the program:
-```
+
 https://github.com/neowisard/sunny_narrator/wiki/Run-It
-```
+
 On the first run, test the program on a file with no more than a hundred words.
 
 **Thanks**
