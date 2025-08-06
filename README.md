@@ -20,7 +20,7 @@ Translation is performed in four passes and may require a large number of tokens
    I use llama.cpp locally and run Mistral 24 Instruct for the main translation and Gemma 27B for proofreading. At a speed of 10 tokens/second, translating books with text around 500KB takes a day.
 4. Try to specify a maximum chunk size of no more than 16000 bytes, and half that amount for the neural network.
    As of May 2025th, the quality of the response slightly degrades (by a few percent) at a context length of more than 8,000 tokens.
-5. The `//vocab` feature is temporarily broken. The `VOCAB` parameter specifies preferred translation pairs in the form of `source_lang=target_lang`.
+5. The `vocabulary` feature  .The `VOCAB` parameter specifies preferred translation pairs in the form of `source_lang=target_lang`, it can be made with NER Spacy feature.
 
 **Launch**
 
@@ -146,7 +146,7 @@ Sunny narrator это ранняя версия AI переводчика дли
     Я использую llama.cpp локально и запускаю mistral24 instruct дя основного перевода и gemma27 it для вычитки. При скорости 10t\s перевод книг с текстом около 500кб занимает сутки.
 4. Старайтесь указывать максимальный размер чанка не более 16000 (в байтах), и при этом в 2 раза меньше максимального для данной нейросети. 
     Согласно отчетам на 05.25 качество ответа чуть (few %) деградирует на длине контекста более 8к. токенов.
-5. //vocab don't work temporary. В параметре VOCAB указаны пары для предпочтительного перевода в виде source_lang=target_lang. 
+5. Словари - работают. Создаются руками в файле имя_книги.dic или с помощью NER spaCy, потом исправляются руками  . 
 
 
 **Запуск**
