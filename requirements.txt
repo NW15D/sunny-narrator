@@ -1,0 +1,9 @@
+icecream
+python-dotenv
+pathlib
+openai==1.95.1
+tiktoken
+langchain-text-splitters
+pydantic==2.11.7
+beautifulsoup4
+lxml

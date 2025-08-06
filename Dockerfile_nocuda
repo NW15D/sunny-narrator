@@ -1,0 +1,38 @@
+# -- base image ---
+FROM python:3.10.13 as base
+WORKDIR /app
+
+# -- Dependencies ---
+FROM base AS dependencies
+
+COPY requirements.txt ./
+
+RUN pip install -r requirements.txt \
+    && pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl \
+    && rm -rf /root/.cache/pip
+
+# -- Copy Files ---
+FROM dependencies as build
+COPY src /app/
+COPY books /app/
+COPY config /app/
+COPY app.py /app/
+# Добавьте эту строку, чтобы скопировать app.py
+
+# --- Release with Alpine ----
+FROM python:3.10.13-alpine as release
+WORKDIR /app
+
+# Install build tools
+RUN apk add --no-cache build-base
+
+COPY --from=dependencies /app/requirements.txt ./
+COPY --from=dependencies /root/.cache /root/.cache
+
+RUN pip install -r requirements.txt \
+    && pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl \
+    && rm -rf /root/.cache/pip
+
+COPY --from=build /app/ ./
+
+CMD ["python", "app.py"]

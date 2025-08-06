@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0">
+    <description>
+        <title-info>
+            <genre>sf</genre>
+            <genre>sf_fantasy</genre>
+            <genre>shortstory</genre>
+            <author>
+                <nickname>Ae_Mc</nickname>
+                <first-name>Alex</first-name>
+                <middle-name>Unknown</middle-name>
+                <home-page>ae-mc.ru</home-page>
+                <email>ae_mc@mail.ru</email>
+            </author>
+            <book-title>Example book</book-title>
+            <annotation>
+                <p>Small test book. Shows basics of FB2 library</p>
+            </annotation>
+            <lang>en</lang>
+            <sequence name="Example books" number="2"/>
+        </title-info>
+        <document-info>
+            <author>
+                <first-name>Ae</first-name>
+                <last-name>Mc</last-name>
+            </author>
+            <program-used>Ae-Mc's FB2 library</program-used>
+            <date value="2024-12-03">03.12.2024</date>
+            <id>6ec8434a-cb39-40b8-bfed-b64e3845692a</id>
+            <version>1.1</version>
+        </document-info>
+    </description>
+    <body>
+        <title>
+            <p>Example book</p>
+        </title>
+        <section>
+            <title>
+                <p>Introduction</p>
+            </title>
+            <p>Introduction chapter first paragraph</p>
+            <p>Introduction chapter second paragraph</p>
+        </section>
+        <section>
+            <title>
+                <p>1. Chapter one. FB2 format history</p>
+            </title>
+            <p>Introduction chapter first paragraph</p>
+            <p>Introduction chapter second paragraph</p>
+            <p>Introduction chapter third paragraph
+        </section>
+        <section>
+            <title>
+                <p>2. Chapter two. Empty</p>
+            </title>
+        and this palce this text
+        <section>
+            some text
+            <title>
+                <p>2. Chapter two. Empty</p>
+            </title>
+        </section>
+    </body>
+</FictionBook>
