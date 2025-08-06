@@ -1,6 +1,6 @@
 #!/bin/bash
 #plan llm pairs:  qwen3-32_ mistral ,
-# Определение списков значений
+
 shorts=("1mg")
 #"mi24_q3-32" "q3-32_g3_27b" "g3_27b_m24" "m24_g3_27b" "m24_s3_14b" "saiyax8b_saig3_14b")
 
