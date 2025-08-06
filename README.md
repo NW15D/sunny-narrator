@@ -62,7 +62,7 @@ Sunny Narrator 是一个用于翻译长文本（例如 FB2、EPUB 或 TXT 格式
    我本地使用 llama.cpp 运行 Mistral 24 Instruct 用于主要翻译，Gemma 27B 用于校对。在速度为 10 tokens/秒的情况下，翻译约 500KB 的书籍需要大约一天时间。
 4. 尽量指定最大块大小不超过 16000 字节，并且不超过该神经网络所允许的最大值的一半。
    根据 05.25 的测试报告显示，当上下文长度超过 8000 个 tokens 时，回答质量可能会下降几个百分点。
-5. VOCAB 参数目前不可用。请勿在 VOCAB 参数中指定优先翻译的语言对，格式为 source_lang=target_lang。
+5. 请勿在 VOCAB 参数中指定优先翻译的语言对，格式为 source_lang=target_lang。
 
 **启动**
 
