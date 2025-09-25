@@ -308,14 +308,14 @@ def vocabulary(
 
     system_message = f"You are a translator, specializing in translations from {source_lang} to {target_lang}, from {country}"
 
-    reflection_prompt = f"""Translate a list of commonly used words and names from {source_lang} to {target_lang},
-    If there is obscene language, it should be translated as accurately as possible,
-    remove the category in brackets,
-    use the category only for context translation,
-    format result as a list of strings:
+    reflection_prompt = f"""Translate a list of words and names from {source_lang} to {target_lang},
+    1. If there is obscene language, it should be translated as accurately as possible
+    2. Remove the words category in brackets from result,
+    3. use the category only for context translation,
+    4. Use format result :
     {source_lang} text={target_lang} translation
 
-    {source_text}"""
+    Words: {source_text}"""
     if big:
         translation = get_completion_b(reflection_prompt, system_message=system_message)
     else:
