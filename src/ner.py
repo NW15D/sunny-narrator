@@ -34,26 +34,25 @@ def make_vocab(text, stop_words=None):
         gpu = spacy.prefer_gpu()
         ic(gpu)
         nlp = spacy.load(app.nermodel)
-        nlp.max_length = 3100000
-        doc = nlp("This is a test sentence.")
-        ic(doc.ents)
+        nlp.max_length = 110000
 
-        doc = nlp(text)
+        # Split text into chunks of up to 100,000 characters
+        chunk_size = 100000
+        text_chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
+        ner_category = ["ORG","LOC","GPE","PERSON"]
+        ents = []
+        for chunk in text_chunks:
+            doc = nlp(chunk)
+            ents.extend([
+                (ent.text.strip(), ent.label_, tuple(ent.vector.get()) if hasattr(ent.vector, 'get') else tuple(ent.vector) if ent.vector.size > 0 else None)
+                for ent in doc.ents if ent.vector_norm != 0 and ent.label_ in ner_category
+            ])
+
+            ic(f"Found entities: {len(ents)}")
+
     except Exception as e:
         ic(f"Error loading spaCy model: {e}")
         return
-
-    ents = []
-    for ent in doc.ents:
-        if ent.vector_norm != 0:  # and ent.label_ in ner_category:
-            # Strip whitespace and newline characters from the entity text
-            clean_text = ent.text.strip()
-            # Convert vector to a tuple if it exists, otherwise use None
-            vector = tuple(ent.vector.get()) if hasattr(ent.vector, 'get') else tuple(
-                ent.vector) if ent.vector.size > 0 else None
-            ents.append((clean_text, ent.label_, vector))
-
-    ic(f"Found entities: {len(ents)}")
 
     # Count occurrences of each entity
     item_counts = Counter((text, label) for text, label, vector in ents)
@@ -91,12 +90,12 @@ def make_vocab(text, stop_words=None):
 
     ic(f"Unique entities after merging: {len(final_merged_ents)}")
 
-    # Find most common words with count > 50 and length > 5
+    # Find most common words with count > 10 and length > 5
     word_counts = Counter(
         token.text for token in doc if token.is_alpha and token.text not in stop_words)
 
     # Filter words with count > 4 and length > 5
-    filtered_words_with_counts = [(word, count) for word, count in word_counts.items() if count > 4 and len(word) > 5]
+    filtered_words_with_counts = [(word, count) for word, count in word_counts.items() if count > 10 and len(word) > 5]
 
     # Sort words by count in descending order and select
     sorted_common_words_with_counts = sorted(filtered_words_with_counts, key=lambda x: x[1], reverse=True)
@@ -157,7 +156,7 @@ def find_matching_words_with_cosine_similarity(text, vocab, lng):
         gpu = spacy.prefer_gpu()
         ic(gpu)
         nlp = spacy.load(app.nermodel)
-        nlp.max_length = 310000
+        nlp.max_length = 110000
         doc = nlp(text)
     except Exception as e:
         ic(f"Error loading spaCy model: {e}")
