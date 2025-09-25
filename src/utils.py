@@ -320,7 +320,7 @@ def vocabulary(
         translation = get_completion_b(reflection_prompt, system_message=system_message)
     else:
         translation = get_completion_s(reflection_prompt, system_message=system_message)
-
+    ic(translation)
     return translation
 
 def one_chunk_reflect_on_translation(
