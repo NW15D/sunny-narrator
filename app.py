@@ -326,9 +326,9 @@ def main():
                 vb = ner.make_vocab(body)
                 if debug:
                     ic(vb)
-                #vocab_dict = ta.vocabulary(source_lang, target_lang, vb, country, True)
-                #vocab_dict = ta.remove_tags(vocab_dict)
-                write_to_file(vb, dict_file)
+                vocab_dict = ta.vocabulary(source_lang, target_lang, vb, country, True)
+                vocab_dict = ta.remove_tags(vocab_dict)
+                write_to_file(vocab_dict, dict_file)
                 raise ValueError(f"Vocabulary is ready, just correct it manually: {dict_file} and restart program")
 
             else:
