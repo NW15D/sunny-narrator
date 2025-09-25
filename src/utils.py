@@ -3,12 +3,14 @@ import openai
 import tiktoken
 import re
 from icecream import ic
+
+import app
 from app import api_timeout,api_timeout2,api_key,api_key2,base_url,base_url2,sys_off,sys_off2,debug,nothink,nothink2,model,model2,temp,temp2,example
 #from concurrent.futures import ThreadPoolExecutor
 import time
 
 # discrete chunks to translate one chunk at a time
-MAX_TOKENS_PER_CHUNK = 32768 # if text is more than this many tokens, we'll break it up into, bytes x2 to tokens
+MAX_TOKENS_PER_CHUNK = app.max_len_chunk*4 # if text is more than this many tokens, we'll break it up into, bytes x2 to tokens
 outline_text = ""
 big: bool = False
 
