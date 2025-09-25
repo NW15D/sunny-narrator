@@ -8,10 +8,11 @@ pydantic==2.11.7
 spacy[cuda12x]
 beautifulsoup4
 scikit-learn
-torch[cuda12x]
+pytorch-gpu
+#torch[cuda12x]
 lxml
 cupy[cuda12x]
-itertools
+more-itertools
 joblib
-thinc.api
+thinc
 spacy-transformers
