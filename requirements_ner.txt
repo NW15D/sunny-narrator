@@ -10,3 +10,8 @@ beautifulsoup4
 scikit-learn
 torch[cuda12x]
 lxml
+cupy[cuda12x]
+itertools
+joblib
+thinc.api
+spacy-transformers

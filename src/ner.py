@@ -2,16 +2,80 @@ from sklearn.metrics.pairwise import cosine_similarity
 from icecream import ic
 import app
 from collections import Counter
+import torch
+import multiprocessing as mp
+mp.set_start_method('spawn', force=True)
+from joblib import Parallel, delayed
+from itertools import cycle
+import cupy
 import spacy
 import torch
-#import numpy as np
+
+from thinc.api import set_gpu_allocator, require_gpu
+
+#########
+import cupy
+from joblib import Parallel, delayed
+
+def chunker(iterable, total_length, chunksize):
+    return (iterable[pos: pos + chunksize] for pos in range(0, total_length, chunksize))
+
+#def flatten(list_of_lists):
+#    "Flatten a list of lists to a combined list"
+#    return [item for sublist in list_of_lists for item in sublist]
+
+def process_entity(doc):
+    """Возвращает список найденных сущностей (NER)"""
+    ner_category = ["PERSON", "ORG", "LOC"]
+    ents = []
+    for ent in doc.ents:
+        if ent.vector_norm != 0 and ent.label_ in ner_category:
+            # Strip whitespace and newline characters from the entity text
+            clean_text = ent.text.strip()
+            # Convert vector to a tuple if it exists, otherwise use None
+            vector = tuple(ent.vector.get()) if hasattr(ent.vector, 'get') else tuple(
+                ent.vector) if ent.vector.size > 0 else None
+            ents.append((clean_text, ent.label_, vector))
+
+    return ents
+
+def process_chunk(texts, rank):
+    print(f"Обрабатывается на GPU {rank}")
+    with cupy.cuda.Device(rank):
+        set_gpu_allocator("pytorch")
+        require_gpu(rank)
+        nlp = spacy.load("en_core_web_trf")
+        preproc_pipe = []
+        for doc in nlp.pipe(texts, batch_size=20):
+            preproc_pipe.extend(process_entity(doc))  # добавляем сущности в общий список
+        return preproc_pipe
+
+def preprocess_parallel(texts, chunksize=100000):
+    executor = Parallel(n_jobs=2, backend='multiprocessing', prefer="processes")
+    do = delayed(process_chunk)
+    tasks = []
+    gpus = list(range(0, cupy.cuda.runtime.getDeviceCount()))
+    rank = 0
+    for chunk in chunker(texts, len(texts), chunksize=chunksize):
+        tasks.append(do(chunk, rank))
+        rank = (rank + 1) % len(gpus)
+    result = executor(tasks)
+    return result
+
+#####################
+#example
+#texts = ["His friend Nicolas J. Smith is here with Bart Simpon and Fred."] * 5
+#print(preprocess_parallel(texts=texts, chunksize=100000))
+#################################
 
 def make_vocab(text, stop_words=None):
     ic("Starting Named Entity Recognition")
     if not text:
         ic("No text to process.")
         return
-
+    ic(torch.cuda.is_available())
+    lst=preprocess_parallel(texts=text, chunksize=100000)
+    ic(lst)
     # Определите список стопслов по умолчанию или используйте переданный пользователем
     default_stop_words = set([
         "the", "and", "p", "emphasis", "section","first", "second", "one","two"
@@ -31,10 +95,10 @@ def make_vocab(text, stop_words=None):
             ic("CUDA is available. Using GPU.")
 
         # Prefer GPU usage in spaCy
-        spacy.prefer_gpu()
+        spacy.require_gpu()
 
         nlp = spacy.load(app.nermodel)
-        nlp.max_length = 2000000
+        nlp.max_length = 3500000
         doc = nlp("This is a test sentence.")
         ic(doc.ents)
 
@@ -43,9 +107,11 @@ def make_vocab(text, stop_words=None):
         ic(f"Error loading spaCy model: {e}")
         return
 
+
+    ner_category = ["PERSON", "ORG", "LOC"]
     ents = []
     for ent in doc.ents:
-        if ent.vector_norm != 0:  # and ent.label_ in ner_category:
+        if ent.vector_norm != 0 and ent.label_ in ner_category:
             # Strip whitespace and newline characters from the entity text
             clean_text = ent.text.strip()
             # Convert vector to a tuple if it exists, otherwise use None
@@ -148,14 +214,16 @@ def make_vocab(text, stop_words=None):
 def find_matching_words_with_cosine_similarity(text, vocab, lng):
     ic("Starting cosine similarity matching")
 
+
     if not text or not vocab:
         ic("No text or vocabulary to process.")
         return []
 
     try:
-        spacy.prefer_gpu()
+        spacy.require_gpu()
+        #spacy.prefer_gpu()
         nlp = spacy.load(app.nermodel)
-        nlp.max_length = 20000000
+        nlp.max_length = 40000000
         doc = nlp(text)
     except Exception as e:
         ic(f"Error loading spaCy model: {e}")

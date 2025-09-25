@@ -29,7 +29,7 @@ example = os.getenv('EXAMPLE', '')  # Example for TXT mode , add it to prompt  (
 source_lang = os.getenv('SOURCE_LANG')  # Source language
 target_lang = os.getenv('TARGET_LANG')  # Target language
 nothink = bool(os.getenv('NOTHINK'))  # Add /nothink for llama.cpp in prompt if set (1 - add, 0 - no add)
-ner_opt = bool(os.getenv('NER',False))  # Enable Named Entity Recognition if set
+ner_opt = bool(os.getenv('NER',True))  # Enable Named Entity Recognition if set
 country = os.getenv('COUNTRY')  # Country setting
 nermodel = os.getenv('NERMODEL')  # Named Entity Recognition model
 short = os.getenv('SHORT')  # Short setting
@@ -351,8 +351,8 @@ def main():
                 section_translation = ''
 
                 for chunk_index, chunk in enumerate(section):
-                    # found_strings = ner.find_matching_words_with_cosine_similarity(chunk, vocab, source_lang)
-                    found_strings = find_matching_words_with_substring_search(chunk, vocab, source_lang)
+                    found_strings = ner.find_matching_words_with_cosine_similarity(chunk, vocab, source_lang)
+                    #found_strings = find_matching_words_with_substring_search(chunk, vocab, source_lang)
                     # ic("found_strings: ", found_strings)
                     if (section_index, chunk_index) not in vocab_dict:
                         vocab_dict[(section_index, chunk_index)] = []  # Initialize list for current iteration
