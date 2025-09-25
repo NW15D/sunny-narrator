@@ -1,10 +1,10 @@
-from sklearn.metrics.pairwise import cosine_similarity
-from icecream import ic
 import app
 from collections import Counter
 import spacy
 import torch
 import numpy as np
+import cupy as cp
+from icecream import ic
 
 def make_vocab(text, stop_words=None):
     ic("Starting Named Entity Recognition")
@@ -144,7 +144,7 @@ def make_vocab(text, stop_words=None):
 
 
 
-def find_matching_words_with_cosine_similarity(text, vocab, lng):
+def find_matching_words_with_cosine_similarity(text, vocab, lng, threshold=0.8, batch_size=1024):
     ic("Starting cosine similarity matching")
 
     if not text or not vocab:
@@ -152,51 +152,57 @@ def find_matching_words_with_cosine_similarity(text, vocab, lng):
         return []
 
     try:
-
-        gpu = spacy.prefer_gpu()
-        ic(gpu)
-        nlp = spacy.load(app.nermodel)
+        # Загружаем модель с GPU (если доступна)
+        spacy.prefer_gpu()
+        nlp = spacy.load(app.nermodel)  # замените на app.nermodel
         nlp.max_length = 110000
         doc = nlp(text)
     except Exception as e:
         ic(f"Error loading spaCy model: {e}")
         return []
 
+    # Список слов из словаря
     orig_values = [entry[lng] for entry in vocab.values() if lng in entry]
-    #ic(orig_values)
 
-    # Extract vectors from the vocab dictionary
-    vocab_vectors = {}
-    for word in orig_values:
-        doc_en = nlp(word)
-        try:
-            if doc_en.vector_norm != 0:
-                vocab_vectors[word] = doc_en.vector.get()
-        except Exception as e:
-            ic(f"Error processing word '{word}': {e}")
+    # Обработка словаря (с учётом подслов)
+    valid_vocab_words = []
+    vocab_vectors = []
 
-    # Find matches using cosine similarity
+    for phrase in orig_values:
+        sub_words = phrase.split()
+        sub_docs = list(nlp.pipe(sub_words, disable=["ner", "parser", "tagger"]))
+        sub_vecs = [d.vector for d in sub_docs if d.vector_norm != 0]
+
+        if sub_vecs:  # numpy массивы
+            mean_vec = np.mean(np.vstack(sub_vecs), axis=0)  # строго numpy
+            vocab_vectors.append(mean_vec)
+            valid_vocab_words.append(phrase)
+
+    if not vocab_vectors:
+        ic("No valid vectors in vocab.")
+        return []
+
+    # numpy → cupy
+    vocab_matrix = cp.asarray(np.vstack(vocab_vectors))
+    vocab_matrix = vocab_matrix / cp.linalg.norm(vocab_matrix, axis=1, keepdims=True)
+
     matched_words_set = set()
-    for token in doc:
-        #ic(token)
-        if token.is_alpha and token.vector_norm != 0:
-            token_vector = token.vector.get().reshape(1, -1)  # Convert to NumPy array
-            for vocab_word, vocab_vector in vocab_vectors.items():
-                # Split vocab_word into individual words if it contains spaces
-                #ic(vocab_word)
-                sub_words = vocab_word.split()
-                match_found = False
-                for sub_word in sub_words:
-                    #ic(sub_word)
-                    doc_sub_word = nlp(sub_word)
-                    if doc_sub_word.vector_norm != 0:
-                        sub_word_vector = doc_sub_word.vector.get().reshape(1, -1)
-                        similarity = cosine_similarity(token_vector, sub_word_vector)[0][0]
-                        if similarity > 0.8:
-                            match_found = True
-                            break
-                if match_found:
-                    matched_words_set.add(vocab_word)
+
+    # Векторизация текста батчами
+    tokens = [t for t in doc if t.is_alpha and t.vector_norm != 0]
+    for i in range(0, len(tokens), batch_size):
+        batch_tokens = tokens[i:i+batch_size]
+        token_vectors = np.vstack([t.vector for t in batch_tokens])  # numpy
+        token_vectors = cp.asarray(token_vectors)  # → cupy
+        token_vectors = token_vectors / cp.linalg.norm(token_vectors, axis=1, keepdims=True)
+
+        # Косинусные сходства: [B, V]
+        sims = cp.dot(token_vectors, vocab_matrix.T)
+
+        # Индексы совпадений
+        best_matches = cp.where(sims > threshold)
+        for _, vi in zip(*best_matches):
+            matched_words_set.add(valid_vocab_words[int(vi)])
 
     ic(f"Found matching words: {matched_words_set}")
-    return list(matched_words_set)  # Return unique matched words
+    return list(matched_words_set)
