@@ -1,6 +1,6 @@
 ## English , translated
 # Sunny Narrator is an early-stage AI translator for long texts
-such as books in FB2, EPUB, or TXT format. The result is a reasonably readable text. 
+such as books in FB2 format. The result is a reasonably readable text. 
 However, for some languages, a character’s gender may accidentally switch in different chapters if it’s not clearly established, and some artifacts may remain. 
 The translation is performed in multiple passes using different roles (translation with synopsis previous part , translation corrections, and proofreading), 
 and it almost needs human proofreading and editing as well. Prompts for translation are located in the `.srcs/utils.py` file in English, and for use with Qwen/Deepseek, they should be rewritten in Chinese.
@@ -8,7 +8,7 @@ and it almost needs human proofreading and editing as well. Prompts for translat
 
 **To use the translator, you’ll need:
 1. A host address and API key for an OpenAI-compatible API (i.e., you can locally run llama.cpp or use the address and key for OpenAI, Claude, etc.).
-2. An FB2 or TXT file. If you have an EPUB file, use an online conversion tool to convert it to FB2. If you don't have specific requirements for translating a book, a TXT file is sufficient.
+2. An FB2. If you have an EPUB file, use an online conversion tool to convert it to FB2..
 3. A running program (Docker or installed Python).
 
 Translation is performed in four passes and may require a large number of tokens and time, usually three times more tokens for input and output than the entire text.
@@ -48,7 +48,7 @@ Sunny narrator это ранняя версия AI переводчика дли
 
 **Для работы переводчика вам нужен:**
 1. Адрес хоста и ключ API OpenAI совместимого API (т.е. вы можете локально запустить llama.cpp или использовать адрес и ключ OpenAI, Claude etc) 
-2. FB2 или TXT файл. Если у вас EPUB файл - воспользуйтесь онлайн конвертацией в FB2. Если у вас нет требований к переводу именно книги - переводите txt файл. 
+2. FB2 . Если у вас EPUB файл - воспользуйтесь онлайн конвертацией в FB2. 
 3. Запущенная программа (docker или на установленном python)
 Перевод выполняется в 4 прохода и может потребовать большого количества токенов и времени, обычно в 3 раза больше токенов на вход и выход чем весь текст.   
 
@@ -88,7 +88,7 @@ Sunny Narrator 是一个用于翻译长文本（例如 FB2、EPUB 或 TXT 格式
 
 **要使用此翻译器，您需要：**
 1. OpenAI 兼容 API 的主机地址和 API 密钥（例如，您可以本地启动 llama.cpp，或使用 OpenAI、Claude 等的地址和密钥）。
-2. FB2 或 TXT 文件。如果您有 EPUB 文件，请先将其转换为 FB2 格式。如果没有特定要求，建议翻译 TXT 文件。
+2. FB2 文件。如果您有 EPUB 文件，请先将其转换为 FB2 格式。
 3. 程序（Docker 或安装的 Python 环境）。
 翻译过程分四步进行，可能需要大量的 tokens 和时间，通常输入和输出的 tokens 数量是原文的三倍。
 
@@ -107,7 +107,7 @@ Os prompts para a tradução estão no arquivo .srcs/utils.py em inglês e, para
 **Para usar o tradutor, você precisa de:**
 
 1. Endereço do host e chave de API tipo OpenAI (ou seja, você pode executar o llama.cpp localmente ou usar o endereço e a chave da OpenAI, Claude, etc.).
-2. Arquivo FB2 ou TXT. Se você tiver um arquivo EPUB, use a conversão online para FB2. Se não precisar traduzir um livro, use o arquivo TXT.
+2. Arquivo FB2 . Se você tiver um arquivo EPUB, use a conversão online para FB2.
 3. Programa em execução (docker ou Python instalado).
 
 A tradução é realizada em 4 passagens e pode exigir uma grande quantidade de tokens e tempo, geralmente três vezes mais tokens na entrada e saída do que todo o texto.
