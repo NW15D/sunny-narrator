@@ -2,80 +2,16 @@ from sklearn.metrics.pairwise import cosine_similarity
 from icecream import ic
 import app
 from collections import Counter
-import torch
-import multiprocessing as mp
-mp.set_start_method('spawn', force=True)
-from joblib import Parallel, delayed
-from itertools import cycle
-import cupy
 import spacy
 import torch
-
-from thinc.api import set_gpu_allocator, require_gpu
-
-#########
-import cupy
-from joblib import Parallel, delayed
-
-def chunker(iterable, total_length, chunksize):
-    return (iterable[pos: pos + chunksize] for pos in range(0, total_length, chunksize))
-
-#def flatten(list_of_lists):
-#    "Flatten a list of lists to a combined list"
-#    return [item for sublist in list_of_lists for item in sublist]
-
-def process_entity(doc):
-    """Возвращает список найденных сущностей (NER)"""
-    ner_category = ["PERSON", "ORG", "LOC"]
-    ents = []
-    for ent in doc.ents:
-        if ent.vector_norm != 0 and ent.label_ in ner_category:
-            # Strip whitespace and newline characters from the entity text
-            clean_text = ent.text.strip()
-            # Convert vector to a tuple if it exists, otherwise use None
-            vector = tuple(ent.vector.get()) if hasattr(ent.vector, 'get') else tuple(
-                ent.vector) if ent.vector.size > 0 else None
-            ents.append((clean_text, ent.label_, vector))
-
-    return ents
-
-def process_chunk(texts, rank):
-    print(f"Обрабатывается на GPU {rank}")
-    with cupy.cuda.Device(rank):
-        set_gpu_allocator("pytorch")
-        require_gpu(rank)
-        nlp = spacy.load("en_core_web_trf")
-        preproc_pipe = []
-        for doc in nlp.pipe(texts, batch_size=20):
-            preproc_pipe.extend(process_entity(doc))  # добавляем сущности в общий список
-        return preproc_pipe
-
-def preprocess_parallel(texts, chunksize=100000):
-    executor = Parallel(n_jobs=2, backend='multiprocessing', prefer="processes")
-    do = delayed(process_chunk)
-    tasks = []
-    gpus = list(range(0, cupy.cuda.runtime.getDeviceCount()))
-    rank = 0
-    for chunk in chunker(texts, len(texts), chunksize=chunksize):
-        tasks.append(do(chunk, rank))
-        rank = (rank + 1) % len(gpus)
-    result = executor(tasks)
-    return result
-
-#####################
-#example
-#texts = ["His friend Nicolas J. Smith is here with Bart Simpon and Fred."] * 5
-#print(preprocess_parallel(texts=texts, chunksize=100000))
-#################################
+import numpy as np
 
 def make_vocab(text, stop_words=None):
     ic("Starting Named Entity Recognition")
     if not text:
         ic("No text to process.")
         return
-    ic(torch.cuda.is_available())
-    lst=preprocess_parallel(texts=text, chunksize=100000)
-    ic(lst)
+
     # Определите список стопслов по умолчанию или используйте переданный пользователем
     default_stop_words = set([
         "the", "and", "p", "emphasis", "section","first", "second", "one","two"
@@ -95,10 +31,10 @@ def make_vocab(text, stop_words=None):
             ic("CUDA is available. Using GPU.")
 
         # Prefer GPU usage in spaCy
-        spacy.require_gpu()
-
+        gpu = spacy.prefer_gpu()
+        ic(gpu)
         nlp = spacy.load(app.nermodel)
-        nlp.max_length = 3500000
+        nlp.max_length = 3100000
         doc = nlp("This is a test sentence.")
         ic(doc.ents)
 
@@ -107,11 +43,9 @@ def make_vocab(text, stop_words=None):
         ic(f"Error loading spaCy model: {e}")
         return
 
-
-    ner_category = ["PERSON", "ORG", "LOC"]
     ents = []
     for ent in doc.ents:
-        if ent.vector_norm != 0 and ent.label_ in ner_category:
+        if ent.vector_norm != 0:  # and ent.label_ in ner_category:
             # Strip whitespace and newline characters from the entity text
             clean_text = ent.text.strip()
             # Convert vector to a tuple if it exists, otherwise use None
@@ -161,8 +95,8 @@ def make_vocab(text, stop_words=None):
     word_counts = Counter(
         token.text for token in doc if token.is_alpha and token.text not in stop_words)
 
-    # Filter words with count > 20 and length > 5
-    filtered_words_with_counts = [(word, count) for word, count in word_counts.items() if count > 10 and len(word) > 5]
+    # Filter words with count > 4 and length > 5
+    filtered_words_with_counts = [(word, count) for word, count in word_counts.items() if count > 4 and len(word) > 5]
 
     # Sort words by count in descending order and select
     sorted_common_words_with_counts = sorted(filtered_words_with_counts, key=lambda x: x[1], reverse=True)
@@ -214,16 +148,16 @@ def make_vocab(text, stop_words=None):
 def find_matching_words_with_cosine_similarity(text, vocab, lng):
     ic("Starting cosine similarity matching")
 
-
     if not text or not vocab:
         ic("No text or vocabulary to process.")
         return []
 
     try:
-        spacy.require_gpu()
-        #spacy.prefer_gpu()
+
+        gpu = spacy.prefer_gpu()
+        ic(gpu)
         nlp = spacy.load(app.nermodel)
-        nlp.max_length = 40000000
+        nlp.max_length = 310000
         doc = nlp(text)
     except Exception as e:
         ic(f"Error loading spaCy model: {e}")
@@ -245,16 +179,16 @@ def find_matching_words_with_cosine_similarity(text, vocab, lng):
     # Find matches using cosine similarity
     matched_words_set = set()
     for token in doc:
-        ic(token)
+        #ic(token)
         if token.is_alpha and token.vector_norm != 0:
             token_vector = token.vector.get().reshape(1, -1)  # Convert to NumPy array
             for vocab_word, vocab_vector in vocab_vectors.items():
                 # Split vocab_word into individual words if it contains spaces
-                ic(vocab_word)
+                #ic(vocab_word)
                 sub_words = vocab_word.split()
                 match_found = False
                 for sub_word in sub_words:
-                    ic(sub_word)
+                    #ic(sub_word)
                     doc_sub_word = nlp(sub_word)
                     if doc_sub_word.vector_norm != 0:
                         sub_word_vector = doc_sub_word.vector.get().reshape(1, -1)
