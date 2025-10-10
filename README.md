@@ -1,7 +1,7 @@
 ## English , translated
 # Sunny Narrator is an early-stage AI translator for long texts
 such as books in FB2 format. The result is a reasonably readable text. 
-However, for some languages, a character’s gender may accidentally switch in different chapters if it’s not clearly established, and some artifacts may remain. 
+However, for some languages, a character’s gender may accidentally switch in different chapters if it’s not clearly established(set gender in vocabulary), and some artifacts may remain. 
 The translation is performed in multiple passes using different roles (translation with synopsis previous part , translation corrections, and proofreading), 
 and it almost needs human proofreading and editing as well. Prompts for translation are located in the `.srcs/utils.py` file in English, and for use with Qwen/Deepseek, they should be rewritten in Chinese.
 ![sh.png](sh.png)
