@@ -1,193 +1,125 @@
-from typing import  Union
+from typing import Union
 import openai
 import tiktoken
 import re
 from icecream import ic
-
-import app
-from app import api_timeout,api_timeout2,api_key,api_key2,base_url,base_url2,sys_off,sys_off2,debug,nothink,nothink2,model,model2,temp,temp2,example
-#from concurrent.futures import ThreadPoolExecutor
 import time
+from src.config import Config
 
-# discrete chunks to translate one chunk at a time
-MAX_TOKENS_PER_CHUNK = app.max_len_chunk*4 # if text is more than this many tokens, we'll break it up into, bytes x2 to tokens
+# Initialize global config (can be overridden or passed if needed, but for now this replaces the 'from app import ...')
+config = Config()
+
+# Discrete chunks to translate one chunk at a time
+MAX_TOKENS_PER_CHUNK = config.max_len_chunk * 4  # if text is more than this many tokens, we'll break it up into bytes x2 to tokens
 outline_text = ""
 big: bool = False
 
 clientb = openai.OpenAI(
-    api_key=api_key,  # This is the default and can be omitted
-    base_url=base_url,
-    timeout=api_timeout
+    api_key=config.api_key,
+    base_url=config.base_url,
+    timeout=config.api_timeout
 )
 clients = openai.OpenAI(
-    api_key=api_key2,  # This is the default and can be omitted
-    base_url=base_url2,
-    timeout=api_timeout2
+    api_key=config.api_key2,
+    base_url=config.base_url2,
+    timeout=config.api_timeout2
 )
 
 def remove_tags(text):
-    # Определяем шаблон для поиска тегов и текста между ними
-    pattern = r'<SOURCE_TEXT>.*?</SOURCE_TEXT>|<INITIAL_TRANSLATION>.*?</INITIAL_TRANSLATION>|<DICTIONARY>.*?</DICTIONARY>|<FIRST_TRANSLATION>.*?</FIRST_TRANSLATION>|<EXPERT_SUGGESTIONS>.*?</EXPERT_SUGGESTIONS>|<TRANSLATION>|</TRANSLATION>|<TTEXT>|</TTEXT>|<SYNOPSIS>.*?</SYNOPSIS>|<think>.*?</think>|<myheader>.*?</myheader>|<myfooter>.*?</myfooter>|</section>|<section>|<IMPROVED_TRANSLATION>|</IMPROVED_TRANSLATION>|```xml|```|'
-    # Используем re.sub для удаления найденных совпадений
+    """
+    Removes various XML/HTML tags and specific artifacts from the text.
+    """
+    pattern = r'<SOURCE_TEXT>.*?</SOURCE_TEXT>|<INITIAL_TRANSLATION>.*?</INITIAL_TRANSLATION>|<DICTIONARY>.*?</DICTIONARY>|<FIRST_TRANSLATION>.*?</FIRST_TRANSLATION>|<EXPERT_SUGGESTIONS>.*?</EXPERT_SUGGESTIONS>|<TRANSLATION>|</TRANSLATION>|<TTEXT>|</TTEXT>|<SYNOPSIS>.*?</SYNOPSIS>|<think>.*?</think>|<myheader>.*?</myheader>|<myfooter>.*?</myfooter>|</section>|<section>|<IMPROVED_TRANSLATION>|</IMPROVED_TRANSLATION>|```xml|```|OceanofPDF.com|<a l:href="https://oceanofpdf.com">|'
     cleaned_text = re.sub(pattern, '', text, flags=re.DOTALL)
     return cleaned_text
 
 def check_and_print_tags(text):
-    # Определяем шаблон для поиска тегов
+    """
+    Finds and returns a list of specific tags present in the text.
+    """
     pattern = r'<SOURCE_TEXT>.*?</SOURCE_TEXT>|<INITIAL_TRANSLATION>.*?</INITIAL_TRANSLATION>|<EXPERT_SUGGESTIONS>.*?</EXPERT_SUGGESTIONS>|<TRANSLATION>.*?</TRANSLATION>|<TTEXT>|</TTEXT>|<SYNOPSIS>.*?</SYNOPSIS>|<think>.*?</think>|<myheader>.*?</myheader>|<myfooter>.*?</myfooter>```xml.*?```'
-    # Ищем все вхождения тегов
     matches = re.findall(pattern, text)
-
     return matches
 
 def get_completion_s(
         prompt: str,
-        system_message: str ,
-        model: str = model2,
-        temperature: float = temp2,
+        system_message: str,
+        model: str = config.model2,
+        temperature: float = config.temp2,
         json_mode: bool = False,
         max_tokens: int = MAX_TOKENS_PER_CHUNK,
 ) -> Union[str, dict]:
     """
-        Generate a completion using the OpenAI API.
-
-    Args:
-        prompt (str): The user's prompt or query.
-        system_message (str, optional): The system message to set the context for the assistant.
-            Defaults to "You are a helpful assistant.".
-        model (str, optional): The name of the OpenAI model to use for generating the completion.
-            Defaults to "gpt-4-turbo".
-        temperature (float, optional): The sampling temperature for controlling the randomness of the generated text.
-            Defaults to 0.3.
-        json_mode (bool, optional): Whether to return the response in JSON format.
-            Defaults to False.
-
-    Returns:
-        Union[str, dict]: The generated completion.
-            If json_mode is True, returns the complete API response as a dictionary.
-            If json_mode is False, returns the generated text as a string.
+    Generate a completion using the OpenAI API (Secondary client).
     """
-    if sys_off is None:
-        prompt =  f"{system_message}.{prompt}"
-        system_message = None
-
-    if nothink:
-        system_message = f"{system_message}./no_think"
-    num_tokens_in = num_tokens_in_string(prompt)
-
-    if debug:
-        ic(num_tokens_in)
-
-    if json_mode:
-        response = clients.chat.completions.create(
-            model=model,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": prompt},
-            ],
-        )
-        return response.choices[0].message.content
-    else:
-        response = clients.chat.completions.create(
-            model=model,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            messages=[
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": prompt},
-            ],
-        )
-        if debug:
-            ic("small one")
-        return response.choices[0].message.content
+    return _get_completion(clients, prompt, system_message, config.sys_not_promt2, config.nothink, model, temperature, json_mode, max_tokens, "small one")
 
 def get_completion_b(
         prompt: str,
-        system_message: str ,
-        model: str = model,
-        temperature: float = temp,
+        system_message: str,
+        model: str = config.model,
+        temperature: float = config.temp,
         json_mode: bool = False,
         max_tokens: int = MAX_TOKENS_PER_CHUNK,
 ) -> Union[str, dict]:
     """
-        Generate a completion using the OpenAI API.
-
-    Args:
-        prompt (str): The user's prompt or query.
-        system_message (str, optional): The system message to set the context for the assistant.
-            Defaults to "You are a helpful assistant.".
-        model (str, optional): The name of the OpenAI model to use for generating the completion.
-            Defaults to "gpt-4-turbo".
-        temperature (float, optional): The sampling temperature for controlling the randomness of the generated text.
-            Defaults to 0.3.
-        json_mode (bool, optional): Whether to return the response in JSON format.
-            Defaults to False.
-
-    Returns:
-        Union[str, dict]: The generated completion.
-            If json_mode is True, returns the complete API response as a dictionary.
-            If json_mode is False, returns the generated text as a string.
+    Generate a completion using the OpenAI API (Primary client).
     """
-    if sys_off2:
-        prompt =  f"{system_message}.{prompt}"
+    return _get_completion(clientb, prompt, system_message, config.sys_not_promt, config.nothink2, model, temperature, json_mode, max_tokens, "big one")
+
+def _get_completion(client, prompt, system_message, sys_off_flag, nothink_flag, model, temperature, json_mode, max_tokens, debug_label):
+    if sys_off_flag:
+        prompt = f"{system_message}.{prompt}"
         system_message = None
 
-    if nothink2:
-        system_message  = f"{system_message}./no_think"
+    if nothink_flag:
+        # Check if system_message is not None before appending
+        if system_message:
+            system_message = f"{system_message}./no_think"
+        else:
+             # If system message is suppressed but nothink is requested, we might need to handle it or append to prompt
+            prompt = f"{prompt} ./no_think"
+
     num_tokens_in = num_tokens_in_string(prompt)
 
-    if debug:
+    if config.debug:
         ic(num_tokens_in)
-    if json_mode:
-        response = clientb.chat.completions.create(
-            model=model,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": prompt},
-            ],
-        )
-        return response.choices[0].message.content
-    else:
-        response = clientb.chat.completions.create(
-            model=model,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            messages=[
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": prompt},
-            ],
-        )
 
-        if debug:
-            ic("big one")
-        return response.choices[0].message.content
+    messages = []
+    if system_message:
+        messages.append({"role": "system", "content": system_message})
+    messages.append({"role": "user", "content": prompt})
+
+    kwargs = {
+        "model": model,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "messages": messages
+    }
+    
+    if json_mode:
+        kwargs["response_format"] = {"type": "json_object"}
+
+    response = client.chat.completions.create(**kwargs)
+    
+    if config.debug:
+        ic(debug_label)
+        
+    return response.choices[0].message.content
 
 def one_chunk_initial_translation(
         source_lang: str, target_lang: str, source_text: str, style: str, outline_text: str, vocab_dict, big: bool
 ) -> str:
     """
     Translate the entire text as one chunk using an LLM.
-
-    Args:
-        source_lang (str): The source language of the text.
-        target_lang (str): The target language for translation.
-        source_text (str): The text to be translated.
-
-    Returns:
-        str: The translated text.
     """
-    if example:
-        outline_text = f"{outline_text}.{example}"
+    if config.example:
+        outline_text = f"{outline_text}.{config.example}"
 
     system_message = f"You are an expert linguist, specializing in translation from {source_lang} to {target_lang}."
-    if style == 'xml':  # Исправлено '=' на '=='
-       translation_prompt = f"""Translate the text in the <TTEXT> tag only, containing a part of a book in xml fb2 format, from {source_lang} to {target_lang}.
+    
+    if style == 'xml':
+        translation_prompt = f"""Translate the text in the <TTEXT> tag only, containing a part of a book in xml fb2 format, from {source_lang} to {target_lang}.
        1. Use the information from the previous part of the text specified in the <SYNOPSIS> tag to clarify the translation.
        2. Use the word pairs specified in the <DICTIONARY> tag to translate proper names, genders, and frequently used words.
        3. If there is obscene language, it should be translated as accurately as possible.
@@ -197,8 +129,7 @@ def one_chunk_initial_translation(
         <DICTIONARY>{vocab_dict}</DICTIONARY>
 
         <TTEXT>{source_text}</TTEXT> """
-
-    else :
+    else:
         translation_prompt = f"""Translate the text from {source_lang} to {target_lang} in tag TTEXT, use the context from the previous part of the text provided in the SYNOPSIS tag.
 
         Instructions:
@@ -209,31 +140,20 @@ def one_chunk_initial_translation(
         <TTEXT>{source_text}</TTEXT>
 
         <SYNOPSIS>{outline_text}</SYNOPSIS>
-
   """
-
 
     if big:
         translation = get_completion_b(translation_prompt, system_message=system_message)
     else:
         translation = get_completion_s(translation_prompt, system_message=system_message)
 
-
     return remove_tags(translation)
-
 
 def one_chunk_referat(
          target_lang: str, final_translation: str,  big: bool
 ) -> str:
     """
-    Make the referat for chunk using an LLM.
-
-    Args:
-        target_lang (str): The target language for translation.
-        final_translation (str): The text to be translated.
-
-    Returns:
-        str: The translated text.
+    Make the synopsis (referat) for chunk using an LLM.
     """
     system_message = f"You are an expert linguist and proofreader, specializing in text analysis and summarization."
 
@@ -253,32 +173,64 @@ def one_chunk_referat(
     else:
         translation = get_completion_s(translation_prompt, system_message=system_message)
 
-
     return remove_tags(translation)
 
-
-def one_chunk_editor(target_lang: str,  source_text: str, style: str,  big: bool
+def one_chunk_editor(target_lang: str,  source_text: str, style: str,  lang: str , country: str , big: bool
 ) -> str:
     """
-    Args:
-        target_lang (str): The target language for translation.
-        source_text (str): The text to be translated.
-
-    Returns:
-        str: The adopted text.
+    Edits and proofreads the text.
     """
     system_message = f"You are an translator and proofreader of fiction texts"
 
-    if style == 'xml':  # Исправлено '=' на '=='
-        translation_prompt = f"""Your task is to  correct the text in the <TTEXT> tag only, containing a part of a book in fb2 format.
-        Ensure all stylistic and grammatical errors are fixed. Leave as is the XML structure, adding <p> or </p> tags only where necessary to properly define paragraphs.
-        The result should contain the same xml structure with text without explanations.
-        <TTEXT>{source_text}</TTEXT>"""
-    else:  # Отступ исправлен
-        translation_prompt = f"""You are tasked with proofreading and correcting the text. Ensure that all stylistic and grammatical errors are corrected. \n
-            Output improved text and nothing else. Don't add any comment. \n
-            Here is the text to be corrected: {source_text} """
+    if style == 'xml':
+        translation_prompt = f"""Your task is to process and correct only the text inside the <TTEXT> tag.
+This text contains a fragment of a book in FB2 format, written in {lang} and originating from {country}.
 
+Follow these instructions carefully:
+
+Language and Style Correction:
+
+Fix all grammatical, spelling, and stylistic errors in the text.
+
+Maintain the author’s tone and literary style.
+
+XML Structure Preservation:
+
+Keep the existing XML structure exactly as it is.
+
+Add <p> and </p> tags only where necessary to properly mark paragraphs.
+
+Ensure that all XML tags are properly closed.
+
+Allowed XML Tags:
+Only the following XML tags may appear in the final result:
+title, epigraph, annotation, image, p, empty-line, poem, cite, subtitle, table, section.
+
+Tag Conversion:
+
+Any other XML or HTML-like tags not in the allowed list must be converted to plain text.
+
+For example: <tag> → &lt;tag&gt;
+
+Output Format:
+
+Return the corrected text with the same XML structure.
+
+Do not include explanations, comments, or metadata — only the corrected XML text.
+Input text:    <TTEXT>{source_text}</TTEXT>"""
+    else:
+        translation_prompt = f"""You are tasked with proofreading and correcting the text. Ensure that all stylistic and grammatical errors are corrected. \n
+            Process the text below according to the following rules:
+
+Ensure that all XML tags are properly closed.
+
+Only the following XML tags are allowed:
+title, epigraph, annotation, image, p, empty-line, poem, cite, subtitle, table, section.
+
+Any other tags must be converted into plain text (for example, <tag> should become &lt;tag&gt;).
+
+Preserve the text content and structure of the document as much as possible. \n
+            Here is the text to be corrected: {source_text} """
 
     if big:
         translation = get_completion_b(translation_prompt, system_message=system_message)
@@ -286,7 +238,6 @@ def one_chunk_editor(target_lang: str,  source_text: str, style: str,  big: bool
         translation = get_completion_s(translation_prompt, system_message=system_message)
 
     return remove_tags(translation)
-
 
 def vocabulary(
         source_lang: str,
@@ -296,18 +247,8 @@ def vocabulary(
         big: bool,
 ) -> str:
     """
-    Use an LLM to make vocabulary proper nouns, treating the entire text as one chunk.
-
-    Args:
-        source_lang (str): The source language of the text.
-        target_lang (str): The target language of the translation.
-        source_text (str): The original text in the source language.
-        country (str): Country specified for the target language.
-
-    Returns:
-        str: The LLM's reflection on the translation, providing constructive criticism and suggestions for improvement.
+    Use an LLM to generate vocabulary for proper nouns.
     """
-
     system_message = f"You are a translator, specializing in translations from {source_lang} to {target_lang}, from {country}"
 
     reflection_prompt = f"""Translate a list of words and names from {source_lang} to {target_lang},
@@ -335,19 +276,8 @@ def one_chunk_reflect_on_translation(
         big: bool,
 ) -> str:
     """
-    Use an LLM to reflect on the translation, treating the entire text as one chunk.
-
-    Args:
-        source_lang (str): The source language of the text.
-        target_lang (str): The target language of the translation.
-        source_text (str): The original text in the source language.
-        translation_1 (str): The initial translation of the source text.
-        country (str): Country specified for the target language.
-
-    Returns:
-        str: The LLM's reflection on the translation, providing constructive criticism and suggestions for improvement.
+    Reflect on the initial translation and provide suggestions for improvement.
     """
-
     system_message = f"You are a proofreader, specializing in improving translations from {source_lang} to {target_lang}, from {country}"
 
     reflection_prompt = f"""Your task is to review a source text in {source_lang} and an initial {target_lang} translation, enclosed in the <SOURCE_TEXT> and <INITIAL_TRANSLATION> tags, and provide a numbered list of specific suggestions to improve the translation.
@@ -374,14 +304,12 @@ def one_chunk_reflect_on_translation(
         {translation_1}
         </INITIAL_TRANSLATION>"""
 
-
     if big:
         translation = get_completion_b(reflection_prompt, system_message=system_message)
     else:
         translation = get_completion_s(reflection_prompt, system_message=system_message)
 
     return remove_tags(translation)
-
 
 def one_chunk_improve_translation(
         source_lang: str,
@@ -393,21 +321,10 @@ def one_chunk_improve_translation(
         big: bool,
 ) -> str:
     """
-    Use the reflection to improve the translation, treating the entire text as one chunk.
-
-    Args:
-        source_lang (str): The source language of the text.
-        target_lang (str): The target language for the translation.
-        source_text (str): The original text in the source language.
-        translation_1 (str): The initial translation of the source text.
-        reflection (str): Expert suggestions and constructive criticism for improving the translation.
-
-    Returns:
-        str: The improved translation based on the expert suggestions.
+    Use the reflection to improve the translation.
     """
-
     system_message = f"You are the proofreader and translator of the books, and you help with the translation of the part of book from {source_lang} language to {target_lang}"
-    if style == 'xml':  #
+    if style == 'xml':
         prompt = f"""Your task is to improve a {source_lang} to {target_lang} translation based on expert suggestions.
               Output format is improved translation only.
 
@@ -428,7 +345,6 @@ def one_chunk_improve_translation(
               <EXPERT_SUGGESTIONS>{reflection}</EXPERT_SUGGESTIONS>
 
               """
-
     else:
         prompt = f"""Edit the translation from {source_lang} to {target_lang} based on expert suggestions. The source text, initial translation, and suggestions are enclosed in tags:
 
@@ -459,26 +375,12 @@ The response should contain only the translated part."""
 
     return translation
 
-
 def one_chunk_translate_text(
         source_lang: str, target_lang: str, source_text: str, style: str, outline_text: str, country, vocab_dict
-) -> str:
+):
     """
     Translate a single chunk of text from the source language to the target language.
-
-    This function performs a two-step translation process:
-    1. Get an initial translation of the source text.
-    2. Reflect on the initial translation and generate an improved translation.
-
-    Args:
-        source_lang (str): The source language of the text.
-        target_lang (str): The target language for the translation.
-        source_text (str): The text to be translated.
-        country (str): Country specified for the target language.
-    Returns:
-        str: The improved translation of the source text.
     """
-
 
     # Step 1: Initial translation
     start_time = time.time()
@@ -486,20 +388,18 @@ def one_chunk_translate_text(
         source_lang, target_lang, source_text, style, outline_text, vocab_dict, True
     )
     translation_1_time = time.time() - start_time
-    if debug:
+    if config.debug:
         ic(source_text)
-        ic(translation_1_time,(num_tokens_in_string(translation_1)), style, outline_text, translation_1)
-
+        ic(translation_1_time, (num_tokens_in_string(translation_1)), style, outline_text, translation_1)
 
     # Step 2: Reflection on the initial translation
     start_time = time.time()
     reflection = one_chunk_reflect_on_translation(
-        source_lang, target_lang, source_text, translation_1, country, vocab_dict,False
+        source_lang, target_lang, source_text, translation_1, country, vocab_dict, False
     )
     reflection_time = time.time() - start_time
-    if debug:
-        ic(reflection_time,num_tokens_in_string(reflection), style, reflection)
-
+    if config.debug:
+        ic(reflection_time, num_tokens_in_string(reflection), style, reflection)
 
     # Step 3: Improved translation
     start_time = time.time()
@@ -507,36 +407,19 @@ def one_chunk_translate_text(
         source_lang, target_lang, source_text, translation_1, reflection, style, True
     )
     translation_2_time = time.time() - start_time
-    if debug:
-        ic(translation_2_time,num_tokens_in_string(translation_2), style, translation_2)
-
-    # Concurrently execute one_chunk_referat and one_chunk_editor , beyond base old  code
-    """///* with ThreadPoolExecutor(max_workers=2) as executor:
-        future_outline = executor.submit(one_chunk_referat, target_lang, translation_2, False)
-        future_final_translation = executor.submit(one_chunk_editor, target_lang, translation_2, style, True)
-
-        start_time = time.time()
-        outline_text = future_outline.result()
-        outline_time = time.time() - start_time
-        if debug:
-            ic(outline_time, num_tokens_in_string(outline_text), outline_text)
-        start_time = time.time()
-        final_translation = future_final_translation.result()
-        final_translation_time = time.time() - start_time
-        if debug:
-            ic(final_translation_time,num_tokens_in_string(final_translation), final_translation)
-    ***///"""
+    if config.debug:
+        ic(translation_2_time, num_tokens_in_string(translation_2), style, translation_2)
 
     start_time = time.time()
     outline_text = one_chunk_referat(target_lang, translation_2, True)
     outline_time = time.time() - start_time
-    if debug:
+    if config.debug:
         ic(outline_time, num_tokens_in_string(outline_text), outline_text)
 
     start_time = time.time()
-    final_translation = one_chunk_editor(target_lang, translation_2, style, False)
+    final_translation = one_chunk_editor(target_lang, translation_2, style, target_lang, country, False)
     final_translation_time = time.time() - start_time
-    if debug:
+    if config.debug:
         ic(final_translation_time, num_tokens_in_string(final_translation), final_translation)
 
     return final_translation, outline_text
@@ -546,56 +429,19 @@ def num_tokens_in_string(
 ) -> int:
     """
     Calculate the number of tokens in a given string using a specified encoding.
-
-    Args:
-        input_str (str): The input string to be tokenized.
-        encoding_name (str, optional): The name of the encoding to use. Defaults to "cl100k_base",
-            which is the most commonly used encoder (used by GPT-4).
-
-    Returns:
-        int: The number of tokens in the input string.
-
-    Example:
-        >>> text = "Hello, how are you?"
-        >>> num_tokens = num_tokens_in_string(text)
-        >>> print(num_tokens)
-        5
     """
-    encoding = tiktoken.get_encoding(encoding_name)
+    try:
+        encoding = tiktoken.get_encoding(encoding_name)
+    except Exception:
+        # Fallback if encoding name is not found, though cl100k_base should be standard
+        encoding = tiktoken.get_encoding("cl100k_base")
     num_tokens = len(encoding.encode(input_str))
     return num_tokens
-
-
-
 
 def calculate_chunk_size(token_count: int, token_limit: int) -> int:
     """
     Calculate the chunk size based on the token count and token limit.
-
-    Args:
-        token_count (int): The total number of tokens.
-        token_limit (int): The maximum number of tokens allowed per chunk.
-
-    Returns:
-        int: The calculated chunk size.
-
-    Description:
-        This function calculates the chunk size based on the given token count and token limit.
-        If the token count is less than or equal to the token limit, the function returns the token count as the chunk size.
-        Otherwise, it calculates the number of chunks needed to accommodate all the tokens within the token limit.
-        The chunk size is determined by dividing the token limit by the number of chunks.
-        If there are remaining tokens after dividing the token count by the token limit,
-        the chunk size is adjusted by adding the remaining tokens divided by the number of chunks.
-
-    Example:
-        >>> calculate_chunk_size(1000, 500)
-        500
-        >>> calculate_chunk_size(1530, 500)
-        389
-        >>> calculate_chunk_size(2242, 500)
-        496
     """
-
     if token_count <= token_limit:
         return token_count
 
@@ -607,11 +453,6 @@ def calculate_chunk_size(token_count: int, token_limit: int) -> int:
         chunk_size += remaining_tokens // num_chunks
 
     return chunk_size
-
-
-
-
-
 
 def translate(
         source_lang,
@@ -628,20 +469,22 @@ def translate(
 
     num_tokens_in_text = num_tokens_in_string(source_text)
 
-    if debug:
+    if config.debug:
         ic(num_tokens_in_text)
 
+    # Simplified check, original logic raise error if oversized but here we trust the chunker upstream for now or just process it.
+    # The original code raised ValueError("Chunks is oversized!!!") if > max_tokens. 
+    # We will keep that behavior but perhaps it should be handled more gracefully in production.
     if num_tokens_in_text < max_tokens:
-        if debug:
+        if config.debug:
             ic("Translating text as a single chunk")
 
-        final_translation , outline = one_chunk_translate_text(
-            source_lang, target_lang, source_text, style,outline_text, country , vocab_dict
+        final_translation, outline = one_chunk_translate_text(
+            source_lang, target_lang, source_text, style, outline_text, country, vocab_dict
         )
 
         return final_translation, outline
 
     else:
-        raise ValueError("Chunks is oversized!!!")
-
-
+        # Better error message
+        raise ValueError(f"Chunk of size {num_tokens_in_text} tokens exceeds limit of {max_tokens} tokens.")
