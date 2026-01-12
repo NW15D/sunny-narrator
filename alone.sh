@@ -1,13 +1,17 @@
 #!/bin/bash
 #plan llm pairs:  qwen3-32_ mistral ,
 # Определение списков значений
-# Собираем список fb2 файлов из директории books
-files=(books/suarez/*.fb2)
+shorts=("Wat1" "Wat2")
+#"mi24_q3-32" "q3-32_g3_27b" "g3_27b_m24" "m24_g3_27b" "m24_s3_14b" "saiyax8b_saig3_14b")
+file=("books/WaT1.fb2" "books/WaT2.fb2")
 
-# Проходим по каждому файлу
-for file in "${files[@]}"; do
-    # basename убирает путь, а %.* — расширение
-    short=$(basename "$file" .fb2)
+# Функция для проверки запуска процесса
+
+
+# Проход по всем комбинациям значений
+for i in "${!file[@]}"; do
+    file="${file[$i]}"
+    short="${shorts[$i]}"
     export FILE=$file
     #export TEMP2=$temp2
 

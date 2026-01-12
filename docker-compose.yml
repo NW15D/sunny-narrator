@@ -1,4 +1,4 @@
-version: '3.4'
+version: '0.9'
 
 services:
   sunny-narrator:
@@ -10,7 +10,9 @@ services:
 #    ports:
 #      - "${HOST_PORT:-8020}:${CONTAINER_PORT:-8020}"
     volumes:
-      - ./books:/app/Books
+      - ./books:/app/books
+      - ./log:/app/log
+      - ./conf:/app/conf
 #    deploy:
 #      resources:
 #        reservations:
