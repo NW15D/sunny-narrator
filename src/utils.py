@@ -488,3 +488,45 @@ def translate(
     else:
         # Better error message
         raise ValueError(f"Chunk of size {num_tokens_in_text} tokens exceeds limit of {max_tokens} tokens.")
+
+def process_image_request(image_data: str,  source_lang: str, target_lang: str, prompt: str = config.cover_prompt) -> str:
+    """
+    Sends an image to the OpenAI API (clientc) with a prompt and returns the result.
+    Assumes the model supports vision (e.g., gpt-4-vision-preview).
+    """
+    system_message = f"You are a helpful assistant designed to translate book covers from {source_lang} to {target_lang}."
+    
+    # If sys_not_promt3 is set, we might prepend system message to prompt, but for now let's keep it standard
+    # unless specific behavior is needed. The current `_get_completion` logic is text-based.
+    # We'll construct the vision request manually here as it differs from text completion structure.
+    
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{image_data}",
+                    },
+                },
+            ],
+        }
+    ]
+    
+    if not config.sys_not_promt3:
+         messages.insert(0, {"role": "system", "content": system_message})
+
+    try:
+        response = clientc.chat.completions.create(
+            model=config.model3,
+            messages=messages,
+            temperature=config.temp3,
+            max_tokens=config.max_len_chunk, # specific token limit for description?
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        ic(f"Error processing image request: {e}")
+        return ""
+
