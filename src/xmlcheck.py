@@ -1,71 +1,66 @@
 from bs4 import BeautifulSoup
+from lxml import etree
+from icecream import ic
 
 def rem_tags(xml_string):
     """
     Parses and cleans up XML tags, ensuring structure validity.
+    Input is assumed to be the content of a <section> (or similar fragment).
+    Wraps it in a dummy root, lets BS4 close tags, then unwraps.
     """
-    # Placeholder: currently returning the original string as requested in the legacy code
-    # to avoid breaking changes if this functionality was disabled on purpose.
-    # To enable strict XML checking, comment out the next line.
-    return xml_string 
+    # Wrap in dummy root to ensure parsability of fragments
+    wrapped_xml = f"<root>{xml_string}</root>"
+    
+    # Use 'xml' parser for strict XML handling (requires lxml installed)
+    soup = BeautifulSoup(wrapped_xml, 'xml')
+    
+    # BS4 automatically closes tags when parsing.
+    # We just need to extract the inner content of <root>
+    root = soup.find('root')
+    
+    if root:
+        # decode_contents() returns the string representation of children
+        cleaned_string = root.decode_contents()
+        return cleaned_string.strip()
+    
+    return xml_string
 
-    # Logic below is preserved for future use:
+import os
+
+def validate_fb2(xml_string):
     """
-    soup = BeautifulSoup(xml_string, 'lxml')
-    body_tag = soup.find('body')
-
-    if not body_tag:
-        return str(soup) 
-
-    tags_to_check = ['section', 'p']
-
-    def process_tag(tag, parent):
-        # Recursive tag processing
-        children = list(tag.children)
-
-        for i in range(len(children)):
-            child = children[i]
-
-            if child.name in tags_to_check:
-                next_child = None
-                if i + 1 < len(children):
-                    next_child = children[i + 1]
-
-                # If the next element is also a tag from the list, split checks
-                if next_child and next_child.name == child.name:
-
-                    new_tag = soup.new_tag(child.name)
-                    closing_tag = soup.new_string(f'</{child.name}>')
-                    opening_tag = soup.new_string(f'<{child.name}>')
-
-                    tag.insert(i + 1, new_tag)
-                    tag.insert(i, closing_tag)
-                    process_tag(new_tag, parent) 
-                else:
-                    process_tag(child, child) 
-
-
-    for tag_name in tags_to_check:
-        open_tags = body_tag.find_all(tag_name, recursive=False)
-
-        for tag in open_tags:
-            process_tag(tag, tag)
-
-    # Fix unclosed tags
-    for tag_name in tags_to_check:
-        tags = body_tag.find_all(tag_name)
-        for tag in tags:
-            if not tag.find_next_sibling(tag_name):
-                closing_tag = soup.new_string(f'</{tag_name}>')
-                tag.insert_after(closing_tag)
-
-    # Fix missing opening tags
-    for tag_name in tags_to_check:
-        tags = body_tag.find_all(tag_name)
-        for tag in tags:
-            if not tag.find_previous_sibling(tag_name):
-                opening_tag = soup.new_string(f'<{tag_name}>')
-                tag.insert_before(opening_tag)
-
-    return str(soup).replace('<?xml version="1.0" encoding="utf-8"?>', '').strip()
+    Validates the FB2 XML string using lxml and the local XSD schema.
+    Returns a list of error strings with line numbers.
+    If valid, returns an empty list.
     """
+    errors = []
+    try:
+        # Load XSD Schema
+        # Assuming schemas are in src/schemas relative to this file
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        schema_path = os.path.join(base_dir, 'schemas', 'FictionBook.xsd')
+        
+        if not os.path.exists(schema_path):
+            return [f"Schema file not found at: {schema_path}"]
+
+        xml_schema_doc = etree.parse(schema_path)
+        xml_schema = etree.XMLSchema(xml_schema_doc)
+
+        # Parse XML string
+        parser = etree.XMLParser(recover=False) # strict parsing
+        doc = etree.fromstring(xml_string.encode('utf-8'), parser)
+        
+        # Validate against schema
+        if not xml_schema.validate(doc):
+            for error in xml_schema.error_log:
+                 errors.append(f"Line {error.line}, Column {error.column}: {error.message}")
+        
+    except etree.XMLSyntaxError as e:
+        # Parsing error (malformed XML)
+        for error in e.error_log:
+            errors.append(f"Line {error.line}, Column {error.column}: {error.message}")
+            
+    except Exception as e:
+        errors.append(f"General Validation Error: {str(e)}")
+        
+    return errors
