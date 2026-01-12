@@ -2,8 +2,12 @@ from typing import Union
 import openai
 import tiktoken
 import re
+import json
 from icecream import ic
 import time
+import io
+import base64
+from PIL import Image
 from src.config import Config
 
 # Initialize global config (can be overridden or passed if needed, but for now this replaces the 'from app import ...')
@@ -24,6 +28,41 @@ clients = openai.OpenAI(
     base_url=config.base_url2,
     timeout=config.api_timeout2
 )
+clientc = openai.OpenAI(
+    api_key=config.api_key3,
+    base_url=config.base_url3,
+    timeout=config.api_timeout3
+)
+
+def parse_json_response(response_text: str) -> dict:
+    """
+    Parses a JSON response from the LLM, handling potential markdown wrappers.
+    """
+    try:
+        # Try direct parsing
+        return json.loads(response_text)
+    except json.JSONDecodeError:
+        # Try finding the first '{' and last '}'
+        start = response_text.find('{')
+        end = response_text.rfind('}')
+        if start != -1 and end != -1 and end > start:
+            try:
+                return json.loads(response_text[start:end+1])
+            except json.JSONDecodeError:
+                pass
+
+        # Try stripping markdown code blocks
+        match = re.search(r'```json\s*(.*?)\s*```', response_text, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(1))
+            except json.JSONDecodeError:
+                pass
+        
+        # If all else fails, return original or raise
+        if config.debug:
+            ic(f"Failed to parse JSON response: {response_text}")
+        raise
 
 def remove_tags(text):
     """
@@ -46,7 +85,7 @@ def get_completion_s(
         system_message: str,
         model: str = config.model2,
         temperature: float = config.temp2,
-        json_mode: bool = False,
+        json_mode: bool = True,
         max_tokens: int = MAX_TOKENS_PER_CHUNK,
 ) -> Union[str, dict]:
     """
@@ -59,7 +98,7 @@ def get_completion_b(
         system_message: str,
         model: str = config.model,
         temperature: float = config.temp,
-        json_mode: bool = False,
+        json_mode: bool = True,
         max_tokens: int = MAX_TOKENS_PER_CHUNK,
 ) -> Union[str, dict]:
     """
@@ -128,7 +167,10 @@ def one_chunk_initial_translation(
         <SYNOPSIS>{outline_text}</SYNOPSIS>
         <DICTIONARY>{vocab_dict}</DICTIONARY>
 
-        <TTEXT>{source_text}</TTEXT> """
+        <TTEXT>{source_text}</TTEXT> 
+        
+Provide the result ONLY as a valid JSON object: {{"translation": "..."}}
+        """
     else:
         translation_prompt = f"""Translate the text from {source_lang} to {target_lang} in tag TTEXT, use the context from the previous part of the text provided in the SYNOPSIS tag.
 
@@ -140,12 +182,20 @@ def one_chunk_initial_translation(
         <TTEXT>{source_text}</TTEXT>
 
         <SYNOPSIS>{outline_text}</SYNOPSIS>
+
+Provide the result ONLY as a valid JSON object: {{"translation": "..."}}
   """
 
     if big:
-        translation = get_completion_b(translation_prompt, system_message=system_message)
+        response_text = get_completion_b(translation_prompt, system_message=system_message, json_mode=True)
     else:
-        translation = get_completion_s(translation_prompt, system_message=system_message)
+        response_text = get_completion_s(translation_prompt, system_message=system_message, json_mode=True)
+
+    try:
+        data = parse_json_response(response_text)
+        translation = data.get("translation", response_text)
+    except Exception:
+        translation = response_text
 
     return remove_tags(translation)
 
@@ -165,15 +215,21 @@ def one_chunk_referat(
 
         Text: {final_translation}
 
-        Synopsis:
+        Provide the result ONLY as a valid JSON object: {{"synopsis": "..."}}
        """
 
     if big:
-        translation = get_completion_b(translation_prompt, system_message=system_message)
+        response_text = get_completion_b(translation_prompt, system_message=system_message, json_mode=True)
     else:
-        translation = get_completion_s(translation_prompt, system_message=system_message)
+        response_text = get_completion_s(translation_prompt, system_message=system_message, json_mode=True)
 
-    return remove_tags(translation)
+    try:
+        data = parse_json_response(response_text)
+        synopsis = data.get("synopsis", response_text)
+    except Exception:
+        synopsis = response_text
+
+    return remove_tags(synopsis)
 
 def one_chunk_editor(target_lang: str,  source_text: str, style: str,  lang: str , country: str , big: bool
 ) -> str:
@@ -210,11 +266,10 @@ Tag Conversion:
 
 Any other XML or HTML-like tags not in the allowed list must be converted to plain text.
 
-For example: <tag> → &lt;tag&gt;
+For example: <tag> -> &lt;tag&gt;
 
 Output Format:
-
-Return the corrected text with the same XML structure.
+Return the corrected text with the same XML structure as a JSON object: {{"corrected_text": "..."}}
 
 Do not include explanations, comments, or metadata — only the corrected XML text.
 Input text:    <TTEXT>{source_text}</TTEXT>"""
@@ -230,14 +285,23 @@ title, epigraph, annotation, image, p, empty-line, poem, cite, subtitle, table, 
 Any other tags must be converted into plain text (for example, <tag> should become &lt;tag&gt;).
 
 Preserve the text content and structure of the document as much as possible. \n
-            Here is the text to be corrected: {source_text} """
+            Here is the text to be corrected: {source_text} 
+            
+            Provide the result ONLY as a valid JSON object: {{"corrected_text": "..."}}
+            """
 
     if big:
-        translation = get_completion_b(translation_prompt, system_message=system_message)
+        response_text = get_completion_b(translation_prompt, system_message=system_message, json_mode=True)
     else:
-        translation = get_completion_s(translation_prompt, system_message=system_message)
+        response_text = get_completion_s(translation_prompt, system_message=system_message, json_mode=True)
 
-    return remove_tags(translation)
+    try:
+        data = parse_json_response(response_text)
+        corrected_text = data.get("corrected_text", response_text)
+    except Exception:
+        corrected_text = response_text
+
+    return remove_tags(corrected_text)
 
 def vocabulary(
         source_lang: str,
@@ -251,19 +315,33 @@ def vocabulary(
     """
     system_message = f"You are a translator, specializing in translations from {source_lang} to {target_lang}, from {country}"
 
-    reflection_prompt = f"""Translate a list of words and names from {source_lang} to {target_lang},
-    1. If there is obscene language, it should be translated as accurately as possible
-    2. Remove the words category in brackets from result,
-    3. use the category only for context translation,
-    4. Use format result :
-    {source_lang} text={target_lang} translation
+    reflection_prompt = f"""Translate a list of words and names from {source_lang} to {target_lang}.
+    1. If there is obscene language, it should be translated as accurately as possible.
+    2. Remove the words category in brackets from result.
+    3. use the category only for context translation.
+    
+    Provide the result ONLY as a valid JSON object: {{"vocabulary": [{"source": "...", "target": "..."}, ...]}}
 
     Words: {source_text}"""
+    
     if big:
-        translation = get_completion_b(reflection_prompt, system_message=system_message)
+        response_text = get_completion_b(reflection_prompt, system_message=system_message, json_mode=True)
     else:
-        translation = get_completion_s(reflection_prompt, system_message=system_message)
-    ic(translation)
+        response_text = get_completion_s(reflection_prompt, system_message=system_message, json_mode=True)
+        
+    try:
+        data = parse_json_response(response_text)
+        vocab_list = data.get("vocabulary", [])
+        # Convert back to string lines for compatibility with find_matching_words_with_cosine_similarity if it expects it
+        # Actually, let's see how vocabulary is used. in app.py it's write_to_file(vocab_dict_clean, dict_file)
+        # and ta.vocabulary(...) returns 'translation' which is the raw text.
+        # So we should convert it back to source=target lines.
+        translation = "\n".join([f"{item['source']}={item['target']}" for item in vocab_list])
+    except Exception:
+        translation = response_text
+
+    if config.debug:
+        ic(translation)
     return translation
 
 def one_chunk_reflect_on_translation(
@@ -294,20 +372,25 @@ def one_chunk_reflect_on_translation(
 
         Prohibited adding explanations of any kind.
         
-        <SOURCE_TEXT>
-        {source_text}
-        </SOURCE_TEXT>
-
-        <DICTIONARY>{vocab_dict}</DICTIONARY>
-
         <INITIAL_TRANSLATION>
         {translation_1}
-        </INITIAL_TRANSLATION>"""
+        </INITIAL_TRANSLATION>
+        
+        Provide the result ONLY as a valid JSON object: {{"reflections": ['"string" should be changed to "improved string"', '"next string" should be changed to "next improved string"', ...]}}
+        """
 
     if big:
-        translation = get_completion_b(reflection_prompt, system_message=system_message)
+        response_text = get_completion_b(reflection_prompt, system_message=system_message, json_mode=True)
     else:
-        translation = get_completion_s(reflection_prompt, system_message=system_message)
+        response_text = get_completion_s(reflection_prompt, system_message=system_message, json_mode=True)
+
+    try:
+        data = parse_json_response(response_text)
+        reflections_list = data.get("reflections", [])
+        # Convert list of suggestions back to a numbered list string for compatibility
+        translation = "\n".join([f"{i+1}. {s}" for i, s in enumerate(reflections_list)])
+    except Exception:
+        translation = response_text
 
     return remove_tags(translation)
 
@@ -337,13 +420,15 @@ def one_chunk_improve_translation(
                 - Use consistent and context-appropriate terminology.
                 - Improved content must maintains the same XML tags as the source_text, like image, p, etc, do not add new XML tags into the result fb2 structure.
                 
+                
                The source text, first translation, and expert suggestions are provided in tags:
               <SOURCE_TEXT>{source_text}</SOURCE_TEXT>
-
+ 
               <FIRST_TRANSLATION>{translation_1}</FIRST_TRANSLATION>
-
+ 
               <EXPERT_SUGGESTIONS>{reflection}</EXPERT_SUGGESTIONS>
-
+ 
+              Provide the result ONLY as a valid JSON object: {{"improved_translation": "..."}}
               """
     else:
         prompt = f"""Edit the translation from {source_lang} to {target_lang} based on expert suggestions. The source text, initial translation, and suggestions are enclosed in tags:
@@ -366,12 +451,21 @@ Ensure the edited translation is:
 3. Stylistic (reflect the style of the source text).
 4. Terminologically consistent (appropriate and consistent use of terms).
 
-The response should contain only the translated part."""
+The response should contain only the translated part.
+
+Provide the result ONLY as a valid JSON object: {{"improved_translation": "..."}}
+"""
 
     if big:
-        translation = get_completion_b(prompt, system_message=system_message)
+        response_text = get_completion_b(prompt, system_message=system_message, json_mode=True)
     else:
-        translation = get_completion_s(prompt, system_message=system_message)
+        response_text = get_completion_s(prompt, system_message=system_message, json_mode=True)
+
+    try:
+        data = parse_json_response(response_text)
+        translation = data.get("improved_translation", response_text)
+    except Exception:
+        translation = response_text
 
     return translation
 
@@ -485,48 +579,96 @@ def translate(
 
         return final_translation, outline
 
-    else:
-        # Better error message
         raise ValueError(f"Chunk of size {num_tokens_in_text} tokens exceeds limit of {max_tokens} tokens.")
 
-def process_image_request(image_data: str,  source_lang: str, target_lang: str, prompt: str = config.cover_prompt) -> str:
+def process_image_request(image_data: str, source_lang: str, target_lang: str, country: str, prompt: str = config.cover_prompt) -> str:
     """
-    Sends an image to the OpenAI API (clientc) with a prompt and returns the result.
-    Assumes the model supports vision (e.g., gpt-4-vision-preview).
+    Sends an image to the OpenAI API (clientc) for image variation generation,
+    then resizes and compresses the result.
     """
-    system_message = f"You are a helpful assistant designed to translate book covers from {source_lang} to {target_lang}."
-    
-    # If sys_not_promt3 is set, we might prepend system message to prompt, but for now let's keep it standard
-    # unless specific behavior is needed. The current `_get_completion` logic is text-based.
-    # We'll construct the vision request manually here as it differs from text completion structure.
-    
-    messages = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": prompt},
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/jpeg;base64,{image_data}",
-                    },
-                },
-            ],
-        }
-    ]
-    
-    if not config.sys_not_promt3:
-         messages.insert(0, {"role": "system", "content": system_message})
-
     try:
-        response = clientc.chat.completions.create(
-            model=config.model3,
-            messages=messages,
-            temperature=config.temp3,
-            max_tokens=config.max_len_chunk, # specific token limit for description?
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        ic(f"Error processing image request: {e}")
-        return ""
+        # Decode the base64 image data
+        image_bytes = base64.b64decode(image_data)
+        
+        # Variation API requires a square PNG image, less than 4MB.
+        # Let's ensure it's a square PNG.
+        img = Image.open(io.BytesIO(image_bytes))
+        
+        # Convert to RGBA if necessary
+        if img.mode != 'RGBA':
+            img = img.convert('RGBA')
+            
+        # Make square (standard for OpenAI Images API)
+        width, height = img.size
+        size = min(width, height)
+        left = (width - size) / 2
+        top = (height - size) / 2
+        right = (width + size) / 2
+        bottom = (height + size) / 2
+        img = img.crop((left, top, right, bottom))
+        img = img.resize((1024, 1024), Image.Resampling.LANCZOS)
+        
+        # Save to a byte buffer in PNG format
+        buffer = io.BytesIO()
+        img.save(buffer, format="PNG")
+        buffer.seek(0)
 
+        # Image Variation API call
+        response = clientc.images.create_variation(
+            image=buffer,
+            n=1,
+            size="1024x1024",
+            response_format="b64_json",
+            model=config.model3 # Use the model from config if specified
+        )
+        
+        generated_b64 = response.data[0].b64_json
+        if not generated_b64:
+            return None
+
+        # Post-processing with PIL
+        img_bytes = base64.b64decode(generated_b64)
+        img = Image.open(io.BytesIO(img_bytes))
+        
+        # Resize to book-friendly dimensions: 1024x1536
+        img = img.resize((1024, 1536), Image.Resampling.LANCZOS)
+        
+        # Save as JPEG with 70% compression (more efficient for FB2)
+        output_buffer = io.BytesIO()
+        img.save(output_buffer, format="JPEG", quality=70)
+        
+        # Encode back to base64
+        return base64.b64encode(output_buffer.getvalue()).decode('utf-8')
+
+    except Exception as e:
+        if config.debug:
+            ic(f"Error processing image request: {e}")
+        return None
+
+def translate_metadata(metadata: dict, source_lang: str, target_lang: str, country: str) -> dict:
+    """
+    Translates a metadata dictionary using the LLM in JSON mode.
+    """
+    system_message = f"You are an expert translator and bibliographer, specializing in fiction and {target_lang} literary standards in {country}."
+    
+    prompt = f"""Translate the values in this JSON object from {source_lang} to {target_lang}.
+    
+    Instructions:
+    1. Translate the book title, author names (first, last, middle), sequence/series name, and the list of annotation paragraphs.
+    2. Maintain the exact same JSON structure and keys.
+    3. Proper names (authors, series) should be localized or transliterated according to {target_lang} literary norms in {country}.
+    4. Provide the result ONLY as a valid JSON object.
+    
+    JSON to translate:
+    {json.dumps(metadata, ensure_ascii=False)}
+    """
+    
+    try:
+        # Use primary client with JSON mode
+        response_text = get_completion_b(prompt, system_message=system_message, json_mode=True)
+        translated_metadata = parse_json_response(response_text)
+        return translated_metadata
+    except Exception as e:
+        if config.debug:
+            ic(f"Error translating metadata: {e}")
+        return metadata # Return original if translation fails

@@ -38,6 +38,7 @@ setup(
         "spacy-transformers",
         "EbookLib",
         "more-itertools",
+        "Pillow",
         # Note: 'torch' and 'cupy' often require specific versions or index URLs for GPU support.
         # We include generic names here.
         "torch", 

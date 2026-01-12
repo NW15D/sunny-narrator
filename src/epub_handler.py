@@ -3,6 +3,9 @@ from ebooklib import epub
 from bs4 import BeautifulSoup
 from icecream import ic
 import src.fb2_handler as fb2
+from src.config import Config
+
+config = Config()
 import base64
 import mimetypes
 from datetime import datetime
@@ -206,12 +209,24 @@ def parse_epub(file_path):
     # Combine into a single body block
     body = f"<body>\n{body_content}\n</body>"
     
-    ic(len(body))
+    if config.debug:
+        ic(len(body))
     return body, header, footer
-
 def prepare_chunks(body, max_len_chunk):
     """
     Uses the existing FB2 chunking logic since we formatted the EPUB body 
     to look like FB2 (sections).
     """
     return fb2.prepare_chunks(body, max_len_chunk)
+
+def get_cover_image(header, footer):
+    """
+    Wrapper for fb2_handler.get_cover_image since the structure is identical.
+    """
+    return fb2.get_cover_image(header, footer)
+
+def replace_cover_image(header, footer, body, new_content):
+    """
+    Wrapper for fb2_handler.replace_cover_image.
+    """
+    return fb2.replace_cover_image(header, footer, body, new_content)
