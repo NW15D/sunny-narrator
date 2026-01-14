@@ -20,15 +20,15 @@ class Config:
 
         self.temp2 = float(os.getenv('TEMP2', 0.7))
         self.api_key2 = os.getenv('API_KEY2', 'a132b20c-96be-467f-a15a-ed08aed67345')
-        self.base_url2 = os.getenv('API_BASE2', 'http://192.168.0.55:6155/v1')
+        self.base_url2 = os.getenv('API_BASE2', 'https://api.openai.com/v1')
         self.sys_not_promt2 = bool(os.getenv('S_PROMT2'))
         self.model2 = os.getenv('MODEL2', 'tencent/Hunyuan-MT-7B') # Model for translating 
         self.api_timeout2 = int(os.getenv('TIMEOUT2', 6000))
         self.nothink2 = bool(os.getenv('NOTHINK2'))
 
         # Third endpoint group (Cover API)
-        self.api_key3 = os.getenv('API_KEY3', 'sk-WuUzNIbNLdje6GHjyZrbh66trdAC9T2O')
-        self.base_url3 = os.getenv('API_BASE3', 'https://api.proxyapi.ru/openai/v1')
+        self.api_key3 = os.getenv('API_KEY3', '')
+        self.base_url3 = os.getenv('API_BASE3', '')
         self.sys_not_promt3 = bool(os.getenv('S_PROMT3'))
         self.model3 = os.getenv('MODEL3', 'gpt-image-1.5') # Default to a vision capable model
         self.temp3 = float(os.getenv('TEMP3', 0.5))
