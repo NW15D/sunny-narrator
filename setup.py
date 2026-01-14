@@ -1,7 +1,11 @@
 from setuptools import setup, find_packages
+import os
 
-with open("README.md", "r", encoding="utf-8") as fh:
-    long_description = fh.read()
+# Create src/__init__.py if it doesn't exist
+src_init = os.path.join(os.path.dirname(__file__), "src", "__init__.py")
+if not os.path.exists(src_init):
+    with open(src_init, "w") as f:
+        pass
 
 setup(
     name="sunny_narrator",
@@ -9,12 +13,8 @@ setup(
     author="nick Kutuzov",
     author_email="kutuzovnick@gmail.com",
     description="AI book translator for xml, fb2, txt",
-    long_description=long_description,
-    long_description_content_type="text/markdown",
     url="https://github.com/neowisard/sunny_narrator",
-    # Assuming code is in 'src' directory and we want to package it.
-    packages=find_packages(where="src"), 
-    package_dir={"": "src"},
+    packages=find_packages(), 
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
@@ -28,28 +28,18 @@ setup(
         "numpy",
         "tiktoken",
         "langchain-text-splitters",
-        "pydantic>=2.11.7",
+        "pydantic>=2.0.0",
         "spacy",
         "beautifulsoup4",
         "scikit-learn",
+        "torch",
         "lxml",
+        "cupy-cuda12x",
+        "more-itertools",
         "joblib",
         "thinc",
         "spacy-transformers",
         "EbookLib",
-        "more-itertools",
-        "Pillow",
-        # Note: 'torch' and 'cupy' often require specific versions or index URLs for GPU support.
-        # We include generic names here.
-        "torch", 
-        "cupy" 
+        "Pillow"
     ],
-    entry_points={
-        'console_scripts': [
-            # Assuming 'app.py' defines a main function, but usually entry points point to modules inside packages.
-            # Since app.py is top-level, it's hard to reference via entry_points if not installed as a module.
-            # If the logic is moved to src/main.py, we could use:
-            # 'sunny-narrator=main:main', 
-        ],
-    },
 )
