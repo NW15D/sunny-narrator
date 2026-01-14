@@ -49,7 +49,8 @@ def make_vocab(text, stop_words=None):
         ner_category = ["ORG", "LOC", "GPE", "PERSON"]
         ents = []
         for chunk in text_chunks:
-            doc = nlp(chunk)
+            # We only need NER here, so we can disable parser and lemmatizer to save time and avoid warnings
+            doc = nlp(chunk, disable=["parser", "lemmatizer", "attribute_ruler"])
             ents.extend([
                 (ent.text.strip(), ent.label_, tuple(ent.vector.get()) if hasattr(ent.vector, 'get') else tuple(ent.vector) if ent.vector.size > 0 else None)
                 for ent in doc.ents if ent.vector_norm != 0 and ent.label_ in ner_category
@@ -162,7 +163,8 @@ def find_matching_words_with_cosine_similarity(text, vocab, lng, threshold=0.8, 
         spacy.prefer_gpu()
         nlp = spacy.load(config.nermodel)
         nlp.max_length = 110000
-        doc = nlp(text)
+        # For cosine similarity, we only need vectors. Disable everything else to avoid W108 and other warnings.
+        doc = nlp(text, disable=["ner", "parser", "tagger", "lemmatizer", "attribute_ruler"])
     except Exception as e:
         if config.debug:
             ic(f"Error loading spaCy model: {e}")
@@ -175,7 +177,8 @@ def find_matching_words_with_cosine_similarity(text, vocab, lng, threshold=0.8, 
 
     for phrase in orig_values:
         sub_words = phrase.split()
-        sub_docs = list(nlp.pipe(sub_words, disable=["ner", "parser", "tagger"]))
+        # Disable all components that are not needed for vector generation
+        sub_docs = list(nlp.pipe(sub_words, disable=["ner", "parser", "tagger", "lemmatizer", "attribute_ruler"]))
         sub_vecs = [d.vector for d in sub_docs if d.vector_norm != 0]
 
         if sub_vecs:

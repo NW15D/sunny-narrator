@@ -1,6 +1,7 @@
 from icecream import ic
 import os
 import sys
+import base64
 from datetime import datetime
 from pathlib import Path
 
@@ -82,9 +83,11 @@ def translatexml(source_text, source_lang, target_lang, outline_text, country, v
             if config.debug:
                 ic("Rechunking !!! ", percentage, "% percent")
             mx = int((len(source_text) // 2) * 1.1)
-            split_pos = source_text.rfind('</p>', 0, mx) + 4
+            split_pos = source_text.rfind('</p>', 0, mx)
             if split_pos == -1:
                 split_pos = mx
+            else:
+                split_pos += 4
             splitchunks = source_text[:split_pos], source_text[split_pos:]
             translated_chunk = ""
             outline = ""
@@ -141,19 +144,31 @@ def main():
     formatted_time = now.strftime("%H%M-%d%m")
 
     if file_extension.lower() in ['.fb2', '.epub', '.txt']:
-        output_file = f"{output_dir}/{file_name_without_ext}_{config.target_lang}_{config.short}_{formatted_time}.fb2"
+        output_file = f"{output_dir}/{file_name_without_ext}_{config.target_lang}_{formatted_time}.fb2"
         output_tfile = f"{output_dir}/{file_name_without_ext}_{config.target_lang}_tmp_{formatted_time}.fb2"
         synopsis_file = f"{output_dir}/{file_name_without_ext}_{config.target_lang}_{formatted_time}_synopsis.txt"
         
         # Parse file based on extension
         if file_extension.lower() == '.fb2':
             body, header, footer = fb2.parse_xml(myfile)
-            
-            ## Extract and translate metadata
+        elif file_extension.lower() == '.epub':
+            body, header, footer = epub.parse_epub(myfile)
+        else:
+            body, header, footer = txt.parse_txt(myfile)
+
+        ## Extract and translate metadata (for all formats that have a header)
+        metadata = None
+        translated_metadata = None
+        if header:
             if config.debug:
                 ic("Extracting and translating metadata...")
             metadata = fb2.extract_metadata(header)
             if metadata:
+                # Include target language from config
+                lang_map = {'russian': 'ru', 'english': 'en', 'french': 'fr', 'german': 'de'}
+                target_code = lang_map.get(config.target_lang.lower(), config.target_code if hasattr(config, 'target_code') else config.target_lang)
+                metadata['lang'] = target_code
+                
                 translated_metadata = ta.translate_metadata(
                     metadata, config.source_lang, config.target_lang, config.country
                 )
@@ -162,13 +177,8 @@ def main():
                     if config.debug:
                         ic("Metadata translated and header updated.")
 
-        elif file_extension.lower() == '.epub':
-            body, header, footer = epub.parse_epub(myfile)
-        else:
-            body, header, footer = txt.parse_txt(myfile)
-
         # Process Cover Image (for all formats)
-        if config.api_key3 and config.base_url3:
+        if config.api_key3:
             # Use appropriate handler or just fb2_handler since structure is unified
             # We can use the module corresponding to extension, but functions are wrappers around fb2 anyway mostly
             # Actually easier to just use fb2 or dynamically chosen handler if logic diverged.
@@ -179,16 +189,32 @@ def main():
             if cover_data:
                 if config.debug:
                     ic("Processing cover image...")
+                
+                # Use translated_metadata if available, otherwise original metadata
+                meta_to_pass = translated_metadata or metadata
+                
                 # Updated call with new signature
                 cover_result = ta.process_image_request(
                     cover_data, 
                     config.source_lang, 
                     config.target_lang, 
-                    config.country, 
-                    config.cover_prompt
+                    config.country,
+                    meta_to_pass
                 )
                 if cover_result:
                     header, footer, body = fb2.replace_cover_image(header, footer, body, cover_result)
+                    
+                    # Save cover to file
+                    cover_file = f"{output_dir}/{file_name_without_ext}_cover.jpg"
+                    try:
+                        with open(cover_file, 'wb') as f:
+                            f.write(base64.b64decode(cover_result))
+                        if config.debug:
+                            ic(f"Cover image saved to {cover_file}")
+                    except Exception as e:
+                        if config.debug:
+                            ic(f"Error saving cover image: {e}")
+
                     if config.debug:
                         ic("Cover image processed/replaced.")
 
@@ -205,7 +231,7 @@ def main():
                 if config.debug:
                     ic(vb)
                     
-                vocab_dict_initial = ta.vocabulary(config.source_lang, config.target_lang, vb, config.country, True)
+                vocab_dict_initial = ta.vocabulary(config.source_lang, config.target_lang, vb, config.country, False)
                 vocab_dict_clean = ta.remove_tags(vocab_dict_initial)
                 write_to_file(vocab_dict_clean, dict_file)
                 if config.debug:
@@ -264,17 +290,17 @@ def main():
 
             # Write translated section
             if section_translation:
-                section_content = f"<section>\n{section_translation}\n</section>\n"
-                # Robust tag repair for the section content
-                section_content = xc.rem_tags(section_content)
                 
-                if config.debug:
-                    ic(section_content)
+                # Robust tag repair for the section content
+                section_content = xc.rem_tags(section_translation)
+                
+                all_content += section_content + "\n"
+                #if config.debug:
+                #    ic(section_content)
                 
                 with open(output_tfile, 'a', encoding='utf-8') as f:
-                    f.write(section_content + "\n")
-                    
-                all_content += section_content + "\n"
+                    f.write(section_content + "\n")                  
+                
 
         # Final validation and saving
         xml_str = f"{header}<body>\n{all_content}</body>\n{footer}"
