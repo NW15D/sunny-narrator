@@ -7,12 +7,13 @@ services:
     build:
       context: ..
       dockerfile: ./docker/Dockerfile
-#    ports:
-#      - "${HOST_PORT:-8020}:${CONTAINER_PORT:-8020}"
+    #    ports:
+    #      - "${HOST_PORT:-8020}:${CONTAINER_PORT:-8020}"
     volumes:
       - ./books:/app/books
       - ./log:/app/log
       - ./conf:/app/conf
+
 #    deploy:
 #      resources:
 #        reservations:

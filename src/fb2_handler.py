@@ -99,6 +99,10 @@ def extract_metadata(header):
     genres = [g.get_text() for g in title_info.find_all('genre')]
     metadata['genre'] = genres
 
+    # Language
+    lang_tag = title_info.find('lang')
+    metadata['lang'] = lang_tag.get_text() if lang_tag else ""
+
     return metadata
 
 def update_header_with_metadata(header, metadata):
@@ -171,10 +175,25 @@ def update_header_with_metadata(header, metadata):
             p_tag.string = p_text
             annotation_tag.append(p_tag)
 
-    # Return as string, keeping the XML declaration if it was there?
-    # BS4 might mess up the prefix or declaration.
-    # Since 'header' is just a slice of the file, we return soup.decode()
-    return str(soup)
+    # Update Language
+    if 'lang' in metadata:
+        lang_tag = title_info.find('lang')
+        if lang_tag:
+            lang_tag.string = metadata['lang']
+        else:
+            new_lang = soup.new_tag('lang')
+            new_lang.string = metadata['lang']
+            title_info.append(new_lang)
+
+    # Return as string. 
+    # Since 'header' is just a slice of the file starting with <FictionBook>,
+    # BeautifulSoup will auto-close it with </FictionBook>.
+    # We must strip it so app.py can append body and footer correctly.
+    updated_header = str(soup)
+    if updated_header.rstrip().endswith('</FictionBook>'):
+        updated_header = updated_header.rstrip()[:-len('</FictionBook>')].rstrip()
+    
+    return updated_header
 
 def prepare_chunks(body, max_len_chunk):
     """

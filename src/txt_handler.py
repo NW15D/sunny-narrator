@@ -18,26 +18,34 @@ def parse_txt(file_path):
     title = os.path.splitext(file_name)[0]
     date_str = str(datetime.now().year)
     
-    header = ""
-
+    header = f"""<?xml version="1.0" encoding="utf-8"?>
+<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink">
+<description>
+    <title-info>
+        <genre>unknown</genre>
+        <author><first-name></first-name><last-name>Unknown</last-name></author>
+        <book-title>{title}</book-title>
+        <date>{date_str}</date>
+        <lang>en</lang>
+    </title-info>
+</description>
+"""
 
     # Create body
     # Wrap text in paragraphs
-    # Split by double newlines for paragraphs?
     paragraphs = content.split('\n\n')
     body_content = ""
     for p in paragraphs:
         p = p.strip()
         if p:
-            # Escape XML chars? minimal replacement
+            # Escape XML chars
             p = p.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-            body_content += f"{p}\n"
+            body_content += f"<p>{p}</p>\n"
             
-    # Wrap in a single section for now? 
-    # The chunker splits by section, so if we only have one section it might try to chunk inside it.
-    body = f"\n{body_content}\n"
+    # Wrap in a single section so the chunker can find it
+    body = f"<body>\n<section>\n{body_content}\n</section>\n</body>"
     
-    footer = ""
+    footer = "</FictionBook>"
     
     return body, header, footer
 
