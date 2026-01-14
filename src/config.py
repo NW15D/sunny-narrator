@@ -74,6 +74,7 @@ class Config:
         # Determine default model from mapping if not specified in ENV
         default_model = self.lang_model_map.get(self.source_lang.lower(), 'en_core_web_lg')
         self.nermodel = os.getenv('NERMODEL', default_model)
+        self.fast_trans = os.getenv('FAST_TRANS', 'False').lower() in ['true', '1', 'on', 'yes']
         self.short = os.getenv('SHORT')
         self.max_len_chunk = int(os.getenv('MAX_LEN_CHUNK', 8192))
         

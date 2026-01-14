@@ -66,18 +66,42 @@ async def translatexml(source_text, source_lang, target_lang, outline_text, coun
     style = 'xml'
     
     try:
-        translated_chunk, outline = await ta.translate(
+        # Wrapper to handle async generator from ta.translate
+        # We need to capture the 'final' result for percentage checks
+        
+        current_outline = ""
+        current_translation = ""
+        
+        async for kind, val in ta.translate(
             source_lang, target_lang, source_text, style, outline_text,
-            country, vocab_dict)
+            country, vocab_dict):
+            
+            if kind == 'outline':
+                current_outline = val
+                yield kind, val
+            elif kind == 'final':
+                current_translation = val
+        
+        translated_chunk = current_translation
+        outline = current_outline
 
         percentage = ((len(translated_chunk) - len(source_text)) / len(source_text)) * 100
         if config.debug:
             ic(percentage, "% percent")
         
         if abs(percentage) == 100:
-            translated_chunk, outline = await ta.translate(
+            # Retry logic
+            async for kind, val in ta.translate(
                 source_lang, target_lang, source_text, style, outline_text,
-                country, vocab_dict)
+                country, vocab_dict):
+                if kind == 'outline':
+                    # We yield new outline if retry happens
+                    current_outline = val
+                    yield kind, val 
+                elif kind == 'final':
+                    current_translation = val
+            translated_chunk = current_translation
+            outline = current_outline
                 
         if abs(percentage) > 7 and len(source_text) > 500:
             
@@ -91,15 +115,22 @@ async def translatexml(source_text, source_lang, target_lang, outline_text, coun
                 split_pos += 4
             splitchunks = source_text[:split_pos], source_text[split_pos:]
             translated_chunk = ""
-            outline = ""
+            outline = "" # We aggregate outline from chunks? Or just ignore? 
+                         # Usually outline is a summary of the whole. 
+                         # For rechunking, maybe concatenation is okay-ish or we just keep the previous one.
+                         # Let's accumulate for correctness of return type.
 
             rechunk_stats['runs'] += 1
             for chunk in splitchunks:
-                ch, outline_chunk = await ta.translate(
+                # Sub-chunks
+                async for kind, val in ta.translate(
                     source_lang, target_lang, chunk, style, outline_text,
-                    country, vocab_dict)
-                translated_chunk += ch
-                outline += outline_chunk
+                    country, vocab_dict):
+                    
+                    if kind == 'final':
+                        translated_chunk += val
+                    elif kind == 'outline':
+                        outline += val # Append outlines? Rough approximation.
 
             percentage = ((len(translated_chunk) - len(source_text)) / len(source_text)) * 100
             if abs(percentage) < 7:
@@ -118,7 +149,7 @@ async def translatexml(source_text, source_lang, target_lang, outline_text, coun
     except Exception as e:
         raise ValueError(f"Error during translation: {e}")
 
-    return translated_chunk, outline
+    yield 'final', translated_chunk
 
 def write_to_file(data, output_file):
     if isinstance(data, str):
@@ -274,14 +305,30 @@ async def main():
         context_lock = asyncio.Lock()
         shared_outline = {'text': ''}
         
-        sem = asyncio.Semaphore(int(os.getenv('CONCURRENT_LIMIT', 3)))
+        concurrent_limit = int(os.getenv('CONCURRENT_LIMIT', 3))
+        sem = asyncio.Semaphore(concurrent_limit)
         
+        # Events for staggered start
+        # events[i] is set when chunk i has produced its outline
+        # Chunk i+1 waits for events[i]
+        outline_events = [asyncio.Event() for _ in range(total_chunks)]
+        
+        # We pre-set the "dummy" event for the very first chunk so it doesn't wait
+        # actually we can just handle index 0 separately, but a dummy event -1 is harder with list.
+        # We'll just handle logic inside task.
+
         async def process_chunk_task(item):
             chunk = item['chunk']
             s_idx = item['section_idx']
             c_idx = item['chunk_idx']
             g_id = item['global_id']
             section_chunks = len(orig_sections[s_idx])
+            
+            # Wait for previous chunk's outline if not the first one
+            if g_id > 0:
+                 # Logic for staggered start
+                 prev_event = outline_events[g_id - 1]
+                 await prev_event.wait()
             
             async with sem:
                 # Find matching words for dictionary injection
@@ -307,22 +354,36 @@ async def main():
                        vocab_dict_map[key])
 
                 # Get current outline (context)
-                # We read the shared outline. It might be from a much earlier chunk if many run in parallel.
-                # This is the trade-off for speed.
                 current_context = shared_outline['text']
                 
-                translated_chunk, new_outline = await translatexml(
-                    chunk, config.source_lang, config.target_lang, current_context,
-                    config.country, vocab_dict_map[key])
+                final_content = None
+                new_outline_val = ""
 
-                # Update shared outline with the new one
-                async with context_lock:
-                    shared_outline['text'] = new_outline
+                # Consume generator
+                async for kind, val in translatexml(
+                    chunk, config.source_lang, config.target_lang, current_context,
+                    config.country, vocab_dict_map[key]):
+                    
+                    if kind == 'outline':
+                        new_outline_val = val
+                        # Update shared outline
+                        async with context_lock:
+                            shared_outline['text'] = new_outline_val
+                        
+                        # Trigger event for next chunk
+                        outline_events[g_id].set()
+                        
+                    elif kind == 'final':
+                        final_content = val
+                
+                # Fallback: ensure event is set if not already (e.g. if generator finished without outline)
+                if not outline_events[g_id].is_set():
+                    outline_events[g_id].set()
 
                 return {
                     'global_id': g_id,
-                    'content': translated_chunk,
-                    'synopsis': new_outline
+                    'content': final_content,
+                    'synopsis': new_outline_val
                 }
 
         # Create tasks

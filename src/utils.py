@@ -85,7 +85,7 @@ def remove_tags(text):
     """
     Removes various XML/HTML tags and specific artifacts from the text.
     """
-    pattern = r'<SOURCE_TEXT>.*?</SOURCE_TEXT>|<INITIAL_TRANSLATION>.*?</INITIAL_TRANSLATION>|<DICTIONARY>.*?</DICTIONARY>|<FIRST_TRANSLATION>.*?</FIRST_TRANSLATION>|<EXPERT_SUGGESTIONS>.*?</EXPERT_SUGGESTIONS>|<TRANSLATION>|</TRANSLATION>|<SOURCE>|</SOURCE>|<SYNOPSIS>.*?</SYNOPSIS>|<think>.*?</think>|<myheader>.*?</myheader>|<myfooter>.*?</myfooter>|</section>|<section>|<IMPROVED_TRANSLATION>|</IMPROVED_TRANSLATION>|```xml|```|OceanofPDF.com|<a l:href="https://oceanofpdf.com">|<\|channel\|>.*?<\|end\|>'
+    pattern = r'<SOURCE_TEXT>.*?</SOURCE_TEXT>|<INITIAL_TRANSLATION>.*?</INITIAL_TRANSLATION>|<DICTIONARY>.*?</DICTIONARY>|<FIRST_TRANSLATION>.*?</FIRST_TRANSLATION>|<EXPERT_SUGGESTIONS>.*?</EXPERT_SUGGESTIONS>|<TRANSLATION>|</TRANSLATION>|<SOURCE>|</SOURCE>|<SYNOPSIS>.*?</SYNOPSIS>|<think>.*?</think>|<myheader>.*?</myheader>|<myfooter>.*?</myfooter>|</section>|<section>|<IMPROVED_TRANSLATION>|</IMPROVED_TRANSLATION>|```xml|```|OceanofPDF.com|</target>|<target>|<a l:href="https://oceanofpdf.com">|<\|channel\|>.*?<\|end\|>'
     cleaned_text = re.sub(pattern, '', text, flags=re.DOTALL)
     return cleaned_text
 
@@ -279,55 +279,72 @@ async def translate(
         if config.debug:
             ic("Translating text as a single chunk")
 
-                # Step 1: Initial translation
-    start_time = time.time()
-    use_big = True
-    translation_1 = await one_chunk_initial_translation(
-        source_lang, target_lang, source_text, style, outline_text, vocab_dict, use_big
-    )
-    translation_1_time = time.time() - start_time
-    if config.debug:
-        ic(source_text)
-        ic(translation_1_time, (num_tokens_in_string(translation_1)), style, outline_text, translation_1)
+        # Step 1: Initial translation
+        start_time = time.time()
+        use_big = True
+        translation_1 = await one_chunk_initial_translation(
+            source_lang, target_lang, source_text, style, outline_text, vocab_dict, use_big
+        )
+        translation_1_time = time.time() - start_time
+        if config.debug:
+            ic(source_text)
+            ic(translation_1_time, (num_tokens_in_string(translation_1)), style, outline_text, translation_1)
 
-    # Step 2: Reflection on the initial translation
-    start_time = time.time()
-    use_big = False
-    reflection = await one_chunk_reflect_on_translation(
-        source_lang, target_lang, source_text, translation_1, country, vocab_dict, use_big
-    )
-    reflection_time = time.time() - start_time
-    if config.debug:
-        ic(reflection_time, num_tokens_in_string(reflection), style, reflection)
+        # Step 2: Outline (Moved to Step 2 to allow fast yielding for async chain)
+        start_time = time.time()
+        use_big = False
+        outline_text = await one_chunk_referat(target_lang, translation_1, use_big)
+        outline_time = time.time() - start_time
+        if config.debug:
+            ic(outline_time, num_tokens_in_string(outline_text), outline_text)
+        
+        # YIELD OUTLINE EARLY
+        yield ("outline", outline_text)
 
-    # Step 3: Improved translation
-    start_time = time.time()
-    use_big = False
-    translation_2 = await one_chunk_improve_translation(
-        source_lang, target_lang, source_text, translation_1, reflection, style, use_big
-    )
-    translation_2_time = time.time() - start_time
-    if config.debug:
-        ic(translation_2_time, num_tokens_in_string(translation_2), style, translation_2)
+        if config.fast_trans:
+            if config.debug:
+               ic("Fast translation mode: Skipping Reflection and Improvement steps")
+            
+            # Step 5: Final translation (using translation_1)
+            start_time = time.time()
+            use_big = False
+            # Note: vocab dict mapping was key-based in app.py logic, here passed into translate
+            final_translation = await one_chunk_editor(target_lang, translation_1, style, target_lang, country, use_big)
+            final_translation_time = time.time() - start_time
+            if config.debug:
+                 ic(final_translation_time, num_tokens_in_string(final_translation), final_translation)
 
-    # Step 4: Outline
-    start_time = time.time()
-    use_big = True
-    outline_text = await one_chunk_referat(target_lang, translation_2, use_big)
-    outline_time = time.time() - start_time
-    if config.debug:
-        ic(outline_time, num_tokens_in_string(outline_text), outline_text)
+        else:
+            # Step 3: Reflection on the initial translation
+            start_time = time.time()
+            use_big = False
+            reflection = await one_chunk_reflect_on_translation(
+                source_lang, target_lang, source_text, translation_1, country, vocab_dict, use_big
+            )
+            reflection_time = time.time() - start_time
+            if config.debug:
+                ic(reflection_time, num_tokens_in_string(reflection), style, reflection)
 
-    # Step 5: Final translation
-    start_time = time.time()
-    use_big = False
-    final_translation = await one_chunk_editor(target_lang, translation_2, style, target_lang, country, use_big)
-    final_translation_time = time.time() - start_time
-    if config.debug:
-        ic(final_translation_time, num_tokens_in_string(final_translation), final_translation)
+            # Step 4: Improved translation
+            start_time = time.time()
+            use_big = False
+            translation_2 = await one_chunk_improve_translation(
+                source_lang, target_lang, source_text, translation_1, reflection, style, use_big
+            )
+            translation_2_time = time.time() - start_time
+            if config.debug:
+                ic(translation_2_time, num_tokens_in_string(translation_2), style, translation_2)
+
+            # Step 5: Final translation
+            start_time = time.time()
+            use_big = False
+            final_translation = await one_chunk_editor(target_lang, translation_2, style, target_lang, country, use_big)
+            final_translation_time = time.time() - start_time
+            if config.debug:
+                ic(final_translation_time, num_tokens_in_string(final_translation), final_translation)
 
 
-        return final_translation, outline_text
+        yield ("final", final_translation)
     else:
         raise ValueError(f"Chunk of size {num_tokens_in_text} tokens exceeds limit of {max_tokens} tokens.")
 
