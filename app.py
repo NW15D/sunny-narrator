@@ -178,7 +178,7 @@ async def main():
     if file_extension.lower() in ['.fb2', '.epub', '.txt']:
         output_file = f"{output_dir}/{file_name_without_ext}_{config.target_lang}_{formatted_time}.fb2"
         output_tfile = f"{output_dir}/{file_name_without_ext}_{config.target_lang}_tmp_{formatted_time}.fb2"
-        synopsis_file = f"{output_dir}/{file_name_without_ext}_{config.target_lang}_{formatted_time}_synopsis.txt"
+        #synopsis_file = f"{output_dir}/{file_name_without_ext}_{config.target_lang}_{formatted_time}_synopsis.txt"
         
         # Parse file based on extension
         if file_extension.lower() == '.fb2':
@@ -187,68 +187,6 @@ async def main():
             body, header, footer = epub.parse_epub(myfile)
         else:
             body, header, footer = txt.parse_txt(myfile)
-
-        ## Extract and translate metadata (for all formats that have a header)
-        metadata = None
-        translated_metadata = None
-        if header:
-            if config.debug:
-                ic("Extracting and translating metadata...")
-            metadata = fb2.extract_metadata(header)
-            if metadata:
-                # Include target language from config
-                lang_map = {'russian': 'ru', 'english': 'en', 'french': 'fr', 'german': 'de'}
-                target_code = lang_map.get(config.target_lang.lower(), config.target_code if hasattr(config, 'target_code') else config.target_lang)
-                metadata['lang'] = target_code
-                
-                translated_metadata = await ta.translate_metadata(
-                    metadata, config.source_lang, config.target_lang, config.country
-                )
-                if translated_metadata:
-                    header = fb2.update_header_with_metadata(header, translated_metadata)
-                    if config.debug:
-                        ic("Metadata translated and header updated.")
-
-        # Process Cover Image (for all formats)
-        if config.api_key3:
-            # Use appropriate handler or just fb2_handler since structure is unified
-            # We can use the module corresponding to extension, but functions are wrappers around fb2 anyway mostly
-            # Actually easier to just use fb2 or dynamically chosen handler if logic diverged.
-            # But currently epub/txt helpers just call fb2.
-            # Let's trust fb2 methods work on the XML strings.
-            
-            cover_data = fb2.get_cover_image(header, footer)
-            if cover_data:
-                if config.debug:
-                    ic("Processing cover image...")
-                
-                # Use translated_metadata if available, otherwise original metadata
-                meta_to_pass = translated_metadata or metadata
-                
-                # Updated call with new signature
-                cover_result = await ta.process_image_request(
-                    cover_data, 
-                    config.source_lang, 
-                    config.target_lang, 
-                    config.country,
-                    meta_to_pass
-                )
-                if cover_result:
-                    header, footer, body = fb2.replace_cover_image(header, footer, body, cover_result)
-                    
-                    # Save cover to file
-                    cover_file = f"{output_dir}/{file_name_without_ext}_cover.jpg"
-                    try:
-                        with open(cover_file, 'wb') as f:
-                            f.write(base64.b64decode(cover_result))
-                        if config.debug:
-                            ic(f"Cover image saved to {cover_file}")
-                    except Exception as e:
-                        if config.debug:
-                            ic(f"Error saving cover image: {e}")
-
-                    if config.debug:
-                        ic("Cover image processed/replaced.")
 
         vocab_dict = {}
         vocab = {}
@@ -410,6 +348,68 @@ async def main():
                 del results[next_to_write]
                 next_to_write += 1
 
+        ## Extract and translate metadata (for all formats that have a header)
+        metadata = None
+        translated_metadata = None
+        if header:
+            if config.debug:
+                ic("Extracting and translating metadata...")
+            metadata = fb2.extract_metadata(header)
+            if metadata:
+                # Include target language from config
+                lang_map = {'russian': 'ru', 'english': 'en', 'french': 'fr', 'german': 'de'}
+                target_code = lang_map.get(config.target_lang.lower(), config.target_code if hasattr(config, 'target_code') else config.target_lang)
+                metadata['lang'] = target_code
+                
+                translated_metadata = await ta.translate_metadata(
+                    metadata, config.source_lang, config.target_lang, config.country
+                )
+                if translated_metadata:
+                    header = fb2.update_header_with_metadata(header, translated_metadata)
+                    if config.debug:
+                        ic("Metadata translated and header updated.")
+
+        # Process Cover Image (for all formats)
+        if config.api_key3:
+            # Use appropriate handler or just fb2_handler since structure is unified
+            # We can use the module corresponding to extension, but functions are wrappers around fb2 anyway mostly
+            # Actually easier to just use fb2 or dynamically chosen handler if logic diverged.
+            # But currently epub/txt helpers just call fb2.
+            # Let's trust fb2 methods work on the XML strings.
+            
+            cover_data = fb2.get_cover_image(header, footer)
+            if cover_data:
+                if config.debug:
+                    ic("Processing cover image...")
+                
+                # Use translated_metadata if available, otherwise original metadata
+                meta_to_pass = translated_metadata or metadata
+                
+                # Updated call with new signature
+                cover_result = await ta.process_image_request(
+                    cover_data, 
+                    config.source_lang, 
+                    config.target_lang, 
+                    config.country,
+                    meta_to_pass
+                )
+                if cover_result:
+                    header, footer, body = fb2.replace_cover_image(header, footer, body, cover_result)
+                    
+                    # Save cover to file
+                    cover_file = f"{output_dir}/{file_name_without_ext}_cover.jpg"
+                    try:
+                        with open(cover_file, 'wb') as f:
+                            f.write(base64.b64decode(cover_result))
+                        if config.debug:
+                            ic(f"Cover image saved to {cover_file}")
+                    except Exception as e:
+                        if config.debug:
+                            ic(f"Error saving cover image: {e}")
+
+                    if config.debug:
+                        ic("Cover image processed/replaced.")
+
         # Final validation and saving
         xml_str = f"{header}<body>\n{all_content}</body>\n{footer}"
         
@@ -424,7 +424,7 @@ async def main():
             ic("Final FB2 validation passed successfully.")
 
         write_to_file(xml_str, output_file)
-        write_to_file(synopsis, synopsis_file)
+        #write_to_file(synopsis, synopsis_file)
 
         # ic rechunking statistics
         if rechunk_stats['runs'] > 0 and config.debug:

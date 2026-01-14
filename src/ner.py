@@ -1,5 +1,6 @@
 from collections import Counter
 import spacy
+import spacy.cli
 import torch
 import numpy as np
 import cupy as cp
@@ -8,6 +9,22 @@ from src.config import Config
 
 # Initialize config
 config = Config()
+
+def load_spacy_model(model_name):
+    """
+    Attempts to load a spaCy model. If not found, downloads it and tries again.
+    """
+    try:
+        if config.debug:
+            ic(f"Loading spaCy model: {model_name}")
+        return spacy.load(model_name)
+    except OSError:
+        if config.debug:
+            ic(f"Model {model_name} not found. Downloading...")
+        spacy.cli.download(model_name)
+        if config.debug:
+            ic(f"Model {model_name} downloaded. Loading...")
+        return spacy.load(model_name)
 
 def make_vocab(text, stop_words=None):
     if config.debug:
@@ -40,7 +57,7 @@ def make_vocab(text, stop_words=None):
         gpu = spacy.prefer_gpu()
         if config.debug:
             ic(gpu)
-        nlp = spacy.load(config.nermodel)
+        nlp = load_spacy_model(config.nermodel)
         nlp.max_length = 110000
 
         # Split text into chunks of up to 100,000 characters
@@ -161,7 +178,7 @@ def find_matching_words_with_cosine_similarity(text, vocab, lng, threshold=0.8, 
 
     try:
         spacy.prefer_gpu()
-        nlp = spacy.load(config.nermodel)
+        nlp = load_spacy_model(config.nermodel)
         nlp.max_length = 110000
         # For cosine similarity, we only need vectors. Disable everything else to avoid W108 and other warnings.
         doc = nlp(text, disable=["ner", "parser", "tagger", "lemmatizer", "attribute_ruler"])
