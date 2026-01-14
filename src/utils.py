@@ -20,23 +20,23 @@ big: bool = False
 
 class LLMService:
     def __init__(self):
-        self.client1 = openai.OpenAI(
+        self.client1 = openai.AsyncOpenAI(
             api_key=config.api_key,
             base_url=config.base_url,
             timeout=config.api_timeout
         )
-        self.client2 = openai.OpenAI(
+        self.client2 = openai.AsyncOpenAI(
             api_key=config.api_key2,
             base_url=config.base_url2,
             timeout=config.api_timeout2
         )
-        self.client3 = openai.OpenAI(
+        self.client3 = openai.AsyncOpenAI(
             api_key=config.api_key3,
             base_url=config.base_url3,
             timeout=config.api_timeout3
         )
 
-    def get_completion(self, use_big=True, prompt_category=None, prompt_key="user", json_mode=False, max_tokens=MAX_TOKENS_PER_CHUNK, **kwargs):
+    async def get_completion(self, use_big=True, prompt_category=None, prompt_key="user", json_mode=False, max_tokens=MAX_TOKENS_PER_CHUNK, **kwargs):
         if use_big:
             client, model, temp, sys_off, nothink, label = (
                 self.client1, config.model, config.temp, config.sys_not_promt, config.nothink2, "big one"
@@ -76,7 +76,7 @@ class LLMService:
         if json_mode:
             comp_kwargs["response_format"] = {"type": "json_object"}
 
-        response = client.chat.completions.create(**comp_kwargs)
+        response = await client.chat.completions.create(**comp_kwargs)
         return response.choices[0].message.content
 
 llm_service = LLMService()
@@ -97,7 +97,7 @@ def check_and_print_tags(text):
     matches = re.findall(pattern, text)
     return matches
 
-def one_chunk_initial_translation(
+async def one_chunk_initial_translation(
         source_lang: str, target_lang: str, source_text: str, style: str, outline_text: str, vocab_dict, big: bool
 ) -> str:
     """
@@ -108,7 +108,7 @@ def one_chunk_initial_translation(
 
     prompt_key = "user_xml" if style == 'xml' else "user_text"
     
-    translation = llm_service.get_completion(
+    translation = await llm_service.get_completion(
         use_big=big, 
         prompt_category="initial_translation", 
         prompt_key=prompt_key,
@@ -121,13 +121,13 @@ def one_chunk_initial_translation(
 
     return remove_tags(translation)
 
-def one_chunk_referat(
+async def one_chunk_referat(
          target_lang: str, final_translation: str,  big: bool
 ) -> str:
     """
     Make the synopsis (referat) for chunk using an LLM.
     """
-    translation = llm_service.get_completion(
+    translation = await llm_service.get_completion(
         use_big=big,
         prompt_category="synopsis",
         target_lang=target_lang,
@@ -135,14 +135,14 @@ def one_chunk_referat(
     )
     return remove_tags(translation)
 
-def one_chunk_editor(target_lang: str,  source_text: str, style: str,  lang: str , country: str , big: bool
+async def one_chunk_editor(target_lang: str,  source_text: str, style: str,  lang: str , country: str , big: bool
 ) -> str:
     """
     Edits and proofreads the text.
     """
     prompt_key = "user_xml" if style == 'xml' else "user_text"
     
-    translation = llm_service.get_completion(
+    translation = await llm_service.get_completion(
         use_big=big,
         prompt_category="editor",
         prompt_key=prompt_key,
@@ -152,7 +152,7 @@ def one_chunk_editor(target_lang: str,  source_text: str, style: str,  lang: str
     )
     return remove_tags(translation)
 
-def vocabulary(
+async def vocabulary(
         source_lang: str,
         target_lang: str,
         source_text: str,
@@ -162,7 +162,7 @@ def vocabulary(
     """
     Use an LLM to generate vocabulary for proper nouns.
     """
-    translation = llm_service.get_completion(
+    translation = await llm_service.get_completion(
         use_big=big,
         prompt_category="vocabulary",
         source_lang=source_lang,
@@ -174,7 +174,7 @@ def vocabulary(
         ic(translation)
     return translation
 
-def one_chunk_reflect_on_translation(
+async def one_chunk_reflect_on_translation(
         source_lang: str,
         target_lang: str,
         source_text: str,
@@ -186,7 +186,7 @@ def one_chunk_reflect_on_translation(
     """
     Reflect on the initial translation and provide suggestions for improvement.
     """
-    translation = llm_service.get_completion(
+    translation = await llm_service.get_completion(
         use_big=big,
         prompt_category="reflect_on_translation",
         source_lang=source_lang,
@@ -198,7 +198,7 @@ def one_chunk_reflect_on_translation(
     )
     return remove_tags(translation)
 
-def one_chunk_improve_translation(
+async def one_chunk_improve_translation(
         source_lang: str,
         target_lang: str,
         source_text: str,
@@ -212,7 +212,7 @@ def one_chunk_improve_translation(
     """
     prompt_key = "user_xml" if style == 'xml' else "user_text"
     
-    translation = llm_service.get_completion(
+    translation = await llm_service.get_completion(
         use_big=big,
         prompt_category="improve_translation",
         prompt_key=prompt_key,
@@ -254,7 +254,7 @@ def calculate_chunk_size(token_count: int, token_limit: int) -> int:
 
     return chunk_size
 
-def translate(
+async def translate(
         source_lang,
         target_lang,
         source_text,
@@ -282,7 +282,7 @@ def translate(
                 # Step 1: Initial translation
     start_time = time.time()
     use_big = True
-    translation_1 = one_chunk_initial_translation(
+    translation_1 = await one_chunk_initial_translation(
         source_lang, target_lang, source_text, style, outline_text, vocab_dict, use_big
     )
     translation_1_time = time.time() - start_time
@@ -293,7 +293,7 @@ def translate(
     # Step 2: Reflection on the initial translation
     start_time = time.time()
     use_big = False
-    reflection = one_chunk_reflect_on_translation(
+    reflection = await one_chunk_reflect_on_translation(
         source_lang, target_lang, source_text, translation_1, country, vocab_dict, use_big
     )
     reflection_time = time.time() - start_time
@@ -303,7 +303,7 @@ def translate(
     # Step 3: Improved translation
     start_time = time.time()
     use_big = False
-    translation_2 = one_chunk_improve_translation(
+    translation_2 = await one_chunk_improve_translation(
         source_lang, target_lang, source_text, translation_1, reflection, style, use_big
     )
     translation_2_time = time.time() - start_time
@@ -313,7 +313,7 @@ def translate(
     # Step 4: Outline
     start_time = time.time()
     use_big = True
-    outline_text = one_chunk_referat(target_lang, translation_2, use_big)
+    outline_text = await one_chunk_referat(target_lang, translation_2, use_big)
     outline_time = time.time() - start_time
     if config.debug:
         ic(outline_time, num_tokens_in_string(outline_text), outline_text)
@@ -321,7 +321,7 @@ def translate(
     # Step 5: Final translation
     start_time = time.time()
     use_big = False
-    final_translation = one_chunk_editor(target_lang, translation_2, style, target_lang, country, use_big)
+    final_translation = await one_chunk_editor(target_lang, translation_2, style, target_lang, country, use_big)
     final_translation_time = time.time() - start_time
     if config.debug:
         ic(final_translation_time, num_tokens_in_string(final_translation), final_translation)
@@ -331,7 +331,7 @@ def translate(
     else:
         raise ValueError(f"Chunk of size {num_tokens_in_text} tokens exceeds limit of {max_tokens} tokens.")
 
-def process_image_request(image_data: str, source_lang: str, target_lang: str, country: str, metadata: dict = None) -> str:
+async def process_image_request(image_data: str, source_lang: str, target_lang: str, country: str, metadata: dict = None) -> str:
     """
     Sends an image to the OpenAI API (client3) for image variation generation,
     then resizes and compresses the result.
@@ -351,7 +351,7 @@ def process_image_request(image_data: str, source_lang: str, target_lang: str, c
         if metadata:
             if config.debug:
                 ic(prompt)
-            response = llm_service.client3.images.generate(
+            response = await llm_service.client3.images.generate(
                 model=config.model3,
                 prompt=prompt,
                 n=1,
@@ -377,7 +377,7 @@ def process_image_request(image_data: str, source_lang: str, target_lang: str, c
             buffer.seek(0)
             if config.debug:
                 ic(prompt)
-            response = llm_service.client3.images.create_variation(
+            response = await llm_service.client3.images.create_variation(
                 image=buffer,
                 n=1,
                 size="1024x1024",
@@ -401,12 +401,12 @@ def process_image_request(image_data: str, source_lang: str, target_lang: str, c
             ic(f"Error processing image request: {e}")
         return None
 
-def translate_metadata(metadata: dict, source_lang: str, target_lang: str, country: str) -> dict:
+async def translate_metadata(metadata: dict, source_lang: str, target_lang: str, country: str) -> dict:
     """
     Translates a metadata dictionary using the LLM in JSON mode.
     """
     try:
-        response_text = llm_service.get_completion(
+        response_text = await llm_service.get_completion(
             use_big=False, # Use secondary for metadata usually
             prompt_category="metadata_translation",
             json_mode=True,
