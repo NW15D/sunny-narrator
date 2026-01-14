@@ -39,11 +39,41 @@ class Config:
         self.source_lang = os.getenv('SOURCE_LANG', 'english')
         self.target_lang = os.getenv('TARGET_LANG', 'russian')
         
-                
+        # Mapping for default nermodel based on source_lang (largest non-transformer models)
+        self.lang_model_map = {
+            "english": "en_core_web_lg", "en": "en_core_web_lg",
+            "russian": "ru_core_news_lg", "ru": "ru_core_news_lg",
+            "french": "fr_core_news_lg", "fr": "fr_core_news_lg",
+            "german": "de_core_news_lg", "de": "de_core_news_lg",
+            "spanish": "es_core_news_lg", "es": "es_core_news_lg",
+            "italian": "it_core_news_lg", "it": "it_core_news_lg",
+            "chinese": "zh_core_web_lg", "zh": "zh_core_web_lg",
+            "japanese": "ja_core_news_lg", "ja": "ja_core_news_lg",
+            "dutch": "nl_core_news_lg", "nl": "nl_core_news_lg",
+            "portuguese": "pt_core_news_lg", "pt": "pt_core_news_lg",
+            "polish": "pl_core_news_lg", "pl": "pl_core_news_lg",
+            "ukrainian": "uk_core_news_lg", "uk": "uk_core_news_lg",
+            "catalan": "ca_core_news_lg", "ca": "ca_core_news_lg",
+            "danish": "da_core_news_lg", "da": "da_core_news_lg",
+            "finnish": "fi_core_news_lg", "fi": "fi_core_news_lg",
+            "swedish": "sv_core_news_lg", "sv": "sv_core_news_lg",
+            "norwegian": "nb_core_news_lg", "nb": "nb_core_news_lg",
+            "korean": "ko_core_news_lg", "ko": "ko_core_news_lg",
+            "romanian": "ro_core_news_lg", "ro": "ro_core_news_lg",
+            "greek": "el_core_news_lg", "el": "el_core_news_lg",
+            "lithuanian": "lt_core_news_lg", "lt": "lt_core_news_lg",
+            "macedonian": "mk_core_news_lg", "mk": "mk_core_news_lg",
+            "croatian": "hr_core_news_lg", "hr": "hr_core_news_lg",
+            "slovenian": "sl_core_news_lg", "sl": "sl_core_news_lg"
+        }
+        
         # NER defaulted to True in .env
         self.ner_opt = os.getenv('NER', 'True').lower() in ['true', '1', 't']
         self.country = os.getenv('COUNTRY', 'Россия')
-        self.nermodel = os.getenv('NERMODEL', 'en_core_web_lg')
+        
+        # Determine default model from mapping if not specified in ENV
+        default_model = self.lang_model_map.get(self.source_lang.lower(), 'en_core_web_lg')
+        self.nermodel = os.getenv('NERMODEL', default_model)
         self.short = os.getenv('SHORT')
         self.max_len_chunk = int(os.getenv('MAX_LEN_CHUNK', 8192))
         

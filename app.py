@@ -1,4 +1,5 @@
 from icecream import ic
+import asyncio
 import os
 import sys
 import base64
@@ -60,12 +61,12 @@ def read_txt_file(file_path):
         content = f.read()
     return content
 
-def translatexml(source_text, source_lang, target_lang, outline_text, country, vocab_dict):
+async def translatexml(source_text, source_lang, target_lang, outline_text, country, vocab_dict):
     translated_chunk = None
     style = 'xml'
     
     try:
-        translated_chunk, outline = ta.translate(
+        translated_chunk, outline = await ta.translate(
             source_lang, target_lang, source_text, style, outline_text,
             country, vocab_dict)
 
@@ -74,7 +75,7 @@ def translatexml(source_text, source_lang, target_lang, outline_text, country, v
             ic(percentage, "% percent")
         
         if abs(percentage) == 100:
-            translated_chunk, outline = ta.translate(
+            translated_chunk, outline = await ta.translate(
                 source_lang, target_lang, source_text, style, outline_text,
                 country, vocab_dict)
                 
@@ -94,7 +95,7 @@ def translatexml(source_text, source_lang, target_lang, outline_text, country, v
 
             rechunk_stats['runs'] += 1
             for chunk in splitchunks:
-                ch, outline_chunk = ta.translate(
+                ch, outline_chunk = await ta.translate(
                     source_lang, target_lang, chunk, style, outline_text,
                     country, vocab_dict)
                 translated_chunk += ch
@@ -127,7 +128,7 @@ def write_to_file(data, output_file):
         for line in data:
             f.write(line + '\n')
 
-def main():
+async def main():
     myfile = config.myfile
     # Ensure file exists
     if not os.path.exists(myfile):
@@ -169,7 +170,7 @@ def main():
                 target_code = lang_map.get(config.target_lang.lower(), config.target_code if hasattr(config, 'target_code') else config.target_lang)
                 metadata['lang'] = target_code
                 
-                translated_metadata = ta.translate_metadata(
+                translated_metadata = await ta.translate_metadata(
                     metadata, config.source_lang, config.target_lang, config.country
                 )
                 if translated_metadata:
@@ -194,7 +195,7 @@ def main():
                 meta_to_pass = translated_metadata or metadata
                 
                 # Updated call with new signature
-                cover_result = ta.process_image_request(
+                cover_result = await ta.process_image_request(
                     cover_data, 
                     config.source_lang, 
                     config.target_lang, 
@@ -231,7 +232,7 @@ def main():
                 if config.debug:
                     ic(vb)
                     
-                vocab_dict_initial = ta.vocabulary(config.source_lang, config.target_lang, vb, config.country, False)
+                vocab_dict_initial = await ta.vocabulary(config.source_lang, config.target_lang, vb, config.country, False)
                 vocab_dict_clean = ta.remove_tags(vocab_dict_initial)
                 write_to_file(vocab_dict_clean, dict_file)
                 if config.debug:
@@ -251,20 +252,46 @@ def main():
         vocab_dict_map = {} 
         all_content = ''
 
-        # Iterate over all sections
-        for section_index, section in enumerate(orig_sections):
-            section_chunks = len(section)
-            section_translation = ''
 
-            for chunk_index, chunk in enumerate(section):
+        # --- Async Translation Pipeline ---
+        
+        # Determine total chunks to help with ordering
+        all_chunks = []
+        for s_idx, section in enumerate(orig_sections):
+            for c_idx, chunk in enumerate(section):
+                all_chunks.append({
+                    'chunk': chunk,
+                    'section_idx': s_idx,
+                    'chunk_idx': c_idx,
+                    'global_id': len(all_chunks)
+                })
+        
+        total_chunks = len(all_chunks)
+        results = {}
+        next_to_write = 0
+        
+        # Shared context for "leaky" sequential dependency
+        context_lock = asyncio.Lock()
+        shared_outline = {'text': ''}
+        
+        sem = asyncio.Semaphore(int(os.getenv('CONCURRENT_LIMIT', 3)))
+        
+        async def process_chunk_task(item):
+            chunk = item['chunk']
+            s_idx = item['section_idx']
+            c_idx = item['chunk_idx']
+            g_id = item['global_id']
+            section_chunks = len(orig_sections[s_idx])
+            
+            async with sem:
                 # Find matching words for dictionary injection
                 found_strings = []
                 if config.ner_opt and ner and vocab:
                     found_strings = ner.find_matching_words_with_cosine_similarity(chunk, vocab, config.source_lang)
-                    if config.debug:
-                        ic("found_strings: ", found_strings)
+                    # if config.debug:
+                    #     ic("found_strings: ", found_strings)
 
-                key = (section_index, chunk_index)
+                key = (s_idx, c_idx)
                 if key not in vocab_dict_map:
                     vocab_dict_map[key] = []
                 
@@ -276,31 +303,51 @@ def main():
                         vocab_dict_map[key].append(f"{source_lang_word}={target_lang_word}")
                 
                 if config.debug:
-                    ic("translate: ", section_index + 1, total_sections, chunk_index + 1, section_chunks,
+                    ic("translate: ", s_idx + 1, len(orig_sections), c_idx + 1, section_chunks,
                        vocab_dict_map[key])
 
-                translated_chunk, outline_text = translatexml(
-                    chunk, config.source_lang, config.target_lang, outline_text,
+                # Get current outline (context)
+                # We read the shared outline. It might be from a much earlier chunk if many run in parallel.
+                # This is the trade-off for speed.
+                current_context = shared_outline['text']
+                
+                translated_chunk, new_outline = await translatexml(
+                    chunk, config.source_lang, config.target_lang, current_context,
                     config.country, vocab_dict_map[key])
 
-                if translated_chunk is not None:
-                    section_translation += translated_chunk + '\n'
-                    translated_chunks.append(translated_chunk)
-                    synopsis.append(outline_text)
+                # Update shared outline with the new one
+                async with context_lock:
+                    shared_outline['text'] = new_outline
 
-            # Write translated section
-            if section_translation:
+                return {
+                    'global_id': g_id,
+                    'content': translated_chunk,
+                    'synopsis': new_outline
+                }
+
+        # Create tasks
+        tasks = [asyncio.create_task(process_chunk_task(item)) for item in all_chunks]
+        
+        # Process as they complete
+        for future in asyncio.as_completed(tasks):
+            res = await future
+            g_id = res['global_id']
+            results[g_id] = res['content']
+            
+            # Write available consecutive chunks
+            while next_to_write in results:
+                content_to_write = results[next_to_write]
+                # Synopsis logic not strictly needed for file output, just keeping track of state
                 
-                # Robust tag repair for the section content
-                section_content = xc.rem_tags(section_translation)
-                
+                section_content = xc.rem_tags(content_to_write)
                 all_content += section_content + "\n"
-                #if config.debug:
-                #    ic(section_content)
                 
                 with open(output_tfile, 'a', encoding='utf-8') as f:
-                    f.write(section_content + "\n")                  
+                    f.write(section_content + "\n")
                 
+                # Clean up memory
+                del results[next_to_write]
+                next_to_write += 1
 
         # Final validation and saving
         xml_str = f"{header}<body>\n{all_content}</body>\n{footer}"
@@ -327,4 +374,4 @@ def main():
         raise ValueError(f"Unsupported file extension: {file_extension}")
 
 if __name__ == '__main__':
-    main()
+    asyncio.run(main())

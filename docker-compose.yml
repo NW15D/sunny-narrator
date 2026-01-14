@@ -1,23 +1,21 @@
-version: '0.9'
-
 services:
   sunny-narrator:
-    image: sunny-narrator
-    env_file: .env
     build:
-      context: ..
-      dockerfile: ./docker/Dockerfile
-    #    ports:
-    #      - "${HOST_PORT:-8020}:${CONTAINER_PORT:-8020}"
+      context: .
+      dockerfile: Dockerfile
+    image: sunny-narrator:latest
+    container_name: sunny-narrator
+    env_file:
+      - .env
     volumes:
       - ./books:/app/books
-      - ./log:/app/log
-      - ./conf:/app/conf
-
-#    deploy:
-#      resources:
-#        reservations:
-#          devices:
-#            - driver: nvidia
-#              device_ids: ['0']
-#              capabilities: [gpu]
+      - ./src/prompts.json:/app/src/prompts.json
+      # Optional: mount .env if you want to change it without rebuilding
+      # - .env:/app/.env
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]

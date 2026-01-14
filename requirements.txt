@@ -1,19 +1,16 @@
 icecream
 python-dotenv
-pathlib
 openai
 numpy
 tiktoken
 langchain-text-splitters
-pydantic==2.11.7
+pydantic>=2.0.0
 spacy
 beautifulsoup4
 scikit-learn
-pytorch-gpu
-#torch
+torch
 lxml
-cupy
-#cupy in github wiki
+cupy-cuda12x
 more-itertools
 joblib
 thinc
