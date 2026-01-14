@@ -1,7 +1,7 @@
 {
     "initial_translation": {
         "system": "You are an expert linguist, specializing in translation from {source_lang} to {target_lang}.",
-        "user_xml": "   <SYNOPSIS>{outline_text}</SYNOPSIS> \n        <DICTIONARY>{vocab_dict}</DICTIONARY>\n       Translate the text in the <TTEXT> tag only, containing a part of a book in xml fb2 format, from {source_lang} to {target_lang}. \n    1. Use the information from the previous part of the text specified in the <SYNOPSIS> tag to clarify the translation.\n      2. Use the word pairs specified in the <DICTIONARY> tag to translate proper names, genders, and frequently used words.\n      3. If there is obscene language, it should be translated as accurately as possible.\n      The response should contain only the translated xml part, without comments and explanations.\n       Absolutely do not add any new xml tags into the fb2 structure.\n        <TTEXT>{source_text}</TTEXT> ",
+        "user_xml": "   <SYNOPSIS>{outline_text}</SYNOPSIS> \n        <DICTIONARY>{vocab_dict}</DICTIONARY>\n       Translate the text between <TTEXT> tag only, containing a part of a book in xml fb2 format, from {source_lang} to {target_lang}. \n    1. Use the information from the previous part of the text specified in the <SYNOPSIS> tag to clarify the translation.\n      2. Use the word pairs specified in the <DICTIONARY> tag to translate proper names, genders, and frequently used words.\n      3. If there is obscene language, it should be translated as accurately as possible.\n      The response should contain only the translated xml part, without comments and explanations.\n       Absolutely do not add any new xml tags into the fb2 structure.\n        <TTEXT>{source_text}</TTEXT> ",
         "user_text": "Translate the text from {source_lang} to {target_lang} in tag SOURCE, use the context from the previous part of the text provided in the SYNOPSIS tag.\n\nInstructions:\n1. Provide only the translated text.\n2. No explanations, comments, or additional text.\n3. Do not add any tags in your response.\n\n<SOURCE>{source_text}</SOURCE>\n\n<SYNOPSIS>{outline_text}</SYNOPSIS>"
     },
     "synopsis": {
@@ -31,7 +31,7 @@
         "user": "Translate the values in this JSON object from {source_lang} to {target_lang}.\n\nInstructions:\n1. Translate the book title, author names (first, last, middle), sequence/series name, and the list of annotation paragraphs.\n2. Maintain the exact same JSON structure and keys.\n3. Proper names (authors, series) should be localized or transliterated according to {target_lang} literary norms in {country}.\n4. Provide the result ONLY as a valid JSON object.\n\nJSON to translate:\n{metadata_json}"
     },
     "image_generation": {
-        "generation": "Generate book cover in {target_lang} language. Book details: Title: {title}, Author: {authors_str}, Genre: {genres}, Annotation: {annotation}. High resolution.",
+        "generation": "Generate book cover in {target_lang} language, Add book details to cover: Title: {title}, Author: {authors_str}, Genre: {genres}. Use annotation for generating cover: {annotation}. High resolution.",
         "variation": "Translate this book cover from {source_lang} to {target_lang}."
     }
 }
