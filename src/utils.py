@@ -348,6 +348,10 @@ async def translate(
     else:
         raise ValueError(f"Chunk of size {num_tokens_in_text} tokens exceeds limit of {max_tokens} tokens.")
 
+import httpx
+
+# ...
+
 async def process_image_request(image_data: str, source_lang: str, target_lang: str, country: str, metadata: dict = None) -> str:
     """
     Sends an image to the OpenAI API (client3) for image variation generation,
@@ -373,7 +377,7 @@ async def process_image_request(image_data: str, source_lang: str, target_lang: 
                 prompt=prompt,
                 n=1,
                 size="1024x1024",
-                response_format="b64_json"
+                # response_format="b64_json" # Removed as it causes unknown parameter error
             )
         else:
             image_bytes = base64.b64decode(image_data)
@@ -398,20 +402,44 @@ async def process_image_request(image_data: str, source_lang: str, target_lang: 
                 image=buffer,
                 n=1,
                 size="1024x1024",
-                response_format="b64_json",
+                # response_format="b64_json", # Removed
                 model=config.model3
             )
         
-        generated_b64 = response.data[0].b64_json
-        if not generated_b64:
-            return None
+        # Determine if response has b64_json (unlikely per error) or url
+        # Just handle URL as default fallback if b64_json is missing or explicitly not asked
+        generated_data = response.data[0]
+        
+        img_bytes = None
+        if hasattr(generated_data, 'b64_json') and generated_data.b64_json:
+             img_bytes = base64.b64decode(generated_data.b64_json)
+        elif hasattr(generated_data, 'url') and generated_data.url:
+             if config.debug:
+                 ic(f"Downloading image from URL: {generated_data.url}")
+             async with httpx.AsyncClient() as client:
+                 r = await client.get(generated_data.url)
+                 if r.status_code == 200:
+                     img_bytes = r.content
+                 else:
+                     if config.debug:
+                        ic(f"Failed to download image from URL. Status: {r.status_code}")
+                     return None
+        
+        if not img_bytes:
+             if config.debug:
+                ic("No image data found in response")
+             return None
 
-        img_bytes = base64.b64decode(generated_b64)
         img = Image.open(io.BytesIO(img_bytes))
         img = img.resize((1024, 1536), Image.Resampling.LANCZOS)
         output_buffer = io.BytesIO()
         img.save(output_buffer, format="JPEG", quality=70)
         return base64.b64encode(output_buffer.getvalue()).decode('utf-8')
+
+    except Exception as e:
+        if config.debug:
+            ic(f"Error processing image request: {e}")
+        return None
 
     except Exception as e:
         if config.debug:
