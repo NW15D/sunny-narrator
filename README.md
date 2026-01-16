@@ -6,7 +6,22 @@ The translation is performed in multiple passes using different roles (translati
 and it almost needs human proofreading and editing as well. Prompts for translation are located in the `.libs/llm.py` file in English, and for use with Qwen/Deepseek, they should be rewritten in Chinese.
 ![sh.png](sh.png)
 
+**if u want just fastest and free translate you cant use https://huggingface.co/tencent/HY-MT1.5-7B-GGUF alone. 12GB VRAM required**
+/n
+This software requires some technical knowledge to run.It add to translating process some features like :
+- Vocabulary translation
+- Proofreading
+- Synopsis for consistent translation
+- Regional nuances
+- Partially humor and obscene if it exist
+- Length and error checking and auto fixing
+- Concurrent translation via 2 API\LLM
+- Cover book with image generation
+- Metadata translation for FB2 and EPUB (EPUB will be converted to FB2 format)
+- Dockerfile and compose use
+
 **To use the translator, you’ll need:
+0. Computer with CUDA enabled GPU and nvidia driver (from 2 Gb VRAM), or use Docker 
 1. A host address and API key for an OpenAI-compatible API (i.e., you can locally run llama.cpp or use the address and key for OpenAI, Claude, etc.).
 2. An FB2 or TXT file. If you have an EPUB file, use an online conversion tool to convert it to FB2. If you don't have specific requirements for translating a book, a TXT file is sufficient.
 3. A running program (Docker or installed Python).
@@ -36,7 +51,7 @@ On the first run, test the program on a file with no more than a hundred words.
 
 **Thanks**
 Thanks to [POC](https://github.com/andrewyng/translation-agent) for automated FB2 translation via LLM translation agents.
-Qwen – Qwen_Coder32B is wonderful.
+Qwen – Qwen_Coder32B was wonderful. Antigravity is awesome
 
 **For your information**
 This was made for fun and home use. This small project could become a real product, and there are dozens of ideas for improving translation quality. Although commercial services already exist, such as www.inotherword.ai, creating a robust commercial application requires Java, Kafka/RabbitMQ, Postgres, Minio, several specialized LLMs, and can be costly (3–6 months and a few *** thousand dollars).

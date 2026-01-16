@@ -243,7 +243,7 @@ async def main():
         context_lock = asyncio.Lock()
         shared_outline = {'text': ''}
         
-        concurrent_limit = int(os.getenv('CONCURRENT_LIMIT', 3))
+        concurrent_limit = config.concurrent_limit
         sem = asyncio.Semaphore(concurrent_limit)
         
         # Events for staggered start
