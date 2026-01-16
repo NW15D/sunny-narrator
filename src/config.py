@@ -74,7 +74,8 @@ class Config:
         # Determine default model from mapping if not specified in ENV
         default_model = self.lang_model_map.get(self.source_lang.lower(), 'en_core_web_lg')
         self.nermodel = os.getenv('NERMODEL', default_model)
-        self.fast_trans = os.getenv('FAST_TRANS', 'False').lower() in ['true', '1', 'on', 'yes']
+        self.fast_trans = os.getenv('FAST_TRANS', 'on').lower() in ['true', '1', 'on', 'yes']
+        self.concurrent_limit = int(os.getenv('CONCURRENT_LIMIT', 1))
         self.short = os.getenv('SHORT')
         self.max_len_chunk = int(os.getenv('MAX_LEN_CHUNK', 8192))
         
@@ -83,8 +84,8 @@ class Config:
         if not os.path.isabs(self.myfile):
              self.myfile = str(Path(os.getcwd()) / self.myfile)
              
-        # DEBUG defaulted to 1
-        self.debug = os.getenv('DEBUG', '1').lower() in ['true', '1', 't']
+        # DEBUG defaulted to off
+        self.debug = os.getenv('DEBUG', 'off').lower() in ['true', '1', 't', 'on']
 
         # Load prompts
         self.prompts = self._load_prompts()

@@ -1,8 +1,8 @@
 {
     "initial_translation": {
         "system": "You are an expert linguist, specializing in translation from {source_lang} to {target_lang}.",
-        "user_xml": "<SYNOPSIS>{outline_text}</SYNOPSIS>\n<DICTIONARY>{vocab_dict}</DICTIONARY>\nTranslate ONLY the text inside the <TTEXT> tag from {source_lang} to {target_lang}.\n- Use the SYNOPSIS for context.\n- Use the DICTIONARY for proper names, genders, and frequent terms.\n- Preserve all original XML tags.\n- Do NOT add explanations or extra tags.\n<TTEXT>{source_text}</TTEXT>",
-        "user_text": "Translate ONLY the text inside the <SOURCE> tag from {source_lang} to {target_lang}.\nUse the SYNOPSIS for context.\nReturn the translated XML fragment without any explanations.\n<SOURCE>{source_text}</SOURCE>\n<SYNOPSIS>{outline_text}</SYNOPSIS>"
+        "user_xml": "<SYNOPSIS>{outline_text}</SYNOPSIS>\n<DICTIONARY>{vocab_dict}</DICTIONARY>\nTranslate ONLY the text inside the <TTEXT> tags from {source_lang} to {target_lang}.\n- Use the SYNOPSIS for context.\n- Use the DICTIONARY for proper names, genders, and frequent terms.\n- Preserve all original XML tags.\n- Do NOT add explanations or extra tags.\n<TTEXT>{source_text}</TTEXT>",
+        "user_text": "Translate ONLY the text inside the TTEXT tag from {source_lang} to {target_lang}.\nUse the SYNOPSIS for context.\nReturn the translated XML fragment without any explanations.\n<SOURCE>{source_text}</SOURCE>\n<SYNOPSIS>{outline_text}</SYNOPSIS>"
     },
     "synopsis": {
         "system": "You are an expert linguist and proofreader, specializing in concise summarization.",
