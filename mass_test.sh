@@ -9,6 +9,8 @@ temp2=("0.1","0.1","0.1")
 #min-p from 001 to 01,topp from 06 to 095, temp from 01 to 00 and from 01 to 02
 llm1=("-m /ai/models/Ministral-3-8B-Instruct-2512-Q8_0.gguf -ngl 130 -np 1 --top-k 20 --min-p 0.1 --top-p 0.95 --device CUDA1 --repeat-penalty 1.4 --repeat-last-n 2 --predict 22512 --reasoning-format none --cache-type-k q8_0 --jinja",
 "-m /ai/models/Ministral-3-8B-Instruct-2512-Q8_0.gguf -ngl 130 -np 1 --top-k 20 --min-p 0.1 --top-p 0.95 --device CUDA1 --repeat-penalty 1.4 --repeat-last-n 2 --predict 22512 --reasoning-format none --cache-type-k q8_0 --jinja",
+"-m /ai/models/Ministral-3-8B-Instruct-2512-Q8_0.gguf -ngl 130 -np 1 --top-k 20 --min-p 0.1 --top-p 0.95 --device CUDA1 --repeat-penalty 1.4 --repeat-last-n 2 --predict 22512 --reasoning-format none --cache-type-k q8_0 --jinja",
+"-m /ai/models/Ministral-3-8B-Instruct-2512-Q8_0.gguf -ngl 130 -np 1 --top-k 20 --min-p 0.1 --top-p 0.95 --device CUDA1 --repeat-penalty 1.4 --repeat-last-n 2 --predict 22512 --reasoning-format none --cache-type-k q8_0 --jinja",
 "-m /ai/models/Ministral-3-8B-Instruct-2512-Q8_0.gguf -ngl 130 -np 1 --top-k 20 --min-p 0.1 --top-p 0.95 --device CUDA1 --repeat-penalty 1.4 --repeat-last-n 2 --predict 22512 --reasoning-format none --cache-type-k q8_0 --jinja")
 #    "-m /ai/models/Mistral-Small-3.1-24B-Instruct-2503-Q6_K.gguf -ngl 130 -np 1 --top-k 20 --min-p 0.1 --top-p 0.95 -fa --device CUDA0,CUDA1 -ts 0.5,0.5 -sm row --repeat-penalty 1.3 --repeat-last-n 4 --predict 16521")
 #      "-m /ai/models/Mistral-Small-3.1-24B-Instruct-2503-Q6_K.gguf -ngl 130 -np 1 --top-k 20 --min-p 0.1 --top-p 0.95 -fa --device CUDA0,CUDA1 -ts 0.5,0.5 -sm row --repeat-penalty 1.3 --repeat-last-n 4 --predict 16512 -ctk q8_0 -ctv q8_0"
@@ -23,8 +25,8 @@ llm1=("-m /ai/models/Ministral-3-8B-Instruct-2512-Q8_0.gguf -ngl 130 -np 1 --top
 #      "-m /ai/models/saiga_yandexgpt_8b.Q8_0.gguf -ngl 130  -np 1 --top-k 20 --min-p 0.0 --top-p 0.8 -fa")
 llm2=("-m /ai/models/HY-MT1.5-7B-Q8_0.gguf -ngl 130  -np 1 --top-k 20 --min-p 0.1 --top-p 0.6 --repeat-penalty 1.05 --device CUDA0 --predict 22512",
 "-m /ai/models/HY-MT1.5-7B-Q8_0.gguf -ngl 130  -np 1 --top-k 20 --min-p 0.1 --top-p 0.6 --repeat-penalty 1.05 --device CUDA0 --predict 22512",
-"-m /ai/models/HY-MT1.5-7B-Q8_0.gguf -ngl 130  -np 1 --top-k 20 --min-p 0.1 --top-p 0.6 --repeat-penalty 1.05 --device CUDA0 --predict 22512")
-# "-m /ai/models/saiga_gemma3_12b.Q8_0.gguf -ngl 130 -np 1 --top-k 64 --min-p 0.1 --top-p 0.95 -fa --prio 2 --repeat-penalty 1.1 --device CUDA0,CUDA1 -ts 0.5,0.5 -sm row --predict 16512")
+"-m /ai/models/HY-MT1.5-7B-Q8_0.gguf -ngl 130  -np 1 --top-k 20 --min-p 0.1 --top-p 0.6 --repeat-penalty 1.05 --device CUDA0 --predict 22512",
+"-m /ai/models/saiga_gemma3_12b.Q8_0.gguf -ngl 130 -np 1 --top-k 64 --min-p 0.1 --top-p 0.95 -fa --prio 2 --repeat-penalty 1.1 --device CUDA0 --predict 16512")
 #      "-m /ai/models/Qwen_Qwen3-32B-Q4_K_L.gguf -ngl 130 -np 1 --top-k 20 --min-p 0.1 --top-p 0.95 -fa --prio 2 --repeat-penalty 1.1 --device CUDA0,CUDA1 -ts 0.5,0.5 -sm row --predict 16512  --jinja --chat-template-file /ai/models/templates/qwen3.jinja --rope-scaling linear -ctk q8_0 -ctv q8_0 --reasoning-budget 0")
 #
 #      "-m /ai/models/mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q4_K_L.gguf -ngl 130 -np 1 --top-k 20 --min-p 0.1 --top-p 0.95 -fa --device CUDA0"
