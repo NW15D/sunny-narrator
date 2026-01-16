@@ -1,44 +1,44 @@
 #!/bin/bash
 #plan llm pairs:  qwen3-32_ mistral ,
 # Определение списков значений
-shorts=("1mh","1mh","1mh")
+shorts=("1mh","1mh","1mh","1mg")
 #"mi24_q3-32" "q3-32_g3_27b" "g3_27b_m24" "m24_g3_27b" "m24_s3_14b" "saiyax8b_saig3_14b")
 
-temp1=("0.05","0.1","0.3")
-temp2=("0.1","0.1","0.1")
+temp1=("0.05","0.1","0.3","0.01")
+temp2=("0.1","0.1","0.1","0.1")
 #min-p from 001 to 01,topp from 06 to 095, temp from 01 to 00 and from 01 to 02
-llm1=("-m /ai/models/Ministral-3-8B-Instruct-2512-Q8_0.gguf -ngl 130 -np 1 --top-k 20 --min-p 0.1 --top-p 0.95 --device CUDA1 --repeat-penalty 1.4 --repeat-last-n 2 --predict 22512 --reasoning-format none --cache-type-k q8_0 --jinja",
-"-m /ai/models/Ministral-3-8B-Instruct-2512-Q8_0.gguf -ngl 130 -np 1 --top-k 20 --min-p 0.1 --top-p 0.95 --device CUDA1 --repeat-penalty 1.4 --repeat-last-n 2 --predict 22512 --reasoning-format none --cache-type-k q8_0 --jinja",
-"-m /ai/models/Ministral-3-8B-Instruct-2512-Q8_0.gguf -ngl 130 -np 1 --top-k 20 --min-p 0.1 --top-p 0.95 --device CUDA1 --repeat-penalty 1.4 --repeat-last-n 2 --predict 22512 --reasoning-format none --cache-type-k q8_0 --jinja",
-"-m /ai/models/Ministral-3-8B-Instruct-2512-Q8_0.gguf -ngl 130 -np 1 --top-k 20 --min-p 0.1 --top-p 0.95 --device CUDA1 --repeat-penalty 1.4 --repeat-last-n 2 --predict 22512 --reasoning-format none --cache-type-k q8_0 --jinja",
-"-m /ai/models/Ministral-3-8B-Instruct-2512-Q8_0.gguf -ngl 130 -np 1 --top-k 20 --min-p 0.1 --top-p 0.95 --device CUDA1 --repeat-penalty 1.4 --repeat-last-n 2 --predict 22512 --reasoning-format none --cache-type-k q8_0 --jinja")
-#    "-m /ai/models/Mistral-Small-3.1-24B-Instruct-2503-Q6_K.gguf -ngl 130 -np 1 --top-k 20 --min-p 0.1 --top-p 0.95 -fa --device CUDA0,CUDA1 -ts 0.5,0.5 -sm row --repeat-penalty 1.3 --repeat-last-n 4 --predict 16521")
-#      "-m /ai/models/Mistral-Small-3.1-24B-Instruct-2503-Q6_K.gguf -ngl 130 -np 1 --top-k 20 --min-p 0.1 --top-p 0.95 -fa --device CUDA0,CUDA1 -ts 0.5,0.5 -sm row --repeat-penalty 1.3 --repeat-last-n 4 --predict 16512 -ctk q8_0 -ctv q8_0"
-#      "-m /ai/models/google_gemma-3-27b-it-qat-Q5_K_M.gguf -ngl 130 -np 1 --top-k 64 --min-p 0.1 --top-p 0.95 -fa --prio 2 --repeat-penalty 1.0 --device CUDA1"
-#      "-m /ai/models/Qwen3-32B-Q8_0.gguf -ngl 130 -np 1 --top-k 20 --min-p 0.1 --top-p 0.95  -fa --model-draft /ai/models/Qwen3-0.6B-Q8_0.gguf  -ngld 99 --draft-max 16 --draft-min 4 --draft-p-min 0.01 -cd 8192 -ctk q8_0 -ctv q8_0 -ts 0.5,0.5 -sm row -e --jinja --chat-template-file /ai/models/templates/qwen3.jinja --device CUDA0,CUDA1 --device-draft CUDA1,CUDA0 --rope-scaling linear"
-#      "-m /ai/models/saiga_yandexgpt_8b.Q8_0.gguf -ngl 130  -np 1 --top-k 20 --min-p 0.1 --top-p 0.95 -fa --device CUDA1"
-#      "-m /ai/models/saiga_yandexgpt_8b.Q6_K.gguf -ngl 130  -np 1 --top-k 20 --min-p 0.1 --top-p 0.95 -fa --device CUDA0,CUDA1 -ts 0.5,0.5 -sm row -ctk q8_0 -ctv q8_0")
-#      "-m /ai/models/Qwen_Qwen3-32B-Q4_K_L.gguf -ngl 130 -np 1 --top-k 20 --min-p 0.1 --top-p 0.95  -fa --model-draft /ai/models/Qwen_Qwen3-0.6B-Q8_0.gguf  -ngld 99 --draft-max 16 --draft-min 4 --draft-p-min 0.01 -cd 8192 -ctk q8_0 -ctv q8_0"
-#      "-m /ai/models/google_gemma-3-27b-it-qat-Q5_K_M.gguf -ngl 130 -np 1 --top-k 64 --min-p 0.1 --top-p 0.95 -fa --prio 2 --repeat-penalty 1.0 "
-#      "-m /ai/models/mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q4_K_L.gguf -ngl 130 -np 1 --top-k 20 --min-p 0.1 --top-p 0.9 -fa"
-#      "-m /ai/models/mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q4_K_L.gguf -ngl 130 -np 1 --top-k 20 --min-p 0.1 --top-p 0.9 -fa"
-#      "-m /ai/models/saiga_yandexgpt_8b.Q8_0.gguf -ngl 130  -np 1 --top-k 20 --min-p 0.0 --top-p 0.8 -fa")
-llm2=("-m /ai/models/HY-MT1.5-7B-Q8_0.gguf -ngl 130  -np 1 --top-k 20 --min-p 0.1 --top-p 0.6 --repeat-penalty 1.05 --device CUDA0 --predict 22512",
-"-m /ai/models/HY-MT1.5-7B-Q8_0.gguf -ngl 130  -np 1 --top-k 20 --min-p 0.1 --top-p 0.6 --repeat-penalty 1.05 --device CUDA0 --predict 22512",
-"-m /ai/models/HY-MT1.5-7B-Q8_0.gguf -ngl 130  -np 1 --top-k 20 --min-p 0.1 --top-p 0.6 --repeat-penalty 1.05 --device CUDA0 --predict 22512",
-"-m /ai/models/saiga_gemma3_12b.Q8_0.gguf -ngl 130 -np 1 --top-k 64 --min-p 0.1 --top-p 0.95 -fa --prio 2 --repeat-penalty 1.1 --device CUDA0 --predict 16512")
-#      "-m /ai/models/Qwen_Qwen3-32B-Q4_K_L.gguf -ngl 130 -np 1 --top-k 20 --min-p 0.1 --top-p 0.95 -fa --prio 2 --repeat-penalty 1.1 --device CUDA0,CUDA1 -ts 0.5,0.5 -sm row --predict 16512  --jinja --chat-template-file /ai/models/templates/qwen3.jinja --rope-scaling linear -ctk q8_0 -ctv q8_0 --reasoning-budget 0")
+llm1=("-m /ai/models/Ministral-3-8B-Instruct-2512-Q8_0.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.95 --device CUDA1 --repeat-penalty 1.4 --repeat-last-n 2 --predict 22512 --reasoning-format none --cache-type-k q8_0 --jinja",
+"-m /ai/models/Ministral-3-8B-Instruct-2512-Q8_0.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.95 --device CUDA1 --repeat-penalty 1.4 --repeat-last-n 2 --predict 22512 --reasoning-format none --cache-type-k q8_0 --jinja",
+"-m /ai/models/Ministral-3-8B-Instruct-2512-Q8_0.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.95 --device CUDA1 --repeat-penalty 1.4 --repeat-last-n 2 --predict 22512 --reasoning-format none --cache-type-k q8_0 --jinja",
+"-m /ai/models/Ministral-3-8B-Instruct-2512-Q8_0.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.95 --device CUDA1 --repeat-penalty 1.4 --repeat-last-n 2 --predict 22512 --reasoning-format none --cache-type-k q8_0 --jinja",
+"-m /ai/models/Ministral-3-8B-Instruct-2512-Q8_0.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.95 --device CUDA1 --repeat-penalty 1.4 --repeat-last-n 2 --predict 22512 --reasoning-format none --cache-type-k q8_0 --jinja")
+#    "-m /ai/models/Mistral-Small-3.1-24B-Instruct-2503-Q6_K.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.95 -fa --device CUDA0,CUDA1 -ts 0.5,0.5 -sm row --repeat-penalty 1.3 --repeat-last-n 4 --predict 16521")
+#      "-m /ai/models/Mistral-Small-3.1-24B-Instruct-2503-Q6_K.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.95 -fa --device CUDA0,CUDA1 -ts 0.5,0.5 -sm row --repeat-penalty 1.3 --repeat-last-n 4 --predict 16512 -ctk q8_0 -ctv q8_0"
+#      "-m /ai/models/google_gemma-3-27b-it-qat-Q5_K_M.gguf -ngl 130  --top-k 64 --min-p 0.1 --top-p 0.95 -fa --prio 2 --repeat-penalty 1.0 --device CUDA1"
+#      "-m /ai/models/Qwen3-32B-Q8_0.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.95  -fa --model-draft /ai/models/Qwen3-0.6B-Q8_0.gguf  -ngld 99 --draft-max 16 --draft-min 4 --draft-p-min 0.01 -cd 8192 -ctk q8_0 -ctv q8_0 -ts 0.5,0.5 -sm row -e --jinja --chat-template-file /ai/models/templates/qwen3.jinja --device CUDA0,CUDA1 --device-draft CUDA1,CUDA0 --rope-scaling linear"
+#      "-m /ai/models/saiga_yandexgpt_8b.Q8_0.gguf -ngl 130   --top-k 20 --min-p 0.1 --top-p 0.95 -fa --device CUDA1"
+#      "-m /ai/models/saiga_yandexgpt_8b.Q6_K.gguf -ngl 130   --top-k 20 --min-p 0.1 --top-p 0.95 -fa --device CUDA0,CUDA1 -ts 0.5,0.5 -sm row -ctk q8_0 -ctv q8_0")
+#      "-m /ai/models/Qwen_Qwen3-32B-Q4_K_L.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.95  -fa --model-draft /ai/models/Qwen_Qwen3-0.6B-Q8_0.gguf  -ngld 99 --draft-max 16 --draft-min 4 --draft-p-min 0.01 -cd 8192 -ctk q8_0 -ctv q8_0"
+#      "-m /ai/models/google_gemma-3-27b-it-qat-Q5_K_M.gguf -ngl 130  --top-k 64 --min-p 0.1 --top-p 0.95 -fa --prio 2 --repeat-penalty 1.0 "
+#      "-m /ai/models/mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q4_K_L.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.9 -fa"
+#      "-m /ai/models/mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q4_K_L.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.9 -fa"
+#      "-m /ai/models/saiga_yandexgpt_8b.Q8_0.gguf -ngl 130   --top-k 20 --min-p 0.0 --top-p 0.8 -fa")
+llm2=("-m /ai/models/HY-MT1.5-7B-Q8_0.gguf -ngl 130   --top-k 20 --min-p 0.1 --top-p 0.6 --repeat-penalty 1.05 --device CUDA0 --predict 22512",
+"-m /ai/models/HY-MT1.5-7B-Q8_0.gguf -ngl 130   --top-k 20 --min-p 0.1 --top-p 0.6 --repeat-penalty 1.05 --device CUDA0 --predict 22512",
+"-m /ai/models/HY-MT1.5-7B-Q8_0.gguf -ngl 130   --top-k 20 --min-p 0.1 --top-p 0.6 --repeat-penalty 1.05 --device CUDA0 --predict 22512",
+"-m /ai/models/saiga_gemma3_12b.Q8_0.gguf -ngl 130  --top-k 64 --min-p 0.1 --top-p 0.95 -fa --prio 2 --repeat-penalty 1.1 --device CUDA0 --predict 16512")
+#      "-m /ai/models/Qwen_Qwen3-32B-Q4_K_L.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.95 -fa --prio 2 --repeat-penalty 1.1 --device CUDA0,CUDA1 -ts 0.5,0.5 -sm row --predict 16512  --jinja --chat-template-file /ai/models/templates/qwen3.jinja --rope-scaling linear -ctk q8_0 -ctv q8_0 --reasoning-budget 0")
 #
-#      "-m /ai/models/mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q4_K_L.gguf -ngl 130 -np 1 --top-k 20 --min-p 0.1 --top-p 0.95 -fa --device CUDA0"
-#      "-m /ai/models/saiga_yandexgpt_8b.Q6_K.gguf -ngl 130  -np 1 --top-k 20 --min-p 0.1 --top-p 0.95 -fa --device CUDA0,CUDA1 -ts 0.5,0.5 -sm row -ctk q8_0 -ctv q8_0"
-#      "-m /ai/models/Mistral-Small-3.1-24B-Instruct-2503-Q8_0.gguf -ngl 130 -np 1 --top-k 20 --min-p 0.1 --top-p 0.95 -fa --device CUDA0 -ctk q8_0 -ctv q8_0"
-#      "-m /ai/models/Qwen3-32B-Q8_0.gguf -ngl 130 -np 1 --top-k 20 --min-p 0.1 --top-p 0.95  -fa --model-draft /ai/models/Qwen3-0.6B-Q8_0.gguf  -ngld 99 --draft-max 16 --draft-min 4 --draft-p-min 0.01 -cd 8192 -ctk q8_0 -ctv q8_0 -ts 0.5,0.5 -sm row -e --jinja --chat-template-file /ai/models/templates/qwen3.jinja --device CUDA0,CUDA1 --device-draft CUDA1,CUDA0 --rope-scaling linear")
-#" -m /ai/models/Qwen_Qwen3-32B-Q4_K_L.gguf -ngl 130 -np 1 --top-k 20 --min-p 0.1 --top-p 0.95  -fa --model-draft /ai/models/Qwen_Qwen3-0.6B-Q8_0.gguf  -ngld 99 --draft-max 16 --draft-min 4 --draft-p-min 0.01 -cd 8192 -ctk q8_0 -ctv q8_0"
-#      "-m /ai/models/google_gemma-3-27b-it-qat-Q5_K_M.gguf -ngl 130 -np 1 --top-k 64 --min-p 0.1 --top-p 0.95 -fa --prio 2 --repeat-penalty 1.0"
-##      "-m /ai/models/mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q4_K_L.gguf -ngl 130 -np 1 --top-k 20 --min-p 0.1 --top-p 0.9 -fa"
-#     "-m /ai/models/google_gemma-3-27b-it-qat-Q5_K_M.gguf -ngl 130 -np 1 --top-k 64 --min-p 0.1 --top-p 0.95 -fa --prio 2 --repeat-penalty 1.0"
-#      "-m /ai/models/saiga_gemma3_12b.Q8_0.gguf -ngl 130 -np 1  --top-k 64 --min-p 0.1 --top-p 0.95 -fa --prio 2 --repeat-penalty 1.1"
-#      "-m /ai/models/saiga_gemma3_12b.Q8_0.gguf -ngl 130 -np 1  --top-k 64 --min-p 0.1 --top-p 0.95 -fa --prio 2 --repeat-penalty 1.0")
+#      "-m /ai/models/mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q4_K_L.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.95 -fa --device CUDA0"
+#      "-m /ai/models/saiga_yandexgpt_8b.Q6_K.gguf -ngl 130   --top-k 20 --min-p 0.1 --top-p 0.95 -fa --device CUDA0,CUDA1 -ts 0.5,0.5 -sm row -ctk q8_0 -ctv q8_0"
+#      "-m /ai/models/Mistral-Small-3.1-24B-Instruct-2503-Q8_0.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.95 -fa --device CUDA0 -ctk q8_0 -ctv q8_0"
+#      "-m /ai/models/Qwen3-32B-Q8_0.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.95  -fa --model-draft /ai/models/Qwen3-0.6B-Q8_0.gguf  -ngld 99 --draft-max 16 --draft-min 4 --draft-p-min 0.01 -cd 8192 -ctk q8_0 -ctv q8_0 -ts 0.5,0.5 -sm row -e --jinja --chat-template-file /ai/models/templates/qwen3.jinja --device CUDA0,CUDA1 --device-draft CUDA1,CUDA0 --rope-scaling linear")
+#" -m /ai/models/Qwen_Qwen3-32B-Q4_K_L.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.95  -fa --model-draft /ai/models/Qwen_Qwen3-0.6B-Q8_0.gguf  -ngld 99 --draft-max 16 --draft-min 4 --draft-p-min 0.01 -cd 8192 -ctk q8_0 -ctv q8_0"
+#      "-m /ai/models/google_gemma-3-27b-it-qat-Q5_K_M.gguf -ngl 130  --top-k 64 --min-p 0.1 --top-p 0.95 -fa --prio 2 --repeat-penalty 1.0"
+##      "-m /ai/models/mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q4_K_L.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.9 -fa"
+#     "-m /ai/models/google_gemma-3-27b-it-qat-Q5_K_M.gguf -ngl 130  --top-k 64 --min-p 0.1 --top-p 0.95 -fa --prio 2 --repeat-penalty 1.0"
+#      "-m /ai/models/saiga_gemma3_12b.Q8_0.gguf -ngl 130   --top-k 64 --min-p 0.1 --top-p 0.95 -fa --prio 2 --repeat-penalty 1.1"
+#      "-m /ai/models/saiga_gemma3_12b.Q8_0.gguf -ngl 130   --top-k 64 --min-p 0.1 --top-p 0.95 -fa --prio 2 --repeat-penalty 1.0")
 
 # Проверка, что длины списков одинаковы
 if [ "${#temp1[@]}" -ne "${#llm1[@]}" ]; then
@@ -70,12 +70,12 @@ for i in "${!temp1[@]}"; do
     echo "Запуск тестирования с параметрами: temp1=$temp1, temp2=$temp2, $short \n"
 
     # Запуск первой нейронной сети в фоновом режиме
-    CUDA_VISIBLE_DEVICES=0,1 /ai/llama.cpp/build/bin/llama-server $llm1 --host 192.168.0.55 -t 8 --no-mmap --numa distribute --port 6150  --ctx-size 32768 --jinja &
+    CUDA_VISIBLE_DEVICES=0,1 /ai/llama.cpp/build/bin/llama-server $llm1 --host 192.168.0.55 -t 8 --no-mmap -np 2 -cb --numa distribute --port 6150  --ctx-size 32768 --jinja &
     pid1=$!
     check_process $pid1 "LLM1"
 
     # Запуск второй нейронной сети в фоновом режиме
-    CUDA_VISIBLE_DEVICES=0,1 /ai/llama.cpp/build/bin/llama-server $llm2 --host 192.168.0.55 -t 8 --no-mmap  --numa distribute --port 6155  --ctx-size 32768 &
+    CUDA_VISIBLE_DEVICES=0,1 /ai/llama.cpp/build/bin/llama-server $llm2 --host 192.168.0.55 -t 8 --no-mmap -np 2 -cb --numa distribute --port 6155  --ctx-size 32768 &
     pid2=$!
     check_process $pid2 "LLM2"
 

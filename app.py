@@ -427,7 +427,7 @@ async def main():
         #write_to_file(synopsis, synopsis_file)
 
         # ic rechunking statistics
-        if rechunk_stats['runs'] > 0 and config.debug:
+        if rechunk_stats['runs'] > 0: #and config.debug:
             failures_str = ", ".join([f"{f:.1f}%" for f in rechunk_stats['failures']])
             ic(f"Речанкинг: {rechunk_stats['runs']} запусков, из них {rechunk_stats['fixed']} исправлено, {rechunk_stats['not_fixed']} не исправлено" + (f" ({failures_str})" if rechunk_stats['failures'] else ""))
 
