@@ -90,6 +90,7 @@ async def translatexml(source_text, source_lang, target_lang, outline_text, coun
         outline = current_outline
 
         percentage = ((len(translated_chunk) - len(source_text)) / len(source_text)) * 100
+
         if config.debug:
             print("DEBUG:", percentage, "% percent")
         
@@ -107,7 +108,7 @@ async def translatexml(source_text, source_lang, target_lang, outline_text, coun
             translated_chunk = current_translation
             outline = current_outline
                 
-        if abs(percentage) > 7 and len(source_text) > 500:
+        if (abs(percentage) > 7 and (len(source_text) > 500)) or (len(translated_chunk) == len(source_text)):
             
             if config.debug:
                 print("DEBUG:", "Rechunking !!! ", percentage, "% percent")
