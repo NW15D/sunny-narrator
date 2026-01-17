@@ -15,7 +15,7 @@ This software requires some technical knowledge to run.It add to translating pro
 - Regional nuances
 - Partially humor and obscene if it exist
 - Length and error checking and auto fixing
-- Concurrent translation via 2 API\LLM
+- Concurrent translation and proofreading via 2 API\LLM
 - Cover book with image generation
 - Metadata translation for FB2 and EPUB (EPUB will be converted to FB2 format)
 - Dockerfile and compose use

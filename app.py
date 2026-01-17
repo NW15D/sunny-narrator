@@ -2,6 +2,10 @@ from icecream import ic
 import asyncio
 import os
 import sys
+import warnings
+
+# Suppress FutureWarning from transformers/torch interaction
+warnings.filterwarnings("ignore", category=FutureWarning, message=".*torch.utils._pytree._register_pytree_node.*")
 import base64
 from datetime import datetime
 from pathlib import Path
@@ -429,7 +433,7 @@ async def main():
         # ic rechunking statistics
         if rechunk_stats['runs'] > 0: #and config.debug:
             failures_str = ", ".join([f"{f:.1f}%" for f in rechunk_stats['failures']])
-            ic(f"Речанкинг: {rechunk_stats['runs']} запусков, из них {rechunk_stats['fixed']} исправлено, {rechunk_stats['not_fixed']} не исправлено" + (f" ({failures_str})" if rechunk_stats['failures'] else ""))
+            print(f"Речанкинг: {rechunk_stats['runs']} запусков, из них {rechunk_stats['fixed']} исправлено, {rechunk_stats['not_fixed']} не исправлено" + (f" ({failures_str})" if rechunk_stats['failures'] else ""))
 
     else:
         raise ValueError(f"Unsupported file extension: {file_extension}")
