@@ -18,6 +18,25 @@ MAX_TOKENS_PER_CHUNK = config.max_len_chunk * 4  # if text is more than this man
 outline_text = ""
 big: bool = False
 
+# Language mapping for models requiring ISO codes (like TranslateGemma)
+LANG_MAP = {
+    "english": "en",
+    "russian": "ru",
+    "chinese": "zh",
+    "french": "fr",
+    "german": "de",
+    "spanish": "es",
+    "italian": "it",
+    "japanese": "ja",
+    "korean": "ko",
+    "portuguese": "pt",
+    "czech": "cs",
+    "polish": "pl",
+    "ukrainian": "uk",
+    "turkish": "tr",
+    "dutch": "nl",
+}
+
 class LLMService:
     def __init__(self):
         self.clientTranslate = openai.AsyncOpenAI(
@@ -62,7 +81,26 @@ class LLMService:
         messages = []
         if system_message:
             messages.append({"role": "system", "content": system_message})
-        messages.append({"role": "user", "content": user_message})
+
+        if model == "TranslateGemma":
+            src = kwargs.get("source_lang", config.source_lang)
+            tgt = kwargs.get("target_lang", config.target_lang)
+            src_code = LANG_MAP.get(src.lower(), src)
+            tgt_code = LANG_MAP.get(tgt.lower(), tgt)
+            
+            messages.append({
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "source_lang_code": src_code,
+                        "target_lang_code": tgt_code,
+                        "text": user_message
+                    }
+                ]
+            })
+        else:
+            messages.append({"role": "user", "content": user_message})
 
         if config.debug:
             ic(num_tokens_in_string(user_message), label)
@@ -107,6 +145,10 @@ async def one_chunk_initial_translation(
         outline_text = f"{outline_text}.{config.example}"
 
     prompt_key = "user_xml" if style == 'xml' else "user_text"
+    if big and config.model_translate == "Hunyuan":
+        prompt_key = "user_hunyuan"
+    elif not big and config.model_proofread == "Hunyuan":
+        prompt_key = "user_hunyuan"
     
     translation = await llm_service.get_completion(
         use_big=big, 

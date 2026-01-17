@@ -2,7 +2,9 @@
     "initial_translation": {
         "system": "You are an expert linguist, specializing in translation from {source_lang} to {target_lang}.",
         "user_xml": "<SYNOPSIS>{outline_text}</SYNOPSIS>\n<DICTIONARY>{vocab_dict}</DICTIONARY>\nTranslate ONLY the text inside the <TTEXT> tags from {source_lang} to {target_lang}.\n- Use the SYNOPSIS for context.\n- Use the DICTIONARY for proper names, genders, and frequent terms.\n- Preserve all original XML tags.\n- Do NOT add explanations or extra tags.\n<TTEXT>{source_text}</TTEXT>",
-        "user_text": "Translate ONLY the text inside the TTEXT tag from {source_lang} to {target_lang}.\nUse the SYNOPSIS for context.\nReturn the translated XML fragment without any explanations.\n<SOURCE>{source_text}</SOURCE>\n<SYNOPSIS>{outline_text}</SYNOPSIS>"
+        "user_text": "Translate ONLY the text inside the TTEXT tag from {source_lang} to {target_lang}.\nUse the SYNOPSIS for context.\nReturn the translated XML fragment without any explanations.\n<SOURCE>{source_text}</SOURCE>\n<SYNOPSIS>{outline_text}</SYNOPSIS>",
+        "user_hunyuan": "你是一个专业翻译引擎。请严格使用以下术语表进行翻译：{vocab_dict}。以下为上下文信息，仅用于理解语义，不需要翻译：{outline_text}。将以下<source></source>中的文本翻译为{target_lang}，只输出译文，不要额外解释，保留所有XML/HTML标签结构，仅翻译可见文本，输出格式为<target>译文</target>：<source>{source_text}</source>"
+"
     },
     "synopsis": {
         "system": "You are an expert linguist and proofreader, specializing in concise summarization.",
