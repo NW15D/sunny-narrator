@@ -5,8 +5,9 @@ However, for some languages, a character’s gender may accidentally switch in d
 and it almost needs human proofreading and editing as well. Prompts for translation are located in the `.libs/llm.py` file in English, and for use with Qwen/Deepseek, they should be rewritten in Chinese.
 ![sh.png](sh.png)
 
-**if u want just fastest and free translate you cant use https://huggingface.co/tencent/HY-MT1.5-7B-GGUF alone. 12GB VRAM required**
-/n
+**if u want just fastest and free translate you cant use Hunyuan(by Tencent) ot TranslateGemma(by Google) https://huggingface.co/tencent/HY-MT1.5-7B-GGUF alone. 5-12GB VRAM required**
+
+
 This software requires some technical knowledge to run.It add to translating process some features like :
 - Vocabulary translation
 - Proofreading
@@ -52,7 +53,7 @@ Used for the main translation, reflection, and improvement passes. Optimized for
 | `MODEL_TRANSLATE` | Model name for translation. Fallback: `MODEL`. | `Any` |  `Hunyuan` |  `TranslateGemma` |
 | `TEMP_TRANSLATE` | Sampling temperature for translation. Fallback: `TEMP`. | `0.01` |
 | `TIMEOUT_TRANSLATE` | API request timeout in seconds. Fallback: `TIMEOUT`. | `6000` |
-| `NOT_HINK_TRANSLATE` | Append `./no_think` to prompts (for reasoning models). Fallback: `NOTHINK2`. | `False` |
+| `NOTHINK_TRANSLATE` | Append `./nothink` to prompts (for reasoning models). Fallback: `NOTHINK2`. | `False` |
 | `S_PROMT_TRANSLATE` | Combine system and user prompts into a single message. Fallback: `S_PROMT`. | `False` |
 
 #### 3. Proofreading API (Secondary Model)
@@ -64,7 +65,7 @@ Used for synopsis generation, final editing, and metadata translation. Optimized
 | `MODEL_PROOFREAD` | Model name for proofreading. Fallback: `MODEL2`. | `tencent/Hunyuan...` |
 | `TEMP_PROOFREAD` | Sampling temperature. Fallback: `TEMP2`. | `0.7` |
 | `TIMEOUT_PROOFREAD` | API request timeout in seconds. Fallback: `TIMEOUT2`. | `6000` |
-| `NOT_HINK_PROOFREAD` | Append `./no_think` to proofreading prompts. Fallback: `NOTHINK`. | `False` |
+| `NOTHINK_PROOFREAD` | Append `./nothink` to proofreading prompts. Fallback: `NOTHINK`. | `False` |
 | `S_PROMT_PROOFREAD` | Combine system and user prompts for proofreading. Fallback: `S_PROMT2`. | `False` |
 
 #### 4. Images API (Cover Generation)
@@ -90,6 +91,7 @@ Used for synopsis generation, final editing, and metadata translation. Optimized
 > - **Rechunking:** If a translation length differs from the source by >7%, the application automatically splits the chunk and retries.
 > - **Token Limits:** The application safety limit for output is `MAX_LEN_CHUNK * 4` tokens.
 > - **Context Quality:** For best results, keep `MAX_LEN_CHUNK` around 8,192 to avoid degradation in model responses.
+> - **Translate Quality:**  Just modify prompts in `prompts.json` file.
 
 Source languages(SpaCy dependent):
     "english": "en",

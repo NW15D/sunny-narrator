@@ -67,6 +67,8 @@ class LLMService:
 
         if sys_off:
             user_message = f"{system_message}.{user_message}"
+            if config.debug:
+                print(f"DEBUG: Selected system off message")
             system_message = None
 
         if nothink:
@@ -123,7 +125,7 @@ def remove_tags(text):
     """
     Removes various XML/HTML tags and specific artifacts from the text.
     """
-    pattern = r'<SOURCE_TEXT>.*?</SOURCE_TEXT>|<INITIAL_TRANSLATION>.*?</INITIAL_TRANSLATION>|<DICTIONARY>.*?</DICTIONARY>|<FIRST_TRANSLATION>.*?</FIRST_TRANSLATION>|<EXPERT_SUGGESTIONS>.*?</EXPERT_SUGGESTIONS>|<TRANSLATION>|</TRANSLATION>|<SOURCE>|</SOURCE>|<SYNOPSIS>.*?</SYNOPSIS>|<think>.*?</think>|<myheader>.*?</myheader>|<myfooter>.*?</myfooter>|</section>|<section>|<IMPROVED_TRANSLATION>|</IMPROVED_TRANSLATION>|```xml|```|OceanofPDF.com|</target>|<target>|<a l:href="https://oceanofpdf.com">|<\|channel\|>.*?<\|end\|>'
+    pattern = r'<SOURCE_TEXT>.*?</SOURCE_TEXT>|<INITIAL_TRANSLATION>.*?</INITIAL_TRANSLATION>|<DICTIONARY>.*?</DICTIONARY>|<FIRST_TRANSLATION>.*?</FIRST_TRANSLATION>|<EXPERT_SUGGESTIONS>.*?</EXPERT_SUGGESTIONS>|<TRANSLATION>|</TRANSLATION>|<SOURCE>|</SOURCE>|<SYNOPSIS>.*?</SYNOPSIS>|<think>.*?</think>|<myheader>.*?</myheader>|<myfooter>.*?</myfooter>|</section>|<section>|<IMPROVED_TRANSLATION>|</IMPROVED_TRANSLATION>|```xml|```|OceanofPDF.com|</target>|<target>|<a l:href="https://oceanofpdf.com">|<\|channel\|>.*?<\|end\|>|<TTEXT>|</TTEXT>|<SYNOPSIS>|<\|im_end\|>|<\|file_separator\|>|</think>'
     cleaned_text = re.sub(pattern, '', text, flags=re.DOTALL)
     return cleaned_text
 
@@ -174,7 +176,8 @@ async def one_chunk_referat(
         role=role,
         prompt_category="synopsis",
         target_lang=target_lang,
-        final_translation=final_translation
+        final_translation=final_translation,
+        max_tokens=160
     )
     return remove_tags(translation)
 
@@ -237,7 +240,8 @@ async def one_chunk_reflect_on_translation(
         source_text=source_text,
         translation_1=translation_1,
         country=country,
-        vocab_dict=vocab_dict
+        vocab_dict=vocab_dict,
+        max_tokens=int(MAX_TOKENS_PER_CHUNK / 4)
     )
     return remove_tags(translation)
 
@@ -387,7 +391,7 @@ async def translate(
             final_translation = await one_chunk_editor(target_lang, translation_2, style, target_lang, country, role)
             final_translation_time = time.time() - start_time
             if config.debug:
-                print(f"DEBUG: Final translation time: {final_translation_time:.2f}s, tokens: {num_tokens_in_string(final_translation), final_translation: {final_translation}")
+                print(f"DEBUG: Final translation time: {final_translation_time:.2f}s, tokens: {num_tokens_in_string(final_translation)}, final_translation: {final_translation}")
 
 
         yield ("final", final_translation)
