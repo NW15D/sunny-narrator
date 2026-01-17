@@ -1,8 +1,7 @@
 ## English , translated
 # Sunny Narrator is an early-stage AI translator for long texts
 such as books in FB2, EPUB, or TXT format. The result is a reasonably readable text. 
-However, for some languages, a character’s gender may accidentally switch in different chapters if it’s not clearly established, and some artifacts may remain. 
-The translation is performed in multiple passes using different roles (translation with synopsis previous part , translation corrections, and proofreading), 
+However, for some languages, a character’s gender may accidentally switch in different chapters if it’s not clearly established, and some artifacts may remain. The translation is performed in multiple passes using different roles (translation with synopsis previous part , translation corrections, and proofreading), 
 and it almost needs human proofreading and editing as well. Prompts for translation are located in the `.libs/llm.py` file in English, and for use with Qwen/Deepseek, they should be rewritten in Chinese.
 ![sh.png](sh.png)
 
@@ -28,14 +27,69 @@ This software requires some technical knowledge to run.It add to translating pro
 
 Translation is performed in four passes and may require a large number of tokens and time, usually three times more tokens for input and output than the entire text.
 
-**Parameters** (`/config/.env` or Docker `.env`)
-1. Target and source language: the target and source languages.
-2. The country for the target language is also important to specify to adhere to the nuances of cultural context during translation.
-3. Optionally, two neural networks can be used for translation: one for direct translation and corrections, and the second for evaluating translation quality and proofreading (i.e., optimized for the target language). Specify the same parameters for both neural networks if you only have one, or specify `API_BASE2` for a smarter or more optimized neural network for the target language.
-   I use llama.cpp locally and run Mistral 24 Instruct for the main translation and Gemma 27B for proofreading. At a speed of 10 tokens/second, translating books with text around 500KB takes a day.
-4. Try to specify a maximum chunk size of no more than 16000 bytes, and half that amount for the neural network.
-   As of May 2025th, the quality of the response slightly degrades (by a few percent) at a context length of more than 8,000 tokens.
-5. The `//vocab` feature is temporarily broken. The `VOCAB` parameter specifies preferred translation pairs in the form of `source_lang=target_lang`.
+### Configuration (Environment Variables)
+
+The program is configured via environment variables, which can be defined in a `.env` file. The application supports semantic naming (e.g., `API_KEY_TRANSLATE`) with fallbacks to generic names (e.g., `API_KEY`) for easier setup.
+
+#### 1. General Settings
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `FILE` | Path to the input file (`.fb2`, `.epub`, or `.txt`). | `books/Cargo.fb2` |
+| `SOURCE_LANG` | Source language of the text (e.g., `english`, `en`). | `english` |
+| `TARGET_LANG` | Target language for translation (e.g., `russian`, `ru`). | `russian` |
+| `COUNTRY` | Target country/region for cultural context (e.g., `Россия`, `France`). | `Россия` |
+| `MAX_LEN_CHUNK` | Maximum chunk size in tokens for processing. | `8192` |
+| `CONCURRENT_LIMIT` | Number of chunks to process simultaneously. | `1` |
+| `FAST_TRANS` | Enable fast mode (skip reflection and improvement steps). `on`/`off`. | `on` |
+| `DEBUG` | Enable verbose logging and `icecream` output. `on`/`off`. | `off` |
+
+#### 2. Translation API (Primary Model)
+Used for the main translation, reflection, and improvement passes. Optimized for high quality.
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `API_KEY_TRANSLATE` | API key for the primary LLM. Fallback: `API_KEY`. | `a132b20c-...` |
+| `API_BASE_TRANSLATE` | Base URL for the primary API. Fallback: `API_BASE`. | `http://...:6150/v1` |
+| `MODEL_TRANSLATE` | Model name for translation. Fallback: `MODEL`. | `Mistral` |
+| `TEMP_TRANSLATE` | Sampling temperature for translation. Fallback: `TEMP`. | `0.01` |
+| `TIMEOUT_TRANSLATE` | API request timeout in seconds. Fallback: `TIMEOUT`. | `6000` |
+| `NOT_HINK_TRANSLATE` | Append `./no_think` to prompts (for reasoning models). Fallback: `NOTHINK2`. | `False` |
+| `S_PROMT_TRANSLATE` | Combine system and user prompts into a single message. Fallback: `S_PROMT`. | `False` |
+
+#### 3. Proofreading API (Secondary Model)
+Used for synopsis generation, final editing, and metadata translation. Optimized for speed/target language nuances.
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `API_KEY_PROOFREAD` | API key for the secondary LLM. Fallback: `API_KEY2`. | `a132b20c-...` |
+| `API_BASE_PROOFREAD` | Base URL for the secondary API. Fallback: `API_BASE2`. | `https://api.../v1` |
+| `MODEL_PROOFREAD` | Model name for proofreading. Fallback: `MODEL2`. | `tencent/Hunyuan...` |
+| `TEMP_PROOFREAD` | Sampling temperature. Fallback: `TEMP2`. | `0.7` |
+| `TIMEOUT_PROOFREAD` | API request timeout in seconds. Fallback: `TIMEOUT2`. | `6000` |
+| `NOT_HINK_PROOFREAD` | Append `./no_think` to proofreading prompts. Fallback: `NOTHINK`. | `False` |
+| `S_PROMT_PROOFREAD` | Combine system and user prompts for proofreading. Fallback: `S_PROMT2`. | `False` |
+
+#### 4. Images API (Cover Generation)
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `API_KEY_IMAGES` | API key for image generation. Fallback: `API_KEY3`. | `''` |
+| `API_BASE_IMAGES` | Base URL for the image API. Fallback: `API_BASE3`. | `''` |
+| `MODEL_IMAGES` | Model name for image generation. Fallback: `MODEL3`. | `gpt-image-1.5` |
+| `TEMP_IMAGES` | Temperature for image generation. Fallback: `TEMP3`. | `0.5` |
+| `TIMEOUT_IMAGES` | Timeout for image API calls. Fallback: `TIMEOUT3`. | `600` |
+| `COVER_PROMPT` | Custom prompt addition for cover generation. | `''` |
+
+#### 5. Advanced Features & Logic
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `NER` | Enable Named Entity Recognition for auto-vocabulary. | `True` |
+| `NERMODEL` | Specific spaCy model for NER (e.g., `en_core_web_lg`). | *Auto* |
+| `EXAMPLE` | Additional context or style examples for translation prompts. | `''` |
+| `SHORT` | If set, can be used to shorten responses (internal logic hint). | `None` |
+
+> [!TIP]
+> **Behavioral Notes:**
+> - **Rechunking:** If a translation length differs from the source by >7%, the application automatically splits the chunk and retries.
+> - **Token Limits:** The application safety limit for output is `MAX_LEN_CHUNK * 4` tokens.
+> - **Context Quality:** For best results, keep `MAX_LEN_CHUNK` around 8,192 to avoid degradation in model responses.
 
 **Launch**
 
@@ -154,14 +208,42 @@ Sunny narrator это ранняя версия AI переводчика дли
 3. Запущенная программа (docker или на установленном python)
 Перевод выполняется в 4 прохода и может потребовать большого количества токенов и времени, обычно в 3 раза больше токенов на вход и выход чем весь текст.   
 
-**Параметры** (/config/.env) или docker .env
-1. target and source language = целевой и исходный языки. 
-2. Страну для целевого языка также важно указать, чтобы соблюсти основы культурного кода при переводе. 
-3. Опционально может использоваться 2 нейросети для перевода, одна из них для непосредственно перевода и внесения исправлений, вторая для выдачи замечаний к качеству перевода и вычитке (т.е. более оптимизированная под целевой язык). Укажите одинаковые параметры для обоих нейросетей если у вас одна, или укажите API_BASE2 для более "умной" или оптимизированной под целевой язык.
-    Я использую llama.cpp локально и запускаю mistral24 instruct дя основного перевода и gemma27 it для вычитки. При скорости 10t\s перевод книг с текстом около 500кб занимает сутки.
-4. Старайтесь указывать максимальный размер чанка не более 16000 (в байтах), и при этом в 2 раза меньше максимального для данной нейросети. 
-    Согласно отчетам на 05.25 качество ответа чуть (few %) деградирует на длине контекста более 8к. токенов.
-5. //vocab don't work temporary. В параметре VOCAB указаны пары для предпочтительного перевода в виде source_lang=target_lang. 
+### Конфигурация (Переменные окружения)
+
+Программа настраивается через файл `.env`. Поддерживаются семантические имена параметров.
+
+#### 1. Общие настройки
+- `FILE`: Путь к входному файлу (`.fb2`, `.epub`, `.txt`).
+- `SOURCE_LANG`: Исходный язык (например, `english`).
+- `TARGET_LANG`: Целевой язык (например, `russian`).
+- `COUNTRY`: Целевая страна для учета культурного контекста.
+- `MAX_LEN_CHUNK`: Базовый размер чанка для разбиения текста. Рекомендуется около `8192`.
+- `CONCURRENT_LIMIT`: Лимит одновременных запросов (потоков).
+- `FAST_TRANS`: Быстрый режим (без этапов проверки и улучшения).
+- `DEBUG`: Режим отладки (расширенные логи).
+
+#### 2. Параметры API (Перевод: `Translate`)
+- `API_KEY_TRANSLATE`: API ключ. (Запасной вариант: `API_KEY`).
+- `API_BASE_TRANSLATE`: Базовый URL API. (Запасной вариант: `API_BASE`).
+- `MODEL_TRANSLATE`: Модель для перевода.
+- `TEMP_TRANSLATE`: Температура (рекомендуется `0.01`).
+- `TIMEOUT_TRANSLATE`: Таймаут запроса.
+- `NOT_HINK_TRANSLATE`: Флаг `./no_think` (для моделей с глубоким рассуждением).
+
+#### 3. Параметры API (Вычитка: `Proofread`)
+- `API_KEY_PROOFREAD`: API ключ для второй модели.
+- `API_BASE_PROOFREAD`: URL для второй модели.
+- `MODEL_PROOFREAD`: Модель для вычитки и синопсиса.
+
+#### 4. Параметры API (Обложки: `Images`)
+- `API_KEY_IMAGES`: API ключ для генерации обложек.
+- `MODEL_IMAGES`: Модель генерации (например, `dall-e-3`).
+- `COVER_PROMPT`: Дополнение к промпту для обложки.
+
+#### 5. Особенности работы
+- **Авто-речанкинг:** Если длина перевода отличается от оригинала более чем на 7%, программа автоматически разделит текст и попробует снова.
+- **Лимиты токенов:** Программа устанавливает `max_tokens` для API как `MAX_LEN_CHUNK * 4`.
+- **NER:** При включенном параметре `NER`, программа автоматически соберет имена и названия для создания словаря.
 
 
 **Запуск**
