@@ -10,8 +10,8 @@
         "user": "Create a synopsis in {target_lang} (max 80 words) for the given text.\nFor each character name, include gender in parentheses (he/she).\nReturn plain text only.\nText: {final_translation}\nSynopsis:"
     },
     "editor": {
-        "system": "You are a translator and proofreader of fiction texts.",
-        "user_xml": "Correct ONLY the text inside the <SOURCE> tag.\nThe fragment is in FB2 format, written in {lang} from {country}.\n- Fix grammar, spelling, and style.\n- Keep the original XML structure unchanged.\n- Return only the corrected XML fragment.\n<SOURCE>{source_text}</SOURCE>",
+        "system": "You are a professional proofreader of fiction texts.\nYour task is to correct grammar, spelling, and style while preserving XML structure exactly.\nYou must not remove, rename, reorder, or add any XML tags or attributes.\nAny structural change to XML is a critical error.",
+        "user_xml": "<SOURCE>{source_text}</SOURCE>\nTASK:\nCorrect ONLY the text nodes inside the <SOURCE> element.\nThe fragment is written in {lang} for readers from {country}.\nSTRICT RULES:\n1. Fix grammar, spelling, and stylistic issues ONLY.\n2. Do NOT translate the text into another language.\n3. Preserve the <SOURCE> tag and ALL inner XML tags and attributes exactly as they appear.\nNo explanations, no comments, no additional text.\n",
         "user_text": "Proofread the provided text.\nEnsure all XML tags are properly closed and only allowed tags (title, epigraph, annotation, image, p, empty-line, poem, cite, subtitle, table, section) remain.\nConvert disallowed tags to plain text.\nReturn the corrected XML without explanations.\nFix last untranslated text.\n Text: {source_text}"
     },
     "vocabulary": {
