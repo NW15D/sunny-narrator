@@ -91,6 +91,26 @@ Used for synopsis generation, final editing, and metadata translation. Optimized
 > - **Token Limits:** The application safety limit for output is `MAX_LEN_CHUNK * 4` tokens.
 > - **Context Quality:** For best results, keep `MAX_LEN_CHUNK` around 8,192 to avoid degradation in model responses.
 
+Source languages(SpaCy dependent):
+    "english": "en",
+    "russian": "ru",
+    "chinese": "zh",
+    "french": "fr",
+    "german": "de",
+    "spanish": "es",
+    "italian": "it",
+    "japanese": "ja",
+    "korean": "ko",
+    "portuguese": "pt",
+    "czech": "cs",
+    "polish": "pl",
+    "ukrainian": "uk",
+    "turkish": "tr",
+    "dutch": "nl",
+
+Target languages is any 2 letter code (LLM dependent)
+    
+
 **Launch**
 
 Set the translation parameters in the `.env` file and run the program:
