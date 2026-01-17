@@ -1,6 +1,6 @@
 import re
 from bs4 import BeautifulSoup
-from icecream import ic
+
 from src.config import Config
 
 config = Config()
@@ -41,7 +41,7 @@ def parse_xml(file_path):
         footer = re.sub(r'<myfooter>.*?</myfooter>', '', footer, flags=re.DOTALL)
 
         if config.debug:
-            ic(len(body))
+            print(len(body))
         return body, header, footer
 
 def extract_metadata(header):

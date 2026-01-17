@@ -1,4 +1,4 @@
-from icecream import ic
+
 import asyncio
 import os
 import sys
@@ -37,7 +37,7 @@ if config.ner_opt:
         ner = ner_module
     except ImportError as e:
         if config.debug:
-            ic(f"Import Error: {e}")
+            print("DEBUG:", f"Import Error: {e}")
         # Handle import error gracefully or exit
         pass
 
@@ -57,7 +57,7 @@ def load_vocab_from_file(file_path, source_lang, target_lang):
                 vocab[key][source_lang] = source_word
                 vocab[key][target_lang] = target_word
     if config.debug:
-        ic(vocab)
+        print("DEBUG:", vocab)
     return vocab
 
 def read_txt_file(file_path):
@@ -91,7 +91,7 @@ async def translatexml(source_text, source_lang, target_lang, outline_text, coun
 
         percentage = ((len(translated_chunk) - len(source_text)) / len(source_text)) * 100
         if config.debug:
-            ic(percentage, "% percent")
+            print("DEBUG:", percentage, "% percent")
         
         if abs(percentage) == 100:
             # Retry logic
@@ -110,7 +110,7 @@ async def translatexml(source_text, source_lang, target_lang, outline_text, coun
         if abs(percentage) > 7 and len(source_text) > 500:
             
             if config.debug:
-                ic("Rechunking !!! ", percentage, "% percent")
+                print("DEBUG:", "Rechunking !!! ", percentage, "% percent")
             mx = int((len(source_text) // 2) * 1.1)
             split_pos = source_text.rfind('</p>', 0, mx)
             if split_pos == -1:
@@ -140,12 +140,12 @@ async def translatexml(source_text, source_lang, target_lang, outline_text, coun
             if abs(percentage) < 7:
                 rechunk_stats['fixed'] += 1
                 if config.debug:
-                    ic("Fixed after rechunk, mx", mx, percentage, "% percent")
+                    print("DEBUG:", "Fixed after rechunk, mx", mx, percentage, "% percent")
             else:
                 rechunk_stats['not_fixed'] += 1
                 rechunk_stats['failures'].append(percentage)
                 if config.debug:
-                    ic("Warning: Large percentage difference after rechunking", percentage, "% percent chunk used")
+                    print("DEBUG:", "Warning: Large percentage difference after rechunking", percentage, "% percent chunk used")
 
         if translated_chunk is None:
             raise ValueError(f"Translation failed for chunk: {source_text}")
@@ -168,7 +168,7 @@ async def main():
     # Ensure file exists
     if not os.path.exists(myfile):
         if config.debug:
-            ic(f"File not found: {myfile}")
+            print("DEBUG:", f"File not found: {myfile}")
         return
 
     file_name, file_extension = os.path.splitext(os.path.basename(myfile))
@@ -199,17 +199,17 @@ async def main():
             if not os.path.exists(dict_file):
                 # Generate vocabulary if it doesn't exist
                 if config.debug:
-                    ic("NER : making vocabulary")
+                    print("DEBUG:", "NER : making vocabulary")
                 
                 vb = ner.make_vocab(body)
                 if config.debug:
-                    ic(vb)
+                    print("DEBUG:", vb)
                     
-                vocab_dict_initial = await ta.vocabulary(config.source_lang, config.target_lang, vb, config.country, False)
+                vocab_dict_initial = await ta.vocabulary(config.source_lang, config.target_lang, vb, config.country, "Proofread")
                 vocab_dict_clean = ta.remove_tags(vocab_dict_initial)
                 write_to_file(vocab_dict_clean, dict_file)
                 if config.debug:
-                    ic(f"Vocabulary is ready. Please correct it manually: {dict_file} and restart the program.")
+                    print("DEBUG:", f"Vocabulary is ready. Please correct it manually: {dict_file} and restart the program.")
                 sys.exit(0) # Exit gracefully
 
             else:
@@ -278,7 +278,7 @@ async def main():
                 if config.ner_opt and ner and vocab:
                     found_strings = ner.find_matching_words_with_cosine_similarity(chunk, vocab, config.source_lang)
                     # if config.debug:
-                    #     ic("found_strings: ", found_strings)
+                    #     print("DEBUG:", "found_strings: ", found_strings)
 
                 key = (s_idx, c_idx)
                 if key not in vocab_dict_map:
@@ -292,7 +292,7 @@ async def main():
                         vocab_dict_map[key].append(f"{source_lang_word}={target_lang_word}")
                 
                 if config.debug:
-                    ic("translate: ", s_idx + 1, len(orig_sections), c_idx + 1, section_chunks,
+                    print("DEBUG:", "translate: ", s_idx + 1, len(orig_sections), c_idx + 1, section_chunks,
                        vocab_dict_map[key])
 
                 # Get current outline (context)
@@ -357,7 +357,7 @@ async def main():
         translated_metadata = None
         if header:
             if config.debug:
-                ic("Extracting and translating metadata...")
+                print("DEBUG:", "Extracting and translating metadata...")
             metadata = fb2.extract_metadata(header)
             if metadata:
                 # Include target language from config
@@ -371,7 +371,7 @@ async def main():
                 if translated_metadata:
                     header = fb2.update_header_with_metadata(header, translated_metadata)
                     if config.debug:
-                        ic("Metadata translated and header updated.")
+                        print("DEBUG:", "Metadata translated and header updated.")
 
         # Process Cover Image (for all formats)
         if config.api_key3:
@@ -384,7 +384,7 @@ async def main():
             cover_data = fb2.get_cover_image(header, footer)
             if cover_data:
                 if config.debug:
-                    ic("Processing cover image...")
+                    print("DEBUG:", "Processing cover image...")
                 
                 # Use translated_metadata if available, otherwise original metadata
                 meta_to_pass = translated_metadata or metadata
@@ -406,13 +406,13 @@ async def main():
                         with open(cover_file, 'wb') as f:
                             f.write(base64.b64decode(cover_result))
                         if config.debug:
-                            ic(f"Cover image saved to {cover_file}")
+                            print("DEBUG:", f"Cover image saved to {cover_file}")
                     except Exception as e:
                         if config.debug:
-                            ic(f"Error saving cover image: {e}")
+                            print("DEBUG:", f"Error saving cover image: {e}")
 
                     if config.debug:
-                        ic("Cover image processed/replaced.")
+                        print("DEBUG:", "Cover image processed/replaced.")
 
         # Final validation and saving
         xml_str = f"{header}<body>\n{all_content}</body>\n{footer}"
@@ -421,11 +421,11 @@ async def main():
         validation_errors = xc.validate_fb2(xml_str)
         if validation_errors:
             if config.debug:
-                ic("WARNING: Final FB2 validation failed with errors:")
+                print("DEBUG:", "WARNING: Final FB2 validation failed with errors:")
                 for err in validation_errors:
-                    ic(f"  {err}")
+                    print("DEBUG:", f"  {err}")
         elif config.debug:
-            ic("Final FB2 validation passed successfully.")
+            print("DEBUG:", "Final FB2 validation passed successfully.")
 
         write_to_file(xml_str, output_file)
         #write_to_file(synopsis, synopsis_file)

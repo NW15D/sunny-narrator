@@ -1,13 +1,10 @@
 from bs4 import BeautifulSoup
 from lxml import etree
-try:
-    from icecream import ic
-except ImportError:
-    def ic(*args):
-        if len(args) == 1:
-            print(args[0])
-        else:
-            print(args)
+def ic(*args):
+    if len(args) == 1:
+        print(args[0])
+    else:
+        print(args)
 
 def rem_tags(xml_string):
     """
