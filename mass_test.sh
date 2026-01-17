@@ -1,17 +1,19 @@
 #!/bin/bash
 #plan llm pairs:  qwen3-32_ mistral ,
 # Определение списков значений
-shorts=("1mh","1mh","1mh","1mg")
+shorts=("1mh005" "1NH01" "1mh03" "1mg001" "1NG01" "1GN01")
 #"mi24_q3-32" "q3-32_g3_27b" "g3_27b_m24" "m24_g3_27b" "m24_s3_14b" "saiyax8b_saig3_14b")
 
-temp1=("0.05","0.1","0.3","0.01")
-temp2=("0.1","0.1","0.1","0.1")
+temp1=("0.05" "0.1" "0.3" "0.01" "0.01" "0.01")
+temp2=("0.1" "0.1" "0.1" "0.1" "0.1" "0.1")
 #min-p from 001 to 01,topp from 06 to 095, temp from 01 to 00 and from 01 to 02
-llm1=("-m /ai/models/Ministral-3-8B-Instruct-2512-Q8_0.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.95 --device CUDA1 --repeat-penalty 1.4 --repeat-last-n 2 --predict 22512 --reasoning-format none --cache-type-k q8_0 --jinja",
-"-m /ai/models/Ministral-3-8B-Instruct-2512-Q8_0.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.95 --device CUDA1 --repeat-penalty 1.4 --repeat-last-n 2 --predict 22512 --reasoning-format none --cache-type-k q8_0 --jinja",
-"-m /ai/models/Ministral-3-8B-Instruct-2512-Q8_0.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.95 --device CUDA1 --repeat-penalty 1.4 --repeat-last-n 2 --predict 22512 --reasoning-format none --cache-type-k q8_0 --jinja",
-"-m /ai/models/Ministral-3-8B-Instruct-2512-Q8_0.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.95 --device CUDA1 --repeat-penalty 1.4 --repeat-last-n 2 --predict 22512 --reasoning-format none --cache-type-k q8_0 --jinja",
-"-m /ai/models/Ministral-3-8B-Instruct-2512-Q8_0.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.95 --device CUDA1 --repeat-penalty 1.4 --repeat-last-n 2 --predict 22512 --reasoning-format none --cache-type-k q8_0 --jinja")
+llm1=("-m /ai/models/Ministral-3-8B-Instruct-2512-Q8_0.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.95 --device CUDA1 --repeat-penalty 1.4 --repeat-last-n 2 --predict 22512 --reasoning-format none --cache-type-k q8_0 --jinja -fa auto"
+	"-m /ai/models/Nemotron-3-Nano-30B-A3B-UD-Q4_K_XL.gguf -ngl 130 -np 2 -cb --top-k 20 --min-p 0.1 --top-p 0.95 --device CUDA1 --repeat-penalty 1.4 --repeat-last-n 2 --predict 22512 --no-mmap -fa auto --numa distribute --reasoning-format none --cache-type-k q8_0 --jinja --reasoning-budget 0"
+	"-m /ai/models/Ministral-3-8B-Instruct-2512-Q8_0.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.95 --device CUDA1 --repeat-penalty 1.4 --repeat-last-n 2 --predict 22512 --reasoning-format none --cache-type-k q8_0 --jinja -fa auto"
+	"-m /ai/models/Ministral-3-8B-Instruct-2512-Q8_0.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.95 --device CUDA1 --repeat-penalty 1.4 --repeat-last-n 2 --predict 22512 --reasoning-format none --cache-type-k q8_0 --jinja -fa auto"
+    "-m /ai/models/Nemotron-3-Nano-30B-A3B-UD-Q4_K_XL.gguf -ngl 130 -np 2 -cb --top-k 20 --min-p 0.1 --top-p 0.95 --device CUDA1 --repeat-penalty 1.4 --repeat-last-n 2 --predict 22512 --no-mmap -fa on --numa distribute --reasoning-format none --cache-type-k q8_0 --jinja --reasoning-budget 0"
+    "-m /ai/models/GigaChat-20B-A3B-instruct-v1.5-q6_K.gguf  -ngl 130 -np 2 -cb --top-k 20 --min-p 0.1 --top-p 0.95 --device CUDA1 --repeat-penalty 1.4 --repeat-last-n 2 --predict 22512 --no-mmap  --numa distribute --reasoning-format none --cache-type-k q8_0 --jinja -fa auto --reasoning-budget 0")
+#"-m /ai/models/Ministral-3-8B-Instruct-2512-Q8_0.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.95 --device CUDA1 --repeat-penalty 1.4 --repeat-last-n 2 --predict 22512 --reasoning-format none --cache-type-k q8_0 --jinja")
 #    "-m /ai/models/Mistral-Small-3.1-24B-Instruct-2503-Q6_K.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.95 -fa --device CUDA0,CUDA1 -ts 0.5,0.5 -sm row --repeat-penalty 1.3 --repeat-last-n 4 --predict 16521")
 #      "-m /ai/models/Mistral-Small-3.1-24B-Instruct-2503-Q6_K.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.95 -fa --device CUDA0,CUDA1 -ts 0.5,0.5 -sm row --repeat-penalty 1.3 --repeat-last-n 4 --predict 16512 -ctk q8_0 -ctv q8_0"
 #      "-m /ai/models/google_gemma-3-27b-it-qat-Q5_K_M.gguf -ngl 130  --top-k 64 --min-p 0.1 --top-p 0.95 -fa --prio 2 --repeat-penalty 1.0 --device CUDA1"
@@ -23,11 +25,12 @@ llm1=("-m /ai/models/Ministral-3-8B-Instruct-2512-Q8_0.gguf -ngl 130  --top-k 20
 #      "-m /ai/models/mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q4_K_L.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.9 -fa"
 #      "-m /ai/models/mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q4_K_L.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.9 -fa"
 #      "-m /ai/models/saiga_yandexgpt_8b.Q8_0.gguf -ngl 130   --top-k 20 --min-p 0.0 --top-p 0.8 -fa")
-llm2=("-m /ai/models/HY-MT1.5-7B-Q8_0.gguf -ngl 130   --top-k 20 --min-p 0.1 --top-p 0.6 --repeat-penalty 1.05 --device CUDA0 --predict 22512",
-"-m /ai/models/HY-MT1.5-7B-Q8_0.gguf -ngl 130   --top-k 20 --min-p 0.1 --top-p 0.6 --repeat-penalty 1.05 --device CUDA0 --predict 22512",
-"-m /ai/models/HY-MT1.5-7B-Q8_0.gguf -ngl 130   --top-k 20 --min-p 0.1 --top-p 0.6 --repeat-penalty 1.05 --device CUDA0 --predict 22512",
-"-m /ai/models/saiga_gemma3_12b.Q8_0.gguf -ngl 130  --top-k 64 --min-p 0.1 --top-p 0.95 -fa --prio 2 --repeat-penalty 1.1 --device CUDA0 --predict 16512")
-#      "-m /ai/models/Qwen_Qwen3-32B-Q4_K_L.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.95 -fa --prio 2 --repeat-penalty 1.1 --device CUDA0,CUDA1 -ts 0.5,0.5 -sm row --predict 16512  --jinja --chat-template-file /ai/models/templates/qwen3.jinja --rope-scaling linear -ctk q8_0 -ctv q8_0 --reasoning-budget 0")
+llm2=("-m /ai/models/HY-MT1.5-7B-Q8_0.gguf -ngl 130   --top-k 20 --min-p 0.1 --top-p 0.6 --repeat-penalty 1.05 --device CUDA0 --predict 22512 -fa auto"
+	"-m /ai/models/HY-MT1.5-7B-Q8_0.gguf -ngl 130   --top-k 20 --min-p 0.1 --top-p 0.6 --repeat-penalty 1.05 --device CUDA0 --predict 22512 -fa auto"
+	"-m /ai/models/HY-MT1.5-7B-Q8_0.gguf -ngl 130   --top-k 20 --min-p 0.1 --top-p 0.6 --repeat-penalty 1.05 --device CUDA0 --predict 22512 -fa auto"
+	"-m /ai/models/saiga_gemma3_12b.Q8_0.gguf -ngl 130  --top-k 64 --min-p 0.1 --top-p 0.95 --prio 2 --repeat-penalty 1.1 --device CUDA0 --predict 16512 -fa auto"
+    "-m /ai/models/GigaChat-20B-A3B-instruct-v1.5-q6_K.gguf  -ngl 130 -np 2 -cb --top-k 20 --min-p 0.1 --top-p 0.95 --device CUDA0 --repeat-penalty 1.4 --repeat-last-n 2 --predict 22512 --no-mmap  --numa distribute --reasoning-format none --cache-type-k q8_0 --jinja -fa auto --reasoning-budget 0"
+    "-m /ai/models/Nemotron-3-Nano-30B-A3B-UD-Q4_K_XL.gguf -ngl 130 -np 2 -cb --top-k 20 --min-p 0.1 --top-p 0.95 --device CUDA0 --repeat-penalty 1.4 --repeat-last-n 2 --predict 22512 --no-mmap -fa auto --numa distribute --reasoning-format none --cache-type-k q8_0 --jinja --reasoning-budget 0")
 #
 #      "-m /ai/models/mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q4_K_L.gguf -ngl 130  --top-k 20 --min-p 0.1 --top-p 0.95 -fa --device CUDA0"
 #      "-m /ai/models/saiga_yandexgpt_8b.Q6_K.gguf -ngl 130   --top-k 20 --min-p 0.1 --top-p 0.95 -fa --device CUDA0,CUDA1 -ts 0.5,0.5 -sm row -ctk q8_0 -ctv q8_0"
@@ -81,14 +84,18 @@ for i in "${!temp1[@]}"; do
 
     # Задержка в 30 секунд перед запуском основного приложения
     sleep 180
-
+    echo " Run main test"\n
     # Запуск основного ПО
-    TEMP2=$temp2 TEMP=$temp1 SHORT=$short FAST_TRANS=1 /root/miniconda3/envs/ttsv2/bin/python app.py > freedom_$short-$temp1-$temp2.log 2>&1 &
+    TEMP2=$temp2 TEMP=$temp1 SHORT=$short FAST_TRANS=1 CONCURRENT_LIMIT=2 /root/miniconda3/envs/ttsv2/bin/python app.py > cargo_$short-$temp1-$temp2.log 2>&1 &
     app_pid=$!
 
     # Ожидание завершения работы основного ПО
     wait $app_pid
+    
+    TEMP2=$temp2 TEMP=$temp1 SHORT=$short FAST_TRANS=0 CONCURRENT_LIMIT=3 /root/miniconda3/envs/ttsv2/bin/python app.py > cargo_$short-$temp1-$temp2.log 2>&1 &
+    app_pid2=$!
 
+    wait $app_pid2
     # Остановка первой нейронной сети
     kill $pid1
     wait $pid1 || true

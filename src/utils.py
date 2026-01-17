@@ -20,30 +20,30 @@ big: bool = False
 
 class LLMService:
     def __init__(self):
-        self.client1 = openai.AsyncOpenAI(
-            api_key=config.api_key,
-            base_url=config.base_url,
-            timeout=config.api_timeout
+        self.clientTranslate = openai.AsyncOpenAI(
+            api_key=config.api_key_translate,
+            base_url=config.base_url_translate,
+            timeout=config.timeout_translate
         )
-        self.client2 = openai.AsyncOpenAI(
-            api_key=config.api_key2,
-            base_url=config.base_url2,
-            timeout=config.api_timeout2
+        self.clientProofread = openai.AsyncOpenAI(
+            api_key=config.api_key_proofread,
+            base_url=config.base_url_proofread,
+            timeout=config.timeout_proofread
         )
-        self.client3 = openai.AsyncOpenAI(
-            api_key=config.api_key3,
-            base_url=config.base_url3,
-            timeout=config.api_timeout3
+        self.clientImages = openai.AsyncOpenAI(
+            api_key=config.api_key_images,
+            base_url=config.base_url_images,
+            timeout=config.timeout_images
         )
 
     async def get_completion(self, use_big=True, prompt_category=None, prompt_key="user", json_mode=False, max_tokens=MAX_TOKENS_PER_CHUNK, **kwargs):
         if use_big:
             client, model, temp, sys_off, nothink, label = (
-                self.client1, config.model, config.temp, config.sys_not_promt, config.nothink2, "big one"
+                self.clientTranslate, config.model_translate, config.temp_translate, config.sys_not_promt_translate, config.nothink_translate, "Translate"
             )
         else:
             client, model, temp, sys_off, nothink, label = (
-                self.client2, config.model2, config.temp2, config.sys_not_promt2, config.nothink, "small one"
+                self.clientProofread, config.model_proofread, config.temp_proofread, config.sys_not_promt_proofread, config.nothink_proofread, "Proofread"
             )
 
         system_message = config.get_prompt(prompt_category, "system", **kwargs)
@@ -317,7 +317,7 @@ async def translate(
         else:
             # Step 3: Reflection on the initial translation
             start_time = time.time()
-            use_big = False
+            use_big = True
             reflection = await one_chunk_reflect_on_translation(
                 source_lang, target_lang, source_text, translation_1, country, vocab_dict, use_big
             )
@@ -327,7 +327,7 @@ async def translate(
 
             # Step 4: Improved translation
             start_time = time.time()
-            use_big = False
+            use_big = True
             translation_2 = await one_chunk_improve_translation(
                 source_lang, target_lang, source_text, translation_1, reflection, style, use_big
             )
@@ -372,7 +372,7 @@ async def process_image_request(image_data: str, source_lang: str, target_lang: 
         if metadata:
             if config.debug:
                 ic(prompt)
-            response = await llm_service.client3.images.generate(
+            response = await llm_service.clientImages.images.generate(
                 model=config.model3,
                 prompt=prompt,
                 n=1,
@@ -398,7 +398,7 @@ async def process_image_request(image_data: str, source_lang: str, target_lang: 
             buffer.seek(0)
             if config.debug:
                 ic(prompt)
-            response = await llm_service.client3.images.create_variation(
+            response = await llm_service.clientImages.images.create_variation(
                 image=buffer,
                 n=1,
                 size="1024x1024",
