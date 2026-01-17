@@ -48,8 +48,8 @@ Used for the main translation, reflection, and improvement passes. Optimized for
 | Variable | Description | Default |
 | :--- | :--- | :--- |
 | `API_KEY_TRANSLATE` | API key for the primary LLM. Fallback: `API_KEY`. | `a132b20c-...` |
-| `API_BASE_TRANSLATE` | Base URL for the primary API. Fallback: `API_BASE`. | `http://...:6150/v1` |
-| `MODEL_TRANSLATE` | Model name for translation. Fallback: `MODEL`. | `Mistral` |
+| `API_BASE_TRANSLATE` | Base URL for the primary API. Fallback: `API_BASE`. | `http://...:6155/v1` |
+| `MODEL_TRANSLATE` | Model name for translation. Fallback: `MODEL`. | `Any` |  `Hunyuan` |  `TranslateGemma` |
 | `TEMP_TRANSLATE` | Sampling temperature for translation. Fallback: `TEMP`. | `0.01` |
 | `TIMEOUT_TRANSLATE` | API request timeout in seconds. Fallback: `TIMEOUT`. | `6000` |
 | `NOT_HINK_TRANSLATE` | Append `./no_think` to prompts (for reasoning models). Fallback: `NOTHINK2`. | `False` |

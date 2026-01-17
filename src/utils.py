@@ -70,6 +70,8 @@ class LLMService:
             system_message = None
 
         if nothink:
+            if config.debug:
+                print(f"DEBUG: Selected nothink message")
             if system_message:
                 system_message = f"{system_message}./no_think"
             else:
@@ -84,7 +86,8 @@ class LLMService:
             tgt = kwargs.get("target_lang", config.target_lang)
             src_code = LANG_MAP.get(src.lower(), src)
             tgt_code = LANG_MAP.get(tgt.lower(), tgt)
-            
+            if config.debug:
+                print(f"DEBUG: Selected TranslateGemma message")
             messages.append({
                 "role": "user",
                 "content": [
@@ -144,8 +147,9 @@ async def one_chunk_initial_translation(
     prompt_key = "user_xml" if style == 'xml' else "user_text"
     if role == "Translate" and config.model_translate == "Hunyuan":
         prompt_key = "user_hunyuan"
-    elif role == "Proofread" and config.model_proofread == "Hunyuan":
-        prompt_key = "user_hunyuan"
+        if config.debug:
+            print(f"DEBUG: Selected Hunyuan prompt")
+
     
     translation = await llm_service.get_completion(
         role=role, 
@@ -326,8 +330,8 @@ async def translate(
         )
         translation_1_time = time.time() - start_time
         if config.debug:
-            print(f"DEBUG: Translation 1 time: {translation_1_time:.2f}s, tokens: {num_tokens_in_string(translation_1)}")
-            print(f"DEBUG: Style: {style}, Outline: {outline_text}")
+            print(f"DEBUG: Translation 1 time: {translation_1_time:.2f}s, tokens: {num_tokens_in_string(translation_1)}, translation: {translation_1}")
+            print(f"DEBUG: Style: {style}, Outline: {outline_text}, role: {role}")
 
         # Step 2: Outline (Moved to Step 2 to allow fast yielding for async chain)
         start_time = time.time()
@@ -363,8 +367,8 @@ async def translate(
             )
             reflection_time = time.time() - start_time
             if config.debug:
-                print(f"DEBUG: Reflection time: {reflection_time:.2f}s, tokens: {num_tokens_in_string(reflection)}")
-                print(f"DEBUG: Style: {style}")
+                print(f"DEBUG: Reflection time: {reflection_time:.2f}s, tokens: {num_tokens_in_string(reflection)}, reflection: {reflection}")
+                print(f"DEBUG: Style: {style}, role: {role}")
 
             # Step 4: Improved translation
             start_time = time.time()
@@ -374,8 +378,8 @@ async def translate(
             )
             translation_2_time = time.time() - start_time
             if config.debug:
-                print(f"DEBUG: Translation 2 time: {translation_2_time:.2f}s, tokens: {num_tokens_in_string(translation_2)}")
-                print(f"DEBUG: Style: {style}")
+                print(f"DEBUG: Translation 2 time: {translation_2_time:.2f}s, tokens: {num_tokens_in_string(translation_2)}, translation_2: {translation_2}")
+                print(f"DEBUG: Style: {style}, role: {role}")
 
             # Step 5: Final translation
             start_time = time.time()
@@ -383,7 +387,7 @@ async def translate(
             final_translation = await one_chunk_editor(target_lang, translation_2, style, target_lang, country, role)
             final_translation_time = time.time() - start_time
             if config.debug:
-                print(f"DEBUG: Final translation time: {final_translation_time:.2f}s, tokens: {num_tokens_in_string(final_translation)}")
+                print(f"DEBUG: Final translation time: {final_translation_time:.2f}s, tokens: {num_tokens_in_string(final_translation), final_translation: {final_translation}")
 
 
         yield ("final", final_translation)
