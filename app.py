@@ -375,7 +375,7 @@ async def main():
                         print("DEBUG:", "Metadata translated and header updated.")
 
         # Process Cover Image (for all formats)
-        if config.api_key3:
+        if config.api_key_images:
             # Use appropriate handler or just fb2_handler since structure is unified
             # We can use the module corresponding to extension, but functions are wrappers around fb2 anyway mostly
             # Actually easier to just use fb2 or dynamically chosen handler if logic diverged.

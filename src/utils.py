@@ -125,15 +125,17 @@ def remove_tags(text):
     """
     Removes various XML/HTML tags and specific artifacts from the text.
     """
-    pattern = r'<SOURCE_TEXT>.*?</SOURCE_TEXT>|<INITIAL_TRANSLATION>.*?</INITIAL_TRANSLATION>|<DICTIONARY>.*?</DICTIONARY>|<FIRST_TRANSLATION>.*?</FIRST_TRANSLATION>|<EXPERT_SUGGESTIONS>.*?</EXPERT_SUGGESTIONS>|<TRANSLATION>|</TRANSLATION>|<SOURCE>|</SOURCE>|<SYNOPSIS>.*?</SYNOPSIS>|<think>.*?</think>|<myheader>.*?</myheader>|<myfooter>.*?</myfooter>|</section>|<section>|<IMPROVED_TRANSLATION>|</IMPROVED_TRANSLATION>|```xml|```|OceanofPDF.com|</target>|<target>|<a l:href="https://oceanofpdf.com">|<\|channel\|>.*?<\|end\|>|<TTEXT>|</TTEXT>|<SYNOPSIS>|<\|im_end\|>|<\|file_separator\|>|</think>'
-    cleaned_text = re.sub(pattern, '', text, flags=re.DOTALL)
-    return cleaned_text
+    #pattern = r'<SOURCE_TEXT>.*?</SOURCE_TEXT>|<INITIAL_TRANSLATION>.*?</INITIAL_TRANSLATION>|<DICTIONARY>.*?</DICTIONARY>|<FIRST_TRANSLATION>.*?</FIRST_TRANSLATION>|<EXPERT_SUGGESTIONS>.*?</EXPERT_SUGGESTIONS>|<TRANSLATION>|</TRANSLATION>|<SOURCE>|</SOURCE>|<SYNOPSIS>.*?</SYNOPSIS>|<think>.*?</think>|<myheader>.*?</myheader>|<myfooter>.*?</myfooter>|</section>|<section>|<IMPROVED_TRANSLATION>|</IMPROVED_TRANSLATION>|```xml|```|OceanofPDF.com|</target>|<target>|<a l:href="https://oceanofpdf.com">|<\|channel\|>.*?<\|end\|>|<TTEXT>|</TTEXT>|<SYNOPSIS>|<\|im_end\|>|<\|file_separator\|>|</think>'
+    #cleaned_text = re.sub(pattern, '', text, flags=re.DOTALL)
+    pattern = r'''<SOURCE_TEXT>[\s\S]*?</SOURCE_TEXT>|<INITIAL_TRANSLATION>[\s\S]*?</INITIAL_TRANSLATION>|<DICTIONARY>[\s\S]*?</DICTIONARY>|<FIRST_TRANSLATION>[\s\S]*?</FIRST_TRANSLATION>|<EXPERT_SUGGESTIONS>[\s\S]*?</EXPERT_SUGGESTIONS>|<SYNOPSIS>[\s\S]*?</SYNOPSIS>|<think>[\s\S]*?</think>|<myheader>[\s\S]*?</myheader>|<myfooter>[\s\S]*?</myfooter>|<\|channel\|>[\s\S]*?<\|end\|>|```xml|```|OceanofPDF\.com|<a l:href="https://oceanofpdf.com">|</?(?:TRANSLATION|SOURCE|section|IMPROVED_TRANSLATION|target|TTEXT|SYNOPSIS)>|<\|im_end\|>|<\|file_separator\|>'''
+    cleaned = re.sub(pattern, '', text, flags=re.IGNORECASE | re.VERBOSE)
+    return cleaned
 
 def check_and_print_tags(text):
     """
     Finds and returns a list of specific tags present in the text.
     """
-    pattern = r'<SOURCE_TEXT>.*?</SOURCE_TEXT>|<INITIAL_TRANSLATION>.*?</INITIAL_TRANSLATION>|<EXPERT_SUGGESTIONS>.*?</EXPERT_SUGGESTIONS>|<TRANSLATION>.*?</TRANSLATION>|<SOURCE>|</SOURCE>|<SYNOPSIS>.*?</SYNOPSIS>|<think>.*?</think>|<myheader>.*?</myheader>|<myfooter>.*?</myfooter>```xml.*?```'
+    pattern = r'<SOURCE_TEXT>.*?</SOURCE_TEXT>|<INITIAL_TRANSLATION>.*?</INITIAL_TRANSLATION>|<EXPERT_SUGGESTIONS>.*?</EXPERT_SUGGESTIONS>|<TRANSLATION>.*?</TRANSLATION>|<SOURCE>|</SOURCE>|<SYNOPSIS>.*?</SYNOPSIS>|<think>.*?</think>|<myheader>.*?</myheader>|<myfooter>.*?</myfooter>|```xml.*?```'
     matches = re.findall(pattern, text)
     return matches
 
@@ -181,7 +183,7 @@ async def one_chunk_referat(
     )
     return remove_tags(translation)
 
-async def one_chunk_editor(target_lang: str,  source_text: str, style: str,  lang: str , country: str , role: str
+async def one_chunk_editor(target_lang: str, source_text: str, style: str, lang: str, country: str, role: str
 ) -> str:
     """
     Edits and proofreads the text.
@@ -269,7 +271,7 @@ async def one_chunk_improve_translation(
         translation_1=translation_1,
         reflection=reflection
     )
-    return translation
+    return remove_tags(translation)
 
 def num_tokens_in_string(
         input_str: str, encoding_name: str = "cl100k_base"
@@ -322,7 +324,7 @@ async def translate(
     # Simplified check, original logic raise error if oversized but here we trust the chunker upstream for now or just process it.
     # The original code raised ValueError("Chunks is oversized!!!") if > max_tokens. 
     # We will keep that behavior but perhaps it should be handled more gracefully in production.
-    if num_tokens_in_text < max_tokens:
+    if num_tokens_in_text <= max_tokens:
         if config.debug:
             print("DEBUG: Translating text as a single chunk")
 
@@ -423,7 +425,7 @@ async def process_image_request(image_data: str, source_lang: str, target_lang: 
             if config.debug:
                 print(f"DEBUG: Image prompt: {prompt}")
             response = await llm_service.clientImages.images.generate(
-                model=config.model3,
+                model=config.model_images,
                 prompt=prompt,
                 n=1,
                 size="1024x1024",
@@ -453,7 +455,7 @@ async def process_image_request(image_data: str, source_lang: str, target_lang: 
                 n=1,
                 size="1024x1024",
                 # response_format="b64_json", # Removed
-                model=config.model3
+                model=config.model_images
             )
         
         # Determine if response has b64_json (unlikely per error) or url
