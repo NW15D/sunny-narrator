@@ -109,7 +109,7 @@ class LLMService:
 
         comp_kwargs = {
             "model": model,
-            "temperature": temp,
+            "temperature": kwargs.get("temperature", temp),
             "max_tokens": max_tokens,
             "messages": messages
         }
@@ -144,6 +144,7 @@ async def one_chunk_initial_translation(
 ) -> str:
     """
     Translate the entire text as one chunk using an LLM.
+    Includes length control: if the result differs by more than 15%, retries with higher temperature.
     """
     if config.example:
         outline_text = f"{outline_text}.{config.example}"
@@ -154,19 +155,44 @@ async def one_chunk_initial_translation(
         if config.debug:
             print(f"DEBUG: Selected Hunyuan prompt")
 
-    
-    translation = await llm_service.get_completion(
-        role=role, 
-        prompt_category="initial_translation", 
-        prompt_key=prompt_key,
-        source_lang=source_lang,
-        target_lang=target_lang,
-        outline_text=outline_text,
-        vocab_dict=vocab_dict,
-        source_text=source_text
-    )
+    current_temp = config.temp_translate
+    source_len = len(source_text)
+    f_translation = ""
 
-    return remove_tags(translation)
+    for attempt in range(3):
+        translation = await llm_service.get_completion(
+            role=role, 
+            prompt_category="initial_translation", 
+            prompt_key=prompt_key,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            outline_text=outline_text,
+            vocab_dict=vocab_dict,
+            source_text=source_text,
+            temperature=current_temp
+        )
+        
+        f_translation = remove_tags(translation)
+        
+        #if source_len == 0:
+        #    return f_translation
+            
+        target_len = len(f_translation)
+        diff_percent = abs(target_len - source_len) / source_len
+        
+        if diff_percent <= 0.22:
+            if config.debug and attempt > 0:
+                print(f"DEBUG: Translation1 successful on attempt {attempt + 1} with temp {current_temp:.2f}")
+            return f_translation
+        
+        if config.debug:
+            print(f"DEBUG: Translation1 attempt {attempt + 1} failed length check: diff {diff_percent:.2%}. Source: {source_len}, Target: {target_len}. Retrying with temp {current_temp + 0.05:.2f}")
+        
+        current_temp += 0.05
+
+    if config.debug:
+        print(f"DEBUG: All translation1 attempts failed length check. Returning last attempt.")
+    return f_translation
 
 async def one_chunk_referat(
          target_lang: str, final_translation: str,  role: str
@@ -337,7 +363,7 @@ async def translate(
         translation_1_time = time.time() - start_time
         if config.debug:
             print(f"DEBUG: Translation 1 time: {translation_1_time:.2f}s, tokens: {num_tokens_in_string(translation_1)}, translation: {translation_1}")
-            print(f"DEBUG: Style: {style}, Outline: {outline_text}, role: {role}")
+            #print(f"DEBUG: Style: {style}, Outline: {outline_text}, role: {role}")
 
         # Step 2: Outline (Moved to Step 2 to allow fast yielding for async chain)
         start_time = time.time()
@@ -345,8 +371,8 @@ async def translate(
         outline_text = await one_chunk_referat(target_lang, translation_1, role)
         outline_time = time.time() - start_time
         if config.debug:
-            print(f"DEBUG: Outline time: {outline_time:.2f}s, tokens: {num_tokens_in_string(outline_text)}")
-            print(f"DEBUG: Outline: {outline_text}")
+            print(f"DEBUG: Outline time: {outline_time:.2f}s, tokens: {num_tokens_in_string(outline_text)}, outline: {outline_text} role: {role}")
+          
         
         # YIELD OUTLINE EARLY
         yield ("outline", outline_text)
