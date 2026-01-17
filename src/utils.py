@@ -3,7 +3,6 @@ import openai
 import tiktoken
 import re
 import json
-from icecream import ic
 import time
 import io
 import base64
@@ -15,8 +14,6 @@ config = Config()
 
 # Discrete chunks to translate one chunk at a time
 MAX_TOKENS_PER_CHUNK = config.max_len_chunk * 4  # if text is more than this many tokens, we'll break it up into bytes x2 to tokens
-outline_text = ""
-big: bool = False
 
 # Language mapping for models requiring ISO codes (like TranslateGemma)
 LANG_MAP = {
@@ -55,8 +52,8 @@ class LLMService:
             timeout=config.timeout_images
         )
 
-    async def get_completion(self, use_big=True, prompt_category=None, prompt_key="user", json_mode=False, max_tokens=MAX_TOKENS_PER_CHUNK, **kwargs):
-        if use_big:
+    async def get_completion(self, role="Translate", prompt_category=None, prompt_key="user", json_mode=False, max_tokens=MAX_TOKENS_PER_CHUNK, **kwargs):
+        if role == "Translate":
             client, model, temp, sys_off, nothink, label = (
                 self.clientTranslate, config.model_translate, config.temp_translate, config.sys_not_promt_translate, config.nothink_translate, "Translate"
             )
@@ -103,7 +100,7 @@ class LLMService:
             messages.append({"role": "user", "content": user_message})
 
         if config.debug:
-            ic(num_tokens_in_string(user_message), label)
+            print(f"DEBUG: Input length: {num_tokens_in_string(user_message)} tokens, Action: {label}")
 
         comp_kwargs = {
             "model": model,
@@ -136,7 +133,7 @@ def check_and_print_tags(text):
     return matches
 
 async def one_chunk_initial_translation(
-        source_lang: str, target_lang: str, source_text: str, style: str, outline_text: str, vocab_dict, big: bool
+        source_lang: str, target_lang: str, source_text: str, style: str, outline_text: str, vocab_dict, role: str
 ) -> str:
     """
     Translate the entire text as one chunk using an LLM.
@@ -145,13 +142,13 @@ async def one_chunk_initial_translation(
         outline_text = f"{outline_text}.{config.example}"
 
     prompt_key = "user_xml" if style == 'xml' else "user_text"
-    if big and config.model_translate == "Hunyuan":
+    if role == "Translate" and config.model_translate == "Hunyuan":
         prompt_key = "user_hunyuan"
-    elif not big and config.model_proofread == "Hunyuan":
+    elif role == "Proofread" and config.model_proofread == "Hunyuan":
         prompt_key = "user_hunyuan"
     
     translation = await llm_service.get_completion(
-        use_big=big, 
+        role=role, 
         prompt_category="initial_translation", 
         prompt_key=prompt_key,
         source_lang=source_lang,
@@ -164,20 +161,20 @@ async def one_chunk_initial_translation(
     return remove_tags(translation)
 
 async def one_chunk_referat(
-         target_lang: str, final_translation: str,  big: bool
+         target_lang: str, final_translation: str,  role: str
 ) -> str:
     """
     Make the synopsis (referat) for chunk using an LLM.
     """
     translation = await llm_service.get_completion(
-        use_big=big,
+        role=role,
         prompt_category="synopsis",
         target_lang=target_lang,
         final_translation=final_translation
     )
     return remove_tags(translation)
 
-async def one_chunk_editor(target_lang: str,  source_text: str, style: str,  lang: str , country: str , big: bool
+async def one_chunk_editor(target_lang: str,  source_text: str, style: str,  lang: str , country: str , role: str
 ) -> str:
     """
     Edits and proofreads the text.
@@ -185,7 +182,7 @@ async def one_chunk_editor(target_lang: str,  source_text: str, style: str,  lan
     prompt_key = "user_xml" if style == 'xml' else "user_text"
     
     translation = await llm_service.get_completion(
-        use_big=big,
+        role=role,
         prompt_category="editor",
         prompt_key=prompt_key,
         lang=lang,
@@ -199,13 +196,13 @@ async def vocabulary(
         target_lang: str,
         source_text: str,
         country: str,
-        big: bool,
+        role: str,
 ) -> str:
     """
     Use an LLM to generate vocabulary for proper nouns.
     """
     translation = await llm_service.get_completion(
-        use_big=big,
+        role=role,
         prompt_category="vocabulary",
         source_lang=source_lang,
         target_lang=target_lang,
@@ -213,7 +210,7 @@ async def vocabulary(
         source_text=source_text
     )
     if config.debug:
-        ic(translation)
+        print(f"DEBUG: Vocabulary: {translation}")
     return translation
 
 async def one_chunk_reflect_on_translation(
@@ -223,13 +220,13 @@ async def one_chunk_reflect_on_translation(
         translation_1: str,
         country: str ,
         vocab_dict,
-        big: bool,
+        role: str,
 ) -> str:
     """
     Reflect on the initial translation and provide suggestions for improvement.
     """
     translation = await llm_service.get_completion(
-        use_big=big,
+        role=role,
         prompt_category="reflect_on_translation",
         source_lang=source_lang,
         target_lang=target_lang,
@@ -247,7 +244,7 @@ async def one_chunk_improve_translation(
         translation_1: str,
         reflection: str,
         style: str,
-        big: bool,
+        role: str,
 ) -> str:
     """
     Use the reflection to improve the translation.
@@ -255,7 +252,7 @@ async def one_chunk_improve_translation(
     prompt_key = "user_xml" if style == 'xml' else "user_text"
     
     translation = await llm_service.get_completion(
-        use_big=big,
+        role=role,
         prompt_category="improve_translation",
         prompt_key=prompt_key,
         source_lang=source_lang,
@@ -312,78 +309,81 @@ async def translate(
     num_tokens_in_text = num_tokens_in_string(source_text)
 
     if config.debug:
-        ic(num_tokens_in_text)
+        print(f"DEBUG: num_tokens_in_text: {num_tokens_in_text}")
 
     # Simplified check, original logic raise error if oversized but here we trust the chunker upstream for now or just process it.
     # The original code raised ValueError("Chunks is oversized!!!") if > max_tokens. 
     # We will keep that behavior but perhaps it should be handled more gracefully in production.
     if num_tokens_in_text < max_tokens:
         if config.debug:
-            ic("Translating text as a single chunk")
+            print("DEBUG: Translating text as a single chunk")
 
         # Step 1: Initial translation
         start_time = time.time()
-        use_big = True
+        role = "Translate"
         translation_1 = await one_chunk_initial_translation(
-            source_lang, target_lang, source_text, style, outline_text, vocab_dict, use_big
+            source_lang, target_lang, source_text, style, outline_text, vocab_dict, role
         )
         translation_1_time = time.time() - start_time
         if config.debug:
-            ic(source_text)
-            ic(translation_1_time, (num_tokens_in_string(translation_1)), style, outline_text, translation_1)
+            print(f"DEBUG: Translation 1 time: {translation_1_time:.2f}s, tokens: {num_tokens_in_string(translation_1)}")
+            print(f"DEBUG: Style: {style}, Outline: {outline_text}")
 
         # Step 2: Outline (Moved to Step 2 to allow fast yielding for async chain)
         start_time = time.time()
-        use_big = False
-        outline_text = await one_chunk_referat(target_lang, translation_1, use_big)
+        role = "Proofread"
+        outline_text = await one_chunk_referat(target_lang, translation_1, role)
         outline_time = time.time() - start_time
         if config.debug:
-            ic(outline_time, num_tokens_in_string(outline_text), outline_text)
+            print(f"DEBUG: Outline time: {outline_time:.2f}s, tokens: {num_tokens_in_string(outline_text)}")
+            print(f"DEBUG: Outline: {outline_text}")
         
         # YIELD OUTLINE EARLY
         yield ("outline", outline_text)
 
         if config.fast_trans:
             if config.debug:
-               ic("Fast translation mode: Skipping Reflection and Improvement steps")
+               print("DEBUG: Fast translation mode: Skipping Reflection and Improvement steps")
             
             # Step 5: Final translation (using translation_1)
             start_time = time.time()
-            use_big = False
+            role = "Proofread"
             # Note: vocab dict mapping was key-based in app.py logic, here passed into translate
-            final_translation = await one_chunk_editor(target_lang, translation_1, style, target_lang, country, use_big)
+            final_translation = await one_chunk_editor(target_lang, translation_1, style, target_lang, country, role)
             final_translation_time = time.time() - start_time
             if config.debug:
-                 ic(final_translation_time, num_tokens_in_string(final_translation), final_translation)
+                 print(f"DEBUG: Final translation time: {final_translation_time:.2f}s, tokens: {num_tokens_in_string(final_translation)}")
 
         else:
             # Step 3: Reflection on the initial translation
             start_time = time.time()
-            use_big = True
+            role = "Proofread"
             reflection = await one_chunk_reflect_on_translation(
-                source_lang, target_lang, source_text, translation_1, country, vocab_dict, use_big
+                source_lang, target_lang, source_text, translation_1, country, vocab_dict, role
             )
             reflection_time = time.time() - start_time
             if config.debug:
-                ic(reflection_time, num_tokens_in_string(reflection), style, reflection)
+                print(f"DEBUG: Reflection time: {reflection_time:.2f}s, tokens: {num_tokens_in_string(reflection)}")
+                print(f"DEBUG: Style: {style}")
 
             # Step 4: Improved translation
             start_time = time.time()
-            use_big = True
+            role = "Proofread"
             translation_2 = await one_chunk_improve_translation(
-                source_lang, target_lang, source_text, translation_1, reflection, style, use_big
+                source_lang, target_lang, source_text, translation_1, reflection, style, role
             )
             translation_2_time = time.time() - start_time
             if config.debug:
-                ic(translation_2_time, num_tokens_in_string(translation_2), style, translation_2)
+                print(f"DEBUG: Translation 2 time: {translation_2_time:.2f}s, tokens: {num_tokens_in_string(translation_2)}")
+                print(f"DEBUG: Style: {style}")
 
             # Step 5: Final translation
             start_time = time.time()
-            use_big = False
-            final_translation = await one_chunk_editor(target_lang, translation_2, style, target_lang, country, use_big)
+            role = "Proofread"
+            final_translation = await one_chunk_editor(target_lang, translation_2, style, target_lang, country, role)
             final_translation_time = time.time() - start_time
             if config.debug:
-                ic(final_translation_time, num_tokens_in_string(final_translation), final_translation)
+                print(f"DEBUG: Final translation time: {final_translation_time:.2f}s, tokens: {num_tokens_in_string(final_translation)}")
 
 
         yield ("final", final_translation)
@@ -413,7 +413,7 @@ async def process_image_request(image_data: str, source_lang: str, target_lang: 
     try:
         if metadata:
             if config.debug:
-                ic(prompt)
+                print(f"DEBUG: Image prompt: {prompt}")
             response = await llm_service.clientImages.images.generate(
                 model=config.model3,
                 prompt=prompt,
@@ -439,7 +439,7 @@ async def process_image_request(image_data: str, source_lang: str, target_lang: 
             img.save(buffer, format="PNG")
             buffer.seek(0)
             if config.debug:
-                ic(prompt)
+                print(f"DEBUG: Image variation prompt: {prompt}")
             response = await llm_service.clientImages.images.create_variation(
                 image=buffer,
                 n=1,
@@ -457,19 +457,19 @@ async def process_image_request(image_data: str, source_lang: str, target_lang: 
              img_bytes = base64.b64decode(generated_data.b64_json)
         elif hasattr(generated_data, 'url') and generated_data.url:
              if config.debug:
-                 ic(f"Downloading image from URL: {generated_data.url}")
+                 print(f"DEBUG: Downloading image from URL: {generated_data.url}")
              async with httpx.AsyncClient() as client:
                  r = await client.get(generated_data.url)
                  if r.status_code == 200:
                      img_bytes = r.content
                  else:
                      if config.debug:
-                        ic(f"Failed to download image from URL. Status: {r.status_code}")
+                        print(f"DEBUG: Failed to download image from URL. Status: {r.status_code}")
                      return None
         
         if not img_bytes:
              if config.debug:
-                ic("No image data found in response")
+                print("DEBUG: No image data found in response")
              return None
 
         img = Image.open(io.BytesIO(img_bytes))
@@ -480,12 +480,7 @@ async def process_image_request(image_data: str, source_lang: str, target_lang: 
 
     except Exception as e:
         if config.debug:
-            ic(f"Error processing image request: {e}")
-        return None
-
-    except Exception as e:
-        if config.debug:
-            ic(f"Error processing image request: {e}")
+            print(f"DEBUG: Error processing image request: {e}")
         return None
 
 async def translate_metadata(metadata: dict, source_lang: str, target_lang: str, country: str) -> dict:
@@ -494,7 +489,7 @@ async def translate_metadata(metadata: dict, source_lang: str, target_lang: str,
     """
     try:
         response_text = await llm_service.get_completion(
-            use_big=False, # Use secondary for metadata usually
+            role="Proofread", # Use secondary for metadata usually
             prompt_category="metadata_translation",
             json_mode=True,
             source_lang=source_lang,
@@ -510,5 +505,5 @@ async def translate_metadata(metadata: dict, source_lang: str, target_lang: str,
         return json.loads(clean_json)
     except Exception as e:
         if config.debug:
-            ic(f"Error translating metadata: {e}")
+            print(f"DEBUG: Error translating metadata: {e}")
         return metadata

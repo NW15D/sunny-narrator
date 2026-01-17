@@ -1,7 +1,7 @@
 import ebooklib
 from ebooklib import epub
 from bs4 import BeautifulSoup
-from icecream import ic
+
 import src.fb2_handler as fb2
 from src.config import Config
 
@@ -210,7 +210,7 @@ def parse_epub(file_path):
     body = f"<body>\n{body_content}\n</body>"
     
     if config.debug:
-        ic(len(body))
+        print(len(body))
     return body, header, footer
 def prepare_chunks(body, max_len_chunk):
     """

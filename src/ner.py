@@ -4,7 +4,7 @@ import spacy.cli
 import torch
 import numpy as np
 import cupy as cp
-from icecream import ic
+
 from src.config import Config
 
 # Initialize config
@@ -16,22 +16,22 @@ def load_spacy_model(model_name):
     """
     try:
         if config.debug:
-            ic(f"Loading spaCy model: {model_name}")
+            print(f"Loading spaCy model: {model_name}")
         return spacy.load(model_name)
     except OSError:
         if config.debug:
-            ic(f"Model {model_name} not found. Downloading...")
+            print(f"Model {model_name} not found. Downloading...")
         spacy.cli.download(model_name)
         if config.debug:
-            ic(f"Model {model_name} downloaded. Loading...")
+            print(f"Model {model_name} downloaded. Loading...")
         return spacy.load(model_name)
 
 def make_vocab(text, stop_words=None):
     if config.debug:
-        ic("Starting Named Entity Recognition")
+        print("Starting Named Entity Recognition")
     if not text:
         if config.debug:
-            ic("No text to process.")
+            print("No text to process.")
         return
 
     # Define default stop words or use user provided
@@ -48,15 +48,15 @@ def make_vocab(text, stop_words=None):
         # Ensure PyTorch is using CUDA
         if not torch.cuda.is_available():
             if config.debug:
-                ic("CUDA is not available. Falling back to CPU.")
+                print("CUDA is not available. Falling back to CPU.")
         else:
             if config.debug:
-                ic("CUDA is available. Using GPU.")
+                print("CUDA is available. Using GPU.")
 
         # Prefer GPU usage in spaCy
         gpu = spacy.prefer_gpu()
         if config.debug:
-            ic(gpu)
+            print(gpu)
         nlp = load_spacy_model(config.nermodel)
         nlp.max_length = 110000
 
@@ -74,11 +74,11 @@ def make_vocab(text, stop_words=None):
             ])
 
             if config.debug:
-                ic(f"Found entities: {len(ents)}")
+                print(f"Found entities: {len(ents)}")
 
     except Exception as e:
         if config.debug:
-            ic(f"Error loading spaCy model: {e}")
+            print(f"Error loading spaCy model: {e}")
         return
 
     # Count occurrences of each entity
@@ -87,13 +87,13 @@ def make_vocab(text, stop_words=None):
                    for (text, label), count in item_counts.items()]
 
     if config.debug:
-        ic(f"Unique entities before filtering by count: {len(unique_ents)}")
+        print(f"Unique entities before filtering by count: {len(unique_ents)}")
 
     # Filter out entities with less than 5 occurrences
     unique_ents = [ent for ent in unique_ents if ent[3] >= 5]
 
     if config.debug:
-        ic(f"Unique entities after filtering by count: {len(unique_ents)}")
+        print(f"Unique entities after filtering by count: {len(unique_ents)}")
 
     # Merge entities that contain substrings of other entities
     merged_ents = []
@@ -118,7 +118,7 @@ def make_vocab(text, stop_words=None):
             final_merged_ents.append(ent1)
 
     if config.debug:
-        ic(f"Unique entities after merging: {len(final_merged_ents)}")
+        print(f"Unique entities after merging: {len(final_merged_ents)}")
 
     # Find most common words with count > 10 and length > 5
     word_counts = Counter(
@@ -131,7 +131,7 @@ def make_vocab(text, stop_words=None):
     top_common_words = [word for word, count in sorted_common_words_with_counts]
 
     if config.debug:
-        ic(f"Top common words with counts: {sorted_common_words_with_counts}")
+        print(f"Top common words with counts: {sorted_common_words_with_counts}")
 
     # Normalize final_merged_ents
     seen_entities = set()
@@ -163,17 +163,17 @@ def make_vocab(text, stop_words=None):
     result_list = [f"{text} ({label})" for text, label in normalized_final_merged_ents] + unique_top_common_words
 
     if config.debug:
-        ic("Finished processing.")
+        print("Finished processing.")
     return '\n'.join(result_list) + '\n'
 
 
 def find_matching_words_with_cosine_similarity(text, vocab, lng, threshold=0.8, batch_size=1024):
     if config.debug:
-        ic("Starting cosine similarity matching")
+        print("Starting cosine similarity matching")
 
     if not text or not vocab:
         if config.debug:
-            ic("No text or vocabulary to process.")
+            print("No text or vocabulary to process.")
         return []
 
     try:
@@ -184,7 +184,7 @@ def find_matching_words_with_cosine_similarity(text, vocab, lng, threshold=0.8, 
         doc = nlp(text, disable=["ner", "parser", "tagger", "lemmatizer", "attribute_ruler"])
     except Exception as e:
         if config.debug:
-            ic(f"Error loading spaCy model: {e}")
+            print(f"Error loading spaCy model: {e}")
         return []
 
     orig_values = [entry[lng] for entry in vocab.values() if lng in entry]
@@ -205,7 +205,7 @@ def find_matching_words_with_cosine_similarity(text, vocab, lng, threshold=0.8, 
 
     if not vocab_vectors:
         if config.debug:
-            ic("No valid vectors in vocab.")
+            print("No valid vectors in vocab.")
         return []
 
     # numpy -> cupy
@@ -228,5 +228,5 @@ def find_matching_words_with_cosine_similarity(text, vocab, lng, threshold=0.8, 
             matched_words_set.add(valid_vocab_words[int(vi)])
 
     if config.debug:
-        ic(f"Found matching words: {matched_words_set}")
+        print(f"Found matching words: {matched_words_set}")
     return list(matched_words_set)
