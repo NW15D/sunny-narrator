@@ -139,6 +139,97 @@ def check_and_print_tags(text):
     matches = re.findall(pattern, text)
     return matches
 
+def split_text_smartly(text: str) -> tuple[str, str]:
+    """
+    Splits text roughly in half, trying to respect paragraph boundaries (</p>).
+    """
+    if not text:
+        return "", ""
+        
+    length = len(text)
+    mx = int((length // 2) * 1.1)
+    
+    # Try to find closing p tag
+    split_pos = text.rfind('</p>', 0, mx)
+    
+    if split_pos == -1:
+        # Fallback to simple middle split if no tag found
+        split_pos = mx if mx < length else length // 2
+    else:
+        split_pos += 4 # Include the </p>
+        
+    return text[:split_pos], text[split_pos:]
+
+async def process_with_retries_and_rechunking(
+    func, 
+    source_text: str, 
+    validation_func=None,
+    initial_temp: float = 0.1,
+    role: str = "Translate"
+) -> str:
+    """
+    Executes a generation function with retries on validation failure, 
+    and falls back to recursive rechunking if all retries fail.
+    
+    Args:
+        func: Async callable taking (text, temperature) -> result str
+        source_text: The input text
+        validation_func: Callable(source, target) -> bool
+        initial_temp: Starting temperature
+        role: Logging role
+    """
+    current_temp = initial_temp
+    
+    # 1. Attempt with retries
+    for attempt in range(3):
+        try:
+            result = await func(source_text, temperature=current_temp)
+            cleaned_result = remove_tags(result)
+            
+            if not validation_func:
+                return cleaned_result
+                
+            if validation_func(source_text, cleaned_result):
+                if config.debug and attempt > 0:
+                     print(f"DEBUG: {role} successful on attempt {attempt + 1} with temp {current_temp:.2f}")
+                return cleaned_result
+                
+            if config.debug:
+                source_len = len(source_text)
+                target_len = len(cleaned_result)
+                diff = abs(target_len - source_len) / source_len if source_len > 0 else 0
+                print(f"DEBUG: {role} attempt {attempt + 1} failed validation: diff {diff:.2%}. Retrying...")
+                
+            current_temp += 0.05
+            
+        except Exception as e:
+            if config.debug:
+                 print(f"DEBUG: {role} attempt {attempt + 1} raised error: {e}")
+            current_temp += 0.05
+
+    # 2. Rechunking Fallback
+    if len(source_text) > 500: # Only split if text is reasonably long
+        if config.debug:
+            print(f"DEBUG: {role} failed all retry attempts. Splitting text...")
+            
+        part1, part2 = split_text_smartly(source_text)
+        
+        # Recursively process parts
+        # We need validation logic for parts too
+        res1 = await process_with_retries_and_rechunking(
+            func, part1, validation_func, initial_temp, role
+        )
+        res2 = await process_with_retries_and_rechunking(
+            func, part2, validation_func, initial_temp, role
+        )
+        
+        return res1 + res2
+    else:
+        if config.debug:
+            print(f"DEBUG: {role} failed and text too short to split. Returning last result.")
+        return cleaned_result  # Return whatever we got last
+
+
 async def one_chunk_initial_translation(
         source_lang: str, target_lang: str, source_text: str, style: str, outline_text: str, vocab_dict, role: str
 ) -> str:
@@ -146,21 +237,22 @@ async def one_chunk_initial_translation(
     Translate the entire text as one chunk using an LLM.
     Includes length control: if the result differs by more than 15%, retries with higher temperature.
     """
+    def length_validator(source, target):
+        if not source: return True
+        s_len = len(source)
+        t_len = len(target)
+        diff = abs(t_len - s_len) / s_len
+        return diff <= 0.22
+
     if config.example:
         outline_text = f"{outline_text}.{config.example}"
 
     prompt_key = "user_xml" if style == 'xml' else "user_text"
     if role == "Translate" and config.model_translate == "Hunyuan":
         prompt_key = "user_hunyuan"
-        if config.debug:
-            print(f"DEBUG: Selected Hunyuan prompt")
-
-    current_temp = config.temp_translate
-    source_len = len(source_text)
-    f_translation = ""
-
-    for attempt in range(3):
-        translation = await llm_service.get_completion(
+        
+    async def generation_func(text, temperature):
+        return await llm_service.get_completion(
             role=role, 
             prompt_category="initial_translation", 
             prompt_key=prompt_key,
@@ -168,31 +260,17 @@ async def one_chunk_initial_translation(
             target_lang=target_lang,
             outline_text=outline_text,
             vocab_dict=vocab_dict,
-            source_text=source_text,
-            temperature=current_temp
+            source_text=text,
+            temperature=temperature
         )
-        
-        f_translation = remove_tags(translation)
-        
-        #if source_len == 0:
-        #    return f_translation
-            
-        target_len = len(f_translation)
-        diff_percent = abs(target_len - source_len) / source_len
-        
-        if diff_percent <= 0.22:
-            if config.debug and attempt > 0:
-                print(f"DEBUG: Translation1 successful on attempt {attempt + 1} with temp {current_temp:.2f}")
-            return f_translation
-        
-        if config.debug:
-            print(f"DEBUG: Translation1 attempt {attempt + 1} failed length check: diff {diff_percent:.2%}. Source: {source_len}, Target: {target_len}. Retrying with temp {current_temp + 0.05:.2f}")
-        
-        current_temp += 0.05
 
-    if config.debug:
-        print(f"DEBUG: All translation1 attempts failed length check. Returning last attempt.")
-    return f_translation
+    return await process_with_retries_and_rechunking(
+        generation_func,
+        source_text,
+        length_validator,
+        config.temp_translate,
+        role="Initial Translation"
+    )
 
 async def one_chunk_referat(
          target_lang: str, final_translation: str,  role: str
@@ -209,22 +287,39 @@ async def one_chunk_referat(
     )
     return remove_tags(translation)
 
-async def one_chunk_editor(target_lang: str, source_text: str, style: str, lang: str, country: str, role: str
+async def one_chunk_editor(source_lang: str,  source_text: str, style: str, lang: str, country: str, role: str
 ) -> str:
     """
     Edits and proofreads the text.
     """
     prompt_key = "user_xml" if style == 'xml' else "user_text"
     
-    translation = await llm_service.get_completion(
-        role=role,
-        prompt_category="editor",
-        prompt_key=prompt_key,
-        lang=lang,
-        country=country,
-        source_text=source_text
+    # Same validator as translation 
+    def length_validator(source, target):
+        if not source: return True
+        s_len = len(source)
+        t_len = len(target)
+        diff = abs(t_len - s_len) / s_len
+        return diff <= 0.25 # Slightly looser for editor? Or same 0.22. reusing 0.25 to be safe logic from implementation plan mention.
+
+    async def generation_func(text, temperature):
+         return await llm_service.get_completion(
+            role=role,
+            prompt_category="editor",
+            prompt_key=prompt_key,
+            lang=lang,
+            country=country,
+            source_text=text,
+            temperature=temperature # Pass temp if editor supports it, usually yes
+        )
+
+    return await process_with_retries_and_rechunking(
+        generation_func,
+        source_text,
+        length_validator,
+        config.temp_proofread, # Assuming proofread temp is appropriate base
+        role="Editor"
     )
-    return remove_tags(translation)
 
 async def vocabulary(
         source_lang: str,
@@ -372,8 +467,7 @@ async def translate(
         outline_time = time.time() - start_time
         if config.debug:
             print(f"DEBUG: Outline time: {outline_time:.2f}s, tokens: {num_tokens_in_string(outline_text)}, outline: {outline_text} role: {role}")
-          
-        
+                
         # YIELD OUTLINE EARLY
         yield ("outline", outline_text)
 
@@ -385,10 +479,10 @@ async def translate(
             start_time = time.time()
             role = "Proofread"
             # Note: vocab dict mapping was key-based in app.py logic, here passed into translate
-            final_translation = await one_chunk_editor(target_lang, translation_1, style, target_lang, country, role)
+            final_translation = await one_chunk_editor(source_lang, translation_1, style, target_lang, country, role)
             final_translation_time = time.time() - start_time
-            if config.debug:
-                 print(f"DEBUG: Final translation time: {final_translation_time:.2f}s, tokens: {num_tokens_in_string(final_translation)}")
+            #if config.debug:
+            #     print(f"DEBUG: Final translation time: {final_translation_time:.2f}s, tokens: {num_tokens_in_string(final_translation)}")
 
         else:
             # Step 3: Reflection on the initial translation
