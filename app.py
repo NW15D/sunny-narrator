@@ -87,69 +87,15 @@ async def translatexml(source_text, source_lang, target_lang, outline_text, coun
                 current_translation = val
         
         translated_chunk = current_translation
-        outline = current_outline
-
-        percentage = ((len(translated_chunk) - len(source_text)) / len(source_text)) * 100
-
-        if config.debug:
-            print("DEBUG:", percentage, "% percent")
         
-        if abs(percentage) == 100:
-            # Retry logic
-            async for kind, val in ta.translate(
-                source_lang, target_lang, source_text, style, outline_text,
-                country, vocab_dict):
-                if kind == 'outline':
-                    # We yield new outline if retry happens
-                    current_outline = val
-                    yield kind, val 
-                elif kind == 'final':
-                    current_translation = val
-            translated_chunk = current_translation
-            outline = current_outline
-                
-        if (abs(percentage) > 9 and (len(source_text) > 1000)) or (len(translated_chunk) == len(source_text)):
-            
-            if config.debug:
-                print("DEBUG:", "Rechunking !!! ", percentage, "% percent")
-            mx = int((len(source_text) // 2) * 1.1)
-            split_pos = source_text.rfind('</p>', 0, mx)
-            if split_pos == -1:
-                split_pos = mx
-            else:
-                split_pos += 4
-            splitchunks = source_text[:split_pos], source_text[split_pos:]
-            translated_chunk = ""
-            outline = "" # We aggregate outline from chunks? Or just ignore? 
-                         # Usually outline is a summary of the whole. 
-                         # For rechunking, maybe concatenation is okay-ish or we just keep the previous one.
-                         # Let's accumulate for correctness of return type.
-
-            rechunk_stats['runs'] += 1
-            for chunk in splitchunks:
-                # Sub-chunks
-                async for kind, val in ta.translate(
-                    source_lang, target_lang, chunk, style, outline_text,
-                    country, vocab_dict):
-                    
-                    if kind == 'final':
-                        translated_chunk += val
-                    elif kind == 'outline':
-                        outline += val # Append outlines? Rough approximation.
-
-            percentage = ((len(translated_chunk) - len(source_text)) / len(source_text)) * 100
-            if abs(percentage) < 9:
-                rechunk_stats['fixed'] += 1
-                if config.debug:
-                    print("DEBUG:", "Fixed after rechunk, mx", mx, percentage, "% percent")
-            else:
-                rechunk_stats['not_fixed'] += 1
-                rechunk_stats['failures'].append(percentage)
-                if config.debug:
-                    print("DEBUG:", "Warning: Large percentage difference after rechunking", percentage, "% percent chunk used")
-
         if translated_chunk is None:
-            raise ValueError(f"Translation failed for chunk: {source_text}")
+             raise ValueError(f"Translation failed for chunk (None result)")
+
+        # Optional: We can still log percentage if we want to monitor, but logic is internal now
+        percentage = ((len(translated_chunk) - len(source_text)) / len(source_text)) * 100
+        if config.debug:
+            print(f"DEBUG: Final chunk diff: {percentage:.2f}%")
+
             
     except Exception as e:
         raise ValueError(f"Error during translation: {e}")
