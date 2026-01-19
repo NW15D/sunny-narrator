@@ -8,9 +8,9 @@ pydantic>=2.0.0
 spacy
 beautifulsoup4
 scikit-learn
-pytorch
+torch
 lxml
-cupy
+cupy-cuda12x
 more-itertools
 joblib
 thinc
