@@ -80,6 +80,7 @@ class Config:
         self.concurrent_limit = int(os.getenv('CONCURRENT_LIMIT', 1))
         self.short = os.getenv('SHORT')
         self.max_len_chunk = int(os.getenv('MAX_LEN_CHUNK', 8192))
+        self.length_check_threshold = int(os.getenv('LENGTH_CHECK_THRESHOLD', 20))
         
         # File defaulted to books/Freedom.fb2 (stripped quotes)
         self.myfile = os.getenv('FILE', 'books/Cargo.fb2')
