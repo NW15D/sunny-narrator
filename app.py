@@ -206,6 +206,61 @@ async def main():
         # actually we can just handle index 0 separately, but a dummy event -1 is harder with list.
         # We'll just handle logic inside task.
 
+        total_source_len = 0
+        total_target_len = 0
+
+        async def process_chunk_recursive(chunk, s_idx, c_idx, g_id, vocab_dict_key, current_context, depth=0):
+            # Base case or normal translation
+            
+            final_content = None
+            new_outline_val = ""
+            
+            # Consume generator
+            async for kind, val in translatexml(
+                chunk, config.source_lang, config.target_lang, current_context,
+                config.country, vocab_dict_map.get(vocab_dict_key, [])):
+                
+                if kind == 'outline':
+                    new_outline_val = val
+                elif kind == 'final':
+                    final_content = val
+            
+            if final_content is None:
+                 return None, new_outline_val
+
+            # Length Check
+            cleaned_source = xc.rem_tags(chunk)
+            source_len = len(chunk)
+            target_len = len(final_content) # Use final content length
+            
+            percent_diff = 0
+            if source_len > 0:
+                percent_diff = abs(target_len - source_len) / source_len * 100
+            
+            if config.debug:
+                 print(f"DEBUG: Chunk {g_id} (depth {depth}): Source {source_len}, Target {target_len}, Ratio {percent_diff:.2f}%")
+
+            # Check threshold
+            if percent_diff > config.length_check_threshold and source_len > 100 and depth < 3:
+                if config.debug:
+                    print(f"DEBUG: Chunk {g_id} exceeded threshold {config.length_check_threshold}%. Splitting...")
+                
+                # Split logic using shared ta.split_text_smartly
+                part1, part2 = ta.split_text_smartly(chunk)
+                
+                # Recursive calls with SAME outline
+                res1_content, res1_outline = await process_chunk_recursive(part1, s_idx, c_idx, g_id, vocab_dict_key, current_context, depth + 1)
+                res2_content, res2_outline = await process_chunk_recursive(part2, s_idx, c_idx, g_id, vocab_dict_key, current_context, depth + 1)
+                
+                # Combine
+                combined_content = (res1_content or "") + (res2_content or "")
+                combined_outline = (res1_outline or "") + " " + (res2_outline or "")
+                
+                return combined_content, combined_outline
+            
+            return final_content, new_outline_val
+
+
         async def process_chunk_task(item):
             chunk = item['chunk']
             s_idx = item['section_idx']
@@ -224,8 +279,6 @@ async def main():
                 found_strings = []
                 if config.ner_opt and ner and vocab:
                     found_strings = ner.find_matching_words_with_cosine_similarity(chunk, vocab, config.source_lang)
-                    # if config.debug:
-                    #     print("DEBUG:", "found_strings: ", found_strings)
 
                 key = (s_idx, c_idx)
                 if key not in vocab_dict_map:
@@ -245,34 +298,21 @@ async def main():
                 # Get current outline (context)
                 current_context = shared_outline['text']
                 
-                final_content = None
-                new_outline_val = ""
-
-                # Consume generator
-                async for kind, val in translatexml(
-                    chunk, config.source_lang, config.target_lang, current_context,
-                    config.country, vocab_dict_map[key]):
-                    
-                    if kind == 'outline':
-                        new_outline_val = val
-                        # Update shared outline
-                        async with context_lock:
-                            shared_outline['text'] = new_outline_val
-                        
-                        # Trigger event for next chunk
-                        outline_events[g_id].set()
-                        
-                    elif kind == 'final':
-                        final_content = val
+                # Call recursive processor
+                final_content, new_outline_val = await process_chunk_recursive(chunk, s_idx, c_idx, g_id, key, current_context)
                 
-                # Fallback: ensure event is set if not already (e.g. if generator finished without outline)
-                if not outline_events[g_id].is_set():
-                    outline_events[g_id].set()
-
+                # Update shared outline (only once for the top-level task)
+                async with context_lock:
+                    shared_outline['text'] = new_outline_val
+                    
+                # Trigger event for next chunk
+                outline_events[g_id].set()
+                
                 return {
                     'global_id': g_id,
                     'content': final_content,
-                    'synopsis': new_outline_val
+                    'synopsis': new_outline_val,
+                    'source_len': len(chunk)
                 }
 
         # Create tasks
@@ -284,6 +324,11 @@ async def main():
             g_id = res['global_id']
             results[g_id] = res['content']
             
+            # Stats accumulation
+            if res['content']:
+                total_source_len += res['source_len']
+                total_target_len += len(res['content'])
+
             # Write available consecutive chunks
             while next_to_write in results:
                 content_to_write = results[next_to_write]
@@ -376,6 +421,19 @@ async def main():
 
         write_to_file(xml_str, output_file)
         #write_to_file(synopsis, synopsis_file)
+        
+        # Global Statistics Report
+        print("\n--- Translation Statistics ---")
+        print(f"Total Source Length: {total_source_len}")
+        print(f"Total Target Length: {total_target_len}")
+        if total_source_len > 0:
+            global_diff = ((total_target_len - total_source_len) / total_source_len) * 100
+            print(f"Global Length Difference: {global_diff:.2f}%")
+        else:
+            print("Global Length Difference: N/A (Empty Source)")
+        
+        # Quality Metrics (Placeholder for future metrics)
+        print("----------------------------\n")
 
         # ic rechunking statistics
         if rechunk_stats['runs'] > 0: #and config.debug:
