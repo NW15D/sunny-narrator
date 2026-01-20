@@ -1,9 +1,59 @@
 import re
 from bs4 import BeautifulSoup
-
+from dataclasses import dataclass
+from typing import Dict
 from src.config import Config
 
 config = Config()
+
+TAG_RE = re.compile(
+    r"""
+    <\?xml[^>]*\?>            |  # XML declaration
+    <!--.*?-->                |  # comments
+    <![CDATA\[.*?\]\]>        |  # CDATA
+    </[^>]+?>                 |  # closing tags
+    <[^/>][^>]*?>             |  # opening tags
+    <[^>]+?/>                    # self-closing tags
+    """,
+    re.VERBOSE | re.DOTALL,
+)
+
+@dataclass
+class MaskedXML:
+    text: str
+    tag_map: Dict[str, str]
+
+
+def mask_xml(xml: str) -> MaskedXML:
+    tag_map: Dict[str, str] = {}
+    counter = 0
+
+    def replacer(match: re.Match) -> str:
+        nonlocal counter
+        counter += 1
+        marker = f"[[T{counter}]]"
+        tag_map[marker] = match.group(0)
+        return marker
+
+    masked_text = TAG_RE.sub(replacer, xml)
+    return MaskedXML(masked_text, tag_map)
+
+def unmask_xml(masked_text: str, tag_map: Dict[str, str]) -> str:
+    restored = masked_text
+    for marker in sorted(tag_map, key=len, reverse=True):
+        restored = restored.replace(marker, tag_map[marker])
+    return restored
+
+def validate_mask_integrity(tag_map: Dict[str, str], translated_text: str) -> None:
+    missing = [m for m in tag_map if m not in translated_text]
+    if missing:
+        raise ValueError(f"Missing markers: {missing}")
+
+    extra = re.findall(r"\[\[T\d+\]\]", translated_text)
+    for m in extra:
+        if m not in tag_map:
+            raise ValueError(f"Unknown marker introduced: {m}")
+
 
 def parse_xml(file_path):
     """
