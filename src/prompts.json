@@ -5,18 +5,10 @@
         "user_text": "Translate ONLY the text inside the TTEXT tag from {source_lang} to {target_lang}.\nUse the SYNOPSIS for context.\nReturn the translated XML fragment without any explanations.\n<SOURCE>{source_text}</SOURCE>\n<SYNOPSIS>{outline_text}</SYNOPSIS>",
         "user_hunyuan": "Use the following terminology list strictly (do not translate these terms differently):\n{vocab_dict}\n\nThe following context is for understanding only and must NOT be translated:\n{outline_text}\n\nTASK:\nTranslate ONLY the text content inside the <source></source> tags from {source_lang} to {target_lang}.\n\nSTRICT XML PRESERVATION RULES:\n1. Preserve ALL XML tags exactly.\n2. Do NOT modify tag names, attributes, or structure.\n3. Return the COMPLETE <source> element with translated text inside.\n4. Output must be valid XML, identical in structure to the input.\n5. No explanations, no additional text.\n\n<source>{source_text}</source>"
     },
-    "synopsis": {
-        "system": "You are an expert linguist and proofreader, specializing in concise summarization.",
-        "user": "Create a synopsis in {target_lang} (max 80 words) for the given text.\nFor each character name, include gender in parentheses (he/she).\nReturn plain text only.\nText: {final_translation}\nSynopsis:"
-    },
     "editor": {
         "system": "You are a professional proofreader of fiction texts.\nYour task is to correct grammar, spelling, and style while preserving XML structure exactly.\nYou must not remove, rename, reorder, or add any XML tags or attributes.\nAny structural change to XML is a critical error.",
         "user_xml": "<SOURCE>{source_text}</SOURCE>\nTASK:\nCorrect ONLY the text nodes inside the <SOURCE> element.\nThe fragment is written in {lang} for readers from {country}.\nSTRICT RULES:\n1. Fix grammar, spelling, and stylistic issues ONLY.\n2. Do NOT translate the text into another language.\n3. Preserve the <SOURCE> tag and ALL inner XML tags and attributes exactly as they appear.\nNo explanations, no comments, no additional text.\n",
         "user_text": "Proofread the provided text.\nEnsure all XML tags are properly closed and only allowed tags (title, epigraph, annotation, image, p, empty-line, poem, cite, subtitle, table, section) remain.\nConvert disallowed tags to plain text.\nReturn the corrected XML without explanations.\nFix last untranslated text.\n Text: {source_text}"
-    },
-    "vocabulary": {
-        "system": "You are a professional translation engine specializing in {source_lang}→{target_lang} translations for {country}.",
-        "user": "Translate the list of words and names from {source_lang} to {target_lang}.\n- Preserve meaning of obscene language.\n- Remove category brackets from the output; they are only for context.\n- Output format: {source_lang} text = {target_lang} translation.\nWords: {source_text}"
     },
     "reflect_on_translation": {
         "system": "You are a professional proofreader improving translations from {source_lang} to {target_lang} for {country}.\nFocus on content accuracy, grammar, and cultural/linguistic nuances specific to {country}.\nDo NOT comment on formatting, tags, punctuation, or whitespace.\nAlways respect the provided DICTIONARY for proper names and technical terms.",
@@ -26,6 +18,14 @@
         "system": "You are a professional proofreader and translator improving book fragments from {source_lang} to {target_lang}.\nYour task is to apply all provided improvement suggestions strictly, ensuring all source-language text is fully translated.\nPreserve all XML tags exactly as they appear inside the translation.\nAny structural change to XML is a critical error.",
         "user_xml": "<FIRST_TRANSLATION>{translation_1}</FIRST_TRANSLATION>\n<EXPERT_SUGGESTIONS>{reflection}</EXPERT_SUGGESTIONS>\nTASK:\nApply all suggestions from EXPERT_SUGGESTIONS to improve the translation inside FIRST_TRANSLATION.\nIMPORTANT:\n- FIRST_TRANSLATION and EXPERT_SUGGESTIONS are INPUT CONTAINERS ONLY.\n- Do NOT wrap the output in <FIRST_TRANSLATION> or any other XML tags.\n- Preserve ALL existing XML tags exactly as they appear.\n- Do NOT add, remove, rename, or reformat any XML tags.\n- Translate ALL remaining source-language text fully into {target_lang}.\n- Return ONLY the improved translation text as plain text.\n- No explanations, no comments, no code.\n- If the output starts or ends with an XML tag, the result is invalid.",
         "user_text": "Edit the translation using the provided suggestions.\nEnsure the result is accurate, fluent, and stylistically consistent.\nDo NOT include explanations or code.\nReturn only the edited translation."
+    },
+    "synopsis": {
+        "system": "You are an expert linguist and proofreader, specializing in concise summarization.",
+        "user": "Create a synopsis in {target_lang} (max 80 words) for the given text.\nFor each character name, include gender in parentheses (he/she).\nReturn plain text only.\nText: {final_translation}\nSynopsis:"
+    },
+    "vocabulary": {
+        "system": "You are a professional translation engine specializing in {source_lang}→{target_lang} translations for {country}.",
+        "user": "Translate the list of words and names from {source_lang} to {target_lang}.\n- Preserve meaning of obscene language.\n- Remove category brackets from the output; they are only for context.\n- Output format: {source_lang} text = {target_lang} translation.\nWords: {source_text}"
     },
     "metadata_translation": {
         "system": "You are an expert translator and bibliographer for fiction in {target_lang} (country: {country}).",
