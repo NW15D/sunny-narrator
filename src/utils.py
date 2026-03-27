@@ -1,3 +1,5 @@
+import logging
+import functools
 from typing import Union
 import openai
 import tiktoken
@@ -11,6 +13,20 @@ from src.config import Config
 
 # Initialize global config (can be overridden or passed if needed, but for now this replaces the 'from app import ...')
 config = Config()
+
+# Setup logging
+logger = logging.getLogger(__name__)
+if config.debug:
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+else:
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def log_entry(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        logger.debug(f"Entering function: {func.__name__}")
+        return func(*args, **kwargs)
+    return wrapper
 
 # Discrete chunks to translate one chunk at a time
 MAX_TOKENS_PER_CHUNK = config.max_len_chunk * 4  # if text is more than this many tokens, we'll break it up into bytes x2 to tokens
@@ -35,24 +51,26 @@ LANG_MAP = {
 }
 
 class LLMService:
+    @log_entry
     def __init__(self):
-        self.clientTranslate = openai.AsyncOpenAI(
+        self.clientTranslate = openai.OpenAI(
             api_key=config.api_key_translate,
             base_url=config.base_url_translate,
             timeout=config.timeout_translate
         )
-        self.clientProofread = openai.AsyncOpenAI(
+        self.clientProofread = openai.OpenAI(
             api_key=config.api_key_proofread,
             base_url=config.base_url_proofread,
             timeout=config.timeout_proofread
         )
-        self.clientImages = openai.AsyncOpenAI(
+        self.clientImages = openai.OpenAI(
             api_key=config.api_key_images,
             base_url=config.base_url_images,
             timeout=config.timeout_images
         )
 
-    async def get_completion(self, role="Translate", prompt_category=None, prompt_key="user", json_mode=False, max_tokens=MAX_TOKENS_PER_CHUNK, **kwargs):
+    @log_entry
+    def get_completion(self, role="Translate", prompt_category=None, prompt_key="user", json_mode=False, max_tokens=MAX_TOKENS_PER_CHUNK, **kwargs):
         if role == "Translate":
             client, model, temp, sys_off, nothink, label = (
                 self.clientTranslate, config.model_translate, config.temp_translate, config.sys_not_promt_translate, config.nothink_translate, "Translate"
@@ -75,9 +93,9 @@ class LLMService:
             if config.debug:
                 print(f"DEBUG: Selected nothink message")
             if system_message:
-                system_message = f"{system_message}./no_think"
+                system_message = f"{system_message} /no_think"
             else:
-                user_message = f"{user_message} ./no_think"
+                user_message = f"{user_message}  /no_think"
 
         messages = []
         if system_message:
@@ -116,21 +134,31 @@ class LLMService:
         if json_mode:
             comp_kwargs["response_format"] = {"type": "json_object"}
 
-        response = await client.chat.completions.create(**comp_kwargs)
-        return response.choices[0].message.content
+        # Raw prompt logging
+        logger.debug(f"OpenAI API Request ({label}): {json.dumps(comp_kwargs, ensure_ascii=False, indent=2)}")
+
+        response = client.chat.completions.create(**comp_kwargs)
+        result = response.choices[0].message.content
+
+        # Raw response logging
+        logger.debug(f"OpenAI API Response ({label}): {result}")
+
+        return result
 
 llm_service = LLMService()
 
+@log_entry
 def remove_tags(text):
     """
     Removes various XML/HTML tags and specific artifacts from the text.
     """
     #pattern = r'<SOURCE_TEXT>.*?</SOURCE_TEXT>|<INITIAL_TRANSLATION>.*?</INITIAL_TRANSLATION>|<DICTIONARY>.*?</DICTIONARY>|<FIRST_TRANSLATION>.*?</FIRST_TRANSLATION>|<EXPERT_SUGGESTIONS>.*?</EXPERT_SUGGESTIONS>|<TRANSLATION>|</TRANSLATION>|<SOURCE>|</SOURCE>|<SYNOPSIS>.*?</SYNOPSIS>|<think>.*?</think>|<myheader>.*?</myheader>|<myfooter>.*?</myfooter>|</section>|<section>|<IMPROVED_TRANSLATION>|</IMPROVED_TRANSLATION>|```xml|```|OceanofPDF.com|</target>|<target>|<a l:href="https://oceanofpdf.com">|<\|channel\|>.*?<\|end\|>|<TTEXT>|</TTEXT>|<SYNOPSIS>|<\|im_end\|>|<\|file_separator\|>|</think>'
     #cleaned_text = re.sub(pattern, '', text, flags=re.DOTALL)
-    pattern = r'''<SOURCE_TEXT>[\s\S]*?</SOURCE_TEXT>|<INITIAL_TRANSLATION>[\s\S]*?</INITIAL_TRANSLATION>|<DICTIONARY>[\s\S]*?</DICTIONARY>|<FIRST_TRANSLATION>[\s\S]*?</FIRST_TRANSLATION>|<EXPERT_SUGGESTIONS>[\s\S]*?</EXPERT_SUGGESTIONS>|<SYNOPSIS>[\s\S]*?</SYNOPSIS>|<think>[\s\S]*?</think>|<myheader>[\s\S]*?</myheader>|<myfooter>[\s\S]*?</myfooter>|<\|channel\|>[\s\S]*?<\|end\|>|```xml|```|OceanofPDF\.com|<a l:href="https://oceanofpdf.com">|</?(?:TRANSLATION|SOURCE|section|IMPROVED_TRANSLATION|target|TTEXT|SYNOPSIS)>|<\|im_end\|>|<\|file_separator\|>'''
+    pattern = r'''<SOURCE_TEXT>[\s\S]*?</SOURCE_TEXT>|<DICTIONARY>[\s\S]*?</DICTIONARY>|<EXPERT_SUGGESTIONS>[\s\S]*?</EXPERT_SUGGESTIONS>|<SYNOPSIS>[\s\S]*?</SYNOPSIS>|<think>[\s\S]*?</think>|<myheader>[\s\S]*?</myheader>|<myfooter>[\s\S]*?</myfooter>|<\|channel\|>[\s\S]*?<\|end\|>|```xml|```|OceanofPDF\.com|<a l:href="https://oceanofpdf.com">|</?(?:INITIAL_TRANSLATION|FIRST_TRANSLATION|TRANSLATION|SOURCE|section|IMPROVED_TRANSLATION|target|TTEXT|SYNOPSIS|TRANS)>|<\|im_end\|>|<\|file_separator\|>'''
     cleaned = re.sub(pattern, '', text, flags=re.IGNORECASE | re.VERBOSE)
     return cleaned
 
+@log_entry
 def check_and_print_tags(text):
     """
     Finds and returns a list of specific tags present in the text.
@@ -139,6 +167,23 @@ def check_and_print_tags(text):
     matches = re.findall(pattern, text)
     return matches
 
+@log_entry
+def remove_markers(text: str) -> str:
+    """
+    Removes @@@TAG_000n@@@ markers and any leftover bracket artifacts from text
+    to prepare clean input for synopsis/outline generation.
+    """
+    # Remove standard markers @@@TAG_0001@@@
+    text = re.sub(r'@@@TAG_\d+@@@', '', text)
+    # Remove any other content in triple at-signs just in case @@@...@@@
+    text = re.sub(r'@@@.*?@@@', '', text)
+    # Remove orphan triple at-signs
+    text = re.sub(r'@@@', '', text)
+    # Clean up multiple spaces resulting from removals
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+@log_entry
 def split_text_smartly(text: str) -> tuple[str, str]:
     """
     Splits text roughly in half, trying to respect paragraph boundaries (</p>).
@@ -160,7 +205,8 @@ def split_text_smartly(text: str) -> tuple[str, str]:
         
     return text[:split_pos], text[split_pos:]
 
-async def process_with_retries_and_rechunking(
+@log_entry
+def process_with_retries_and_rechunking(
     func, 
     source_text: str, 
     validation_func=None,
@@ -183,7 +229,73 @@ async def process_with_retries_and_rechunking(
     # 1. Attempt with retries
     for attempt in range(3):
         try:
-            result = await func(source_text, temperature=current_temp)
+            result = func(source_text, temperature=current_temp)
+            #cleaned_result =  remove_tags(result)
+            
+            if not validation_func:
+                return result
+                
+            if validation_func(source_text, result):
+                if config.debug and attempt > 0:
+                     print(f"DEBUG: {role} successful on attempt {attempt + 1} with temp {current_temp:.2f}")
+                return result
+                
+            if config.debug:
+                source_len = len(source_text)
+                target_len = len(result)
+                diff = abs(target_len - source_len) / source_len if source_len > 0 else 0
+                print(f"DEBUG: {role} attempt {attempt + 1} failed validation: diff {diff:.2%}. Retrying...")
+                print(f"DEBUG: Source len: {source_len}, Target len: {target_len}")
+                print(f"DEBUG: Source: {source_text}")
+                print(f"DEBUG: Target: {cleaned_result}")
+                
+            current_temp += 0.1
+            
+        except Exception as e:
+            if config.debug:
+                 print(f"DEBUG: {role} attempt {attempt + 1} raised error: {e}")
+            current_temp += 0.1
+
+    # 2. Rechunking Fallback
+    if len(source_text) > 500: # Only split if text is reasonably long
+        if config.debug:
+            print(f"DEBUG: {role} failed all retry attempts. Splitting text...")
+            
+        part1, part2 = split_text_smartly(source_text)
+        
+        # Recursively process parts
+        # We need validation logic for parts too
+        res1 = process_with_retries_and_rechunking(
+            func, part1, validation_func, initial_temp, role
+        )
+        res2 = process_with_retries_and_rechunking(
+            func, part2, validation_func, initial_temp, role
+        )
+        
+        return res1 + res2
+    else:
+        if config.debug:
+            print(f"DEBUG: {role} failed and text too short to split. Returning last result.")
+        return cleaned_result  # Return whatever we got last
+
+@log_entry
+def process_with_retries_only(
+    func, 
+    source_text: str, # Not really used for splitting, just for logging length
+    validation_func=None,
+    initial_temp: float = 0.1,
+    role: str = "Translate"
+) -> str:
+    """
+    Executes a generation function with retries on validation failure.
+    Does NOT attempt to split text.
+    """
+    current_temp = initial_temp
+    
+    # Attempt with retries
+    for attempt in range(3):
+        try:
+            result = func(temperature=current_temp)
             cleaned_result = remove_tags(result)
             
             if not validation_func:
@@ -195,43 +307,26 @@ async def process_with_retries_and_rechunking(
                 return cleaned_result
                 
             if config.debug:
-                source_len = len(source_text)
-                target_len = len(cleaned_result)
-                diff = abs(target_len - source_len) / source_len if source_len > 0 else 0
-                print(f"DEBUG: {role} attempt {attempt + 1} failed validation: diff {diff:.2%}. Retrying...")
+                # Basic diff logging
+                print(f"DEBUG: {role} attempt {attempt + 1} failed validation. Retrying...")
                 
-            current_temp += 0.05
+            current_temp += 0.1
             
         except Exception as e:
             if config.debug:
-                 print(f"DEBUG: {role} attempt {attempt + 1} raised error: {e}")
-            current_temp += 0.05
-
-    # 2. Rechunking Fallback
-    if len(source_text) > 500: # Only split if text is reasonably long
-        if config.debug:
-            print(f"DEBUG: {role} failed all retry attempts. Splitting text...")
+                  print(f"DEBUG: {role} attempt {attempt + 1} raised error: {e}")
+            current_temp += 0.1
             
-        part1, part2 = split_text_smartly(source_text)
-        
-        # Recursively process parts
-        # We need validation logic for parts too
-        res1 = await process_with_retries_and_rechunking(
-            func, part1, validation_func, initial_temp, role
-        )
-        res2 = await process_with_retries_and_rechunking(
-            func, part2, validation_func, initial_temp, role
-        )
-        
-        return res1 + res2
-    else:
-        if config.debug:
-            print(f"DEBUG: {role} failed and text too short to split. Returning last result.")
-        return cleaned_result  # Return whatever we got last
+    # Return last result even if failed
+    if config.debug:
+        print(f"DEBUG: {role} failed all retry attempts. Returning last result.")
+    return cleaned_result
 
 
-async def one_chunk_initial_translation(
-        source_lang: str, target_lang: str, source_text: str, style: str, outline_text: str, vocab_dict, role: str
+
+@log_entry
+def one_chunk_initial_translation(
+        source_lang: str, target_lang: str, source_text: str, style: str, outline_text: str, vocab_dict, role: str, **kwargs
 ) -> str:
     """
     Translate the entire text as one chunk using an LLM.
@@ -251,8 +346,8 @@ async def one_chunk_initial_translation(
     if role == "Translate" and config.model_translate == "Hunyuan":
         prompt_key = "user_hunyuan"
         
-    async def generation_func(text, temperature):
-        return await llm_service.get_completion(
+    def generation_func(text, temperature):
+        return llm_service.get_completion(
             role=role, 
             prompt_category="initial_translation", 
             prompt_key=prompt_key,
@@ -264,21 +359,34 @@ async def one_chunk_initial_translation(
             temperature=temperature
         )
 
-    return await process_with_retries_and_rechunking(
+    def combined_validator(source, target):
+        # Length check only (markers removed)
+        if not source: return True
+        s_len = len(source)
+        t_len = len(target)
+        diff = abs(t_len - s_len) / s_len
+        if diff > 0.22:
+             if config.debug:
+                 print(f"DEBUG: Initial Translation length mismatch {diff:.2%}")
+             return False
+        return True
+
+    return process_with_retries_and_rechunking(
         generation_func,
         source_text,
-        length_validator,
-        config.temp_translate,
+        combined_validator,
+        float(kwargs.get('temperature', config.temp_translate)),
         role="Initial Translation"
     )
 
-async def one_chunk_referat(
+@log_entry
+def one_chunk_referat(
          target_lang: str, final_translation: str,  role: str
 ) -> str:
     """
     Make the synopsis (referat) for chunk using an LLM.
     """
-    translation = await llm_service.get_completion(
+    translation = llm_service.get_completion(
         role=role,
         prompt_category="synopsis",
         target_lang=target_lang,
@@ -287,7 +395,8 @@ async def one_chunk_referat(
     )
     return remove_tags(translation)
 
-async def one_chunk_editor(source_lang: str,  source_text: str, style: str, lang: str, country: str, role: str
+@log_entry
+def one_chunk_editor(source_lang: str,  source_text: str, style: str, lang: str, country: str, role: str, **kwargs
 ) -> str:
     """
     Edits and proofreads the text.
@@ -302,26 +411,29 @@ async def one_chunk_editor(source_lang: str,  source_text: str, style: str, lang
         diff = abs(t_len - s_len) / s_len
         return diff <= 0.25 # Slightly looser for editor? Or same 0.22. reusing 0.25 to be safe logic from implementation plan mention.
 
-    async def generation_func(text, temperature):
-         return await llm_service.get_completion(
+    def generation_func(text, temperature):
+         return llm_service.get_completion(
             role=role,
             prompt_category="editor",
             prompt_key=prompt_key,
             lang=lang,
+            target_lang=lang,
             country=country,
-            source_text=text,
+            source_text="  " + text,
             temperature=temperature # Pass temp if editor supports it, usually yes
         )
 
-    return await process_with_retries_and_rechunking(
+    # Editor uses length_validator only (markers removed)
+    return process_with_retries_and_rechunking(
         generation_func,
         source_text,
         length_validator,
-        config.temp_proofread, # Assuming proofread temp is appropriate base
+        config.temp_proofread,
         role="Editor"
     )
 
-async def vocabulary(
+@log_entry
+def vocabulary(
         source_lang: str,
         target_lang: str,
         source_text: str,
@@ -331,7 +443,7 @@ async def vocabulary(
     """
     Use an LLM to generate vocabulary for proper nouns.
     """
-    translation = await llm_service.get_completion(
+    translation = llm_service.get_completion(
         role=role,
         prompt_category="vocabulary",
         source_lang=source_lang,
@@ -343,7 +455,8 @@ async def vocabulary(
         print(f"DEBUG: Vocabulary: {translation}")
     return translation
 
-async def one_chunk_reflect_on_translation(
+@log_entry
+def one_chunk_reflect_on_translation(
         source_lang: str,
         target_lang: str,
         source_text: str,
@@ -355,7 +468,7 @@ async def one_chunk_reflect_on_translation(
     """
     Reflect on the initial translation and provide suggestions for improvement.
     """
-    translation = await llm_service.get_completion(
+    translation = llm_service.get_completion(
         role=role,
         prompt_category="reflect_on_translation",
         source_lang=source_lang,
@@ -368,7 +481,8 @@ async def one_chunk_reflect_on_translation(
     )
     return remove_tags(translation)
 
-async def one_chunk_improve_translation(
+@log_entry
+def one_chunk_improve_translation(
         source_lang: str,
         target_lang: str,
         source_text: str,
@@ -382,18 +496,41 @@ async def one_chunk_improve_translation(
     """
     prompt_key = "user_xml" if style == 'xml' else "user_text"
     
-    translation = await llm_service.get_completion(
-        role=role,
-        prompt_category="improve_translation",
-        prompt_key=prompt_key,
-        source_lang=source_lang,
-        target_lang=target_lang,
-        source_text=source_text,
-        translation_1=translation_1,
-        reflection=reflection
-    )
-    return remove_tags(translation)
+    def generation_func(temperature=0.1):
+        return llm_service.get_completion(
+            role=role,
+            prompt_category="improve_translation",
+            prompt_key=prompt_key,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            source_text="  " + source_text,
+            translation_1=translation_1,
+            reflection=reflection,
+            temperature=temperature
+        )
 
+    def marker_validator(source, target):
+        # We don't have explicit markers passed here yet.
+        # Logic: If translation_1 had markers, improved should have them.
+        # Check source_text for markers?
+        # Extract markers from source_text
+        markers = re.findall(r'@@@TAG_\d+@@@', source_text)
+        missing = [m for m in markers if m not in target]
+        if missing:
+            if config.debug:
+                 print(f"DEBUG: Improve Translation missing markers: {missing}")
+            return False
+        return True
+
+    return process_with_retries_only(
+        generation_func,
+        source_text,
+        marker_validator,
+        initial_temp=config.temp_proofread,
+        role="Improve Translation"
+    )
+
+@log_entry
 def num_tokens_in_string(
         input_str: str, encoding_name: str = "cl100k_base"
 ) -> int:
@@ -408,6 +545,7 @@ def num_tokens_in_string(
     num_tokens = len(encoding.encode(input_str))
     return num_tokens
 
+@log_entry
 def calculate_chunk_size(token_count: int, token_limit: int) -> int:
     """
     Calculate the chunk size based on the token count and token limit.
@@ -424,7 +562,8 @@ def calculate_chunk_size(token_count: int, token_limit: int) -> int:
 
     return chunk_size
 
-async def translate(
+@log_entry
+def translate(
         source_lang,
         target_lang,
         source_text,
@@ -433,7 +572,7 @@ async def translate(
         country,
         vocab_dict,
         max_tokens=MAX_TOKENS_PER_CHUNK,
-
+        temperature=None
 ):
     """Translate the source_text from source_lang to target_lang."""
 
@@ -452,24 +591,25 @@ async def translate(
         # Step 1: Initial translation
         start_time = time.time()
         role = "Translate"
-        translation_1 = await one_chunk_initial_translation(
-            source_lang, target_lang, source_text, style, outline_text, vocab_dict, role
+
+        translation_1 = one_chunk_initial_translation(
+            source_lang, target_lang, source_text, style, outline_text, vocab_dict, role, temperature=temperature
         )
         translation_1_time = time.time() - start_time
         if config.debug:
             print(f"DEBUG: Translation 1 time: {translation_1_time:.2f}s, tokens: {num_tokens_in_string(translation_1)}, translation: {translation_1}")
             #print(f"DEBUG: Style: {style}, Outline: {outline_text}, role: {role}")
 
-        # Step 2: Outline (Moved to Step 2 to allow fast yielding for async chain)
+        # Step 2: Outline
         start_time = time.time()
         role = "Proofread"
-        outline_text = await one_chunk_referat(target_lang, translation_1, role)
+        outline_text = one_chunk_referat(target_lang, translation_1, role)
         outline_time = time.time() - start_time
         if config.debug:
             print(f"DEBUG: Outline time: {outline_time:.2f}s, tokens: {num_tokens_in_string(outline_text)}, outline: {outline_text} role: {role}")
                 
-        # YIELD OUTLINE EARLY
-        yield ("outline", outline_text)
+        # YIELD OUTLINE EARLY - REPLACED WITH RETURN AT END
+        # yield ("outline", outline_text)
 
         if config.fast_trans:
             if config.debug:
@@ -478,8 +618,7 @@ async def translate(
             # Step 5: Final translation (using translation_1)
             start_time = time.time()
             role = "Proofread"
-            # Note: vocab dict mapping was key-based in app.py logic, here passed into translate
-            final_translation = await one_chunk_editor(source_lang, translation_1, style, target_lang, country, role)
+            final_translation = one_chunk_editor(source_lang, translation_1, style, target_lang, country, role)
             final_translation_time = time.time() - start_time
             #if config.debug:
             #     print(f"DEBUG: Final translation time: {final_translation_time:.2f}s, tokens: {num_tokens_in_string(final_translation)}")
@@ -488,7 +627,7 @@ async def translate(
             # Step 3: Reflection on the initial translation
             start_time = time.time()
             role = "Proofread"
-            reflection = await one_chunk_reflect_on_translation(
+            reflection = one_chunk_reflect_on_translation(
                 source_lang, target_lang, source_text, translation_1, country, vocab_dict, role
             )
             reflection_time = time.time() - start_time
@@ -499,24 +638,25 @@ async def translate(
             # Step 4: Improved translation
             start_time = time.time()
             role = "Proofread"
-            translation_2 = await one_chunk_improve_translation(
+            translation_2 = one_chunk_improve_translation(
                 source_lang, target_lang, source_text, translation_1, reflection, style, role
             )
             translation_2_time = time.time() - start_time
             if config.debug:
-                print(f"DEBUG: Translation 2 time: {translation_2_time:.2f}s, tokens: {num_tokens_in_string(translation_2)}, translation_2: {translation_2}")
+                print(f"DEBUG: Improved translation,  Translation 2 time: {translation_2_time:.2f}s, tokens: {num_tokens_in_string(translation_2)}")
                 print(f"DEBUG: Style: {style}, role: {role}")
 
             # Step 5: Final translation
             start_time = time.time()
             role = "Proofread"
-            final_translation = await one_chunk_editor(target_lang, translation_2, style, target_lang, country, role)
+            final_translation = translation_2 
+            # #one_chunk_editor(target_lang, translation_2, style, target_lang, country, role, validation_markers=validation_markers)
             final_translation_time = time.time() - start_time
             if config.debug:
-                print(f"DEBUG: Final translation time: {final_translation_time:.2f}s, tokens: {num_tokens_in_string(final_translation)}, final_translation: {final_translation}")
+                print(f"DEBUG: Final translation time: {final_translation_time:.2f}s, tokens: {num_tokens_in_string(final_translation)}")
 
 
-        yield ("final", final_translation)
+        return final_translation, outline_text
     else:
         raise ValueError(f"Chunk of size {num_tokens_in_text} tokens exceeds limit of {max_tokens} tokens.")
 
@@ -524,7 +664,8 @@ import httpx
 
 # ...
 
-async def process_image_request(image_data: str, source_lang: str, target_lang: str, country: str, metadata: dict = None) -> str:
+@log_entry
+def process_image_request(image_data: str, source_lang: str, target_lang: str, country: str, metadata: dict = None) -> str:
     """
     Sends an image to the OpenAI API (client3) for image variation generation,
     then resizes and compresses the result.
@@ -544,7 +685,11 @@ async def process_image_request(image_data: str, source_lang: str, target_lang: 
         if metadata:
             if config.debug:
                 print(f"DEBUG: Image prompt: {prompt}")
-            response = await llm_service.clientImages.images.generate(
+            
+            # Raw prompt logging
+            logger.debug(f"OpenAI Image API Request (generate): prompt='{prompt}', model='{config.model_images}'")
+            
+            response = llm_service.clientImages.images.generate(
                 model=config.model_images,
                 prompt=prompt,
                 n=1,
@@ -570,7 +715,11 @@ async def process_image_request(image_data: str, source_lang: str, target_lang: 
             buffer.seek(0)
             if config.debug:
                 print(f"DEBUG: Image variation prompt: {prompt}")
-            response = await llm_service.clientImages.images.create_variation(
+                
+            # Raw prompt logging
+            logger.debug(f"OpenAI Image API Request (create_variation): prompt='{prompt}', model='{config.model_images}'")
+
+            response = llm_service.clientImages.images.create_variation(
                 image=buffer,
                 n=1,
                 size="1024x1024",
@@ -582,14 +731,17 @@ async def process_image_request(image_data: str, source_lang: str, target_lang: 
         # Just handle URL as default fallback if b64_json is missing or explicitly not asked
         generated_data = response.data[0]
         
+        # Raw response logging (log metadata of response)
+        logger.debug(f"OpenAI Image API Response: {generated_data}")
+
         img_bytes = None
         if hasattr(generated_data, 'b64_json') and generated_data.b64_json:
              img_bytes = base64.b64decode(generated_data.b64_json)
         elif hasattr(generated_data, 'url') and generated_data.url:
              if config.debug:
                  print(f"DEBUG: Downloading image from URL: {generated_data.url}")
-             async with httpx.AsyncClient() as client:
-                 r = await client.get(generated_data.url)
+             with httpx.Client() as client:
+                 r = client.get(generated_data.url)
                  if r.status_code == 200:
                      img_bytes = r.content
                  else:
@@ -613,12 +765,13 @@ async def process_image_request(image_data: str, source_lang: str, target_lang: 
             print(f"DEBUG: Error processing image request: {e}")
         return None
 
-async def translate_metadata(metadata: dict, source_lang: str, target_lang: str, country: str) -> dict:
+@log_entry
+def translate_metadata(metadata: dict, source_lang: str, target_lang: str, country: str) -> dict:
     """
     Translates a metadata dictionary using the LLM in JSON mode.
     """
     try:
-        response_text = await llm_service.get_completion(
+        response_text = llm_service.get_completion(
             role="Proofread", # Use secondary for metadata usually
             prompt_category="metadata_translation",
             json_mode=True,
