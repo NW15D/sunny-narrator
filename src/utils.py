@@ -227,10 +227,11 @@ def process_with_retries_and_rechunking(
     current_temp = initial_temp
     
     # 1. Attempt with retries
+    last_result = None
     for attempt in range(3):
         try:
             result = func(source_text, temperature=current_temp)
-            #cleaned_result =  remove_tags(result)
+            last_result = result
             
             if not validation_func:
                 return result
@@ -246,8 +247,8 @@ def process_with_retries_and_rechunking(
                 diff = abs(target_len - source_len) / source_len if source_len > 0 else 0
                 print(f"DEBUG: {role} attempt {attempt + 1} failed validation: diff {diff:.2%}. Retrying...")
                 print(f"DEBUG: Source len: {source_len}, Target len: {target_len}")
-                print(f"DEBUG: Source: {source_text}")
-                print(f"DEBUG: Target: {cleaned_result}")
+                print(f"DEBUG: Source: {source_text[:200]}...")
+                print(f"DEBUG: Target: {result[:200]}...")
                 
             current_temp += 0.1
             
@@ -276,7 +277,7 @@ def process_with_retries_and_rechunking(
     else:
         if config.debug:
             print(f"DEBUG: {role} failed and text too short to split. Returning last result.")
-        return cleaned_result  # Return whatever we got last
+        return last_result if last_result is not None else source_text  # Return whatever we got last or source as fallback
 
 @log_entry
 def process_with_retries_only(

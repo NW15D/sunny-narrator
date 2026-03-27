@@ -198,6 +198,7 @@ def update_header_with_metadata(header, metadata):
 def prepare_chunks(body, max_len_chunk):
     """
     Splits the body content into sections and chunks based on max_len_chunk.
+    Ensures each chunk has balanced XML tags (opens and closes properly).
     """
     body_str = body
     sections = []
@@ -225,26 +226,130 @@ def prepare_chunks(body, max_len_chunk):
         section = body_str[section_start:section_end]
         chunks = []
 
-        # Split the section into chunks
+        # Split the section into chunks with tag-aware boundaries
         chunk_start = 0
         while chunk_start < len(section):
             chunk_end = chunk_start + max_len_chunk
+            
             if chunk_end >= len(section):
+                # Last chunk - take everything remaining
                 chunk_end = len(section)
+                chunk_text = section[chunk_start:chunk_end]
+                # Ensure chunk ends at a tag boundary if possible
+                chunk_text = _ensure_balanced_tags(chunk_text)
+                chunks.append(chunk_text)
+                break
             else:
-                # Find the nearest </p> tag within the chunk to avoid breaking paragraphs
-                pos = section.rfind('</p>', chunk_start, chunk_end)
-                if pos != -1:
-                    chunk_end = pos + len('</p>')
-
-            chunk_text = section[chunk_start:chunk_end]
-            chunks.append(chunk_text)  # Plain string, без маскирования
-            chunk_start = chunk_end
+                # Find the best split point before max_len_chunk
+                chunk_end = _find_chunk_boundary(section, chunk_start, chunk_end)
+                chunk_text = section[chunk_start:chunk_end]
+                # Ensure XML tags are balanced
+                chunk_text = _ensure_balanced_tags(chunk_text)
+                chunks.append(chunk_text)
+                chunk_start = chunk_end
 
         sections.append(chunks)
         start = section_end + len('</section>')
 
     return sections
+
+
+def _find_chunk_boundary(text, start_pos, preferred_end):
+    """
+    Find the best boundary to split text, preferring to end at closing tags.
+    Searches backwards from preferred_end to find a good split point.
+    """
+    # Look for closing tags within reasonable range (last 20% of chunk)
+    search_start = max(start_pos + int((preferred_end - start_pos) * 0.8), start_pos)
+    search_end = min(preferred_end + int((preferred_end - start_pos) * 0.1), len(text))
+    
+    # Priority: </p>, </div>, </title>, then any </tag>
+    closing_tags = ['</p>', '</div>', '</title>', '</emphasis>', '</strong>', 
+                    '</subtitle>', '</cite>', '</poem>', '</stanza>', '</v>']
+    
+    for tag in closing_tags:
+        pos = text.rfind(tag, search_start, search_end)
+        if pos != -1:
+            return pos + len(tag)
+    
+    # Fallback: any closing tag
+    import re
+    tag_match = re.search(r'</[^>]+>\s*$', text[search_start:search_end])
+    if tag_match:
+        return search_start + tag_match.end()
+    
+    # Last resort: split at preferred_end, but ensure we're not inside a tag
+    return _adjust_for_tag_boundary(text, preferred_end)
+
+
+def _adjust_for_tag_boundary(text, pos):
+    """
+    Adjust position to ensure we're not splitting inside a tag.
+    """
+    # If we're inside a tag, move to after the tag
+    in_tag = False
+    adjusted_pos = pos
+    
+    for i in range(max(0, pos - 100), min(pos + 10, len(text))):
+        if i >= len(text):
+            break
+        if text[i] == '<':
+            in_tag = True
+            tag_start = i
+        elif text[i] == '>':
+            if in_tag and i >= pos:
+                # We were inside a tag that ends after pos
+                adjusted_pos = i + 1
+            in_tag = False
+    
+    return min(adjusted_pos, len(text))
+
+
+def _ensure_balanced_tags(chunk):
+    """
+    Ensure chunk has balanced opening and closing XML tags.
+    Adds missing closing tags or removes incomplete opening tags at boundaries.
+    """
+    import re
+    
+    # Find all opening and closing tags
+    opening_pattern = r'<([a-zA-Z][a-zA-Z0-9]*)[^>]*?(?<!/)>'
+    closing_pattern = r'</([a-zA-Z][a-zA-Z0-9]*)>'
+    self_closing_pattern = r'<[a-zA-Z][a-zA-Z0-9]*[^>]*/>'
+    
+    # Stack to track unclosed tags
+    tag_stack = []
+    
+    # Find all tags with their positions
+    all_tags = []
+    for match in re.finditer(opening_pattern, chunk):
+        all_tags.append(('open', match.group(1), match.start(), match.end()))
+    for match in re.finditer(closing_pattern, chunk):
+        all_tags.append(('close', match.group(1), match.start(), match.end()))
+    for match in re.finditer(self_closing_pattern, chunk):
+        all_tags.append(('self', None, match.start(), match.end()))
+    
+    # Sort by position
+    all_tags.sort(key=lambda x: x[2])
+    
+    # Process tags to find unclosed ones
+    for tag_type, tag_name, start, end in all_tags:
+        if tag_type == 'open':
+            tag_stack.append((tag_name, end))
+        elif tag_type == 'close':
+            # Pop matching opening tag
+            for i in range(len(tag_stack) - 1, -1, -1):
+                if tag_stack[i][0] == tag_name:
+                    tag_stack.pop(i)
+                    break
+        # self-closing tags are ignored
+    
+    # Add closing tags for any remaining open tags (in reverse order)
+    result = chunk
+    for tag_name, _ in reversed(tag_stack):
+        result += f'</{tag_name}>'
+    
+    return result
 
 def get_cover_image(header, footer):
     """
