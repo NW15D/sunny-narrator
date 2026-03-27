@@ -191,6 +191,11 @@ class TranslationEngine:
         Main loop to process all chunks sequentially.
         """
         all_content = ""
+        total_chunks = len(all_chunks)
+        
+        print(f"\n{'='*60}")
+        print(f"Starting translation: {total_chunks} chunks")
+        print(f"{'='*60}\n")
         
         for item in all_chunks:
             chunk = item['chunk']
@@ -203,8 +208,11 @@ class TranslationEngine:
             key = (s_idx, c_idx)
             self.load_vocab_for_chunk(chunk, s_idx, c_idx, vocab)
             
-            if config.debug:
-                print(f"DEBUG: Processing Chunk {g_id} [{s_idx+1}/{len(orig_sections)}:{c_idx+1}/{section_chunks}]")
+            # Log chunk info
+            chunk_preview = chunk[:80] if isinstance(chunk, str) else str(chunk)[:80]
+            vocab_count = len(self.vocab_dict_map.get(key, []))
+            print(f"\n[Chunk {g_id+1}/{total_chunks}] Section {s_idx+1}.{c_idx+1} | {len(chunk)} chars | Vocab: {vocab_count} terms")
+            print(f"  Source: {chunk_preview}{'...' if len(chunk) > 80 else ''}")
 
             # Get Context
             current_context = self.shared_outline['text']
@@ -214,6 +222,10 @@ class TranslationEngine:
             
             # Update Context
             self.shared_outline['text'] = new_outline_val
+            
+            # Log result
+            result_preview = final_content[:80] if final_content else "(empty)"
+            print(f"  Result: {result_preview}{'...' if len(final_content) > 80 else ''}")
             
             # Statistics & Output
             if final_content:
