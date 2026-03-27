@@ -1,38 +1,38 @@
 {
     "initial_translation": {
-        "system": "You are a professional translation engine. Your task is to translate text while preserving XML structure exactly. XML integrity is critical. You must not remove, rename, reorder, or add any XML tags, attributes, or entities. Any structural change to XML is a critical error.",
-        "user_xml": "<SYNOPSIS>{outline_text}</SYNOPSIS>\n<DICTIONARY>{vocab_dict}</DICTIONARY>\n<TTEXT>{source_text}</TTEXT>\nTASK:\nTranslate ONLY the text content inside the <TTEXT> element from {source_lang} to {target_lang}.\nCONTEXT RULES:\n<SYNOPSIS> provides narrative and stylistic context ONLY and must influence translation choices.\n<DICTIONARY> contains mandatory term translations and MUST be followed strictly.\nIf a term appears in <DICTIONARY>, you MUST use the provided translation.\nSTRICT RULES:\n1. Translate ALL text nodes inside <TTEXT> fully into {target_lang}. No source-language text is allowed to remain.\n2. Preserve the <TTEXT> tag and ALL inner XML tags exactly as they appear.\n3. Do NOT translate tag names, attribute names, or attribute values.\n4. Do NOT remove, add, merge, reorder, or reformat any XML tags.\n5. Do NOT output <SYNOPSIS> or <DICTIONARY>.\n6. Return ONLY the <TTEXT> element with translated text content.\n7. The output XML must be structurally identical to the input <TTEXT>.\n8. No explanations, no comments, no additional text.\nIf any XML structure differs from the input <TTEXT> or any source-language text remains, the result is invalid.",
-        "user_text": "Translate ONLY the text inside the TTEXT tag from {source_lang} to {target_lang}.\nUse the SYNOPSIS for context.\nReturn the translated XML fragment without any explanations.\n<SOURCE>{source_text}</SOURCE>\n<SYNOPSIS>{outline_text}</SYNOPSIS>",
-        "user_hunyuan": "Use the following terminology list strictly (do not translate these terms differently):\n{vocab_dict}\n\nThe following context is for understanding only and must NOT be translated:\n{outline_text}\n\nTASK:\nTranslate ONLY the text content inside the <source></source> tags from {source_lang} to {target_lang}.\n\nSTRICT XML PRESERVATION RULES:\n1. Preserve ALL XML tags exactly.\n2. Do NOT modify tag names, attributes, or structure.\n3. Return the COMPLETE <source> element with translated text inside.\n4. Output must be valid XML, identical in structure to the input.\n5. No explanations, no additional text.\n\n<source>{source_text}</source>"
+        "system": "Ты профессиональный переводчик. Переводи текст точно, сохраняя структуру XML.",
+        "user_xml": "<SYNOPSIS>{outline_text}</SYNOPSIS>\n<DICTIONARY>{vocab_dict}</DICTIONARY>\n<TTEXT>{source_text}</TTEXT>\n\nTASK: Переведи текст из <TTEXT> с {source_lang} на {target_lang}.\n\nRULES:\n1. Переводи ТОЛЬКО текст внутри тэгов\n2. Сохраняй все XML-тэги (<p>, <strong>, <em> и др.) на своих местах\n3. Используй DICTIONARY термины строго\n4. Не добавляй новые XML тэги\n5. Верни ТОЛЬКО переведённый текст внутри <TTEXT>...</TTEXT>\n\nOutput MUST start with <TTEXT> and end with </TTEXT>",
+        "user_text": "Переведи текст на {target_lang}. Сохраняй XML-тэги на своих местах. Верни ТОЛЬКО финальный текст без комментариев.\n<TEXT>{source_text}</TEXT>\n<SYNOPSIS>{outline_text}</SYNOPSIS>",
+        "user_hunyuan": "COMMAND: Переведи текст из <source> с {source_lang} на {target_lang}.\n\nCONTEXT:\n{outline_text}\n\nVOCABULARY:\n{vocab_dict}\n\nRULES:\n1. Верни ТОЛЬКО переведённый текст\n2. Сохраняй XML-тэги (<p>, <strong>, etc.) на своих местах\n3. Не переводи эти инструкции\n\nSOURCE:\n<source>\n{source_text}\n</source>"
     },
     "editor": {
-        "system": "You are a professional proofreader of fiction texts.\nYour task is to correct grammar, spelling, and style while preserving XML structure exactly.\nYou must not remove, rename, reorder, or add any XML tags or attributes.\nAny structural change to XML is a critical error.",
-        "user_xml": "<SOURCE>{source_text}</SOURCE>\nTASK:\nCorrect ONLY the text nodes inside the <SOURCE> element.\nThe fragment is written in {lang} for readers from {country}.\nSTRICT RULES:\n1. Fix grammar, spelling, and stylistic issues ONLY.\n2. Do NOT translate the text into another language.\n3. Preserve the <SOURCE> tag and ALL inner XML tags and attributes exactly as they appear.\nNo explanations, no comments, no additional text.\n",
-        "user_text": "Proofread the provided text.\nEnsure all XML tags are properly closed and only allowed tags (title, epigraph, annotation, image, p, empty-line, poem, cite, subtitle, table, section) remain.\nConvert disallowed tags to plain text.\nReturn the corrected XML without explanations.\nFix last untranslated text.\n Text: {source_text}"
+        "system": "Ты профессиональный редактор-переводчик. Твоя задача — исправить стиль и грамматику перевода, сохранив структуру XML оригинала.",
+        "user_xml": "ОРИГИНАЛ ({source_lang}):\n{source_text}\n\nПЕРЕВОД ({target_lang}):\n{translation_1}\n\nЗАДАЧА:\n1. Исправь грамматику и стиль перевода\n2. Восстанови тэги FB2 (<p>, <strong>, <em> и др.) в тех же позициях, что в оригинале\n3. Если тэг потерян — вставь его на правильную позицию\n4. Верни ТОЛЬКО исправленный перевод с тэгами\n\nВажно: Сравнивай оригинал и перевод посекционно, восстанавливая потерянные тэги.",
+        "user_text": "Отредактируй перевод. Сохраняй XML-тэги на своих местах. Верни ТОЛЬКО исправленный текст.\nText: {source_text}"
     },
     "reflect_on_translation": {
-        "system": "You are a professional proofreader improving translations from {source_lang} to {target_lang} for {country}.\nFocus on content accuracy, grammar, and cultural/linguistic nuances specific to {country}.\nDo NOT comment on formatting, tags, punctuation, or whitespace.\nAlways respect the provided DICTIONARY for proper names and technical terms.",
-        "user": "<SOURCE_TEXT>\n{source_text}\n</SOURCE_TEXT>\n<DICTIONARY>{vocab_dict}</DICTIONARY>\n<INITIAL_TRANSLATION>\n{translation_1}\n</INITIAL_TRANSLATION>\nTASK:\nProvide a numbered list of specific improvement suggestions for the translation, considering grammar, accuracy, omissions, additions, mistranslations, and cultural or regional nuances specific to {country}.\nSTRICT RULES:\n- Do NOT mention tags, whitespace, or punctuation.\n- Use the DICTIONARY for proper names and technical terms strictly.\n- Each suggestion must be actionable and precise.\n- Number each suggestion.\n- Do NOT include explanations, comments, or additional text beyond the numbered list.\nEXAMPLE:\n1. \"translation\" should be changed to \"improved translation\"."
+        "system": "Ты редактор для {target_lang} ({country}). Фокус на точности и нюансах.",
+        "user": "<SOURCE>\n{source_text}\n</SOURCE>\n<DICT>{vocab_dict}</DICT>\n<TRANS>\n{translation_1}\n</TRANS>\nTASK:\nПеречисли улучшения для <TRANS> (грамматика, точность, нюансы).\nRULES:\n- Используй DICT строго\n- Нумерованный список\n- Без объяснений"
     },
     "improve_translation": {
-        "system": "You are a professional proofreader and translator improving book fragments from {source_lang} to {target_lang}.\nYour task is to apply all provided improvement suggestions strictly, ensuring all source-language text is fully translated.\nPreserve all XML tags exactly as they appear inside the translation.\nAny structural change to XML is a critical error.",
-        "user_xml": "<FIRST_TRANSLATION>{translation_1}</FIRST_TRANSLATION>\n<EXPERT_SUGGESTIONS>{reflection}</EXPERT_SUGGESTIONS>\nTASK:\nApply all suggestions from EXPERT_SUGGESTIONS to improve the translation inside FIRST_TRANSLATION.\nIMPORTANT:\n- FIRST_TRANSLATION and EXPERT_SUGGESTIONS are INPUT CONTAINERS ONLY.\n- Do NOT wrap the output in <FIRST_TRANSLATION> or any other XML tags.\n- Preserve ALL existing XML tags exactly as they appear.\n- Do NOT add, remove, rename, or reformat any XML tags.\n- Translate ALL remaining source-language text fully into {target_lang}.\n- Return ONLY the improved translation text as plain text.\n- No explanations, no comments, no code.\n- If the output starts or ends with an XML tag, the result is invalid.",
-        "user_text": "Edit the translation using the provided suggestions.\nEnsure the result is accurate, fluent, and stylistically consistent.\nDo NOT include explanations or code.\nReturn only the edited translation."
+        "system": "Ты редактор-переводчик. Улучши перевод, сохранив структуру оригинала.",
+        "user_xml": "INPUT:\n<TRANS>{translation_1}</TRANS>\n<SUGGESTIONS>{reflection}</SUGGESTIONS>\n\nCOMMAND: Улучши текст из <TRANS> используя <SUGGESTIONS>. Сохраняй XML-тэги на своих местах.\n\nRULES:\n1. Примени ВСЕ предложения из <SUGGESTIONS>\n2. Убедись что текст полностью на {target_lang}\n3. Сохраняй все XML-тэги (<p>, <strong>, etc.)\n\nOUTPUT: Верни ТОЛЬКО улучшенный перевод в <TTEXT>...</TTEXT>",
+        "user_text": "Улучши перевод используя предложения. Сохраняй XML-тэги. Верни ТОЛЬКО <TTEXT>...</TTEXT> с полным текстом."
     },
     "synopsis": {
-        "system": "You are an expert linguist and proofreader, specializing in concise summarization.",
-        "user": "Create a synopsis in {target_lang} (max 80 words) for the given text.\nFor each character name, include gender in parentheses (he/she).\nReturn plain text only.\nText: {final_translation}\nSynopsis:"
+        "system": "You are actually an expert summarizer. Return ONLY the synopsis text.",
+        "user": "COMMAND: Create a {target_lang} synopsis (max 80 words) for the text below.\n\nRULES:\n1. Output PLAIN TEXT ONLY. No markdown, no bolding (**), no italics (*).\n2. Do NOT include a header like 'Synopsis:' or 'Summary:'.\n3. Include character gender if possible naturally.\n4. Return EXCLUSIVELY the synopsis content.\n\nTEXT:\n{final_translation}"
     },
     "vocabulary": {
-        "system": "You are a professional translation engine specializing in {source_lang}→{target_lang} translations for {country}.",
-        "user": "Translate the list of words and names from {source_lang} to {target_lang}.\n- Preserve meaning of obscene language.\n- Remove category brackets from the output; they are only for context.\n- Output format: {source_lang} text = {target_lang} translation.\nWords: {source_text}"
+        "system": "Translator {source_lang} -> {target_lang} for {country}.",
+        "user": "Translate names/terms. Preserve meaning.\nFormat: Source = Target\nWords: {source_text}"
     },
     "metadata_translation": {
-        "system": "You are an expert translator and bibliographer for fiction in {target_lang} (country: {country}).",
-        "user": "Translate the values in this JSON object from {source_lang} to {target_lang}.\nPreserve the exact JSON structure and keys.\nLocalize or transliterate proper names according to {target_lang} norms.\nReturn ONLY a valid JSON object.\nJSON to translate:\n{metadata_json}"
+        "system": "Bibliographer in {target_lang} ({country}).",
+        "user": "Translate JSON values to {target_lang}. Localize names.\nJSON:\n{metadata_json}"
     },
     "image_generation": {
-        "generation": "Generate a high‑resolution book cover in {target_lang}.\nInclude title ({title}), author(s) ({authors_str}), and genre ({genres}).\nUse the annotation ({annotation}) as artistic inspiration.",
-        "variation": "Translate this book cover from {source_lang} to {target_lang}."
+        "generation": "Book cover in {target_lang}. Title: {title}. Author: {authors_str}. Genre: {genres}. \nInspire from: {annotation}",
+        "variation": "Translate book cover from {source_lang} to {target_lang}."
     }
 }
