@@ -156,10 +156,13 @@ class TranslationEngine:
         should_split = False
         split_reason = ""
         
-        if percent_diff > config.length_check_threshold and source_len > 100:
+        # Skip length check for small chunks (< 1000 chars) to avoid over-splitting micro-chunks
+        MIN_CHUNK_SIZE_FOR_LENGTH_CHECK = 1000
+        
+        if percent_diff > config.length_check_threshold and source_len >= MIN_CHUNK_SIZE_FOR_LENGTH_CHECK:
             should_split = True
             split_reason = f"length diff {percent_diff:.2f}% > {config.length_check_threshold}%"
-        elif validation_failed and source_len > 200:
+        elif validation_failed and source_len >= MIN_CHUNK_SIZE_FOR_LENGTH_CHECK:
             should_split = True
             split_reason = "persistent validation failure"
 
