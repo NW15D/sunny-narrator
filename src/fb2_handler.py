@@ -6,15 +6,16 @@ from src.config import Config
 
 config = Config()
 
-TAG_RE = re.compile(
-    r"""
-    <\?xml[^>]*\?>            |  # XML declaration
+SINGLE_TAG = r"""
     <!--.*?-->                |  # comments
-    <![CDATA\[.*?\]\]>        |  # CDATA
-    </[^>]+?>                 |  # closing tags
-    <[^/>][^>]*?>             |  # opening tags
-    <[^>]+?/>                    # self-closing tags
-    """,
+    <!\[CDATA\[.*?\]\]>       |  # CDATA
+    <\?.*?\?>                 |  # XML declaration
+    </?[^>]+>                    # All other tags (open, close, self-close)
+"""
+
+# Match one or more tags, optionally separated by whitespace
+TAG_RE = re.compile(
+    fr"(?:(?:{SINGLE_TAG})\s*)+",
     re.VERBOSE | re.DOTALL,
 )
 
@@ -31,9 +32,9 @@ def mask_xml(xml: str) -> MaskedXML:
     def replacer(match: re.Match) -> str:
         nonlocal counter
         counter += 1
-        marker = f"[[T{counter}]]"
+        marker = f"@@@TAG_{counter:04d}@@@"
         tag_map[marker] = match.group(0)
-        return marker
+        return f" {marker} "
 
     masked_text = TAG_RE.sub(replacer, xml)
     return MaskedXML(masked_text, tag_map)
@@ -49,10 +50,75 @@ def validate_mask_integrity(tag_map: Dict[str, str], translated_text: str) -> No
     if missing:
         raise ValueError(f"Missing markers: {missing}")
 
-    extra = re.findall(r"\[\[T\d+\]\]", translated_text)
+    extra = re.findall(r"@@@TAG_\d+@@@", translated_text)
     for m in extra:
         if m not in tag_map:
             raise ValueError(f"Unknown marker introduced: {m}")
+
+def repair_markers(text: str) -> str:
+    """
+    Attempts to fix common malformed markers and remove hallucinated XML tags.
+    """
+    # Fix malformed brackets/at-signs
+    text = re.sub(r'@@@TAG_(\d+)@@@', r'@@@TAG_\1@@@', text) # Identity
+    # Handle potential OCR or hallucination errors (e.g. mixed brackets or wrong symbols)
+    # Sometimes model might output [TAG_0001], [[TAG_0001]], @TAG_0001@ etc.
+    text = re.sub(r'[\[⟦@]{1,3}TAG_(\d+)[\]⟧@]{1,3}', r'@@@TAG_\1@@@', text)
+    
+    # Simple search for TAG_nnnn without surrounding symbols if model failed strictly
+    # text = re.sub(r'TAG_(\d{4})', r'@@@TAG_\1@@@', text) 
+    
+    # Remove any XML tags that might have been hallucinated around markers
+    # We assume the translation should NOT contain functional XML tags, only markers.
+    # However, user content might have < or > escaped.
+    # Real XML tags start with < and end with >. Markers start with [[.
+    # We strip all <...> sequences.
+    text = re.sub(r'<[^>]+>', '', text)
+    
+    return text
+
+
+def strip_boundary_markers(text: str):
+    """
+    Removes one leading boundary marker and one trailing boundary marker from the text
+    if they exist. Returns the stripped text, the head marker, and the tail marker.
+    """
+    head = None
+    tail = None
+    stripped_text = text.strip()
+
+    # Regex for a generic marker
+    marker_pattern = r'@@@TAG_\d+@@@'
+    
+    # Check Head
+    match_head = re.match(fr'^({marker_pattern})', stripped_text)
+    if match_head:
+        head = match_head.group(1)
+        stripped_text = stripped_text[len(head):].strip()
+        
+    # Check Tail
+    # Need to be careful not to match the same marker as tail if text was just one marker
+    if stripped_text:
+        match_tail = re.search(fr'({marker_pattern})$', stripped_text)
+        if match_tail:
+            tail = match_tail.group(1)
+            stripped_text = stripped_text[:match_tail.start()].strip()
+    
+    return stripped_text, head, tail
+
+def restore_boundary_markers(text: str, head: str = None, tail: str = None) -> str:
+    """
+    Restores the boundary markers to the text.
+    """
+    # Ensure text is cleaner before re-attaching
+    res = text.strip()
+    
+    if head:
+        res = f" {head} {res}"
+    if tail:
+        res = f"{res} {tail} "
+        
+    return res
 
 
 def parse_xml(file_path):
@@ -287,7 +353,8 @@ def prepare_chunks(body, max_len_chunk):
                 if pos != -1:
                     chunk_end = pos + len('</p>')
 
-            chunks.append(section[chunk_start:chunk_end])
+            chunk_text = section[chunk_start:chunk_end]
+            chunks.append(chunk_text)  # Plain string, без маскирования
             chunk_start = chunk_end
 
         sections.append(chunks)
