@@ -396,10 +396,10 @@ def one_chunk_referat(
     return remove_tags(translation)
 
 @log_entry
-def one_chunk_editor(source_lang: str,  source_text: str, style: str, lang: str, country: str, role: str, **kwargs
+def one_chunk_editor(source_lang: str, source_text: str, translation_1: str, style: str, lang: str, country: str, role: str, **kwargs
 ) -> str:
     """
-    Edits and proofreads the text.
+    Edits and proofreads the text. Compares original + translation to restore XML tags.
     """
     prompt_key = "user_xml" if style == 'xml' else "user_text"
     
@@ -409,24 +409,25 @@ def one_chunk_editor(source_lang: str,  source_text: str, style: str, lang: str,
         s_len = len(source)
         t_len = len(target)
         diff = abs(t_len - s_len) / s_len
-        return diff <= 0.25 # Slightly looser for editor? Or same 0.22. reusing 0.25 to be safe logic from implementation plan mention.
+        return diff <= 0.25
 
     def generation_func(text, temperature):
          return llm_service.get_completion(
             role=role,
             prompt_category="editor",
             prompt_key=prompt_key,
-            lang=lang,
+            source_lang=source_lang,
+            source_text=source_text,  # Original for comparison
+            translation_1=translation_1,  # Translation to edit
             target_lang=lang,
             country=country,
-            source_text="  " + text,
-            temperature=temperature # Pass temp if editor supports it, usually yes
+            temperature=temperature
         )
 
-    # Editor uses length_validator only (markers removed)
+    # Editor uses length_validator only
     return process_with_retries_and_rechunking(
         generation_func,
-        source_text,
+        translation_1,  # Process the translation, not the source
         length_validator,
         config.temp_proofread,
         role="Editor"
@@ -618,7 +619,7 @@ def translate(
             # Step 5: Final translation (using translation_1)
             start_time = time.time()
             role = "Proofread"
-            final_translation = one_chunk_editor(source_lang, translation_1, style, target_lang, country, role)
+            final_translation = one_chunk_editor(source_lang, source_text, translation_1, style, target_lang, country, role)
             final_translation_time = time.time() - start_time
             #if config.debug:
             #     print(f"DEBUG: Final translation time: {final_translation_time:.2f}s, tokens: {num_tokens_in_string(final_translation)}")
