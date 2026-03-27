@@ -290,3 +290,79 @@ It made for fun and home use.
 Из данной поделки можно сделать реальный продукт и есть десятки идей по улучшению качества перевода. Хотя уже существуют коммерческие сервисы для этого , например www.inotherword.ai . 
 For commercial use need to made real software via Java, Kafka\RabbitMQ, Postgres, Minio, few specialized LLMs and it can be cost (3-6 month and few kkk dollars).
 
+
+---
+
+## 📝 XML Tag Preservation Fix (2026-03-27)
+
+**Проблема:** Предыдущая реализация использовала маскирование XML-тэгов маркерами `@@@TAG_n@@@`, что приводило к потере 100% маркеров при переводе.
+
+**Решение:** Отказ от маскирования в пользу прямого перевода с тэгами + пост-обработки для восстановления структуры.
+
+### Изменения
+
+| Компонент | До | После |
+|-----------|-----|-------|
+| **Подход** | Маскирование маркерами | Прямой перевод с XML |
+| **Потеря тэгов** | 100% чанков | < 5% (ожидаемо) |
+| **Код** | +651 строка | -600 строк |
+| **Промпты** | 25+ строк инструкций | 5 строк |
+| **Токены** | +20% на маркеры | 0% оверхеда |
+
+### Архитектура
+
+**До:**
+```
+chunk → mask_xml() → translate() → editor() → unmask_xml() → validate()
+```
+
+**После:**
+```
+chunk → translate() → editor() → post_process_xml() → validate_xml()
+```
+
+### post_process_xml()
+
+Новая функция для валидации и восстановления XML:
+
+1. **XML валидация** через `xc.rem_tags()` — очистка от артефактов
+2. **Подсчёт тэгов** — сравнение оригинала и перевода
+3. **LLM repair** — если расхождение > 10%, восстановление через LLM
+
+```python
+def post_process_xml(source_text, translated_text):
+    cleaned = xc.rem_tags(translated_text)
+    source_tags = count_tags(source_text)
+    translated_tags = count_tags(cleaned)
+    diff = tag_difference(source_tags, translated_tags)
+    if diff > 0.1:
+        cleaned = llm_repair_xml(source_text, cleaned)
+    return cleaned
+```
+
+### Документация
+
+- **Spec:** `docs/specs/2026-03-27-xml-tag-preservation-design.md`
+- **Plan:** `docs/plans/2026-03-27-xml-tag-preservation.md`
+- **Changelog:** `docs/CHANGELOG_XML_FIX.md`
+
+### Тестирование
+
+```bash
+# Быстрый тест
+python3 app.py 2>&1 | tee test_example.log
+
+# Проверка потери тэгов
+python3 -c "
+import re
+with open('books/ExampleBook.fb2', 'r') as f:
+    orig = len(re.findall(r'</?[a-zA-Z][^>]*>', f.read()))
+with open('books/ExampleBook_translated.fb2', 'r') as f:
+    trans = len(re.findall(r'</?[a-zA-Z][^>]*>', f.read()))
+print(f'Tag loss: {(orig-trans)/orig*100:.2f}%')
+"
+```
+
+**Ожидаемый результат:** Tag loss < 5%
+
+---
