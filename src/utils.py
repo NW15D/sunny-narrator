@@ -24,7 +24,9 @@ else:
 def log_entry(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        logger.debug(f"Entering function: {func.__name__}")
+        # Only log entry for key translation functions, not all
+        if func.__name__ in ['translate', 'one_chunk_initial_translation', 'one_chunk_editor']:
+            logger.info(f"→ {func.__name__}")
         return func(*args, **kwargs)
     return wrapper
 
@@ -122,8 +124,15 @@ class LLMService:
         else:
             messages.append({"role": "user", "content": user_message})
 
-        if config.debug:
-            print(f"DEBUG: Input length: {num_tokens_in_string(user_message)} tokens, Action: {label}")
+        # Log summary of what we're sending (not full prompt)
+        source_preview = kwargs.get('source_text', '')[:100]
+        outline_preview = kwargs.get('outline_text', '')[:50]
+        vocab_count = len(kwargs.get('vocab_dict', [])) if kwargs.get('vocab_dict') else 0
+        
+        logger.info(f"  [{label}] {num_tokens_in_string(user_message)} tokens | "
+                   f"Source: {source_preview}{'...' if len(kwargs.get('source_text', '')) > 100 else ''} | "
+                   f"Outline: {outline_preview}{'...' if len(kwargs.get('outline_text', '')) > 50 else ''} | "
+                   f"Vocab: {vocab_count} terms")
 
         comp_kwargs = {
             "model": model,
@@ -134,14 +143,20 @@ class LLMService:
         if json_mode:
             comp_kwargs["response_format"] = {"type": "json_object"}
 
-        # Raw prompt logging
-        logger.debug(f"OpenAI API Request ({label}): {json.dumps(comp_kwargs, ensure_ascii=False, indent=2)}")
+        # Raw prompt logging only in debug mode
+        if config.debug:
+            logger.debug(f"OpenAI API Request ({label}): {json.dumps(comp_kwargs, ensure_ascii=False, indent=2)}")
 
         response = client.chat.completions.create(**comp_kwargs)
         result = response.choices[0].message.content
 
-        # Raw response logging
-        logger.debug(f"OpenAI API Response ({label}): {result}")
+        # Log result summary
+        result_preview = result[:100] if result else "(empty)"
+        logger.info(f"  ← [{label}] {len(result)} chars | {result_preview}{'...' if len(result) > 100 else ''}")
+
+        # Raw response logging only in debug mode
+        if config.debug:
+            logger.debug(f"OpenAI API Response ({label}): {result}")
 
         return result
 
@@ -580,16 +595,10 @@ def translate(
 
     num_tokens_in_text = num_tokens_in_string(source_text)
 
-    if config.debug:
-        print(f"DEBUG: num_tokens_in_text: {num_tokens_in_text}")
-
     # Simplified check, original logic raise error if oversized but here we trust the chunker upstream for now or just process it.
     # The original code raised ValueError("Chunks is oversized!!!") if > max_tokens. 
     # We will keep that behavior but perhaps it should be handled more gracefully in production.
     if num_tokens_in_text <= max_tokens:
-        if config.debug:
-            print("DEBUG: Translating text as a single chunk")
-
         # Step 1: Initial translation
         start_time = time.time()
         role = "Translate"
@@ -598,32 +607,19 @@ def translate(
             source_lang, target_lang, source_text, style, outline_text, vocab_dict, role, temperature=temperature
         )
         translation_1_time = time.time() - start_time
-        if config.debug:
-            print(f"DEBUG: Translation 1 time: {translation_1_time:.2f}s, tokens: {num_tokens_in_string(translation_1)}, translation: {translation_1}")
-            #print(f"DEBUG: Style: {style}, Outline: {outline_text}, role: {role}")
 
         # Step 2: Outline
         start_time = time.time()
         role = "Proofread"
         outline_text = one_chunk_referat(target_lang, translation_1, role)
         outline_time = time.time() - start_time
-        if config.debug:
-            print(f"DEBUG: Outline time: {outline_time:.2f}s, tokens: {num_tokens_in_string(outline_text)}, outline: {outline_text} role: {role}")
-                
-        # YIELD OUTLINE EARLY - REPLACED WITH RETURN AT END
-        # yield ("outline", outline_text)
 
         if config.fast_trans:
-            if config.debug:
-               print("DEBUG: Fast translation mode: Skipping Reflection and Improvement steps")
-            
             # Step 5: Final translation (using translation_1)
             start_time = time.time()
             role = "Proofread"
             final_translation = one_chunk_editor(source_lang, source_text, translation_1, style, target_lang, country, role)
             final_translation_time = time.time() - start_time
-            #if config.debug:
-            #     print(f"DEBUG: Final translation time: {final_translation_time:.2f}s, tokens: {num_tokens_in_string(final_translation)}")
 
         else:
             # Step 3: Reflection on the initial translation
@@ -633,9 +629,6 @@ def translate(
                 source_lang, target_lang, source_text, translation_1, country, vocab_dict, role
             )
             reflection_time = time.time() - start_time
-            if config.debug:
-                print(f"DEBUG: Reflection time: {reflection_time:.2f}s, tokens: {num_tokens_in_string(reflection)}, reflection: {reflection}")
-                print(f"DEBUG: Style: {style}, role: {role}")
 
             # Step 4: Improved translation
             start_time = time.time()
@@ -644,19 +637,12 @@ def translate(
                 source_lang, target_lang, source_text, translation_1, reflection, style, role
             )
             translation_2_time = time.time() - start_time
-            if config.debug:
-                print(f"DEBUG: Improved translation,  Translation 2 time: {translation_2_time:.2f}s, tokens: {num_tokens_in_string(translation_2)}")
-                print(f"DEBUG: Style: {style}, role: {role}")
 
             # Step 5: Final translation
             start_time = time.time()
             role = "Proofread"
             final_translation = translation_2 
-            # #one_chunk_editor(target_lang, translation_2, style, target_lang, country, role, validation_markers=validation_markers)
             final_translation_time = time.time() - start_time
-            if config.debug:
-                print(f"DEBUG: Final translation time: {final_translation_time:.2f}s, tokens: {num_tokens_in_string(final_translation)}")
-
 
         return final_translation, outline_text
     else:
