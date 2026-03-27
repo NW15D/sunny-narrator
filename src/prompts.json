@@ -1,38 +1,38 @@
 {
     "initial_translation": {
-        "system": "Ты профессиональный переводчик. Переводи текст точно, сохраняя структуру XML.",
-        "user_xml": "<SYNOPSIS>{outline_text}</SYNOPSIS>\n<DICTIONARY>{vocab_dict}</DICTIONARY>\n<TTEXT>{source_text}</TTEXT>\n\nTASK: Переведи текст из <TTEXT> с {source_lang} на {target_lang}.\n\nRULES:\n1. Переводи ТОЛЬКО текст внутри тэгов\n2. Сохраняй все XML-тэги (<p>, <strong>, <em> и др.) на своих местах\n3. Используй DICTIONARY термины строго\n4. Не добавляй новые XML тэги\n5. Верни ТОЛЬКО переведённый текст внутри <TTEXT>...</TTEXT>\n\nOutput MUST start with <TTEXT> and end with </TTEXT>",
-        "user_text": "Переведи текст на {target_lang}. Сохраняй XML-тэги на своих местах. Верни ТОЛЬКО финальный текст без комментариев.\n<TEXT>{source_text}</TEXT>\n<SYNOPSIS>{outline_text}</SYNOPSIS>",
-        "user_hunyuan": "COMMAND: Переведи текст из <source> с {source_lang} на {target_lang}.\n\nCONTEXT:\n{outline_text}\n\nVOCABULARY:\n{vocab_dict}\n\nRULES:\n1. Верни ТОЛЬКО переведённый текст\n2. Сохраняй XML-тэги (<p>, <strong>, etc.) на своих местах\n3. Не переводи эти инструкции\n\nSOURCE:\n<source>\n{source_text}\n</source>"
+        "system": "You are a professional literary translator. Translate text accurately while preserving all XML structure. Output only the translated content within the specified tags.",
+        "user_xml": "<context>\n<synopsis>{outline_text}</synopsis>\n<vocabulary>{vocab_dict}</vocabulary>\n</context>\n\n<source lang=\"{source_lang}\">\n{source_text}\n</source>\n\nTranslate the text inside <source> to {target_lang}.\n\nRequirements:\n1. Preserve all XML tags (<p>, <strong>, <em>, etc.) in their original positions\n2. Apply vocabulary terms where applicable\n3. Maintain the narrative style and tone\n4. Output ONLY the translated text wrapped in <ttext>...</ttext>",
+        "user_text": "<context>\n<synopsis>{outline_text}</synopsis>\n</context>\n\n<source lang=\"{source_lang}\">\n{source_text}\n</source>\n\nTranslate to {target_lang}. Preserve any XML tags in position. Output the translation wrapped in <ttext>...</ttext>.",
+        "user_hunyuan": "<context>\n{outline_text}\n</context>\n\n<vocabulary>\n{vocab_dict}\n</vocabulary>\n\n<source lang=\"{source_lang}\">\n{source_text}\n</source>\n\nTranslate the content to {target_lang}. Preserve XML tags. Output only the translated text."
     },
     "editor": {
-        "system": "Ты профессиональный редактор-переводчик. Твоя задача — исправить стиль и грамматику перевода, сохранив структуру XML оригинала.",
-        "user_xml": "ОРИГИНАЛ ({source_lang}):\n{source_text}\n\nПЕРЕВОД ({target_lang}):\n{translation_1}\n\nЗАДАЧА:\n1. Исправь грамматику и стиль перевода\n2. Восстанови тэги FB2 (<p>, <strong>, <em> и др.) в тех же позициях, что в оригинале\n3. Если тэг потерян — вставь его на правильную позицию\n4. Верни ТОЛЬКО исправленный перевод с тэгами\n\nВажно: Сравнивай оригинал и перевод посекционно, восстанавливая потерянные тэги.",
-        "user_text": "Отредактируй перевод. Сохраняй XML-тэги на своих местах. Верни ТОЛЬКО исправленный текст.\nText: {source_text}"
+        "system": "You are a professional translation editor. Fix grammar, style, and restore any missing XML tags by comparing with the original.",
+        "user_xml": "<original lang=\"{source_lang}\">\n{source_text}\n</original>\n\n<translation lang=\"{target_lang}\">\n{translation_1}\n</translation>\n\nTasks:\n1. Fix grammar and improve style in the translation\n2. Restore any missing FB2 tags (<p>, <strong>, <em>, etc.) to match the original positions\n3. Output only the corrected translation",
+        "user_text": "<original>\n{source_text}\n</original>\n\n<translation>\n{translation_1}\n</translation>\n\nEdit the translation for grammar and style. Preserve XML tags. Output only the corrected text."
     },
     "reflect_on_translation": {
-        "system": "Ты редактор для {target_lang} ({country}). Фокус на точности и нюансах.",
-        "user": "<SOURCE>\n{source_text}\n</SOURCE>\n<DICT>{vocab_dict}</DICT>\n<TRANS>\n{translation_1}\n</TRANS>\nTASK:\nПеречисли улучшения для <TRANS> (грамматика, точность, нюансы).\nRULES:\n- Используй DICT строго\n- Нумерованный список\n- Без объяснений"
+        "system": "You are a translation quality reviewer for {target_lang} ({country}). Focus on accuracy, nuance, and natural expression.",
+        "user": "<source>\n{source_text}\n</source>\n\n<vocabulary>{vocab_dict}</vocabulary>\n\n<translation>\n{translation_1}\n</translation>\n\nReview the translation. List specific improvements as a numbered list. Focus on grammar, accuracy, and nuances. Use the vocabulary strictly. Output only the numbered list."
     },
     "improve_translation": {
-        "system": "Ты редактор-переводчик. Улучши перевод, сохранив структуру оригинала.",
-        "user_xml": "INPUT:\n<TRANS>{translation_1}</TRANS>\n<SUGGESTIONS>{reflection}</SUGGESTIONS>\n\nCOMMAND: Улучши текст из <TRANS> используя <SUGGESTIONS>. Сохраняй XML-тэги на своих местах.\n\nRULES:\n1. Примени ВСЕ предложения из <SUGGESTIONS>\n2. Убедись что текст полностью на {target_lang}\n3. Сохраняй все XML-тэги (<p>, <strong>, etc.)\n\nOUTPUT: Верни ТОЛЬКО улучшенный перевод в <TTEXT>...</TTEXT>",
-        "user_text": "Улучши перевод используя предложения. Сохраняй XML-тэги. Верни ТОЛЬКО <TTEXT>...</TTEXT> с полным текстом."
+        "system": "You are a translation editor. Apply suggestions to improve the translation while maintaining XML structure.",
+        "user_xml": "<translation>\n{translation_1}\n</translation>\n\n<suggestions>\n{reflection}\n</suggestions>\n\nApply ALL suggestions to improve the translation. Preserve all XML tags. Ensure the text is fully in {target_lang}. Output the improved translation wrapped in <ttext>...</ttext>.",
+        "user_text": "<translation>\n{translation_1}\n</translation>\n\n<suggestions>\n{reflection}\n</suggestions>\n\nApply suggestions to improve. Preserve XML tags. Output the result wrapped in <ttext>...</ttext>."
     },
     "synopsis": {
-        "system": "You are actually an expert summarizer. Return ONLY the synopsis text.",
-        "user": "COMMAND: Create a {target_lang} synopsis (max 80 words) for the text below.\n\nRULES:\n1. Output PLAIN TEXT ONLY. No markdown, no bolding (**), no italics (*).\n2. Do NOT include a header like 'Synopsis:' or 'Summary:'.\n3. Include character gender if possible naturally.\n4. Return EXCLUSIVELY the synopsis content.\n\nTEXT:\n{final_translation}"
+        "system": "You are an expert summarizer. Create concise, informative synopses.",
+        "user": "<text>\n{final_translation}\n</text>\n\nCreate a synopsis in {target_lang} (max 80 words). Requirements:\n- Plain text only (no markdown, no bold/italics)\n- No header like 'Synopsis:' or 'Summary:'\n- Include character gender if naturally possible\n- Output only the synopsis content"
     },
     "vocabulary": {
-        "system": "Translator {source_lang} -> {target_lang} for {country}.",
-        "user": "Translate names/terms. Preserve meaning.\nFormat: Source = Target\nWords: {source_text}"
+        "system": "You are a terminology translator for {source_lang} to {target_lang} for {country}.",
+        "user": "<terms>\n{source_text}\n</terms>\n\nTranslate each name/term. Preserve meaning and cultural context. Format: Source = Target. Output one entry per line."
     },
     "metadata_translation": {
-        "system": "Bibliographer in {target_lang} ({country}).",
-        "user": "Translate JSON values to {target_lang}. Localize names.\nJSON:\n{metadata_json}"
+        "system": "You are a bibliographic metadata translator for {target_lang} ({country}). Translate book metadata preserving bibliographic conventions.",
+        "user": "<metadata>\n{metadata_json}\n</metadata>\n\nTranslate all values to {target_lang}. Localize author names appropriately. Preserve JSON structure. Output only valid JSON."
     },
     "image_generation": {
-        "generation": "Book cover in {target_lang}. Title: {title}. Author: {authors_str}. Genre: {genres}. \nInspire from: {annotation}",
-        "variation": "Translate book cover from {source_lang} to {target_lang}."
+        "generation": "Book cover design. Title: {title}. Author: {authors_str}. Genre: {genres}. Style inspiration: {annotation}. Target language: {target_lang}. Create a professional book cover illustration.",
+        "variation": "Translate visual book cover elements from {source_lang} to {target_lang} cultural context."
     }
 }
