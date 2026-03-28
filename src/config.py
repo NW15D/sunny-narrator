@@ -90,6 +90,11 @@ class Config:
         # DEBUG defaulted to off
         self.debug = os.getenv('DEBUG', 'off').lower() in ['true', '1', 't', 'on']
 
+        # Output format: 'fb2' or 'epub' (default: fb2)
+        self.output_format = os.getenv('OUTPUT_FORMAT', 'fb2').lower()
+        if self.output_format not in ['fb2', 'epub']:
+            self.output_format = 'fb2'
+
         # Load prompts
         self.prompts = self._load_prompts()
 

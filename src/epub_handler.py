@@ -55,6 +55,28 @@ def parse_epub(file_path):
     publisher_meta = book.get_metadata('DC', 'publisher')
     publisher = publisher_meta[0][0] if publisher_meta else ""
 
+    # Series/Sequence (Calibre-style or OPF belongs-to-collection)
+    series_name = ""
+    series_number = ""
+    
+    # Try Calibre-style metadata
+    calibre_series = book.get_metadata('OPF', 'calibre:series')
+    if calibre_series:
+        series_name = calibre_series[0][0]
+    calibre_index = book.get_metadata('OPF', 'calibre:title_sort')  # or calibre:series_index
+    if calibre_index:
+        series_number = calibre_index[0][0]
+    
+    # Try belongs-to-collection (EPUB 3.x)
+    if not series_name:
+        belongs_to = book.get_metadata('OPF', 'belongs-to-collection')
+        if belongs_to:
+            series_name = belongs_to[0][0]
+            # Try to get position
+            group_position = book.get_metadata('OPF', 'group-position')
+            if group_position:
+                series_number = group_position[0][0]
+
     # Cover Image
     cover_image_id = None
     # Try to find cover image id
@@ -122,6 +144,14 @@ def parse_epub(file_path):
     if cover_href:
         coverpage_xml = f"<coverpage><image l:href=\"#{cover_href}\"/></coverpage>"
 
+    # Series/Sequence XML
+    series_xml = ""
+    if series_name:
+        if series_number:
+            series_xml = f'<sequence name="{series_name}" number="{series_number}"/>'
+        else:
+            series_xml = f'<sequence name="{series_name}"/>'
+
     header = f"""<?xml version="1.0" encoding="utf-8"?>
 <FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink">
 <description>
@@ -136,6 +166,7 @@ def parse_epub(file_path):
         <date>{date_str}</date>
         {coverpage_xml}
         <lang>{lang}</lang>
+        {series_xml}
         <translator><nickname>Sunny narrator opensource AI translator </nickname> <email>n@uwns.org</email> </translator>
     </title-info>
     <publish-info>
@@ -218,6 +249,20 @@ def prepare_chunks(body, max_len_chunk):
     to look like FB2 (sections).
     """
     return fb2.prepare_chunks(body, max_len_chunk)
+
+def extract_metadata(header):
+    """
+    Extract metadata from FB2-like header (EPUB converted to FB2 structure).
+    Wrapper for fb2_handler.extract_metadata.
+    """
+    return fb2.extract_metadata(header)
+
+def update_header_with_metadata(header, metadata):
+    """
+    Update FB2-like header with translated metadata.
+    Wrapper for fb2_handler.update_header_with_metadata.
+    """
+    return fb2.update_header_with_metadata(header, metadata)
 
 def get_cover_image(header, footer):
     """
