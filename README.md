@@ -6,7 +6,7 @@
 
 ## Features
 
-- 📚 **Format preservation**: Native FB2/EPUB support with XML tag integrity
+- 📚 **Format preservation**: Native FB2 support with XML tag integrity (EPUB: not tested)
 - 🎯 **Vocabulary translation**: NER-based consistent name/term handling
 - 📝 **Proofreading**: Dual-pass translation with quality check
 - 🌍 **Regional adaptation**: Country-specific language nuances
@@ -21,6 +21,10 @@
 git clone https://github.com/neowisard/sunny_narrator
 cd sunny_narrator
 
+# Configure: copy sample and edit
+mv .env_sample .env
+# Edit .env with your API settings
+
 # Setup and run
 ./scripts/check-gpu.sh
 docker-compose -f docker-compose.gpu.yml build
@@ -30,8 +34,15 @@ docker-compose -f docker-compose.gpu.yml run --rm sunny-narrator
 ### Python
 
 ```bash
+# Setup environment
 pip install -r requirements.txt
-python app.py
+
+# Configure: copy sample and edit
+mv .env_sample .env
+# Edit .env with your API settings
+
+# Run with specific file
+FILE="books/ExampleBook.fb2" python app.py
 ```
 
 ## Requirements
