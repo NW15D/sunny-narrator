@@ -25,7 +25,7 @@ from pathlib import Path
 
 from src.config import Config
 from src import ner as ner_module
-from src.character_registry import CharacterRegistry, get_character_registry
+from src.character_registry import CharacterRegistry, get_character_registry, Character
 
 config = Config()
 logger = logging.getLogger(__name__)
@@ -52,18 +52,8 @@ class VocabEntry:
         }
 
 
-@dataclass  
-class Character:
-    """Character with gender tracking."""
-    name: str
-    gender: str = ""  # he, she, it, they
-    aliases: List[str] = field(default_factory=list)
-    first_mention_chunk: int = 0
-    mentions: List[int] = field(default_factory=list)  # chunk indices
-    
-    def get_all_forms(self) -> List[str]:
-        """Get all name forms including aliases."""
-        return [self.name] + self.aliases
+# NOTE: Character class is defined in character_registry.py
+# Use CharacterRegistry.Character for unified character tracking
 
 
 class VocabularyManager:
@@ -412,11 +402,11 @@ class VocabularyManager:
         
         return ""
     
-    def update_character_mentions(self, name: str, chunk_idx: int):
+    def update_character_mentions(self, name: str, section_idx: int, chunk_idx: int):
         """Update character mention tracking."""
         key = name.replace(' ', '_').lower()
         if key in self.characters:
-            self.characters[key].mentions.append(chunk_idx)
+            self.characters[key].mentions.append((section_idx, chunk_idx))
     
     def get_series_vocab(self, previous_books: List[str]) -> Dict[str, VocabEntry]:
         """
