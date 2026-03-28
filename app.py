@@ -256,7 +256,14 @@ class TranslationEngine:
             # Log chunk info
             chunk_preview = chunk[:80] if isinstance(chunk, str) else str(chunk)[:80]
             vocab_count = len(self.vocab_dict_map.get(key, []))
-            new_vocab_count = len(formatted_vocab.split('\n')) if formatted_vocab else 0
+            # FIX: Hunyuan uses "|" separator, others use "\n"
+            if formatted_vocab:
+                if 'hunyuan' in config.model_translate.lower():
+                    new_vocab_count = len(formatted_vocab.split('|'))
+                else:
+                    new_vocab_count = len(formatted_vocab.strip().split('\n'))
+            else:
+                new_vocab_count = 0
             print(f"\n[Chunk {g_id+1}/{total_chunks}] Section {s_idx+1}.{c_idx+1} | {len(chunk)} chars | Vocab: {vocab_count} terms (formatted: {new_vocab_count})")
             print(f"  Source: {chunk_preview}{'...' if len(chunk) > 80 else ''}")
 
@@ -267,7 +274,8 @@ class TranslationEngine:
             final_content, new_outline_val = self.process_chunk_recursive(chunk, s_idx, c_idx, g_id, key, current_context)
             
             # Save result to SynopsisManager for future chunks in this section
-            self.synopsis_manager.add_chunk_result(s_idx, c_idx, final_content)
+            # FIX: Pass generated synopsis from pipeline (new_outline_val)
+            self.synopsis_manager.add_chunk_result(s_idx, c_idx, final_content, generated_synopsis=new_outline_val)
             
             # Legacy: also update shared_outline for backward compatibility
             self.shared_outline['text'] = new_outline_val
