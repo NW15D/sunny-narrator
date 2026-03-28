@@ -18,6 +18,7 @@ from src.config import Config
 from src.synopsis_manager import SynopsisManager
 from src.vocabulary_manager import VocabularyManager, get_vocabulary_manager
 from src.character_registry import CharacterRegistry, get_character_registry, reset_character_registry
+from src.epub_writer import create_epub_from_fb2
 
 # Initialize configuration
 config = Config()
@@ -330,7 +331,10 @@ def main():
     if file_extension.lower() not in ['.fb2', '.epub', '.txt']:
         raise ValueError(f"Unsupported file extension: {file_extension}")
 
-    output_file = f"{output_dir}/{file_name}_{config.target_lang}_{formatted_time}.fb2"
+    # Output format based on config (default: fb2)
+    output_ext = config.output_format
+    output_base = f"{output_dir}/{file_name}_{config.target_lang}_{formatted_time}"
+    output_file = f"{output_base}.{output_ext}"
     output_tfile = f"{output_dir}/{file_name}_{config.target_lang}_tmp_{formatted_time}.fb2"
 
     # 1. Parse Input
@@ -418,7 +422,21 @@ def main():
         for err in validation_errors:
             print(f"  {err}")
     
-    write_to_file(xml_str, output_file)
+    # Write output based on format
+    if config.output_format == 'epub':
+        # Create EPUB from FB2-like structure
+        try:
+            epub_path = create_epub_from_fb2(header, all_content, footer, output_base)
+            print(f"\nEPUB created: {epub_path}")
+        except Exception as e:
+            print(f"Error creating EPUB: {e}")
+            # Fallback to FB2
+            write_to_file(xml_str, f"{output_base}.fb2")
+            print(f"Fallback FB2 created: {output_base}.fb2")
+    else:
+        # Default: create FB2
+        write_to_file(xml_str, output_file)
+        print(f"\nFB2 created: {output_file}")
 
     # Stats
     print("\n--- Translation Statistics ---")
