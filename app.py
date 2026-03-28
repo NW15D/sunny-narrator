@@ -15,6 +15,7 @@ import src.fb2_handler as fb2
 import src.epub_handler as epub
 import src.txt_handler as txt
 from src.config import Config
+from src.synopsis_manager import SynopsisManager
 
 # Initialize configuration
 config = Config()
@@ -48,6 +49,8 @@ class TranslationEngine:
         self.shared_outline = {'text': ''}
         self.total_source_len = 0
         self.total_target_len = 0
+        # NEW: Synopsis manager for proper context handling per section
+        self.synopsis_manager = SynopsisManager()
 
     def load_vocab_for_chunk(self, chunk, s_idx, c_idx, vocab):
         """
@@ -214,13 +217,16 @@ class TranslationEngine:
             print(f"\n[Chunk {g_id+1}/{total_chunks}] Section {s_idx+1}.{c_idx+1} | {len(chunk)} chars | Vocab: {vocab_count} terms")
             print(f"  Source: {chunk_preview}{'...' if len(chunk) > 80 else ''}")
 
-            # Get Context
-            current_context = self.shared_outline['text']
+            # Get Context from SynopsisManager (NEW: proper per-section, per-chunk synopsis)
+            current_context = self.synopsis_manager.get_synopsis(s_idx, c_idx)
             
             # Execute Translation
             final_content, new_outline_val = self.process_chunk_recursive(chunk, s_idx, c_idx, g_id, key, current_context)
             
-            # Update Context
+            # Save result to SynopsisManager for future chunks in this section
+            self.synopsis_manager.add_chunk_result(s_idx, c_idx, final_content)
+            
+            # Legacy: also update shared_outline for backward compatibility
             self.shared_outline['text'] = new_outline_val
             
             # Log result
