@@ -16,6 +16,7 @@ import src.epub_handler as epub
 import src.txt_handler as txt
 from src.config import Config
 from src.synopsis_manager import SynopsisManager
+from src.vocabulary_manager import VocabularyManager, get_vocabulary_manager
 
 # Initialize configuration
 config = Config()
@@ -43,7 +44,7 @@ class TranslationEngine:
     """
     Encapsulates the translation logic, context management, and recursive processing.
     """
-    def __init__(self, output_tfile):
+    def __init__(self, output_tfile, book_path=None):
         self.output_tfile = output_tfile
         self.vocab_dict_map = {}
         self.shared_outline = {'text': ''}
@@ -51,10 +52,17 @@ class TranslationEngine:
         self.total_target_len = 0
         # NEW: Synopsis manager for proper context handling per section
         self.synopsis_manager = SynopsisManager()
+        # NEW: Vocabulary manager for dictionary handling
+        self.vocab_manager = None
+        if book_path:
+            self.vocab_manager = get_vocabulary_manager(book_path)
 
     def load_vocab_for_chunk(self, chunk, s_idx, c_idx, vocab):
         """
         Prepares the vocabulary dictionary for a specific chunk using NER.
+        
+        LEGACY: Kept for backward compatibility.
+        NEW: Use VocabularyManager via get_formatted_vocab_for_chunk()
         """
         if not (config.ner_opt and ner and vocab):
             return
@@ -78,6 +86,31 @@ class TranslationEngine:
         
         if config.debug and self.vocab_dict_map[key]:
              print(f"DEBUG: Vocab for chunk {s_idx}-{c_idx}: {self.vocab_dict_map[key]}")
+
+    def get_formatted_vocab_for_chunk(self, chunk, s_idx, c_idx) -> str:
+        """
+        NEW: Get formatted vocabulary for chunk using VocabularyManager.
+        
+        Returns vocabulary formatted for the current model (Hunyuan, Gemma, etc.)
+        """
+        if not self.vocab_manager:
+            return ""
+        
+        chunk_text = chunk if isinstance(chunk, str) else str(chunk)
+        
+        # Get relevant entries for this chunk
+        entries = self.vocab_manager.get_vocab_for_chunk(chunk_text, s_idx, c_idx)
+        
+        if not entries:
+            return ""
+        
+        # Format for current model
+        formatted = self.vocab_manager.format_for_model(entries, config.model_translate)
+        
+        if config.debug and formatted:
+            print(f"DEBUG: Formatted vocab for chunk {s_idx}-{c_idx}: {len(entries)} terms")
+        
+        return formatted
 
     def translate_chunk_wrapper(self, source_text, source_lang, target_lang, outline_text, country, vocab_list, temperature):
         """
@@ -211,10 +244,14 @@ class TranslationEngine:
             key = (s_idx, c_idx)
             self.load_vocab_for_chunk(chunk, s_idx, c_idx, vocab)
             
+            # NEW: Get formatted vocab for current model
+            formatted_vocab = self.get_formatted_vocab_for_chunk(chunk, s_idx, c_idx)
+            
             # Log chunk info
             chunk_preview = chunk[:80] if isinstance(chunk, str) else str(chunk)[:80]
             vocab_count = len(self.vocab_dict_map.get(key, []))
-            print(f"\n[Chunk {g_id+1}/{total_chunks}] Section {s_idx+1}.{c_idx+1} | {len(chunk)} chars | Vocab: {vocab_count} terms")
+            new_vocab_count = len(formatted_vocab.split('\n')) if formatted_vocab else 0
+            print(f"\n[Chunk {g_id+1}/{total_chunks}] Section {s_idx+1}.{c_idx+1} | {len(chunk)} chars | Vocab: {vocab_count} terms (formatted: {new_vocab_count})")
             print(f"  Source: {chunk_preview}{'...' if len(chunk) > 80 else ''}")
 
             # Get Context from SynopsisManager (NEW: proper per-section, per-chunk synopsis)
@@ -316,7 +353,18 @@ def main():
             })
 
     # 4. Initialize Engine & Translate
-    engine = TranslationEngine(output_tfile)
+    # NEW: Pass book_path to enable VocabularyManager
+    engine = TranslationEngine(output_tfile, book_path=myfile)
+    
+    # NEW: Initialize vocabulary via VocabularyManager if available
+    if engine.vocab_manager:
+        try:
+            vocab = engine.vocab_manager.initialize()
+            print(f"Vocabulary loaded: {len(vocab)} entries")
+        except SystemExit:
+            # Dictionary was created, user needs to edit
+            return
+    
     all_content = engine.process_all_chunks(all_chunks, orig_sections, vocab, output_tfile)
 
     # 5. Metadata & Cover
