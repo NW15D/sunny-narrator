@@ -15,8 +15,8 @@ class TranslationStage(Enum):
     """Stages in the translation pipeline."""
     INITIAL = "initial"
     SYNOPSIS = "synopsis"
-    QUALITY_CHECK = "quality_check"
-    STYLE_EDIT = "style_edit"
+    REFLECTION = "reflection"      # Merged: quality + nuances + suggestions
+    IMPROVE = "improve"            # Apply reflection suggestions
     FINAL = "final"
 
 
@@ -65,8 +65,7 @@ class PipelineState:
     context: TranslationContext
     initial_translation: Optional[str] = None
     synopsis: Optional[str] = None
-    quality_report: Optional[str] = None
-    style_corrections: Optional[str] = None
+    reflection: Optional[str] = None       # Merged quality + nuances
     final_translation: Optional[str] = None
     
     # Metadata
@@ -83,25 +82,35 @@ class PipelineState:
             self.initial_translation = result.text
         elif result.stage == TranslationStage.SYNOPSIS:
             self.synopsis = result.text
-        elif result.stage == TranslationStage.QUALITY_CHECK:
-            self.quality_report = result.text
-        elif result.stage == TranslationStage.STYLE_EDIT:
-            self.style_corrections = result.text
+        elif result.stage == TranslationStage.REFLECTION:
+            self.reflection = result.text
+        elif result.stage == TranslationStage.IMPROVE:
+            self.final_translation = result.text
         elif result.stage == TranslationStage.FINAL:
             self.final_translation = result.text
 
 
 @dataclass
-class QualityCheckPrompt:
-    """Prompt structure for quality control stage."""
-    system: str = """You are a translation quality controller. 
-Review the translation against the source text and identify:
-1. Accuracy issues (meaning changes, omissions, additions)
-2. Terminology inconsistencies (check against provided vocabulary)
-3. Grammar and syntax errors
-4. Style deviations from the original
+class ReflectionPrompt:
+    """
+    Combined reflection + quality check with literary focus.
+    
+    Merged from:
+    - reflect_on_translation (literary nuances)
+    - quality_check (accuracy, terminology)
+    
+    Output: numbered list of specific improvements.
+    """
+    system: str = """You are a literary translation quality reviewer for {target_lang} ({country}).
 
-Output a structured report with specific issues and suggestions."""
+Review the translation against the source and identify:
+1. Accuracy issues (meaning changes, omissions, additions)
+2. Terminology inconsistencies (vocabulary usage)
+3. Grammar and syntax errors
+4. Nuances and natural expression (literary quality)
+5. Style deviations from the original tone
+
+Output a numbered list of specific improvements."""
     
     user_template: str = """<source lang="{source_lang}">
 {source_text}
@@ -115,26 +124,36 @@ Output a structured report with specific issues and suggestions."""
 {vocab_dict}
 </vocabulary>
 
-Provide a quality report:
-1. ACCURACY: List any meaning changes or omissions
-2. TERMINOLOGY: Check vocabulary usage
-3. GRAMMAR: List syntax issues
-4. STYLE: Note any tone mismatches
+Review the translation:
+1. ACCURACY: Meaning changes or omissions
+2. TERMINOLOGY: Vocabulary compliance
+3. GRAMMAR: Syntax issues
+4. NUANCES: Literary quality improvements
+5. STYLE: Tone mismatches
 
-Format: Numbered list with specific examples."""
+Output numbered suggestions. Focus on natural {target_lang} expression for {country}."""
 
 
 @dataclass
-class StyleEditorPrompt:
-    """Prompt structure for style editing stage."""
-    system: str = """You are a literary style editor. 
-Your task is to refine the translation while preserving:
+class ImprovePrompt:
+    """
+    Apply reflection suggestions to improve translation.
+    
+    Merged from:
+    - improve_translation (apply reflection)
+    - style_edit (preserve obscene, cultural nuances)
+    
+    Output: final polished translation.
+    """
+    system: str = """You are a literary translation editor for {target_lang} ({country}).
+
+Your task is to apply reflection suggestions while preserving:
 - Original narrative voice and tone
 - Obscene/profane language (if present in source)
 - Character speech patterns
 - Cultural nuances appropriate for {country}
 
-Apply quality feedback and produce the final polished text."""
+Output the improved translation."""
     
     user_template: str = """<source lang="{source_lang}">
 {source_text}
@@ -144,24 +163,27 @@ Apply quality feedback and produce the final polished text."""
 {translation}
 </translation>
 
-<quality_feedback>
-{quality_report}
-</quality_feedback>
+<suggestions>
+{reflection}
+</suggestions>
 
 <vocabulary>
 {vocab_dict}
 </vocabulary>
 
-Edit the translation:
-1. Apply all quality feedback
-2. Preserve obscene/profane language if present in source
-3. Maintain narrative style and character voices
-4. Ensure cultural appropriateness for {country}
+Apply ALL numbered suggestions to improve the translation:
+1. Fix accuracy issues
+2. Apply vocabulary terms correctly
+3. Fix grammar
+4. Improve literary nuances
+5. Maintain style and tone
+6. Preserve obscene/profane language if present in source
+7. Ensure cultural appropriateness for {country}
 
 Output the final translation wrapped in <ttext>...</ttext>."""
 
 
-# Workflow definition
+# Workflow definition (merged reflection approach)
 TRANSLATION_WORKFLOW = [
     {
         "stage": TranslationStage.INITIAL,
@@ -170,15 +192,21 @@ TRANSLATION_WORKFLOW = [
         "description": "Primary translation with dictionary and synopsis"
     },
     {
-        "stage": TranslationStage.QUALITY_CHECK,
-        "llm_role": LLMRole.SECONDARY,
-        "function": "quality_check",
-        "description": "Quality control and consistency verification"
+        "stage": TranslationStage.SYNOPSIS,
+        "llm_role": LLMRole.PRIMARY,
+        "function": "generate_synopsis",
+        "description": "Summary for next chunk context"
     },
     {
-        "stage": TranslationStage.STYLE_EDIT,
+        "stage": TranslationStage.REFLECTION,
         "llm_role": LLMRole.SECONDARY,
-        "function": "style_edit",
-        "description": "Style preservation and final polishing"
+        "function": "reflection",
+        "description": "Quality + nuances + suggestions (merged)"
+    },
+    {
+        "stage": TranslationStage.IMPROVE,
+        "llm_role": LLMRole.SECONDARY,
+        "function": "improve_translation",
+        "description": "Apply reflection suggestions + preserve style"
     },
 ]
