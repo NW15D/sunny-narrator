@@ -59,7 +59,7 @@ python app.py
 
 ## Wiki
 
-📖 [Full Documentation](https://gt.farhome.ru/sn/sunny-narrator/-/wikis/home)
+📖 [Full Documentation](https://github.com/NW15D/sunny-narrator/wiki)
 
 ## Languages
 

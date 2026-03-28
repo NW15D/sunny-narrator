@@ -36,7 +36,7 @@ python app.py
 ## 文档
 
 - [Docker](DOCKER_README.md)
-- [Wiki](https://gt.farhome.ru/sn/sunny-narrator/-/wikis/home)
+- [Wiki](https://github.com/NW15D/sunny-narrator/wiki)
 
 ---
 
