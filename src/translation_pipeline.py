@@ -360,7 +360,8 @@ class TranslationPipeline:
             final_result = TranslationResult(
                 stage=TranslationStage.FINAL,
                 llm_role=LLMRole.PRIMARY,
-                text=initial_result.text
+                text=initial_result.text,
+                metadata={"fast_mode": True, "applied_reflection": False}
             )
             state.add_result(final_result)
         else:
@@ -377,6 +378,15 @@ class TranslationPipeline:
                 reflection_result.text
             )
             state.add_result(improve_result)
+            
+            # Stage 5: Final (marker stage)
+            final_result = TranslationResult(
+                stage=TranslationStage.FINAL,
+                llm_role=LLMRole.SECONDARY,
+                text=improve_result.text,
+                metadata={"applied_reflection": True}
+            )
+            state.add_result(final_result)
         
         return state
 
