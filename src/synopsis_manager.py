@@ -21,6 +21,7 @@ from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass, field
 
 from src.config import Config
+from src.character_registry import CharacterRegistry, get_character_registry
 
 config = Config()
 logger = logging.getLogger(__name__)
@@ -68,10 +69,13 @@ class SynopsisManager:
         manager.add_chunk_result(section_idx, chunk_idx, final_translation)
     """
     
-    def __init__(self, max_synopsis_chars: int = 500):
+    def __init__(self, max_synopsis_chars: int = 500, character_registry: Optional[CharacterRegistry] = None):
         self.section_contexts: Dict[int, SectionContext] = {}
         self.max_synopsis_chars = max_synopsis_chars
         self._synopsis_generator = None  # Lazy init
+        
+        # Character registry for gender tracking
+        self.character_registry = character_registry or get_character_registry()
         
     def _get_or_create_section(self, section_idx: int) -> SectionContext:
         """Get or create section context."""
@@ -121,7 +125,11 @@ class SynopsisManager:
         
         # Generate synopsis from final translation if not provided
         if generated_synopsis is None:
-            generated_synopsis = self._generate_synopsis(final_translation)
+            generated_synopsis = self._generate_synopsis(final_translation, section_idx, chunk_idx)
+        
+        # Update character mentions in registry
+        if self.character_registry:
+            self.character_registry.detect_mentions(final_translation, section_idx, chunk_idx)
         
         # Truncate if too long
         if len(generated_synopsis) > self.max_synopsis_chars:
@@ -135,33 +143,33 @@ class SynopsisManager:
                 f"added {len(generated_synopsis)} chars synopsis"
             )
     
-    def _generate_synopsis(self, text: str) -> str:
+    def _generate_synopsis(self, text: str, section_idx: int = -1, chunk_idx: int = -1) -> str:
         """
         Generate synopsis from translated text.
         
-        In production, this should call LLM to extract:
-        - Character names and their gender
-        - Key events
-        - Important terminology
-        
-        For now, returns first sentence as fallback.
+        Includes character context from CharacterRegistry if available.
         """
-        # TODO: Replace with LLM call for proper synopsis generation
-        # This is a placeholder - real implementation should extract:
-        # - Character names + gender markers
-        # - Key plot points
-        # - Important terms from vocabulary
+        # Get character context line
+        char_context = ""
+        if section_idx >= 0 and chunk_idx >= 0 and self.character_registry:
+            char_context = self.character_registry.get_character_context_line(section_idx, chunk_idx)
         
-        # Simple fallback: first sentence up to 200 chars
+        # Generate content synopsis (first sentence as fallback)
         sentences = text.split('.')
         first_sentence = sentences[0].strip() if sentences else text
         
         # Clean up XML tags
         import re
-        clean = re.sub(r'<[^>]+>', '', first_sentence)
-        clean = clean.strip()
+        content = re.sub(r'<[^>]+>', '', first_sentence)
+        content = content.strip()
         
-        return clean[:self.max_synopsis_chars]
+        # Combine character context + content
+        if char_context:
+            synopsis = f"{char_context}. {content}"
+        else:
+            synopsis = content
+        
+        return synopsis[:self.max_synopsis_chars]
     
     def get_section_stats(self, section_idx: int) -> Dict:
         """Get statistics for a section."""

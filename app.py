@@ -17,6 +17,7 @@ import src.txt_handler as txt
 from src.config import Config
 from src.synopsis_manager import SynopsisManager
 from src.vocabulary_manager import VocabularyManager, get_vocabulary_manager
+from src.character_registry import CharacterRegistry, get_character_registry, reset_character_registry
 
 # Initialize configuration
 config = Config()
@@ -50,8 +51,13 @@ class TranslationEngine:
         self.shared_outline = {'text': ''}
         self.total_source_len = 0
         self.total_target_len = 0
-        # NEW: Synopsis manager for proper context handling per section
-        self.synopsis_manager = SynopsisManager()
+        # NEW: Character registry (shared between synopsis and vocabulary)
+        reset_character_registry()  # Reset for new book
+        self.character_registry = get_character_registry()
+        
+        # NEW: Synopsis manager with character registry integration
+        self.synopsis_manager = SynopsisManager(character_registry=self.character_registry)
+        
         # NEW: Vocabulary manager for dictionary handling
         self.vocab_manager = None
         if book_path:

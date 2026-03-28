@@ -25,6 +25,7 @@ from pathlib import Path
 
 from src.config import Config
 from src import ner as ner_module
+from src.character_registry import CharacterRegistry, get_character_registry
 
 config = Config()
 logger = logging.getLogger(__name__)
@@ -253,14 +254,30 @@ class VocabularyManager:
         return vocab
     
     def _extract_characters(self):
-        """Extract characters from vocabulary (PERSON category)."""
+        """Extract characters from vocabulary (PERSON category) and sync with CharacterRegistry."""
+        # Get or create character registry
+        registry = get_character_registry()
+        
         for key, entry in self.vocab.items():
             if entry.category.upper() == "PERSON" or not entry.category:
+                # Create local character
                 self.characters[key] = Character(
                     name=entry.source,
                     gender=entry.gender,
                     aliases=[entry.target] if entry.target else []
                 )
+                
+                # Sync with global registry
+                registry.add_character(
+                    name=entry.source,
+                    target_name=entry.target,
+                    gender=entry.gender,
+                    category=entry.category or "PERSON",
+                    notes=entry.notes
+                )
+        
+        if config.debug:
+            logger.debug(f"[VocabularyManager] Extracted {len(self.characters)} characters, synced with registry")
     
     def get_vocab_for_chunk(self, chunk_text: str, s_idx: int, c_idx: int) -> List[VocabEntry]:
         """
