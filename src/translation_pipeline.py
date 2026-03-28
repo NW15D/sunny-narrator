@@ -21,7 +21,7 @@ from src.config import Config
 from src.schemas.translation import (
     TranslationStage, LLMRole, TranslationContext, 
     TranslationResult, PipelineState,
-    QualityCheckPrompt, StyleEditorPrompt
+    ReflectionPrompt, ImprovePrompt
 )
 
 config = Config()
@@ -121,8 +121,8 @@ class TranslationPipeline:
     """Main translation pipeline implementing dual-LLM workflow."""
     
     def __init__(self):
-        self.quality_prompt = QualityCheckPrompt()
-        self.style_prompt = StyleEditorPrompt()
+        self.reflection_prompt = ReflectionPrompt()
+        self.improve_prompt = ImprovePrompt()
     
     @log_stage
     def initial_translation(
@@ -213,16 +213,16 @@ class TranslationPipeline:
         )
     
     @log_stage
-    def quality_check(
+    def reflection(
         self,
         context: TranslationContext,
         translation: str
     ) -> TranslationResult:
         """
-        Stage 2: Secondary LLM quality control.
-        Checks accuracy, terminology, grammar, style.
+        Stage 3: Secondary LLM reflection with literary focus.
+        Merged: quality check + nuances + suggestions.
         """
-        user_prompt = self.quality_prompt.user_template.format(
+        user_prompt = self.reflection_prompt.user_template.format(
             source_lang=context.source_lang,
             target_lang=context.target_lang,
             source_text=context.source_text,
@@ -230,43 +230,53 @@ class TranslationPipeline:
             vocab_dict=context.vocab_dict
         )
         
+        system_prompt = self.reflection_prompt.system.format(
+            target_lang=context.target_lang,
+            country=context.country
+        )
+        
         text = llm_service.complete(
             role=LLMRole.SECONDARY,
-            system_prompt=self.quality_prompt.system,
+            system_prompt=system_prompt,
             user_prompt=user_prompt,
             max_tokens=config.max_len_chunk
         )
         
         return TranslationResult(
-            stage=TranslationStage.QUALITY_CHECK,
+            stage=TranslationStage.REFLECTION,
             llm_role=LLMRole.SECONDARY,
             text=text
         )
     
     @log_stage
-    def style_edit(
+    def improve_translation(
         self,
         context: TranslationContext,
         translation: str,
-        quality_report: str
+        reflection: str
     ) -> TranslationResult:
         """
-        Stage 3: Secondary LLM style editing.
-        Applies quality feedback, preserves style and obscene language.
+        Stage 4: Secondary LLM improvement.
+        Apply reflection suggestions + preserve style + obscene language.
         """
-        user_prompt = self.style_prompt.user_template.format(
+        user_prompt = self.improve_prompt.user_template.format(
             source_lang=context.source_lang,
             target_lang=context.target_lang,
             country=context.country,
             source_text=context.source_text,
             translation=translation,
-            quality_report=quality_report,
+            reflection=reflection,
             vocab_dict=context.vocab_dict
+        )
+        
+        system_prompt = self.improve_prompt.system.format(
+            target_lang=context.target_lang,
+            country=context.country
         )
         
         text = llm_service.complete(
             role=LLMRole.SECONDARY,
-            system_prompt=self.style_prompt.system,
+            system_prompt=system_prompt,
             user_prompt=user_prompt,
             max_tokens=config.max_len_chunk * 4
         )
@@ -274,7 +284,7 @@ class TranslationPipeline:
         text = self._remove_tags(text)
         
         return TranslationResult(
-            stage=TranslationStage.STYLE_EDIT,
+            stage=TranslationStage.IMPROVE,
             llm_role=LLMRole.SECONDARY,
             text=text
         )
@@ -319,7 +329,7 @@ class TranslationPipeline:
             vocab_dict: Translation dictionary
             country: Target country for cultural context
             style: "xml" or "text"
-            fast_mode: Skip quality/style stages if True
+            fast_mode: Skip reflection/improve stages if True
         
         Returns:
             PipelineState with all stage results
@@ -346,7 +356,7 @@ class TranslationPipeline:
         state.add_result(synopsis_result)
         
         if fast_mode:
-            # Fast path: just return initial translation
+            # Fast path: skip reflection/improve, return initial translation
             final_result = TranslationResult(
                 stage=TranslationStage.FINAL,
                 llm_role=LLMRole.PRIMARY,
@@ -354,25 +364,19 @@ class TranslationPipeline:
             )
             state.add_result(final_result)
         else:
-            # Stage 3: Quality Check (Secondary LLM)
-            quality_result = self.quality_check(context, initial_result.text)
-            state.add_result(quality_result)
+            # Stage 3: Reflection (Secondary LLM)
+            # Merged: quality + nuances + suggestions
+            reflection_result = self.reflection(context, initial_result.text)
+            state.add_result(reflection_result)
             
-            # Stage 4: Style Edit (Secondary LLM)
-            style_result = self.style_edit(
+            # Stage 4: Improve (Secondary LLM)
+            # Apply reflection + preserve style + obscene language
+            improve_result = self.improve_translation(
                 context,
                 initial_result.text,
-                quality_result.text
+                reflection_result.text
             )
-            state.add_result(style_result)
-            
-            # Final result
-            final_result = TranslationResult(
-                stage=TranslationStage.FINAL,
-                llm_role=LLMRole.SECONDARY,
-                text=style_result.text
-            )
-            state.add_result(final_result)
+            state.add_result(improve_result)
         
         return state
 
