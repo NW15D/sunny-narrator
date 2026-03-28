@@ -1,3 +1,10 @@
+"""
+Utility functions for translation pipeline.
+
+This module now serves as a compatibility layer over the new dual-LLM architecture.
+Main translation logic moved to src/translation_pipeline.py
+"""
+
 import logging
 import functools
 from typing import Union
@@ -10,6 +17,9 @@ import io
 import base64
 from PIL import Image
 from src.config import Config
+
+# Import new pipeline
+from src.translation_pipeline import translate_chunk, TranslationPipeline, LLMService as NewLLMService
 
 # Initialize global config (can be overridden or passed if needed, but for now this replaces the 'from app import ...')
 config = Config()
@@ -591,62 +601,33 @@ def translate(
         max_tokens=MAX_TOKENS_PER_CHUNK,
         temperature=None
 ):
-    """Translate the source_text from source_lang to target_lang."""
-
+    """
+    Translate the source_text from source_lang to target_lang.
+    
+    REFACTORED: Now uses the new dual-LLM pipeline architecture.
+    - Primary LLM (Hunyuan): Translation + Synopsis
+    - Secondary LLM (Instruction-based): Quality Check + Style Edit
+    """
     num_tokens_in_text = num_tokens_in_string(source_text)
-
-    # Simplified check, original logic raise error if oversized but here we trust the chunker upstream for now or just process it.
-    # The original code raised ValueError("Chunks is oversized!!!") if > max_tokens. 
-    # We will keep that behavior but perhaps it should be handled more gracefully in production.
-    if num_tokens_in_text <= max_tokens:
-        # Step 1: Initial translation
-        start_time = time.time()
-        role = "Translate"
-
-        translation_1 = one_chunk_initial_translation(
-            source_lang, target_lang, source_text, style, outline_text, vocab_dict, role, temperature=temperature
-        )
-        translation_1_time = time.time() - start_time
-
-        # Step 2: Outline
-        start_time = time.time()
-        role = "Proofread"
-        outline_text = one_chunk_referat(target_lang, translation_1, role)
-        outline_time = time.time() - start_time
-
-        if config.fast_trans:
-            # Step 5: Final translation (using translation_1)
-            start_time = time.time()
-            role = "Proofread"
-            final_translation = one_chunk_editor(source_lang, source_text, translation_1, style, target_lang, country, role)
-            final_translation_time = time.time() - start_time
-
-        else:
-            # Step 3: Reflection on the initial translation
-            start_time = time.time()
-            role = "Proofread"
-            reflection = one_chunk_reflect_on_translation(
-                source_lang, target_lang, source_text, translation_1, country, vocab_dict, role
-            )
-            reflection_time = time.time() - start_time
-
-            # Step 4: Improved translation
-            start_time = time.time()
-            role = "Proofread"
-            translation_2 = one_chunk_improve_translation(
-                source_lang, target_lang, source_text, translation_1, reflection, style, role
-            )
-            translation_2_time = time.time() - start_time
-
-            # Step 5: Final translation
-            start_time = time.time()
-            role = "Proofread"
-            final_translation = translation_2 
-            final_translation_time = time.time() - start_time
-
-        return final_translation, outline_text
-    else:
+    
+    if num_tokens_in_text > max_tokens:
         raise ValueError(f"Chunk of size {num_tokens_in_text} tokens exceeds limit of {max_tokens} tokens.")
+    
+    # Use new dual-LLM pipeline
+    logger.info(f"→ [translate] Using dual-LLM pipeline (fast_mode={config.fast_trans})")
+    
+    final_translation, new_outline = translate_chunk(
+        source_lang=source_lang,
+        target_lang=target_lang,
+        source_text=source_text,
+        outline_text=outline_text,
+        vocab_dict=vocab_dict if vocab_dict else {},
+        country=country,
+        style=style,
+        fast_mode=config.fast_trans
+    )
+    
+    return final_translation, new_outline
 
 import httpx
 
