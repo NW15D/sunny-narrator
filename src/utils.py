@@ -1,17 +1,158 @@
+"""
+Utility functions for translation pipeline.
+
+This module serves as a compatibility layer over the new dual-LLM architecture.
+Main translation logic moved to src/translation_pipeline.py
+
+Used functions:
+- translate() → pipeline wrapper
+- split_text_smartly() → rechunking
+- vocabulary() → dictionary generation  
+- remove_tags() → cleanup
+- translate_metadata() → metadata translation
+- process_image_request() → cover processing
+- llm_service → LLM client accessor
+"""
+
 import logging
 import functools
-from typing import Union
-import openai
-import tiktoken
 import re
 import json
-import time
 import io
 import base64
+import httpx
+import time
+from typing import Optional, Dict, Any, List
+from dataclasses import dataclass, field
+from enum import Enum
 from PIL import Image
+
+import openai
+import tiktoken
+
 from src.config import Config
 
-# Initialize global config (can be overridden or passed if needed, but for now this replaces the 'from app import ...')
+# LLMService, TranslationPipeline, translate_chunk are defined in this module
+
+
+# =============================================================================
+# Schema Definitions (moved from src/schemas/translation.py)
+# =============================================================================
+
+class TranslationStage(Enum):
+    """Stages in the translation pipeline."""
+    INITIAL = "initial"
+    SYNOPSIS = "synopsis"
+    REFLECTION = "reflection"      # Merged: quality + nuances + suggestions
+    IMPROVE = "improve"            # Apply reflection suggestions
+    FINAL = "final"
+
+
+class LLMRole(Enum):
+    """LLM roles in the translation workflow."""
+    PRIMARY = "primary"      # Hunyuan: translation + dictionary
+    SECONDARY = "secondary"  # Instruction-based: quality + style
+
+
+@dataclass
+class TranslationContext:
+    """Context passed through the translation pipeline."""
+    source_lang: str
+    target_lang: str
+    source_text: str
+    outline_text: str = ""
+    vocab_dict: Dict[str, str] = field(default_factory=dict)
+    country: str = ""
+    style: str = "text"  # "xml" or "text"
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "source_lang": self.source_lang,
+            "target_lang": self.target_lang,
+            "outline_text": self.outline_text,
+            "vocab_dict": self.vocab_dict,
+            "country": self.country,
+            "style": self.style,
+        }
+
+
+@dataclass
+class TranslationResult:
+    """Result from a single translation stage."""
+    stage: TranslationStage
+    llm_role: LLMRole
+    text: str
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    processing_time: float = 0.0
+    tokens_used: int = 0
+    
+    
+@dataclass
+class PipelineState:
+    """Complete state of the translation pipeline."""
+    context: TranslationContext
+    initial_translation: Optional[str] = None
+    synopsis: Optional[str] = None
+    reflection: Optional[str] = None       # Merged quality + nuances
+    final_translation: Optional[str] = None
+    
+    # Metadata
+    stage_results: List[TranslationResult] = field(default_factory=list)
+    start_time: float = 0.0
+    total_tokens: int = 0
+    
+    def add_result(self, result: TranslationResult):
+        """Add a stage result and update state."""
+        self.stage_results.append(result)
+        self.total_tokens += result.tokens_used
+        
+        if result.stage == TranslationStage.INITIAL:
+            self.initial_translation = result.text
+        elif result.stage == TranslationStage.SYNOPSIS:
+            self.synopsis = result.text
+        elif result.stage == TranslationStage.REFLECTION:
+            self.reflection = result.text
+        elif result.stage == TranslationStage.IMPROVE:
+            self.final_translation = result.text
+        elif result.stage == TranslationStage.FINAL:
+            self.final_translation = result.text
+
+
+# Workflow definition (5 stages - NEW ORDER)
+TRANSLATION_WORKFLOW = [
+    {
+        "stage": TranslationStage.INITIAL,
+        "llm_role": LLMRole.PRIMARY,
+        "function": "initial_translation",
+        "description": "Primary translation with dictionary and synopsis context"
+    },
+    {
+        "stage": TranslationStage.REFLECTION,
+        "llm_role": LLMRole.SECONDARY,
+        "function": "reflection",
+        "description": "Quality review + suggestions (country-aware)"
+    },
+    {
+        "stage": TranslationStage.IMPROVE,
+        "llm_role": LLMRole.SECONDARY,
+        "function": "improve_translation",
+        "description": "Apply reflection suggestions"
+    },
+    {
+        "stage": TranslationStage.FINAL,
+        "llm_role": LLMRole.SECONDARY,
+        "function": "final_edit",
+        "description": "Final proofreading against original (XML tag restoration)"
+    },
+    {
+        "stage": TranslationStage.SYNOPSIS,
+        "llm_role": LLMRole.PRIMARY,
+        "function": "generate_synopsis",
+        "description": "Summary from final translation (for next chunk context)"
+    },
+]
+
+# Initialize global config
 config = Config()
 
 # Setup logging
@@ -21,191 +162,695 @@ if config.debug:
 else:
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+
 def log_entry(func):
+    """Decorator to log function entry for key functions."""
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        # Only log entry for key translation functions, not all
-        if func.__name__ in ['translate', 'one_chunk_initial_translation', 'one_chunk_editor']:
-            logger.info(f"→ {func.__name__}")
+        logger.debug(f"→ {func.__name__}")
         return func(*args, **kwargs)
     return wrapper
 
-# Discrete chunks to translate one chunk at a time
-MAX_TOKENS_PER_CHUNK = config.max_len_chunk * 4  # if text is more than this many tokens, we'll break it up into bytes x2 to tokens
 
-# Language mapping for models requiring ISO codes (like TranslateGemma)
+# Constants
+MAX_TOKENS_PER_CHUNK = config.max_len_chunk * 4
+
+# Language mapping for models requiring ISO codes
 LANG_MAP = {
-    "english": "en",
-    "russian": "ru",
-    "chinese": "zh",
-    "french": "fr",
-    "german": "de",
-    "spanish": "es",
-    "italian": "it",
-    "japanese": "ja",
-    "korean": "ko",
-    "portuguese": "pt",
-    "czech": "cs",
-    "polish": "pl",
-    "ukrainian": "uk",
-    "turkish": "tr",
-    "dutch": "nl",
+    "english": "en", "russian": "ru", "chinese": "zh",
+    "french": "fr", "german": "de", "spanish": "es",
+    "italian": "it", "japanese": "ja", "korean": "ko",
+    "portuguese": "pt", "czech": "cs", "polish": "pl",
+    "ukrainian": "uk", "dutch": "nl", "turkish": "tr",
+    "vietnamese": "vi", "thai": "th", "arabic": "ar",
+    "hebrew": "he", "hindi": "hi", "indonesian": "id",
+    "swedish": "sv", "norwegian": "no", "danish": "da",
+    "finnish": "fi", "greek": "el", "hungarian": "hu"
 }
 
+
+# =============================================================================
+# Dual-LLM Translation Pipeline
+# =============================================================================
+
 class LLMService:
-    @log_entry
+    """Service for LLM interactions with role-based client selection."""
+    
     def __init__(self):
-        self.clientTranslate = openai.OpenAI(
+        import openai
+        
+        # Primary LLM client (Hunyuan for translation)
+        self._primary_client = openai.OpenAI(
             api_key=config.api_key_translate,
             base_url=config.base_url_translate,
             timeout=config.timeout_translate
         )
-        self.clientProofread = openai.OpenAI(
+        
+        # Secondary LLM client (Instruction-based for quality/style)
+        self._secondary_client = openai.OpenAI(
             api_key=config.api_key_proofread,
             base_url=config.base_url_proofread,
             timeout=config.timeout_proofread
         )
-        self.clientImages = openai.OpenAI(
+        
+        # Images client (separate)
+        self._images_client = openai.OpenAI(
             api_key=config.api_key_images,
             base_url=config.base_url_images,
             timeout=config.timeout_images
         )
-
-    @log_entry
-    def get_completion(self, role="Translate", prompt_category=None, prompt_key="user", json_mode=False, max_tokens=MAX_TOKENS_PER_CHUNK, **kwargs):
-        if role == "Translate":
-            client, model, temp, sys_off, nothink, label = (
-                self.clientTranslate, config.model_translate, config.temp_translate, config.sys_not_promt_translate, config.nothink_translate, "Translate"
-            )
+    
+    def get_client(self, role: LLMRole):
+        """Get appropriate client based on LLM role."""
+        if role == LLMRole.PRIMARY:
+            return self._primary_client, config.model_translate, config.temp_translate
         else:
-            client, model, temp, sys_off, nothink, label = (
-                self.clientProofread, config.model_proofread, config.temp_proofread, config.sys_not_promt_proofread, config.nothink_proofread, "Proofread"
-            )
-
-        system_message = config.get_prompt(prompt_category, "system", **kwargs)
-        user_message = config.get_prompt(prompt_category, prompt_key, **kwargs)
-
-        if sys_off:
-            user_message = f"{system_message}.{user_message}"
-            if config.debug:
-                print(f"DEBUG: Selected system off message")
-            system_message = None
-
-        if nothink:
-            if config.debug:
-                print(f"DEBUG: Selected nothink message")
-            if system_message:
-                system_message = f"{system_message} /no_think"
-            else:
-                user_message = f"{user_message}  /no_think"
-
-        messages = []
-        if system_message:
-            messages.append({"role": "system", "content": system_message})
-
-        if model == "TranslateGemma":
-            src = kwargs.get("source_lang", config.source_lang)
-            tgt = kwargs.get("target_lang", config.target_lang)
-            src_code = LANG_MAP.get(src.lower(), src)
-            tgt_code = LANG_MAP.get(tgt.lower(), tgt)
-            if config.debug:
-                print(f"DEBUG: Selected TranslateGemma message")
-            messages.append({
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "source_lang_code": src_code,
-                        "target_lang_code": tgt_code,
-                        "text": user_message
-                    }
-                ]
-            })
-        else:
-            messages.append({"role": "user", "content": user_message})
-
-        # Log summary of what we're sending (not full prompt)
-        source_preview = kwargs.get('source_text', '')[:100]
-        outline_preview = kwargs.get('outline_text', '')[:50]
-        vocab_count = len(kwargs.get('vocab_dict', [])) if kwargs.get('vocab_dict') else 0
+            return self._secondary_client, config.model_proofread, config.temp_proofread
+    
+    def get_temperature_for_stage(self, stage: TranslationStage, role: LLMRole) -> float:
+        """
+        Get temperature for specific pipeline stage.
         
-        logger.info(f"  [{label}] {num_tokens_in_string(user_message)} tokens | "
-                   f"Source: {source_preview}{'...' if len(kwargs.get('source_text', '')) > 100 else ''} | "
-                   f"Outline: {outline_preview}{'...' if len(kwargs.get('outline_text', '')) > 50 else ''} | "
-                   f"Vocab: {vocab_count} terms")
-
+        Stage-specific temperatures provide better quality than single temperature:
+        - INITIAL: Low temp (0.01) for consistent translation
+        - REFLECTION: Medium temp (0.4) for creative analysis
+        - IMPROVE: Medium temp (0.4) for flexible editing
+        - FINAL_EDIT: Low temp (0.15) for precise proofreading
+        - SYNOPSIS: Low temp (0.15) for accurate summary
+        
+        Args:
+            stage: TranslationStage enum
+            role: LLMRole (PRIMARY or SECONDARY)
+            
+        Returns:
+            Temperature value for the stage
+        """
+        if stage == TranslationStage.INITIAL:
+            return config.temp_initial
+        elif stage == TranslationStage.REFLECTION:
+            return config.temp_reflection
+        elif stage == TranslationStage.IMPROVE:
+            return config.temp_improve
+        elif stage == TranslationStage.FINAL:
+            return config.temp_final_edit
+        elif stage == TranslationStage.SYNOPSIS:
+            return config.temp_synopsis
+        else:
+            # Fallback to role-based default
+            if role == LLMRole.PRIMARY:
+                return config.temp_translate
+            else:
+                return config.temp_proofread
+    
+    def complete(
+        self,
+        role: LLMRole,
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int = 8192,
+        json_mode: bool = False,
+        stage: TranslationStage = None  # NEW: for stage-specific temperature
+    ) -> str:
+        """
+        Execute LLM completion with role-appropriate client.
+        
+        Handles sys_not_promt mode for models that don't support system prompts:
+        - Gemma 2/3: System prompt merged into user prompt
+        - Mistral, Llama 3.x: System prompt sent separately
+        
+        Args:
+            role: LLMRole.PRIMARY or LLMRole.SECONDARY
+            system_prompt: System instruction (may be merged with user_prompt)
+            user_prompt: User message content
+            max_tokens: Maximum tokens to generate
+            json_mode: Enable JSON response format
+            stage: TranslationStage for temperature selection (optional)
+            
+        Returns:
+            Generated text from LLM
+        """
+        client, model, temp = self.get_client(role)
+        
+        # Use stage-specific temperature if provided
+        if stage is not None:
+            temp = self.get_temperature_for_stage(stage, role)
+        
+        # Determine if we need to merge system prompt into user prompt
+        # Models that DON'T support system prompts: Gemma 2, Gemma 3
+        # Config flags: config.sys_not_promt_translate / config.sys_not_promt_proofread
+        use_sys_not_promt = False
+        
+        if role == LLMRole.PRIMARY:
+            use_sys_not_promt = config.sys_not_promt_translate
+        else:
+            use_sys_not_promt = config.sys_not_promt_proofread
+        
+        messages = []
+        
+        if use_sys_not_promt and system_prompt:
+            # Merge system prompt into user prompt (for Gemma and similar)
+            merged_prompt = f"{system_prompt}\n\n{user_prompt}"
+            messages.append({"role": "user", "content": merged_prompt})
+        else:
+            # Standard mode: separate system and user messages
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": user_prompt})
+        
         comp_kwargs = {
             "model": model,
-            "temperature": kwargs.get("temperature", temp),
+            "temperature": temp,
             "max_tokens": max_tokens,
             "messages": messages
         }
         if json_mode:
             comp_kwargs["response_format"] = {"type": "json_object"}
-
-        # Raw prompt logging only in debug mode
+        
         if config.debug:
-            logger.debug(f"OpenAI API Request ({label}): {json.dumps(comp_kwargs, ensure_ascii=False, indent=2)}")
-
+            logger.debug(f"LLM Request [{role.value}]: {model}, {len(user_prompt)} chars, temp={temp:.2f}, sys_not_promt={use_sys_not_promt}")
+        
         response = client.chat.completions.create(**comp_kwargs)
         result = response.choices[0].message.content
-
-        # Log result summary
-        result_preview = result[:100] if result else "(empty)"
-        logger.info(f"  ← [{label}] {len(result)} chars | {result_preview}{'...' if len(result) > 100 else ''}")
-
-        # Raw response logging only in debug mode
+        
         if config.debug:
-            logger.debug(f"OpenAI API Response ({label}): {result}")
-
+            logger.debug(f"LLM Response [{role.value}]: {len(result)} chars")
+        
         return result
 
+
+# Global LLM service instance
 llm_service = LLMService()
 
-@log_entry
-def remove_tags(text):
+
+class TranslationPipeline:
+    """Main translation pipeline implementing dual-LLM workflow."""
+    
+    def __init__(self):
+        # Prompts are loaded from prompts.json via config.get_prompt()
+        pass
+    
+    @log_entry
+    def initial_translation(self, context: TranslationContext) -> TranslationResult:
+        """Stage 1: Primary LLM translation."""
+        if context.style == "xml":
+            user_prompt = config.get_prompt(
+                "initial_translation", "user_xml",
+                source_lang=context.source_lang,
+                target_lang=context.target_lang,
+                outline_text=context.outline_text,
+                vocab_dict=context.vocab_dict,
+                source_text=context.source_text
+            )
+        elif config.model_translate == "Hunyuan":
+            user_prompt = config.get_prompt(
+                "initial_translation", "user_hunyuan",
+                source_lang=context.source_lang,
+                target_lang=context.target_lang,
+                outline_text=context.outline_text,
+                vocab_dict=context.vocab_dict,
+                source_text=context.source_text
+            )
+        else:
+            user_prompt = config.get_prompt(
+                "initial_translation", "user_text",
+                source_lang=context.source_lang,
+                target_lang=context.target_lang,
+                outline_text=context.outline_text,
+                vocab_dict=context.vocab_dict,
+                source_text=context.source_text
+            )
+        
+        system_prompt = config.get_prompt("initial_translation", "system")
+        
+        text = llm_service.complete(
+            role=LLMRole.PRIMARY,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_tokens=config.max_len_chunk * 4,
+            stage=TranslationStage.INITIAL  # Stage-specific temperature
+        )
+        
+        text = remove_tags(text)
+        
+        return TranslationResult(
+            stage=TranslationStage.INITIAL,
+            llm_role=LLMRole.PRIMARY,
+            text=text,
+            metadata={"prompt_style": context.style}
+        )
+    
+    @log_entry
+    def generate_synopsis(self, context: TranslationContext, translation: str) -> TranslationResult:
+        """Stage 5: Generate synopsis from FINAL translation (moved to end)."""
+        if config.model_translate == "Hunyuan":
+            user_prompt = config.get_prompt(
+                "synopsis", "user_hunyuan",
+                target_lang=context.target_lang,
+                final_translation=translation
+            )
+        else:
+            user_prompt = config.get_prompt(
+                "synopsis", "user",
+                target_lang=context.target_lang,
+                final_translation=translation
+            )
+        system_prompt = config.get_prompt("synopsis", "system")
+        
+        text = llm_service.complete(
+            role=LLMRole.PRIMARY,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_tokens=160,
+            stage=TranslationStage.SYNOPSIS  # Stage-specific temperature
+        )
+        
+        text = remove_tags(text)
+        
+        return TranslationResult(
+            stage=TranslationStage.SYNOPSIS,
+            llm_role=LLMRole.PRIMARY,
+            text=text
+        )
+    
+    @log_entry
+    def reflection(self, context: TranslationContext, translation: str) -> TranslationResult:
+        """
+        Stage 2: Secondary LLM reflection.
+        Note: Does NOT use vocab_dict or synopsis - focuses on accuracy/style only.
+        """
+        user_prompt = config.get_prompt(
+            "reflection", f"user_{context.style}",
+            source_lang=context.source_lang,
+            target_lang=context.target_lang,
+            source_text=context.source_text,
+            translation=translation,
+            country=context.country
+            # NO vocab_dict - reflection focuses on accuracy/style, not terminology
+        )
+        
+        system_prompt = config.get_prompt("reflection", "system",
+            target_lang=context.target_lang,
+            country=context.country
+        )
+        
+        text = llm_service.complete(
+            role=LLMRole.SECONDARY,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_tokens=config.max_len_chunk,
+            stage=TranslationStage.REFLECTION  # Stage-specific temperature
+        )
+        
+        return TranslationResult(
+            stage=TranslationStage.REFLECTION,
+            llm_role=LLMRole.SECONDARY,
+            text=text
+        )
+    
+    @log_entry
+    def improve_translation(self, context: TranslationContext, translation: str, reflection: str) -> TranslationResult:
+        """Stage 4: Secondary LLM improvement."""
+        user_prompt = config.get_prompt(
+            "improve", f"user_{context.style}",
+            source_lang=context.source_lang,
+            target_lang=context.target_lang,
+            country=context.country,
+            source_text=context.source_text,
+            translation=translation,
+            reflection=reflection,
+            vocab_dict=context.vocab_dict
+        )
+        
+        system_prompt = config.get_prompt("improve", "system",
+            target_lang=context.target_lang,
+            country=context.country
+        )
+        
+        text = llm_service.complete(
+            role=LLMRole.SECONDARY,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_tokens=config.max_len_chunk * 4,
+            stage=TranslationStage.IMPROVE  # Stage-specific temperature
+        )
+        
+        text = remove_tags(text)
+        
+        return TranslationResult(
+            stage=TranslationStage.IMPROVE,
+            llm_role=LLMRole.SECONDARY,
+            text=text
+        )
+    
+    @log_entry
+    def final_edit(self, context: TranslationContext, translation: str) -> TranslationResult:
+        """
+        Stage 4: Final editing/proofreading - compare with original and fix XML tags.
+        Uses vocabulary to verify terminology consistency.
+        """
+        user_prompt = config.get_prompt(
+            "editor", f"user_{context.style}",
+            source_lang=context.source_lang,
+            target_lang=context.target_lang,
+            country=context.country,
+            source_text=context.source_text,
+            translation=translation,
+            vocab_dict=context.vocab_dict  # Added for terminology verification
+        )
+        
+        system_prompt = config.get_prompt("editor", "system",
+            target_lang=context.target_lang,
+            country=context.country
+        )
+        
+        text = llm_service.complete(
+            role=LLMRole.SECONDARY,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_tokens=config.max_len_chunk * 4,
+            stage=TranslationStage.FINAL  # Stage-specific temperature
+        )
+        
+        text = remove_tags(text)
+        
+        return TranslationResult(
+            stage=TranslationStage.FINAL,
+            llm_role=LLMRole.SECONDARY,
+            text=text,
+            metadata={"stage": "final_edit", "compared_with_original": True, "vocabulary_used": True}
+        )
+    
+    def execute(self, source_lang: str, target_lang: str, source_text: str,
+                outline_text: str, vocab_dict: dict, country: str,
+                style: str = "text", fast_mode: bool = False) -> PipelineState:
+        """
+        Execute the complete translation pipeline.
+        
+        UPDATED ORDER (5 stages):
+        1. INITIAL - Primary LLM translation
+        2. REFLECTION - Secondary LLM quality review (NO vocab_dict)
+        3. IMPROVE - Apply reflection suggestions
+        4. FINAL_EDIT - Final proofreading WITH vocabulary (UPDATED)
+        5. SYNOPSIS - Create summary from final translation
+        """
+        context = TranslationContext(
+            source_lang=source_lang,
+            target_lang=target_lang,
+            source_text=source_text,
+            outline_text=outline_text,
+            vocab_dict=vocab_dict,
+            country=country,
+            style=style
+        )
+        
+        state = PipelineState(context=context)
+        state.start_time = time.time()
+        
+        # Stage 1: Initial Translation (Primary LLM)
+        initial_result = self.initial_translation(context)
+        state.add_result(initial_result)
+        
+        if fast_mode:
+            # Fast path: skip reflection/improve/final_edit, return initial translation
+            final_result = TranslationResult(
+                stage=TranslationStage.FINAL,
+                llm_role=LLMRole.PRIMARY,
+                text=initial_result.text,
+                metadata={"fast_mode": True, "applied_reflection": False}
+            )
+            state.add_result(final_result)
+            
+            # Even in fast mode, generate synopsis from final translation
+            synopsis_result = self.generate_synopsis(context, initial_result.text)
+            state.add_result(synopsis_result)
+        else:
+            # Stage 2: Reflection (Secondary LLM) - NO vocab_dict
+            reflection_result = self.reflection(context, initial_result.text)
+            state.add_result(reflection_result)
+            
+            # Stage 3: Improve (Secondary LLM)
+            improve_result = self.improve_translation(
+                context, initial_result.text, reflection_result.text
+            )
+            state.add_result(improve_result)
+            
+            # Stage 4: Final Edit (Secondary LLM) - WITH vocab_dict
+            final_edit_result = self.final_edit(context, improve_result.text)
+            state.add_result(final_edit_result)
+            
+            # Stage 5: Synopsis (Primary LLM) - from final translation
+            synopsis_result = self.generate_synopsis(context, final_edit_result.text)
+            state.add_result(synopsis_result)
+            
+            final_result = TranslationResult(
+                stage=TranslationStage.FINAL,
+                llm_role=LLMRole.SECONDARY,
+                text=final_edit_result.text,
+                metadata={"fast_mode": False, "applied_reflection": True, "final_edit": True}
+            )
+            state.add_result(final_result)
+        
+        return state
+
+
+# Global pipeline instance
+_pipeline = TranslationPipeline()
+
+
+# =============================================================================
+# Length Validation (Rechunking Support)
+# =============================================================================
+
+MIN_CHUNK_SIZE = 1000  # Minimum chunk size for rechunking
+MAX_DEPTH = 3  # Maximum recursion depth
+
+
+def validate_translation_length(source_text: str, translated_text: str, 
+                                 stage_name: str = "") -> tuple:
     """
-    Removes various XML/HTML tags and specific artifacts from the text.
+    Validate translation length and determine if rechunking is needed.
+    
+    Args:
+        source_text: Original source text
+        translated_text: Translated text
+        stage_name: Name of pipeline stage (for logging)
+        
+    Returns:
+        Tuple of (is_valid: bool, percent_diff: float, should_split: bool)
     """
-    #pattern = r'<SOURCE_TEXT>.*?</SOURCE_TEXT>|<INITIAL_TRANSLATION>.*?</INITIAL_TRANSLATION>|<DICTIONARY>.*?</DICTIONARY>|<FIRST_TRANSLATION>.*?</FIRST_TRANSLATION>|<EXPERT_SUGGESTIONS>.*?</EXPERT_SUGGESTIONS>|<TRANSLATION>|</TRANSLATION>|<SOURCE>|</SOURCE>|<SYNOPSIS>.*?</SYNOPSIS>|<think>.*?</think>|<myheader>.*?</myheader>|<myfooter>.*?</myfooter>|</section>|<section>|<IMPROVED_TRANSLATION>|</IMPROVED_TRANSLATION>|```xml|```|OceanofPDF.com|</target>|<target>|<a l:href="https://oceanofpdf.com">|<\|channel\|>.*?<\|end\|>|<TTEXT>|</TTEXT>|<SYNOPSIS>|<\|im_end\|>|<\|file_separator\|>|</think>'
-    #cleaned_text = re.sub(pattern, '', text, flags=re.DOTALL)
-    pattern = r'''<SOURCE_TEXT>[\s\S]*?</SOURCE_TEXT>|<DICTIONARY>[\s\S]*?</DICTIONARY>|<EXPERT_SUGGESTIONS>[\s\S]*?</EXPERT_SUGGESTIONS>|<SYNOPSIS>[\s\S]*?</SYNOPSIS>|<think>[\s\S]*?</think>|<myheader>[\s\S]*?</myheader>|<myfooter>[\s\S]*?</myfooter>|<\|channel\|>[\s\S]*?<\|end\|>|```xml|```|OceanofPDF\.com|<a l:href="https://oceanofpdf.com">|</?(?:INITIAL_TRANSLATION|FIRST_TRANSLATION|TRANSLATION|SOURCE|section|IMPROVED_TRANSLATION|target|TTEXT|SYNOPSIS|TRANS)>|<\|im_end\|>|<\|file_separator\|>'''
-    cleaned = re.sub(pattern, '', text, flags=re.IGNORECASE | re.VERBOSE)
-    return cleaned
+    source_len = len(source_text)
+    target_len = len(translated_text)
+    
+    if source_len == 0:
+        return True, 0.0, False
+    
+    percent_diff = abs(target_len - source_len) / source_len * 100
+    
+    # Check if rechunking is needed
+    should_split = (
+        source_len >= MIN_CHUNK_SIZE and
+        percent_diff > config.length_check_threshold
+    )
+    
+    if config.debug:
+        status = "⚠ SPLIT" if should_split else "✓ OK"
+        logger.debug(f"[{stage_name}] {source_len} → {target_len} chars ({percent_diff:.1f}%) {status}")
+    
+    return not should_split, percent_diff, should_split
+
+
+def translate_chunk(source_lang: str, target_lang: str, source_text: str,
+                    outline_text: str, vocab_dict: dict, country: str,
+                    style: str = "text", fast_mode: bool = False,
+                    depth: int = 0) -> tuple:
+    """
+    Translate a single chunk using the dual-LLM pipeline.
+    
+    Includes automatic rechunking if length validation fails.
+    
+    Args:
+        source_lang: Source language
+        target_lang: Target language
+        source_text: Text to translate
+        outline_text: Context synopsis from previous chunks
+        vocab_dict: Translation dictionary
+        country: Target country for cultural context
+        style: "xml" or "text"
+        fast_mode: Skip reflection/improve stages
+        depth: Current recursion depth (for rechunking)
+    
+    Returns:
+        Tuple of (final_translation, synopsis)
+    """
+    # Execute pipeline
+    state = _pipeline.execute(
+        source_lang=source_lang,
+        target_lang=target_lang,
+        source_text=source_text,
+        outline_text=outline_text,
+        vocab_dict=vocab_dict,
+        country=country,
+        style=style,
+        fast_mode=fast_mode
+    )
+    
+    # Validate final translation length
+    is_valid, percent_diff, should_split = validate_translation_length(
+        source_text, state.final_translation, "FINAL"
+    )
+    
+    # Rechunking if needed
+    if should_split and depth < MAX_DEPTH:
+        logger.info(f"Rechunking at depth {depth}: {percent_diff:.1f}% length difference")
+        
+        # Split source text
+        part1, part2 = split_text_smartly(source_text)
+        
+        # Translate parts recursively
+        result1, syn1 = translate_chunk(
+            source_lang, target_lang, part1, outline_text,
+            vocab_dict, country, style, fast_mode, depth + 1
+        )
+        result2, syn2 = translate_chunk(
+            source_lang, target_lang, part2, outline_text,
+            vocab_dict, country, style, fast_mode, depth + 1
+        )
+        
+        # Combine results
+        combined_translation = (result1 or "") + (result2 or "")
+        combined_synopsis = (syn1 or "") + " " + (syn2 or "")
+        
+        return combined_translation, combined_synopsis
+    
+    return state.final_translation, state.synopsis
+
+
+# =============================================================================
+# LLM Service (compatibility layer)
+# =============================================================================
+
+class LLMServiceCompat:
+    """
+    Compatibility layer for old LLMService interface.
+    Delegates to LLMService in the same module.
+    """
+    
+    def __init__(self):
+        self._new_service = llm_service
+    
+    @property
+    def clientTranslate(self):
+        """Primary LLM client (Hunyuan)."""
+        return self._new_service._primary_client
+    
+    @property
+    def clientProofread(self):
+        """Secondary LLM client."""
+        return self._new_service._secondary_client
+    
+    @property
+    def clientImages(self):
+        """Images LLM client."""
+        return self._new_service._images_client
+    
+    def complete(self, role: LLMRole, system_prompt: str, user_prompt: str,
+                 max_tokens: int = 8192, json_mode: bool = False) -> str:
+        """
+        Direct LLM completion (delegates to translation_pipeline.LLMService).
+        Used by synopsis_manager.py and other modules.
+        """
+        return self._new_service.complete(
+            role=role,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_tokens=max_tokens,
+            json_mode=json_mode
+        )
+    
+    def get_completion(self, role: str, prompt_category: str, prompt_key: str = None,
+                       temperature: float = None, max_tokens: int = None, json_mode: bool = False,
+                       **kwargs) -> str:
+        """
+        Get completion using prompts.json templates.
+        Compatibility wrapper for old-style calls.
+        """
+        # Get prompt template
+        template = config.prompts.get(prompt_category, {})
+        if isinstance(template, dict):
+            prompt_template = template.get(prompt_key, template.get('user', ''))
+        else:
+            prompt_template = str(template)
+        
+        # Format template
+        try:
+            user_prompt = prompt_template.format(**kwargs)
+        except KeyError as e:
+            logger.warning(f"Missing variable for prompt: {e}")
+            user_prompt = prompt_template
+        
+        # Determine LLM role
+        llm_role = LLMRole.PRIMARY if role == "Translate" else LLMRole.SECONDARY
+        
+        # Get completion
+        return self._new_service.complete(
+            role=llm_role,
+            system_prompt="",  # Prompts are self-contained
+            user_prompt=user_prompt,
+            max_tokens=max_tokens or MAX_TOKENS_PER_CHUNK,
+            json_mode=json_mode
+        )
+
+
+# Global LLM service instance
+llm_service = LLMServiceCompat()
+
+
+# =============================================================================
+# Core Functions (used by app.py)
+# =============================================================================
 
 @log_entry
-def check_and_print_tags(text):
+def remove_tags(text: str) -> str:
     """
-    Finds and returns a list of specific tags present in the text.
+    Remove XML/HTML tags and artifacts from translation output.
+    Uses regex patterns to clean common LLM output artifacts.
+    
+    Note: For FB2 XML validation and cleaning, use xmlcheck.rem_tags()
+    
+    Args:
+        text: Text with XML tags to remove
+        
+    Returns:
+        Cleaned text without tags
     """
-    pattern = r'<SOURCE_TEXT>.*?</SOURCE_TEXT>|<INITIAL_TRANSLATION>.*?</INITIAL_TRANSLATION>|<EXPERT_SUGGESTIONS>.*?</EXPERT_SUGGESTIONS>|<TRANSLATION>.*?</TRANSLATION>|<SOURCE>|</SOURCE>|<SYNOPSIS>.*?</SYNOPSIS>|<think>.*?</think>|<myheader>.*?</myheader>|<myfooter>.*?</myfooter>|```xml.*?```'
-    matches = re.findall(pattern, text)
-    return matches
+    patterns = [
+        r'<SOURCE_TEXT>[\s\S]*?</SOURCE_TEXT>',
+        r'<DICTIONARY>[\s\S]*?</DICTIONARY>',
+        r'<EXPERT_SUGGESTIONS>[\s\S]*?</EXPERT_SUGGESTIONS>',
+        r'<SYNOPSIS>[\s\S]*?</SYNOPSIS>',
+        r'<INITIAL_TRANSLATION>[\s\S]*?</INITIAL_TRANSLATION>',
+        r'<FIRST_TRANSLATION>[\s\S]*?</FIRST_TRANSLATION>',
+        r'<TRANSLATION>[\s\S]*?</TRANSLATION>',
+        r'```xml', r'```',
+        r'</?(?:section|IMPROVED_TRANSLATION|target|TTEXT|TRANS)>',
+        r'<\|im_end\|>', r'<\|file_separator\|>'
+    ]
+    
+    for pattern in patterns:
+        text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+    
+    return text.strip()
+
 
 @log_entry
-def remove_markers(text: str) -> str:
+def split_text_smartly(text: str) -> tuple:
     """
-    Removes @@@TAG_000n@@@ markers and any leftover bracket artifacts from text
-    to prepare clean input for synopsis/outline generation.
-    """
-    # Remove standard markers @@@TAG_0001@@@
-    text = re.sub(r'@@@TAG_\d+@@@', '', text)
-    # Remove any other content in triple at-signs just in case @@@...@@@
-    text = re.sub(r'@@@.*?@@@', '', text)
-    # Remove orphan triple at-signs
-    text = re.sub(r'@@@', '', text)
-    # Clean up multiple spaces resulting from removals
-    text = re.sub(r'\s+', ' ', text).strip()
-    return text
-
-@log_entry
-def split_text_smartly(text: str) -> tuple[str, str]:
-    """
-    Splits text roughly in half, trying to respect paragraph boundaries (</p>).
+    Split text roughly in half, respecting paragraph boundaries.
+    Used for rechunking when translation validation fails.
     """
     if not text:
         return "", ""
-        
+    
     length = len(text)
     mx = int((length // 2) * 1.1)
     
@@ -213,568 +858,233 @@ def split_text_smartly(text: str) -> tuple[str, str]:
     split_pos = text.rfind('</p>', 0, mx)
     
     if split_pos == -1:
-        # Fallback to simple middle split if no tag found
         split_pos = mx if mx < length else length // 2
     else:
-        split_pos += 4 # Include the </p>
-        
+        split_pos += 4  # Include the </p>
+    
     return text[:split_pos], text[split_pos:]
 
+
 @log_entry
-def process_with_retries_and_rechunking(
-    func, 
-    source_text: str, 
-    validation_func=None,
-    initial_temp: float = 0.1,
-    role: str = "Translate"
-) -> str:
+def translate(source_lang: str, target_lang: str, source_text: str,
+              style: str, outline_text: str, country: str, vocab_dict: dict,
+              max_tokens: int = MAX_TOKENS_PER_CHUNK, temperature: float = None) -> tuple:
     """
-    Executes a generation function with retries on validation failure, 
-    and falls back to recursive rechunking if all retries fail.
+    Translate source_text using dual-LLM pipeline.
     
     Args:
-        func: Async callable taking (text, temperature) -> result str
-        source_text: The input text
-        validation_func: Callable(source, target) -> bool
-        initial_temp: Starting temperature
-        role: Logging role
-    """
-    current_temp = initial_temp
+        source_lang: Source language
+        target_lang: Target language
+        source_text: Text to translate
+        style: "xml" or "text"
+        outline_text: Context synopsis
+        country: Target country
+        vocab_dict: Translation dictionary
+        max_tokens: Max tokens per chunk
+        temperature: Temperature override (ignored, uses config)
     
-    # 1. Attempt with retries
-    last_result = None
-    for attempt in range(3):
-        try:
-            result = func(source_text, temperature=current_temp)
-            last_result = result
-            
-            if not validation_func:
-                return result
-                
-            if validation_func(source_text, result):
-                if config.debug and attempt > 0:
-                     print(f"DEBUG: {role} successful on attempt {attempt + 1} with temp {current_temp:.2f}")
-                return result
-                
-            if config.debug:
-                source_len = len(source_text)
-                target_len = len(result)
-                diff = abs(target_len - source_len) / source_len if source_len > 0 else 0
-                print(f"DEBUG: {role} attempt {attempt + 1} failed validation: diff {diff:.2%}. Retrying...")
-                print(f"DEBUG: Source len: {source_len}, Target len: {target_len}")
-                print(f"DEBUG: Source: {source_text[:200]}...")
-                print(f"DEBUG: Target: {result[:200]}...")
-                
-            current_temp += 0.1
-            
-        except Exception as e:
-            if config.debug:
-                 print(f"DEBUG: {role} attempt {attempt + 1} raised error: {e}")
-            current_temp += 0.1
-
-    # 2. Rechunking Fallback
-    if len(source_text) > 500: # Only split if text is reasonably long
-        if config.debug:
-            print(f"DEBUG: {role} failed all retry attempts. Splitting text...")
-            
-        part1, part2 = split_text_smartly(source_text)
-        
-        # Recursively process parts
-        # We need validation logic for parts too
-        res1 = process_with_retries_and_rechunking(
-            func, part1, validation_func, initial_temp, role
-        )
-        res2 = process_with_retries_and_rechunking(
-            func, part2, validation_func, initial_temp, role
-        )
-        
-        return res1 + res2
-    else:
-        if config.debug:
-            print(f"DEBUG: {role} failed and text too short to split. Returning last result.")
-        return last_result if last_result is not None else source_text  # Return whatever we got last or source as fallback
-
-@log_entry
-def process_with_retries_only(
-    func, 
-    source_text: str, # Not really used for splitting, just for logging length
-    validation_func=None,
-    initial_temp: float = 0.1,
-    role: str = "Translate"
-) -> str:
+    Returns:
+        (final_translation, synopsis)
     """
-    Executes a generation function with retries on validation failure.
-    Does NOT attempt to split text.
-    """
-    current_temp = initial_temp
+    # Token check
+    num_tokens = num_tokens_in_string(source_text)
+    if num_tokens > max_tokens:
+        raise ValueError(f"Chunk of size {num_tokens} tokens exceeds limit of {max_tokens}")
     
-    # Attempt with retries
-    for attempt in range(3):
-        try:
-            result = func(temperature=current_temp)
-            cleaned_result = remove_tags(result)
-            
-            if not validation_func:
-                return cleaned_result
-                
-            if validation_func(source_text, cleaned_result):
-                if config.debug and attempt > 0:
-                     print(f"DEBUG: {role} successful on attempt {attempt + 1} with temp {current_temp:.2f}")
-                return cleaned_result
-                
-            if config.debug:
-                # Basic diff logging
-                print(f"DEBUG: {role} attempt {attempt + 1} failed validation. Retrying...")
-                
-            current_temp += 0.1
-            
-        except Exception as e:
-            if config.debug:
-                  print(f"DEBUG: {role} attempt {attempt + 1} raised error: {e}")
-            current_temp += 0.1
-            
-    # Return last result even if failed
-    if config.debug:
-        print(f"DEBUG: {role} failed all retry attempts. Returning last result.")
-    return cleaned_result
-
-
-
-@log_entry
-def one_chunk_initial_translation(
-        source_lang: str, target_lang: str, source_text: str, style: str, outline_text: str, vocab_dict, role: str, **kwargs
-) -> str:
-    """
-    Translate the entire text as one chunk using an LLM.
-    Includes length control: if the result differs by more than 15%, retries with higher temperature.
-    """
-    def length_validator(source, target):
-        if not source: return True
-        s_len = len(source)
-        t_len = len(target)
-        diff = abs(t_len - s_len) / s_len
-        return diff <= 0.22
-
-    if config.example:
-        outline_text = f"{outline_text}.{config.example}"
-
-    prompt_key = "user_xml" if style == 'xml' else "user_text"
-    if role == "Translate" and config.model_translate == "Hunyuan":
-        prompt_key = "user_hunyuan"
-        
-    def generation_func(text, temperature):
-        return llm_service.get_completion(
-            role=role, 
-            prompt_category="initial_translation", 
-            prompt_key=prompt_key,
-            source_lang=source_lang,
-            target_lang=target_lang,
-            outline_text=outline_text,
-            vocab_dict=vocab_dict,
-            source_text=text,
-            temperature=temperature
-        )
-
-    def combined_validator(source, target):
-        # Length check only (markers removed)
-        if not source: return True
-        s_len = len(source)
-        t_len = len(target)
-        diff = abs(t_len - s_len) / s_len
-        if diff > 0.22:
-             if config.debug:
-                 print(f"DEBUG: Initial Translation length mismatch {diff:.2%}")
-             return False
-        return True
-
-    return process_with_retries_and_rechunking(
-        generation_func,
-        source_text,
-        combined_validator,
-        float(kwargs.get('temperature', config.temp_translate)),
-        role="Initial Translation"
-    )
-
-@log_entry
-def one_chunk_referat(
-         target_lang: str, final_translation: str,  role: str
-) -> str:
-    """
-    Make the synopsis (referat) for chunk using an LLM.
-    """
-    translation = llm_service.get_completion(
-        role=role,
-        prompt_category="synopsis",
+    logger.info(f"→ [translate] Using dual-LLM pipeline (fast_mode={config.fast_trans})")
+    
+    final_translation, synopsis = translate_chunk(
+        source_lang=source_lang,
         target_lang=target_lang,
-        final_translation=final_translation,
-        max_tokens=160
+        source_text=source_text,
+        outline_text=outline_text,
+        vocab_dict=vocab_dict if vocab_dict else {},
+        country=country,
+        style=style,
+        fast_mode=config.fast_trans
     )
-    return remove_tags(translation)
-
-@log_entry
-def one_chunk_editor(source_lang: str, source_text: str, translation_1: str, style: str, lang: str, country: str, role: str, **kwargs
-) -> str:
-    """
-    Edits and proofreads the text. Compares original + translation to restore XML tags.
-    """
-    prompt_key = "user_xml" if style == 'xml' else "user_text"
     
-    # Same validator as translation 
-    def length_validator(source, target):
-        if not source: return True
-        s_len = len(source)
-        t_len = len(target)
-        diff = abs(t_len - s_len) / s_len
-        return diff <= 0.25
+    return final_translation, synopsis
 
-    def generation_func(text, temperature):
-         return llm_service.get_completion(
-            role=role,
-            prompt_category="editor",
-            prompt_key=prompt_key,
-            source_lang=source_lang,
-            source_text=source_text,  # Original for comparison
-            translation_1=translation_1,  # Translation to edit
-            target_lang=lang,
-            country=country,
-            temperature=temperature
-        )
-
-    # Editor uses length_validator only
-    return process_with_retries_and_rechunking(
-        generation_func,
-        translation_1,  # Process the translation, not the source
-        length_validator,
-        config.temp_proofread,
-        role="Editor"
-    )
 
 @log_entry
-def vocabulary(
-        source_lang: str,
-        target_lang: str,
-        source_text: str,
-        country: str,
-        role: str,
-) -> str:
+def vocabulary(source_lang: str, target_lang: str, source_text: str,
+               country: str, role: str) -> str:
     """
-    Use an LLM to generate vocabulary for proper nouns.
+    Generate vocabulary for proper nouns using LLM.
     """
-    translation = llm_service.get_completion(
+    # Use Hunyuan-specific prompt if model is Hunyuan
+    prompt_key = "user_hunyuan" if config.model_translate == "Hunyuan" else "user"
+    
+    result = llm_service.get_completion(
         role=role,
         prompt_category="vocabulary",
+        prompt_key=prompt_key,
         source_lang=source_lang,
         target_lang=target_lang,
         country=country,
         source_text=source_text
     )
-    if config.debug:
-        print(f"DEBUG: Vocabulary: {translation}")
-    return translation
-
-@log_entry
-def one_chunk_reflect_on_translation(
-        source_lang: str,
-        target_lang: str,
-        source_text: str,
-        translation_1: str,
-        country: str ,
-        vocab_dict,
-        role: str,
-) -> str:
-    """
-    Reflect on the initial translation and provide suggestions for improvement.
-    """
-    translation = llm_service.get_completion(
-        role=role,
-        prompt_category="reflect_on_translation",
-        source_lang=source_lang,
-        target_lang=target_lang,
-        source_text=source_text,
-        translation_1=translation_1,
-        country=country,
-        vocab_dict=vocab_dict,
-        max_tokens=int(MAX_TOKENS_PER_CHUNK / 4)
-    )
-    return remove_tags(translation)
-
-@log_entry
-def one_chunk_improve_translation(
-        source_lang: str,
-        target_lang: str,
-        source_text: str,
-        translation_1: str,
-        reflection: str,
-        style: str,
-        role: str,
-) -> str:
-    """
-    Use the reflection to improve the translation.
-    """
-    prompt_key = "user_xml" if style == 'xml' else "user_text"
     
-    def generation_func(temperature=0.1):
-        return llm_service.get_completion(
-            role=role,
-            prompt_category="improve_translation",
-            prompt_key=prompt_key,
-            source_lang=source_lang,
-            target_lang=target_lang,
-            source_text="  " + source_text,
-            translation_1=translation_1,
-            reflection=reflection,
-            temperature=temperature
-        )
+    if config.debug:
+        logger.debug(f"Vocabulary generated: {len(result)} chars")
+    
+    return result
 
-    def marker_validator(source, target):
-        # We don't have explicit markers passed here yet.
-        # Logic: If translation_1 had markers, improved should have them.
-        # Check source_text for markers?
-        # Extract markers from source_text
-        markers = re.findall(r'@@@TAG_\d+@@@', source_text)
-        missing = [m for m in markers if m not in target]
-        if missing:
-            if config.debug:
-                 print(f"DEBUG: Improve Translation missing markers: {missing}")
-            return False
-        return True
-
-    return process_with_retries_only(
-        generation_func,
-        source_text,
-        marker_validator,
-        initial_temp=config.temp_proofread,
-        role="Improve Translation"
-    )
 
 @log_entry
-def num_tokens_in_string(
-        input_str: str, encoding_name: str = "cl100k_base"
-) -> int:
+def translate_metadata(metadata: dict, source_lang: str, target_lang: str,
+                       country: str) -> dict:
     """
-    Calculate the number of tokens in a given string using a specified encoding.
+    Translate metadata dictionary using LLM in JSON mode.
     """
     try:
-        encoding = tiktoken.get_encoding(encoding_name)
-    except Exception:
-        # Fallback if encoding name is not found, though cl100k_base should be standard
-        encoding = tiktoken.get_encoding("cl100k_base")
-    num_tokens = len(encoding.encode(input_str))
-    return num_tokens
-
-@log_entry
-def calculate_chunk_size(token_count: int, token_limit: int) -> int:
-    """
-    Calculate the chunk size based on the token count and token limit.
-    """
-    if token_count <= token_limit:
-        return token_count
-
-    num_chunks = (token_count + token_limit - 1) // token_limit
-    chunk_size = token_count // num_chunks
-
-    remaining_tokens = token_count % token_limit
-    if remaining_tokens > 0:
-        chunk_size += remaining_tokens // num_chunks
-
-    return chunk_size
-
-@log_entry
-def translate(
-        source_lang,
-        target_lang,
-        source_text,
-        style,
-        outline_text,
-        country,
-        vocab_dict,
-        max_tokens=MAX_TOKENS_PER_CHUNK,
-        temperature=None
-):
-    """Translate the source_text from source_lang to target_lang."""
-
-    num_tokens_in_text = num_tokens_in_string(source_text)
-
-    # Simplified check, original logic raise error if oversized but here we trust the chunker upstream for now or just process it.
-    # The original code raised ValueError("Chunks is oversized!!!") if > max_tokens. 
-    # We will keep that behavior but perhaps it should be handled more gracefully in production.
-    if num_tokens_in_text <= max_tokens:
-        # Step 1: Initial translation
-        start_time = time.time()
-        role = "Translate"
-
-        translation_1 = one_chunk_initial_translation(
-            source_lang, target_lang, source_text, style, outline_text, vocab_dict, role, temperature=temperature
-        )
-        translation_1_time = time.time() - start_time
-
-        # Step 2: Outline
-        start_time = time.time()
-        role = "Proofread"
-        outline_text = one_chunk_referat(target_lang, translation_1, role)
-        outline_time = time.time() - start_time
-
-        if config.fast_trans:
-            # Step 5: Final translation (using translation_1)
-            start_time = time.time()
-            role = "Proofread"
-            final_translation = one_chunk_editor(source_lang, source_text, translation_1, style, target_lang, country, role)
-            final_translation_time = time.time() - start_time
-
-        else:
-            # Step 3: Reflection on the initial translation
-            start_time = time.time()
-            role = "Proofread"
-            reflection = one_chunk_reflect_on_translation(
-                source_lang, target_lang, source_text, translation_1, country, vocab_dict, role
-            )
-            reflection_time = time.time() - start_time
-
-            # Step 4: Improved translation
-            start_time = time.time()
-            role = "Proofread"
-            translation_2 = one_chunk_improve_translation(
-                source_lang, target_lang, source_text, translation_1, reflection, style, role
-            )
-            translation_2_time = time.time() - start_time
-
-            # Step 5: Final translation
-            start_time = time.time()
-            role = "Proofread"
-            final_translation = translation_2 
-            final_translation_time = time.time() - start_time
-
-        return final_translation, outline_text
-    else:
-        raise ValueError(f"Chunk of size {num_tokens_in_text} tokens exceeds limit of {max_tokens} tokens.")
-
-import httpx
-
-# ...
-
-@log_entry
-def process_image_request(image_data: str, source_lang: str, target_lang: str, country: str, metadata: dict = None) -> str:
-    """
-    Sends an image to the OpenAI API (client3) for image variation generation,
-    then resizes and compresses the result.
-    """
-    if metadata:
-        title = metadata.get('book-title', '')
-        authors_list = metadata.get('author', [])
-        authors_str = ", ".join([f"{a.get('first-name', '')} {a.get('last-name', '')}".strip() for a in authors_list if isinstance(a, dict)])
-        genres = ", ".join(metadata.get('genre', []))
-        annotation = " ".join(metadata.get('annotation', []))[:300]
+        # Use Hunyuan-specific prompt if model is Hunyuan
+        prompt_key = "user_hunyuan" if config.model_translate == "Hunyuan" else "user"
         
-        prompt = config.get_prompt("image_generation", "generation", target_lang=target_lang, title=title, authors_str=authors_str, genres=genres, annotation=annotation)
-    else:
-        prompt = config.get_prompt("image_generation", "variation", source_lang=source_lang, target_lang=target_lang)
-
-    try:
-        if metadata:
-            if config.debug:
-                print(f"DEBUG: Image prompt: {prompt}")
-            
-            # Raw prompt logging
-            logger.debug(f"OpenAI Image API Request (generate): prompt='{prompt}', model='{config.model_images}'")
-            
-            response = llm_service.clientImages.images.generate(
-                model=config.model_images,
-                prompt=prompt,
-                n=1,
-                size="1024x1024",
-                # response_format="b64_json" # Removed as it causes unknown parameter error
-            )
-        else:
-            image_bytes = base64.b64decode(image_data)
-            img = Image.open(io.BytesIO(image_bytes))
-            if img.mode != 'RGBA':
-                img = img.convert('RGBA')
-            width, height = img.size
-            size = min(width, height)
-            left = (width - size) / 2
-            top = (height - size) / 2
-            right = (width + size) / 2
-            bottom = (height + size) / 2
-            img = img.crop((left, top, right, bottom))
-            img = img.resize((1024, 1024), Image.Resampling.LANCZOS)
-            
-            buffer = io.BytesIO()
-            img.save(buffer, format="PNG")
-            buffer.seek(0)
-            if config.debug:
-                print(f"DEBUG: Image variation prompt: {prompt}")
-                
-            # Raw prompt logging
-            logger.debug(f"OpenAI Image API Request (create_variation): prompt='{prompt}', model='{config.model_images}'")
-
-            response = llm_service.clientImages.images.create_variation(
-                image=buffer,
-                n=1,
-                size="1024x1024",
-                # response_format="b64_json", # Removed
-                model=config.model_images
-            )
-        
-        # Determine if response has b64_json (unlikely per error) or url
-        # Just handle URL as default fallback if b64_json is missing or explicitly not asked
-        generated_data = response.data[0]
-        
-        # Raw response logging (log metadata of response)
-        logger.debug(f"OpenAI Image API Response: {generated_data}")
-
-        img_bytes = None
-        if hasattr(generated_data, 'b64_json') and generated_data.b64_json:
-             img_bytes = base64.b64decode(generated_data.b64_json)
-        elif hasattr(generated_data, 'url') and generated_data.url:
-             if config.debug:
-                 print(f"DEBUG: Downloading image from URL: {generated_data.url}")
-             with httpx.Client() as client:
-                 r = client.get(generated_data.url)
-                 if r.status_code == 200:
-                     img_bytes = r.content
-                 else:
-                     if config.debug:
-                        print(f"DEBUG: Failed to download image from URL. Status: {r.status_code}")
-                     return None
-        
-        if not img_bytes:
-             if config.debug:
-                print("DEBUG: No image data found in response")
-             return None
-
-        img = Image.open(io.BytesIO(img_bytes))
-        img = img.resize((1024, 1536), Image.Resampling.LANCZOS)
-        output_buffer = io.BytesIO()
-        img.save(output_buffer, format="JPEG", quality=70)
-        return base64.b64encode(output_buffer.getvalue()).decode('utf-8')
-
-    except Exception as e:
-        if config.debug:
-            print(f"DEBUG: Error processing image request: {e}")
-        return None
-
-@log_entry
-def translate_metadata(metadata: dict, source_lang: str, target_lang: str, country: str) -> dict:
-    """
-    Translates a metadata dictionary using the LLM in JSON mode.
-    """
-    try:
-        response_text = llm_service.get_completion(
-            role="Proofread", # Use secondary for metadata usually
+        response = llm_service.get_completion(
+            role="Proofread",
             prompt_category="metadata_translation",
+            prompt_key=prompt_key,
             json_mode=True,
             source_lang=source_lang,
             target_lang=target_lang,
             country=country,
             metadata_json=json.dumps(metadata, ensure_ascii=False)
         )
-        if not response_text:
+        
+        if not response:
             return metadata
-            
-        match = re.search(r'(\{.*\})', response_text, re.DOTALL)
-        clean_json = match.group(1) if match else response_text.strip()
+        
+        # Extract JSON from response
+        match = re.search(r'(\{.*\})', response, re.DOTALL)
+        clean_json = match.group(1) if match else response.strip()
+        
         return json.loads(clean_json)
+        
     except Exception as e:
-        if config.debug:
-            print(f"DEBUG: Error translating metadata: {e}")
+        logger.error(f"Error translating metadata: {e}")
         return metadata
+
+
+@log_entry
+def process_image_request(image_data: str, source_lang: str, target_lang: str,
+                          country: str, metadata: dict = None) -> Optional[str]:
+    """
+    Process cover image: generate variation or new image.
+    
+    Args:
+        image_data: Base64 encoded image data
+        source_lang: Source language
+        target_lang: Target language
+        country: Target country
+        metadata: Book metadata for prompt generation
+    
+    Returns:
+        Base64 encoded result image or None on failure
+    """
+    try:
+        # Build prompt
+        if metadata:
+            title = metadata.get('book-title', '')
+            authors = metadata.get('author', [])
+            authors_str = ", ".join(
+                f"{a.get('first-name', '')} {a.get('last-name', '')}".strip()
+                for a in authors if isinstance(a, dict)
+            )
+            genres = ", ".join(metadata.get('genre', []))
+            annotation = " ".join(metadata.get('annotation', []))[:300]
+            
+            prompt = config.get_prompt(
+                "image_generation", "generation",
+                target_lang=target_lang, title=title,
+                authors_str=authors_str, genres=genres, annotation=annotation
+            )
+        else:
+            prompt = config.get_prompt(
+                "image_generation", "variation",
+                source_lang=source_lang, target_lang=target_lang
+            )
+        
+        if config.debug:
+            logger.debug(f"Image prompt: {prompt[:100]}...")
+        
+        client = llm_service.clientImages
+        
+        if metadata:
+            # Generate new image
+            response = client.images.generate(
+                model=config.model_images,
+                prompt=prompt,
+                n=1,
+                size="1024x1024"
+            )
+        else:
+            # Create variation
+            image_bytes = base64.b64decode(image_data)
+            img = Image.open(io.BytesIO(image_bytes))
+            
+            if img.mode != 'RGBA':
+                img = img.convert('RGBA')
+            
+            # Crop to square
+            w, h = img.size
+            size = min(w, h)
+            left = (w - size) / 2
+            top = (h - size) / 2
+            img = img.crop((left, top, left + size, top + size))
+            img = img.resize((1024, 1024), Image.Resampling.LANCZOS)
+            
+            buffer = io.BytesIO()
+            img.save(buffer, format="PNG")
+            buffer.seek(0)
+            
+            response = client.images.create_variation(
+                image=buffer,
+                n=1,
+                size="1024x1024",
+                model=config.model_images
+            )
+        
+        # Get image data
+        generated = response.data[0]
+        
+        if hasattr(generated, 'b64_json') and generated.b64_json:
+            img_bytes = base64.b64decode(generated.b64_json)
+        elif hasattr(generated, 'url') and generated.url:
+            logger.info(f"Downloading image from URL: {generated.url}")
+            with httpx.Client() as client:
+                r = client.get(generated.url)
+                if r.status_code != 200:
+                    logger.error(f"Failed to download image: {r.status_code}")
+                    return None
+                img_bytes = r.content
+        else:
+            logger.error("No image data in response")
+            return None
+        
+        # Resize and encode
+        img = Image.open(io.BytesIO(img_bytes))
+        img = img.resize((1024, 1536), Image.Resampling.LANCZOS)
+        
+        output = io.BytesIO()
+        img.save(output, format="JPEG", quality=70)
+        
+        return base64.b64encode(output.getvalue()).decode('utf-8')
+        
+    except Exception as e:
+        logger.error(f"Error processing image: {e}")
+        return None
+
+
+# =============================================================================
+# Utility Functions
+# =============================================================================
+
+def num_tokens_in_string(input_str: str, encoding_name: str = "cl100k_base") -> int:
+    """Calculate number of tokens in string."""
+    try:
+        encoding = tiktoken.get_encoding(encoding_name)
+    except Exception:
+        encoding = tiktoken.get_encoding("cl100k_base")
+    return len(encoding.encode(input_str))
