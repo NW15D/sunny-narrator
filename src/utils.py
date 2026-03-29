@@ -876,6 +876,14 @@ def remove_tags(text: str) -> str:
         return ""
     
     patterns = [
+        # Remove context sections that shouldn't be in translation
+        r'<vocabulary>[\s\S]*?</vocabulary>',
+        r'<synopsis>[\s\S]*?</synopsis>',
+        r'<context>[\s\S]*?</context>',
+        r'<task>[\s\S]*?</task>',
+        r'<suggestions>[\s\S]*?</suggestions>',
+        
+        # Remove source text artifacts
         r'<SOURCE_TEXT>[\s\S]*?</SOURCE_TEXT>',
         r'<DICTIONARY>[\s\S]*?</DICTIONARY>',
         r'<EXPERT_SUGGESTIONS>[\s\S]*?</EXPERT_SUGGESTIONS>',
@@ -883,8 +891,14 @@ def remove_tags(text: str) -> str:
         r'<INITIAL_TRANSLATION>[\s\S]*?</INITIAL_TRANSLATION>',
         r'<FIRST_TRANSLATION>[\s\S]*?</FIRST_TRANSLATION>',
         r'<TRANSLATION>[\s\S]*?</TRANSLATION>',
+        
+        # Remove markdown code blocks
         r'```xml', r'```',
+        
+        # Remove translation wrapper tags (keep content)
         r'</?(?:section|IMPROVED_TRANSLATION|target|TTEXT|TRANS)>',
+        
+        # Remove special tokens
         r'<\|im_end\|>', r'<\|file_separator\|>'
     ]
     
