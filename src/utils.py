@@ -890,6 +890,12 @@ def remove_tags(text: str) -> str:
         return ""
     
     patterns = [
+        # Remove source text blocks (LLM sometimes includes original text)
+        r'<source[^>]*>[\s\S]*?</source>',
+        r'<SOURCE[^>]*>[\s\S]*?</SOURCE>',
+        r'<original[^>]*>[\s\S]*?</original>',
+        r'<ORIGINAL[^>]*>[\s\S]*?</ORIGINAL>',
+        
         # Remove context sections that shouldn't be in translation
         r'<vocabulary>[\s\S]*?</vocabulary>',
         r'<synopsis>[\s\S]*?</synopsis>',
