@@ -1,4 +1,4 @@
-# Sunny Narrator — AI Translation Pipeline
+# Sunny Narrator v1.9
 
 Dual-LLM translation system with 5-stage quality control.
 
@@ -232,16 +232,28 @@ print(f"Translation: {result}")
 print(f"Synopsis: {synopsis}")
 ```
 
+## 📝 Versions
+
+- **v1.9** — 5-stage pipeline, stage-specific temperatures, profanity preservation
+- **v1.8** — Rechunking with length validation
+- **v1.7** — NER with CPU fallback
+- **v1.0** — Initial release
+
 ## 📝 Changelog
 
-### 2026-03-29
-- ✅ Added Stage 5: FINAL_EDIT (final proofreading)
-- ✅ Moved SYNOPSIS to end (uses final translation)
-- ✅ Added sys_not_promt mode for Gemma 2/3
-- ✅ Created PROMPTS_GUIDE.md documentation
-- ✅ Separated Primary/Secondary LLM prompts
+### 2026-03-29 (v1.9)
+- ✅ 5-stage translation pipeline (INITIAL → REFLECTION → IMPROVE → FINAL_EDIT → SYNOPSIS)
+- ✅ Stage-specific temperatures (TEMP_INITIAL, TEMP_REFLECTION, etc.)
+- ✅ sys_not_promt mode for Gemma 2/3
+- ✅ Dictionary format with commas (source = target, category, gender, notes)
+- ✅ NER with CPU fallback (avoid NVRTC errors)
+- ✅ Rechunking with length validation
+- ✅ FAST_TRANS mode (skip stages 2-4 for speed)
+- ✅ Profanity preservation in prompts
+- ✅ remove_tags() strips <vocabulary>, <synopsis> sections
+- ✅ Comprehensive documentation (8 guide files)
 
-### Previous
+### Previous (v1.0)
 - Dual-LLM pipeline implementation
 - Hunyuan-specific prompt support
 - Country/language awareness in prompts
