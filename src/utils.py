@@ -359,7 +359,7 @@ class TranslationPipeline:
     
     @log_entry
     def generate_synopsis(self, context: TranslationContext, translation: str) -> TranslationResult:
-        """Stage 2: Generate synopsis using Primary LLM."""
+        """Stage 5: Generate synopsis from FINAL translation (moved to end)."""
         if config.model_translate == "Hunyuan":
             user_prompt = config.get_prompt(
                 "synopsis", "user_hunyuan",
@@ -391,15 +391,18 @@ class TranslationPipeline:
     
     @log_entry
     def reflection(self, context: TranslationContext, translation: str) -> TranslationResult:
-        """Stage 3: Secondary LLM reflection."""
+        """
+        Stage 2: Secondary LLM reflection.
+        Note: Does NOT use vocab_dict or synopsis - focuses on accuracy/style only.
+        """
         user_prompt = config.get_prompt(
             "reflection", f"user_{context.style}",
             source_lang=context.source_lang,
             target_lang=context.target_lang,
             source_text=context.source_text,
             translation=translation,
-            vocab_dict=context.vocab_dict,
             country=context.country
+            # NO vocab_dict - reflection focuses on accuracy/style, not terminology
         )
         
         system_prompt = config.get_prompt("reflection", "system",
@@ -456,14 +459,18 @@ class TranslationPipeline:
     
     @log_entry
     def final_edit(self, context: TranslationContext, translation: str) -> TranslationResult:
-        """Stage 5: Final editing/proofreading - compare with original and fix XML tags."""
+        """
+        Stage 4: Final editing/proofreading - compare with original and fix XML tags.
+        Uses vocabulary to verify terminology consistency.
+        """
         user_prompt = config.get_prompt(
             "editor", f"user_{context.style}",
             source_lang=context.source_lang,
             target_lang=context.target_lang,
             country=context.country,
             source_text=context.source_text,
-            translation=translation
+            translation=translation,
+            vocab_dict=context.vocab_dict  # Added for terminology verification
         )
         
         system_prompt = config.get_prompt("editor", "system",
@@ -484,7 +491,7 @@ class TranslationPipeline:
             stage=TranslationStage.FINAL,
             llm_role=LLMRole.SECONDARY,
             text=text,
-            metadata={"stage": "final_edit", "compared_with_original": True}
+            metadata={"stage": "final_edit", "compared_with_original": True, "vocabulary_used": True}
         )
     
     def execute(self, source_lang: str, target_lang: str, source_text: str,
@@ -493,12 +500,12 @@ class TranslationPipeline:
         """
         Execute the complete translation pipeline.
         
-        NEW ORDER (5 stages):
+        UPDATED ORDER (5 stages):
         1. INITIAL - Primary LLM translation
-        2. REFLECTION - Secondary LLM quality review
+        2. REFLECTION - Secondary LLM quality review (NO vocab_dict)
         3. IMPROVE - Apply reflection suggestions
-        4. FINAL_EDIT - Final proofreading against original (NEW)
-        5. SYNOPSIS - Create summary from final translation (MOVED TO END)
+        4. FINAL_EDIT - Final proofreading WITH vocabulary (UPDATED)
+        5. SYNOPSIS - Create summary from final translation
         """
         context = TranslationContext(
             source_lang=source_lang,
@@ -531,7 +538,7 @@ class TranslationPipeline:
             synopsis_result = self.generate_synopsis(context, initial_result.text)
             state.add_result(synopsis_result)
         else:
-            # Stage 2: Reflection (Secondary LLM)
+            # Stage 2: Reflection (Secondary LLM) - NO vocab_dict
             reflection_result = self.reflection(context, initial_result.text)
             state.add_result(reflection_result)
             
@@ -541,11 +548,11 @@ class TranslationPipeline:
             )
             state.add_result(improve_result)
             
-            # Stage 4: Final Edit (Secondary LLM) - NEW
+            # Stage 4: Final Edit (Secondary LLM) - WITH vocab_dict
             final_edit_result = self.final_edit(context, improve_result.text)
             state.add_result(final_edit_result)
             
-            # Stage 5: Synopsis (Primary LLM) - MOVED TO END
+            # Stage 5: Synopsis (Primary LLM) - from final translation
             synopsis_result = self.generate_synopsis(context, final_edit_result.text)
             state.add_result(synopsis_result)
             
