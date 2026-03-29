@@ -401,6 +401,20 @@ class TranslationPipeline:
         
         text = remove_tags(text)
         
+        # Check if translation is in correct language (detect if LLM returned source language)
+        if _detect_language_mismatch(text, context.target_lang, context.source_text):
+            logger.error("Translation returned in wrong language! Retrying...")
+            # Retry once with stronger instruction
+            user_prompt = f"TRANSLATE to {context.target_lang} ONLY. DO NOT output English/source text.\n\n{user_prompt}"
+            text = llm_service.complete(
+                role=LLMRole.PRIMARY,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                max_tokens=MAX_TOKENS_PER_CHUNK,
+                stage=TranslationStage.INITIAL
+            )
+            text = remove_tags(text)
+        
         return TranslationResult(
             stage=TranslationStage.INITIAL,
             llm_role=LLMRole.PRIMARY,
@@ -906,6 +920,51 @@ def remove_tags(text: str) -> str:
         text = re.sub(pattern, '', text, flags=re.IGNORECASE)
     
     return text.strip()
+
+
+def _detect_language_mismatch(text: str, expected_lang: str, source_text: str) -> bool:
+    """
+    Detect if translation is in wrong language (e.g., English instead of Russian).
+    
+    Args:
+        text: Translated text to check
+        expected_lang: Expected target language (e.g., 'russian', 'ru')
+        source_text: Original source text
+        
+    Returns:
+        True if language mismatch detected
+    """
+    if not text or not source_text:
+        return False
+    
+    # Common Russian characters that shouldn't be in English
+    russian_chars = set('абвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ')
+    
+    # Common English characters
+    english_chars = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ')
+    
+    # Count characters
+    text_chars = set(text)
+    
+    # If expected Russian but no Cyrillic characters
+    if 'ru' in expected_lang.lower() or 'russian' in expected_lang.lower():
+        has_cyrillic = bool(text_chars & russian_chars)
+        has_english = bool(text_chars & english_chars)
+        
+        # If text is mostly English (no Cyrillic), it's likely not translated
+        if not has_cyrillic and has_english:
+            # Check if text is similar to source (not translated)
+            if len(text) > 50 and len(source_text) > 50:
+                # Simple similarity check
+                text_words = set(text.lower().split())
+                source_words = set(source_text.lower().split())
+                overlap = len(text_words & source_words) / min(len(text_words), len(source_words))
+                
+                if overlap > 0.5:  # More than 50% word overlap
+                    logger.warning(f"Language mismatch detected: expected {expected_lang}, got English. Overlap: {overlap:.1%}")
+                    return True
+    
+    return False
 
 
 @log_entry
