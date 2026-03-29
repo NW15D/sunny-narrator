@@ -211,6 +211,20 @@ class LLMServiceCompat:
         """Images LLM client."""
         return self._new_service._images_client
     
+    def complete(self, role: LLMRole, system_prompt: str, user_prompt: str,
+                 max_tokens: int = 8192, json_mode: bool = False) -> str:
+        """
+        Direct LLM completion (delegates to translation_pipeline.LLMService).
+        Used by synopsis_manager.py and other modules.
+        """
+        return self._new_service.complete(
+            role=role,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_tokens=max_tokens,
+            json_mode=json_mode
+        )
+    
     def get_completion(self, role: str, prompt_category: str, prompt_key: str = None,
                        temperature: float = None, max_tokens: int = None, json_mode: bool = False,
                        **kwargs) -> str:

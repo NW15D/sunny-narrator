@@ -18,6 +18,8 @@ from typing import Optional, Callable
 import re
 
 from src.config import Config
+from src.utils import remove_tags
+
 # Import schema classes directly to avoid circular import
 # (utils.py imports from this file, so we can't import from utils)
 from dataclasses import dataclass, field
@@ -238,7 +240,7 @@ class TranslationPipeline:
         )
         
         # Clean up tags
-        text = self._remove_tags(text)
+        text = remove_tags(text)
         
         return TranslationResult(
             stage=TranslationStage.INITIAL,
@@ -278,7 +280,7 @@ class TranslationPipeline:
             max_tokens=160
         )
         
-        text = self._remove_tags(text)
+        text = remove_tags(text)
         
         return TranslationResult(
             stage=TranslationStage.SYNOPSIS,
@@ -364,31 +366,13 @@ class TranslationPipeline:
             max_tokens=config.max_len_chunk * 4
         )
         
-        text = self._remove_tags(text)
+        text = remove_tags(text)
         
         return TranslationResult(
             stage=TranslationStage.IMPROVE,
             llm_role=LLMRole.SECONDARY,
             text=text
         )
-    
-    def _remove_tags(self, text: str) -> str:
-        """Remove XML/HTML tags and artifacts."""
-        patterns = [
-            r'<SOURCE_TEXT>[\s\S]*?</SOURCE_TEXT>',
-            r'<DICTIONARY>[\s\S]*?</DICTIONARY>',
-            r'<EXPERT_SUGGESTIONS>[\s\S]*?</EXPERT_SUGGESTIONS>',
-            r'<SYNOPSIS>[\s\S]*?</SYNOPSIS>',
-            r'\<\|channel\|\>[\s\S]*?\<\|end\|\>',
-            r'```xml', r'```',
-            r'</?(?:INITIAL_TRANSLATION|FIRST_TRANSLATION|TRANSLATION|SOURCE|section|IMPROVED_TRANSLATION|target|TTEXT|SYNOPSIS|TRANS)>',
-            r'<\|im_end\|>', r'<\|file_separator\|>'
-        ]
-        
-        for pattern in patterns:
-            text = re.sub(pattern, '', text, flags=re.IGNORECASE | re.VERBOSE)
-        
-        return text.strip()
     
     def execute(
         self,
