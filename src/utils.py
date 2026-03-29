@@ -233,9 +233,13 @@ def vocabulary(source_lang: str, target_lang: str, source_text: str,
     """
     Generate vocabulary for proper nouns using LLM.
     """
+    # Use Hunyuan-specific prompt if model is Hunyuan
+    prompt_key = "user_hunyuan" if config.model_translate == "Hunyuan" else "user"
+    
     result = llm_service.get_completion(
         role=role,
         prompt_category="vocabulary",
+        prompt_key=prompt_key,
         source_lang=source_lang,
         target_lang=target_lang,
         country=country,
@@ -255,9 +259,13 @@ def translate_metadata(metadata: dict, source_lang: str, target_lang: str,
     Translate metadata dictionary using LLM in JSON mode.
     """
     try:
+        # Use Hunyuan-specific prompt if model is Hunyuan
+        prompt_key = "user_hunyuan" if config.model_translate == "Hunyuan" else "user"
+        
         response = llm_service.get_completion(
             role="Proofread",
             prompt_category="metadata_translation",
+            prompt_key=prompt_key,
             json_mode=True,
             source_lang=source_lang,
             target_lang=target_lang,
