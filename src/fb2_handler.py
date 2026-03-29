@@ -1,14 +1,46 @@
+"""
+FB2 file handler.
+
+Handles parsing, reading, and writing FB2 files.
+Uses xml_utils for common XML operations.
+"""
+
 import re
-from bs4 import BeautifulSoup
+from pathlib import Path
 from src.config import Config
+from src.xml_utils import (
+    extract_metadata,
+    update_header_with_metadata,
+    get_cover_image,
+    replace_cover_image,
+    prepare_chunks
+)
 
 config = Config()
 
+# Re-export functions for backward compatibility
+__all__ = [
+    'parse_xml',
+    'extract_metadata',
+    'update_header_with_metadata',
+    'get_cover_image',
+    'replace_cover_image',
+    'prepare_chunks',
+    'save_fb2',
+    'add_translator_info'
+]
 
-def parse_xml(file_path):
+
+def parse_xml(file_path: str) -> tuple:
     """
     Parses an FB2 XML file and separates the header, body, and footer.
-    Also handles some cleanup and injection of translator info.
+    Also handles cleanup and injection of translator info.
+    
+    Args:
+        file_path: Path to FB2 file
+        
+    Returns:
+        Tuple of (body, header, footer)
     """
     with open(file_path, 'r', encoding='utf-8') as f:
         content = f.read()
@@ -31,407 +63,57 @@ def parse_xml(file_path):
         body = re.sub(r'<myheader>.*?</myheader>', '', body, flags=re.DOTALL)
         body = re.sub(r'<myfooter>.*?</myfooter>', '', body, flags=re.DOTALL)
         
-        # Add translator info to title-info
-        header = re.sub(r'</title-info>',
-                        '<translator><nickname>Sunny narrator opensource AI translator </nickname> <email>n@uwns.org</email> </translator> </title-info>',
-                        header, flags=re.DOTALL)
+        # Add translator info
+        header = add_translator_info(header)
 
         # Remove <myheader> and <myfooter> from header and footer
         header = re.sub(r'<myheader>.*?</myheader>', '', header, flags=re.DOTALL)
         footer = re.sub(r'<myfooter>.*?</myfooter>', '', footer, flags=re.DOTALL)
 
         if config.debug:
-            print(len(body))
+            print(f"Body length: {len(body)}")
+            
         return body, header, footer
 
-def extract_metadata(header):
-    """
-    Extracts key metadata from the FB2 header using BeautifulSoup.
-    """
-    # We use 'xml' parser for FB2
-    soup = BeautifulSoup(header, 'xml')
-    title_info = soup.find('title-info')
-    if not title_info:
-        return {}
 
-    metadata = {}
+def add_translator_info(header: str) -> str:
+    """
+    Add translator info to FB2 header.
     
-    # Title
-    title_tag = title_info.find('book-title')
-    metadata['book-title'] = title_tag.get_text() if title_tag else ""
-
-    # Authors
-    authors = []
-    for author_tag in title_info.find_all('author'):
-        author = {}
-        for tag_name in ['first-name', 'last-name', 'middle-name', 'nickname']:
-            tag = author_tag.find(tag_name)
-            if tag:
-                author[tag_name] = tag.get_text()
-        authors.append(author)
-    metadata['author'] = authors
-
-    # Series
-    series_tags = title_info.find_all('sequence')
-    series_list = []
-    for s_tag in series_tags:
-        series = {}
-        if s_tag.get('name'):
-            series['name'] = s_tag.get('name')
-        if s_tag.get('number'):
-            series['number'] = s_tag.get('number')
-        series_list.append(series)
-    metadata['sequence'] = series_list
-
-    # Annotation
-    annotation_tag = title_info.find('annotation')
-    if annotation_tag:
-        # Extract paragraphs as a list of strings
-        paragraphs = [p.get_text() for p in annotation_tag.find_all('p')]
-        # If no <p> tags, just get text
-        if not paragraphs:
-            paragraphs = [annotation_tag.get_text()]
-        metadata['annotation'] = paragraphs
-    else:
-        metadata['annotation'] = []
-
-    # Genres
-    genres = [g.get_text() for g in title_info.find_all('genre')]
-    metadata['genre'] = genres
-
-    # Language
-    lang_tag = title_info.find('lang')
-    metadata['lang'] = lang_tag.get_text() if lang_tag else ""
-
-    return metadata
-
-def update_header_with_metadata(header, metadata):
-    """
-    Updates the FB2 header with translated metadata.
-    """
-    soup = BeautifulSoup(header, 'xml')
-    title_info = soup.find('title-info')
-    if not title_info:
-        return header
-
-    # Update Title
-    if 'book-title' in metadata:
-        title_tag = title_info.find('book-title')
-        if title_tag:
-            title_tag.string = metadata['book-title']
-        else:
-            new_title = soup.new_tag('book-title')
-            new_title.string = metadata['book-title']
-            title_info.append(new_title)
-
-    # Update Authors
-    if 'author' in metadata:
-        # For authors, we might have multiple. 
-        # Usually easier to replace existing author tags if we have translated ones.
-        # But FB2 can have many authors. If the count matches, we replace.
-        existing_authors = title_info.find_all('author')
-        new_authors_data = metadata['author']
+    Args:
+        header: FB2 header string
         
-        for i, author_data in enumerate(new_authors_data):
-            if i < len(existing_authors):
-                author_tag = existing_authors[i]
-                for tag_name, value in author_data.items():
-                    tag = author_tag.find(tag_name)
-                    if tag:
-                        tag.string = value
-                    else:
-                        new_tag = soup.new_tag(tag_name)
-                        new_tag.string = value
-                        author_tag.append(new_tag)
-            else:
-                # Add new author if more than existing (unlikely in translation but possible)
-                new_author_tag = soup.new_tag('author')
-                for tag_name, value in author_data.items():
-                    new_tag = soup.new_tag(tag_name)
-                    new_tag.string = value
-                    new_author_tag.append(new_tag)
-                title_info.append(new_author_tag)
-
-    # Update Series
-    if 'sequence' in metadata:
-        existing_sequences = title_info.find_all('sequence')
-        for i, s_data in enumerate(metadata['sequence']):
-            if i < len(existing_sequences):
-                if 'name' in s_data:
-                    existing_sequences[i]['name'] = s_data['name']
-            # We don't usually translate sequence numbers
-
-    # Update Annotation
-    if 'annotation' in metadata:
-        annotation_tag = title_info.find('annotation')
-        if not annotation_tag:
-            annotation_tag = soup.new_tag('annotation')
-            title_info.append(annotation_tag)
-        
-        # Clear existing content
-        annotation_tag.clear()
-        for p_text in metadata['annotation']:
-            p_tag = soup.new_tag('p')
-            p_tag.string = p_text
-            annotation_tag.append(p_tag)
-
-    # Update Language
-    if 'lang' in metadata:
-        lang_tag = title_info.find('lang')
-        if lang_tag:
-            lang_tag.string = metadata['lang']
-        else:
-            new_lang = soup.new_tag('lang')
-            new_lang.string = metadata['lang']
-            title_info.append(new_lang)
-
-    # Return as string. 
-    # Since 'header' is just a slice of the file starting with <FictionBook>,
-    # BeautifulSoup will auto-close it with </FictionBook>.
-    # We must strip it so app.py can append body and footer correctly.
-    updated_header = str(soup)
-    if updated_header.rstrip().endswith('</FictionBook>'):
-        updated_header = updated_header.rstrip()[:-len('</FictionBook>')].rstrip()
-    
-    return updated_header
-
-def prepare_chunks(body, max_len_chunk):
+    Returns:
+        Updated header with translator info
     """
-    Splits the body content into sections and chunks based on max_len_chunk.
-    Ensures each chunk has balanced XML tags (opens and closes properly).
+    translator_block = '<translator><nickname>Sunny narrator opensource AI translator</nickname><email>n@uwns.org</email></translator></title-info>'
+    header = re.sub(
+        r'</title-info>',
+        translator_block,
+        header,
+        flags=re.DOTALL
+    )
+    return header
+
+
+def save_fb2(body: str, header: str, footer: str, output_path: str) -> None:
     """
-    body_str = body
-    sections = []
-    start_tags = {'<section>', '<SECTION>'}
+    Save FB2 file from components.
     
-    start = 0
-
-    while start < len(body_str):
-        # Find the start of the next section
-        found_start_tag = None
-        for tag in start_tags:
-            pos = body_str.find(tag, start)
-            if pos != -1 and (found_start_tag is None or pos < found_start_tag[1]):
-                found_start_tag = (tag, pos)
-
-        if not found_start_tag:
-            break
-
-        section_start = found_start_tag[1] + len(found_start_tag[0])
-        section_end = body_str.find('</section>', section_start)
-
-        if section_end == -1:
-            break
-
-        section = body_str[section_start:section_end]
-        chunks = []
-
-        # Split the section into chunks with tag-aware boundaries
-        chunk_start = 0
-        while chunk_start < len(section):
-            chunk_end = chunk_start + max_len_chunk
-            
-            if chunk_end >= len(section):
-                # Last chunk - take everything remaining
-                chunk_end = len(section)
-                chunk_text = section[chunk_start:chunk_end]
-                # Ensure chunk ends at a tag boundary if possible
-                chunk_text = _ensure_balanced_tags(chunk_text)
-                chunks.append(chunk_text)
-                break
-            else:
-                # Find the best split point before max_len_chunk
-                chunk_end = _find_chunk_boundary(section, chunk_start, chunk_end)
-                chunk_text = section[chunk_start:chunk_end]
-                # Ensure XML tags are balanced
-                chunk_text = _ensure_balanced_tags(chunk_text)
-                chunks.append(chunk_text)
-                chunk_start = chunk_end
-
-        sections.append(chunks)
-        start = section_end + len('</section>')
-
-    return sections
-
-
-def _find_chunk_boundary(text, start_pos, preferred_end):
+    Args:
+        body: FB2 body content
+        header: FB2 header
+        footer: FB2 footer
+        output_path: Output file path
     """
-    Find the best boundary to split text, preferring to end at closing tags.
-    Searches backwards from preferred_end to find a good split point.
-    """
-    # Look for closing tags within reasonable range (last 20% of chunk)
-    search_start = max(start_pos + int((preferred_end - start_pos) * 0.8), start_pos)
-    search_end = min(preferred_end + int((preferred_end - start_pos) * 0.1), len(text))
+    content = header + body + footer
     
-    # Priority: </p>, </div>, </title>, then any </tag>
-    closing_tags = ['</p>', '</div>', '</title>', '</emphasis>', '</strong>', 
-                    '</subtitle>', '</cite>', '</poem>', '</stanza>', '</v>']
+    output_file = Path(output_path)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
     
-    for tag in closing_tags:
-        pos = text.rfind(tag, search_start, search_end)
-        if pos != -1:
-            return pos + len(tag)
-    
-    # Fallback: any closing tag
-    import re
-    tag_match = re.search(r'</[^>]+>\s*$', text[search_start:search_end])
-    if tag_match:
-        return search_start + tag_match.end()
-    
-    # Last resort: split at preferred_end, but ensure we're not inside a tag
-    return _adjust_for_tag_boundary(text, preferred_end)
+    with open(output_file, 'w', encoding='utf-8') as f:
+        f.write(content)
 
 
-def _adjust_for_tag_boundary(text, pos):
-    """
-    Adjust position to ensure we're not splitting inside a tag.
-    """
-    # If we're inside a tag, move to after the tag
-    in_tag = False
-    adjusted_pos = pos
-    
-    for i in range(max(0, pos - 100), min(pos + 10, len(text))):
-        if i >= len(text):
-            break
-        if text[i] == '<':
-            in_tag = True
-            tag_start = i
-        elif text[i] == '>':
-            if in_tag and i >= pos:
-                # We were inside a tag that ends after pos
-                adjusted_pos = i + 1
-            in_tag = False
-    
-    return min(adjusted_pos, len(text))
-
-
-def _ensure_balanced_tags(chunk):
-    """
-    Ensure chunk has balanced opening and closing XML tags.
-    Adds missing closing tags or removes incomplete opening tags at boundaries.
-    """
-    import re
-    
-    # Find all opening and closing tags
-    opening_pattern = r'<([a-zA-Z][a-zA-Z0-9]*)[^>]*?(?<!/)>'
-    closing_pattern = r'</([a-zA-Z][a-zA-Z0-9]*)>'
-    self_closing_pattern = r'<[a-zA-Z][a-zA-Z0-9]*[^>]*/>'
-    
-    # Stack to track unclosed tags
-    tag_stack = []
-    
-    # Find all tags with their positions
-    all_tags = []
-    for match in re.finditer(opening_pattern, chunk):
-        all_tags.append(('open', match.group(1), match.start(), match.end()))
-    for match in re.finditer(closing_pattern, chunk):
-        all_tags.append(('close', match.group(1), match.start(), match.end()))
-    for match in re.finditer(self_closing_pattern, chunk):
-        all_tags.append(('self', None, match.start(), match.end()))
-    
-    # Sort by position
-    all_tags.sort(key=lambda x: x[2])
-    
-    # Process tags to find unclosed ones
-    for tag_type, tag_name, start, end in all_tags:
-        if tag_type == 'open':
-            tag_stack.append((tag_name, end))
-        elif tag_type == 'close':
-            # Pop matching opening tag
-            for i in range(len(tag_stack) - 1, -1, -1):
-                if tag_stack[i][0] == tag_name:
-                    tag_stack.pop(i)
-                    break
-        # self-closing tags are ignored
-    
-    # Add closing tags for any remaining open tags (in reverse order)
-    result = chunk
-    for tag_name, _ in reversed(tag_stack):
-        result += f'</{tag_name}>'
-    
-    return result
-
-def get_cover_image(header, footer):
-    """
-    Extracts the cover image base64 data from the footer based on header info.
-    Returns the base64 string or None if not found.
-    """
-    # 1. Find image href in header <coverpage><image l:href="#..."/>
-    cover_match = re.search(r'<coverpage>\s*<image[^>]*l:href=["\']#?([^"\']+)["\'][^>]*/>\s*</coverpage>', header)
-    if not cover_match:
-        # Try simplified search without coverpage tag constraint, just first image in title-info?
-        # But standard is coverpage.
-        return None
-
-    image_id = cover_match.group(1)
-    
-    # 2. Find binary block in footer <binary id="...">...</binary>
-    # Note: id in binary might not have #, but href does.
-    # Regex to find binary with id
-    binary_pattern = fr'<binary[^>]*id="{re.escape(image_id)}"[^>]*>(.*?)</binary>'
-    binary_match = re.search(binary_pattern, footer, re.DOTALL)
-    
-    if binary_match:
-        return binary_match.group(1)
-    
-    return None
-
-def replace_cover_image(header, footer, body, new_content):
-    """
-    Replaces the cover image with new content (image or text).
-    Returns updated (header, footer, body) tuple.
-    """
-    # Check if new_content looks like base64 (no spaces, long string) or text
-    # Simple heuristic: if it contains spaces and is not huge block of chars, it's text.
-    # Or check if it validates as base64? 
-    # Let's assume if it starts with "data:image" or is just pure base64 chars without spaces it's image.
-    # But usually, the API returns what we asked.
-    
-    is_image = False
-    if len(new_content) > 100 and " " not in new_content[:100]:
-        is_image = True
-    
-    # Locate the cover image ID
-    cover_match = re.search(r'<coverpage>\s*<image[^>]*l:href=["\']#?([^"\']+)["\'][^>]*/>\s*</coverpage>', header)
-    if not cover_match:
-        # No cover found, nothing to replace? Or should we insert?
-        # For now, only replace if exists.
-        return header, footer, body
-
-    image_id = cover_match.group(1)
-    
-    if is_image:
-        # Replace binary content
-        binary_pattern = fr'(<binary[^>]*id="{re.escape(image_id)}"[^>]*>)(.*?)(</binary>)'
-        # We assume new_content is just the base64 data (without data:image prefix if present, we should strip it?)
-        # Base64 from OpenAI might be raw.
-        # Ensure we strip possible data URI scheme
-        if new_content.startswith('data:image'):
-            new_content = new_content.split(',', 1)[1]
-            
-        footer = re.sub(binary_pattern, fr'\1{new_content}\3', footer, count=1, flags=re.DOTALL)
-        
-    else:
-        # It is text description
-        # 1. Remove coverpage from header
-        header = re.sub(r'<coverpage>.*?</coverpage>', '', header, flags=re.DOTALL)
-        
-        # 2. Remove binary from footer (optional, to save space)
-        binary_pattern = fr'<binary[^>]*id="{re.escape(image_id)}"[^>]*>.*?</binary>'
-        footer = re.sub(binary_pattern, '', footer, flags=re.DOTALL)
-        
-        # 3. Add text to body
-        # Insert at the beginning of the body
-        # Check if body has a section, insert before or inside first section?
-        # Or add to annotation in header? 
-        # User request: "замену ее в теле книги на полуенный результат" -> "replace it in the book body with the received result"
-        # Since it's text, adding it as a <p> or <section> at start of body is appropriate.
-        
-        new_text_block = f'<section><title><p>Cover Description</p></title><p>{new_content}</p></section>'
-        
-        # Insert after <body ...>
-        # Find first occurrence of > after <body
-        body_start = body.find('>') + 1
-        body = body[:body_start] + '\n' + new_text_block + body[body_start:]
-        
-    return header, footer, body
+# Keep existing functions for backward compatibility
+# They now delegate to xml_utils
