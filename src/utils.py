@@ -571,15 +571,72 @@ class TranslationPipeline:
 _pipeline = TranslationPipeline()
 
 
+# =============================================================================
+# Length Validation (Rechunking Support)
+# =============================================================================
+
+MIN_CHUNK_SIZE = 1000  # Minimum chunk size for rechunking
+MAX_DEPTH = 3  # Maximum recursion depth
+
+
+def validate_translation_length(source_text: str, translated_text: str, 
+                                 stage_name: str = "") -> tuple:
+    """
+    Validate translation length and determine if rechunking is needed.
+    
+    Args:
+        source_text: Original source text
+        translated_text: Translated text
+        stage_name: Name of pipeline stage (for logging)
+        
+    Returns:
+        Tuple of (is_valid: bool, percent_diff: float, should_split: bool)
+    """
+    source_len = len(source_text)
+    target_len = len(translated_text)
+    
+    if source_len == 0:
+        return True, 0.0, False
+    
+    percent_diff = abs(target_len - source_len) / source_len * 100
+    
+    # Check if rechunking is needed
+    should_split = (
+        source_len >= MIN_CHUNK_SIZE and
+        percent_diff > config.length_check_threshold
+    )
+    
+    if config.debug:
+        status = "⚠ SPLIT" if should_split else "✓ OK"
+        logger.debug(f"[{stage_name}] {source_len} → {target_len} chars ({percent_diff:.1f}%) {status}")
+    
+    return not should_split, percent_diff, should_split
+
+
 def translate_chunk(source_lang: str, target_lang: str, source_text: str,
                     outline_text: str, vocab_dict: dict, country: str,
-                    style: str = "text", fast_mode: bool = False) -> tuple:
+                    style: str = "text", fast_mode: bool = False,
+                    depth: int = 0) -> tuple:
     """
     Translate a single chunk using the dual-LLM pipeline.
     
+    Includes automatic rechunking if length validation fails.
+    
+    Args:
+        source_lang: Source language
+        target_lang: Target language
+        source_text: Text to translate
+        outline_text: Context synopsis from previous chunks
+        vocab_dict: Translation dictionary
+        country: Target country for cultural context
+        style: "xml" or "text"
+        fast_mode: Skip reflection/improve stages
+        depth: Current recursion depth (for rechunking)
+    
     Returns:
-        (final_translation, synopsis)
+        Tuple of (final_translation, synopsis)
     """
+    # Execute pipeline
     state = _pipeline.execute(
         source_lang=source_lang,
         target_lang=target_lang,
@@ -590,6 +647,34 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
         style=style,
         fast_mode=fast_mode
     )
+    
+    # Validate final translation length
+    is_valid, percent_diff, should_split = validate_translation_length(
+        source_text, state.final_translation, "FINAL"
+    )
+    
+    # Rechunking if needed
+    if should_split and depth < MAX_DEPTH:
+        logger.info(f"Rechunking at depth {depth}: {percent_diff:.1f}% length difference")
+        
+        # Split source text
+        part1, part2 = split_text_smartly(source_text)
+        
+        # Translate parts recursively
+        result1, syn1 = translate_chunk(
+            source_lang, target_lang, part1, outline_text,
+            vocab_dict, country, style, fast_mode, depth + 1
+        )
+        result2, syn2 = translate_chunk(
+            source_lang, target_lang, part2, outline_text,
+            vocab_dict, country, style, fast_mode, depth + 1
+        )
+        
+        # Combine results
+        combined_translation = (result1 or "") + (result2 or "")
+        combined_synopsis = (syn1 or "") + " " + (syn2 or "")
+        
+        return combined_translation, combined_synopsis
     
     return state.final_translation, state.synopsis
 
