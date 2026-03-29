@@ -773,6 +773,18 @@ class LLMServiceCompat:
         """
         Get completion using prompts.json templates.
         Compatibility wrapper for old-style calls.
+        
+        Args:
+            role: LLM role ("Translate" or "Proofread")
+            prompt_category: Category in prompts.json (e.g., "vocabulary")
+            prompt_key: Key in category (e.g., "user", "user_hunyuan")
+            temperature: Override temperature (optional)
+            max_tokens: Override max tokens (optional)
+            json_mode: Enable JSON response format
+            **kwargs: Template variables for prompt formatting
+            
+        Returns:
+            Generated text from LLM
         """
         # Get prompt template
         template = config.prompts.get(prompt_category, {})
@@ -781,9 +793,12 @@ class LLMServiceCompat:
         else:
             prompt_template = str(template)
         
+        # Filter out None values from kwargs to prevent formatting errors
+        safe_kwargs = {k: v for k, v in kwargs.items() if v is not None}
+        
         # Format template
         try:
-            user_prompt = prompt_template.format(**kwargs)
+            user_prompt = prompt_template.format(**safe_kwargs)
         except KeyError as e:
             logger.warning(f"Missing variable for prompt: {e}")
             user_prompt = prompt_template
@@ -912,7 +927,22 @@ def vocabulary(source_lang: str, target_lang: str, source_text: str,
                country: str, role: str) -> str:
     """
     Generate vocabulary for proper nouns using LLM.
+    
+    Args:
+        source_lang: Source language
+        target_lang: Target language
+        source_text: Text with terms to translate (from NER)
+        country: Target country
+        role: LLM role ("Translate" or "Proofread")
+        
+    Returns:
+        Translated vocabulary terms
     """
+    # Validate input
+    if not source_text or not source_text.strip():
+        logger.warning("vocabulary() called with empty source_text")
+        return ""
+    
     # Use Hunyuan-specific prompt if model is Hunyuan
     prompt_key = "user_hunyuan" if config.model_translate == "Hunyuan" else "user"
     
