@@ -1,42 +1,132 @@
-# Sunny Narrator v1.0
+# Sunny Narrator v1.9
 
-**长文本AI翻译器** (FB2, EPUB, TXT)，支持词汇一致性和格式保留。
+具有 5 阶段质量控制的 AI 翻译系统。
 
-## 功能
-
-- 📚 格式保留：原生 FB2/EPUB 支持
-- 🎯 词汇翻译：基于NER的一致性处理
-- 📝 校对：双通道翻译质量检查
-- 🐳 Docker支持：GPU加速
-
-## 快速开始
-
-### Docker
+## 🚀 快速开始
 
 ```bash
-git clone https://github.com/neowisard/sunny_narrator
-cd sunny_narrator
-./scripts/check-gpu.sh
-docker-compose -f docker-compose.gpu.yml up
-```
-
-### Python
-
-```bash
+# 安装依赖
 pip install -r requirements.txt
+
+# 配置 .env
+cp .env.example .env
+
+# 运行翻译
 python app.py
 ```
 
-## 要求
+## 📋 配置
 
-- GPU: NVIDIA 4GB+ VRAM
-- RAM: 8GB+
-- API: OpenAI-compatible
+### .env 文件
 
-## 文档
+```bash
+# Primary LLM (翻译)
+MODEL_TRANSLATE=google/gemma-2-27b-it
+API_BASE_TRANSLATE=http://localhost:11434/v1
+API_KEY_TRANSLATE=your-key
+S_PROMT_TRANSLATE=true          # ⚠️ Gemma 2/3 需要 true!
+TEMP_TRANSLATE=0.01
 
-- [Docker](DOCKER_README.md)
-- [Wiki](https://github.com/NW15D/sunny-narrator/wiki)
+# Secondary LLM (校对)
+MODEL_PROOFREAD=Mistral
+API_BASE_PROOFREAD=http://localhost:11434/v1
+API_KEY_PROOFREAD=your-key
+S_PROMT_PROOFREAD=false
+TEMP_PROOFREAD=0.7
+
+# 阶段特定温度
+TEMP_INITIAL=0.01               # 阶段 1: 翻译一致性
+TEMP_REFLECTION=0.4             # 阶段 2: 分析
+TEMP_IMPROVE=0.4                # 阶段 3: 编辑
+TEMP_FINAL_EDIT=0.15            # 阶段 4: 校对
+TEMP_SYNOPSIS=0.15              # 阶段 5: 摘要
+
+# 语言
+SOURCE_LANG=english
+TARGET_LANG=chinese
+COUNTRY=中国
+
+# 处理
+MAX_LEN_CHUNK=8192
+LENGTH_CHECK_THRESHOLD=20
+FAST_TRANS=false
+DEBUG=off
+```
+
+## ⚡ FAST_TRANS 模式
+
+**FAST_TRANS=true** (快速，2 阶段):
+- Stage 1: INITIAL (Primary LLM)
+- Stage 5: SYNOPSIS (Primary LLM)
+- ~2.5x 更快，中等质量
+
+**FAST_TRANS=false** (标准，5 阶段):
+- 完整质量控制流程
+- 高质量
+
+## 📊 5 阶段流程
+
+1. **INITIAL** (Primary, temp=0.01) — 翻译草稿
+2. **REFLECTION** (Secondary, temp=0.4) — 质量审查
+3. **IMPROVE** (Secondary, temp=0.4) — 应用建议
+4. **FINAL_EDIT** (Secondary, temp=0.15) — 最终校对
+5. **SYNOPSIS** (Primary, temp=0.15) — 上下文摘要
+
+## 📁 格式
+
+- **输入:** FB2, EPUB, TXT
+- **输出:** FB2, EPUB (保留结构)
+
+## 🎯 词汇表
+
+通过 NER 自动创建词汇表:
+```bash
+NER=true
+NERMODEL=zh_core_web_lg
+```
+
+词汇表格式 (.dic):
+```dic
+# Format: source = target, category, gender, notes
+Alice = 爱丽丝，PERSON, she, 
+Wonderland = 仙境，LOC, , 
+```
+
+## 🔧 Gemma 的 sys_not_promt
+
+Gemma 2/3 不支持 system prompts:
+```bash
+S_PROMT_TRANSLATE=true    # Gemma 需要
+S_PROMT_PROOFREAD=false   # Mistral/Llama
+```
+
+## 📚 文档
+
+- [安装](docs/INSTALLATION.md)
+- [提示词](docs/PROMPTS_GUIDE.md)
+- [温度策略](docs/TEMPERATURE_STRATEGY.md)
+- [Rechunking](docs/RECHUNKING_GUIDE.md)
+- [NER](docs/NER_GUIDE.md)
+- [词汇表](docs/DICTIONARY_FORMAT.md)
+- [翻译阶段](docs/TRANSLATION_STAGES.md)
+
+## ⚠️ NER 和 GPU
+
+如果 NVRTC 错误:
+```bash
+# 使用 CPU 进行 NER
+SPACY_USE_GPU=false
+
+# 或删除 cupy
+pip uninstall cupy cupy-cuda12x -y
+```
+
+## 📝 版本
+
+- **v1.9** — 5 阶段流程，阶段特定温度
+- **v1.8** — 长度验证 Rechunking
+- **v1.7** — NER CPU fallback
+- **v1.0** — 初始版本
 
 ---
 
