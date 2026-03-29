@@ -445,14 +445,16 @@ class TranslationPipeline:
     def reflection(self, context: TranslationContext, translation: str) -> TranslationResult:
         """
         Stage 2: Secondary LLM reflection.
-        Note: Does NOT use vocab_dict or synopsis - focuses on accuracy/style only.
+        Returns ONLY numbered suggestions/improvements (not translation).
+        
+        Note: Does NOT use vocab_dict - focuses on accuracy/style only.
         """
         user_prompt = config.get_prompt(
             "reflection", f"user_{context.style}",
             source_lang=context.source_lang,
             target_lang=context.target_lang,
             source_text=context.source_text,
-            translation=translation,
+            translation=translation,  # Must match {translation} in prompts.json
             country=context.country
             # NO vocab_dict - reflection focuses on accuracy/style, not terminology
         )
@@ -466,14 +468,15 @@ class TranslationPipeline:
             role=LLMRole.SECONDARY,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
-            max_tokens=config.max_len_chunk,
+            max_tokens=MAX_TOKENS_PER_CHUNK,  # Enough for detailed suggestions
             stage=TranslationStage.REFLECTION  # Stage-specific temperature
         )
         
         return TranslationResult(
             stage=TranslationStage.REFLECTION,
             llm_role=LLMRole.SECONDARY,
-            text=text
+            text=text,
+            metadata={"stage": "reflection", "output_type": "suggestions_only"}
         )
     
     @log_entry
