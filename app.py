@@ -340,14 +340,29 @@ def load_vocab_from_file(file_path: str) -> dict:
         for line in f:
             line = line.strip()
             if line and '=' in line and not line.startswith('#'):
+                # Format: source = target, category, gender, notes
                 parts = line.split('=', 1)
-                source = parts[0].strip().replace(' ', '_')
-                target = parts[1].split('|')[0].strip()  # Handle extended format
+                source = parts[0].strip()
+                rest = parts[1].strip()
                 
-                if source not in vocab:
-                    vocab[source] = {}
-                vocab[source][config.source_lang] = parts[0].strip()
-                vocab[source][config.target_lang] = target
+                # Parse comma-separated values: target, category, gender, notes
+                csv_parts = [p.strip() for p in rest.split(',')]
+                target = csv_parts[0] if len(csv_parts) > 0 else ''
+                category = csv_parts[1] if len(csv_parts) > 1 else ''
+                gender = csv_parts[2] if len(csv_parts) > 2 else ''
+                notes = csv_parts[3] if len(csv_parts) > 3 else ''
+                
+                key = source.replace(' ', '_')
+                if key not in vocab:
+                    vocab[key] = {}
+                vocab[key][config.source_lang] = source
+                vocab[key][config.target_lang] = target
+                if category:
+                    vocab[key]['category'] = category
+                if gender:
+                    vocab[key]['gender'] = gender
+                if notes:
+                    vocab[key]['notes'] = notes
     return vocab
 
 
@@ -364,7 +379,7 @@ def _save_vocabulary_formatted(translated_text: str, dict_file: str, original_te
     """
     Save vocabulary in proper format according to docs/DICTIONARY_FORMAT.md
     
-    Format: source = target | category | gender | notes
+    Format: source = target, category, gender, notes
     
     Args:
         translated_text: Translated terms from LLM (format: "source = target")
@@ -386,7 +401,7 @@ def _save_vocabulary_formatted(translated_text: str, dict_file: str, original_te
             category = match.group(2).strip()
             original_categories[term] = category
         else:
-            # Common word without category
+            # Common word without category - mark as TERM
             original_categories[line.lower()] = 'TERM'
     
     # Parse translated terms
@@ -407,14 +422,21 @@ def _save_vocabulary_formatted(translated_text: str, dict_file: str, original_te
     
     for term_key, (source, target) in translations.items():
         cat = original_categories.get(term_key, 'OTHER')
-        if cat not in categories:
+        # Map NER categories to our format
+        if cat in ['PERSON', 'LOC', 'ORG']:
+            pass  # Keep as is
+        elif cat in ['GPE', 'GPE/LOC']:
+            cat = 'LOC'  # Map GPE to LOC
+        elif cat == 'TERM':
+            pass  # Keep as TERM
+        else:
             cat = 'OTHER'
         categories[cat].append((source, target, cat))
     
-    # Write dictionary in proper format
+    # Write dictionary in proper format with commas
     with open(dict_file, 'w', encoding='utf-8') as f:
         f.write(f"# Vocabulary for {Path(dict_file).stem}\n")
-        f.write(f"# Format: source = target | category | gender | notes\n")
+        f.write(f"# Format: source = target, category, gender, notes\n")
         f.write(f"# Generated automatically by NER\n")
         f.write(f"# Please review and edit as needed\n\n")
         
@@ -425,8 +447,9 @@ def _save_vocabulary_formatted(translated_text: str, dict_file: str, original_te
             
             f.write(f"# {cat_name} ({len(entries)} terms)\n")
             for source, target, cat in entries:
-                # Format: source = target | category | gender | notes
-                f.write(f"{source} = {target} | {cat} | | \n")
+                # Format: source = target, category, gender, notes
+                # Empty gender and notes by default
+                f.write(f"{source} = {target}, {cat}, , \n")
     
     logger.info(f"Dictionary saved: {dict_file} ({len(translations)} entries)")
 
