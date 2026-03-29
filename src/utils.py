@@ -461,7 +461,7 @@ class TranslationPipeline:
         Stage 2: Secondary LLM reflection.
         Returns ONLY numbered suggestions/improvements (not translation).
         
-        Note: Does NOT use vocab_dict - focuses on accuracy/style only.
+        Note: Uses vocab_dict to verify terminology consistency.
         """
         user_prompt = config.get_prompt(
             "reflection", f"user_{context.style}",
@@ -469,8 +469,8 @@ class TranslationPipeline:
             target_lang=context.target_lang,
             source_text=context.source_text,
             translation=translation,  # Must match {translation} in prompts.json
-            country=context.country
-            # NO vocab_dict - reflection focuses on accuracy/style, not terminology
+            country=context.country,
+            vocab_dict=context.vocab_dict  # Added for vocabulary checking
         )
         
         system_prompt = config.get_prompt("reflection", "system",
@@ -490,7 +490,7 @@ class TranslationPipeline:
             stage=TranslationStage.REFLECTION,
             llm_role=LLMRole.SECONDARY,
             text=text,
-            metadata={"stage": "reflection", "output_type": "suggestions_only"}
+            metadata={"stage": "reflection", "output_type": "suggestions_only", "vocabulary_checked": True}
         )
     
     @log_entry
