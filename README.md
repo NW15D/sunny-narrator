@@ -36,11 +36,11 @@ S_PROMT_PROOFREAD=false         # false для Mistral/Llama
 TEMP_PROOFREAD=0.7              # Base temperature (fallback)
 
 # Stage-Specific Temperatures (NEW!)
-TEMP_INITIAL=0.01               # Stage 1: Translation consistency
-TEMP_REFLECTION=0.4             # Stage 2: Analysis creativity
-TEMP_IMPROVE=0.4                # Stage 3: Editing flexibility
-TEMP_FINAL_EDIT=0.15            # Stage 4: Proofreading precision
-TEMP_SYNOPSIS=0.15              # Stage 5: Summary accuracy
+TEMP_INITIAL=0.01               # Stage 1: Primary LLM - Translation
+TEMP_REFLECTION=0.4             # Stage 2: Secondary LLM - Analysis
+TEMP_IMPROVE=0.4                # Stage 3: Secondary LLM - Editing
+TEMP_FINAL_EDIT=0.15            # Stage 4: Secondary LLM - Proofreading
+TEMP_SYNOPSIS=0.15              # Stage 5: Secondary LLM - Summary
 
 # Languages
 SOURCE_LANG=english
@@ -69,17 +69,17 @@ DEBUG=off
 
 **FAST_TRANS=false** (Standard, 5 stages):
 ```
-Stage 1: INITIAL (Primary LLM)      → Translation
-Stage 2: REFLECTION (Secondary)     → Quality review
-Stage 3: IMPROVE (Secondary)        → Apply suggestions
-Stage 4: FINAL_EDIT (Secondary)     → Proofreading
-Stage 5: SYNOPSIS (Secondary LLM)   → Summary
+Stage 1: INITIAL (Primary LLM)       → Translation
+Stage 2: REFLECTION (Secondary LLM)  → Quality review
+Stage 3: IMPROVE (Secondary LLM)     → Apply suggestions
+Stage 4: FINAL_EDIT (Secondary LLM)  → Proofreading
+Stage 5: SYNOPSIS (Secondary LLM)    → Summary
 ```
 
 **FAST_TRANS=true** (Fast, 2 stages):
 ```
-Stage 1: INITIAL (Primary LLM)      → Translation
-Stage 5: SYNOPSIS (Secondary LLM)   → Summary
+Stage 1: INITIAL (Primary LLM)       → Translation
+Stage 5: SYNOPSIS (Secondary LLM)    → Summary
 (Stages 2-4 skipped)
 ```
 

@@ -35,11 +35,11 @@ S_PROMT_PROOFREAD=false
 TEMP_PROOFREAD=0.7
 
 # 阶段特定温度
-TEMP_INITIAL=0.01               # 阶段 1: 翻译一致性
-TEMP_REFLECTION=0.4             # 阶段 2: 分析
-TEMP_IMPROVE=0.4                # 阶段 3: 编辑
-TEMP_FINAL_EDIT=0.15            # 阶段 4: 校对
-TEMP_SYNOPSIS=0.15              # 阶段 5: 摘要
+TEMP_INITIAL=0.01               # 阶段 1: Primary LLM - 翻译
+TEMP_REFLECTION=0.4             # 阶段 2: Secondary LLM - 分析
+TEMP_IMPROVE=0.4                # 阶段 3: Secondary LLM - 编辑
+TEMP_FINAL_EDIT=0.15            # 阶段 4: Secondary LLM - 校对
+TEMP_SYNOPSIS=0.15              # 阶段 5: Secondary LLM - 摘要
 
 # 语言
 SOURCE_LANG=english

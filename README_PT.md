@@ -35,11 +35,11 @@ S_PROMT_PROOFREAD=false
 TEMP_PROOFREAD=0.7
 
 # Temperaturas por Estágio
-TEMP_INITIAL=0.01               # Estágio 1: Consistência
-TEMP_REFLECTION=0.4             # Estágio 2: Análise
-TEMP_IMPROVE=0.4                # Estágio 3: Edição
-TEMP_FINAL_EDIT=0.15            # Estágio 4: Revisão
-TEMP_SYNOPSIS=0.15              # Estágio 5: Sinopse
+TEMP_INITIAL=0.01               # Estágio 1: Primary LLM - Tradução
+TEMP_REFLECTION=0.4             # Estágio 2: Secondary LLM - Análise
+TEMP_IMPROVE=0.4                # Estágio 3: Secondary LLM - Edição
+TEMP_FINAL_EDIT=0.15            # Estágio 4: Secondary LLM - Revisão
+TEMP_SYNOPSIS=0.15              # Estágio 5: Secondary LLM - Sinopse
 
 # Idiomas
 SOURCE_LANG=english
