@@ -754,21 +754,35 @@ class LLMServiceCompat:
         return self._new_service._images_client
     
     def complete(self, role: LLMRole, system_prompt: str, user_prompt: str,
-                 max_tokens: int = 8192, json_mode: bool = False) -> str:
+                 max_tokens: int = 8192, json_mode: bool = False,
+                 stage: 'TranslationStage' = None) -> str:
         """
         Direct LLM completion (delegates to translation_pipeline.LLMService).
         Used by synopsis_manager.py and other modules.
+        
+        Args:
+            role: LLM role (PRIMARY or SECONDARY)
+            system_prompt: System message
+            user_prompt: User message
+            max_tokens: Maximum tokens to generate
+            json_mode: Enable JSON response format
+            stage: TranslationStage for temperature selection (optional)
+            
+        Returns:
+            Generated text from LLM
         """
         return self._new_service.complete(
             role=role,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             max_tokens=max_tokens,
-            json_mode=json_mode
+            json_mode=json_mode,
+            stage=stage  # Pass stage for temperature selection
         )
     
     def get_completion(self, role: str, prompt_category: str, prompt_key: str = None,
                        temperature: float = None, max_tokens: int = None, json_mode: bool = False,
+                       stage: 'TranslationStage' = None,  # For stage-specific temperature
                        **kwargs) -> str:
         """
         Get completion using prompts.json templates.
@@ -781,6 +795,7 @@ class LLMServiceCompat:
             temperature: Override temperature (optional)
             max_tokens: Override max tokens (optional)
             json_mode: Enable JSON response format
+            stage: TranslationStage for temperature selection (optional)
             **kwargs: Template variables for prompt formatting
             
         Returns:
@@ -812,7 +827,8 @@ class LLMServiceCompat:
             system_prompt="",  # Prompts are self-contained
             user_prompt=user_prompt,
             max_tokens=max_tokens or MAX_TOKENS_PER_CHUNK,
-            json_mode=json_mode
+            json_mode=json_mode,
+            stage=stage  # Pass stage for temperature selection
         )
 
 
