@@ -121,12 +121,15 @@ class TranslationEngine:
         """
         try:
             # Note: rechunking is now handled inside ta.translate_chunk()
+            # Get vocabulary for this chunk (formatted for model)
+            vocab_dict = self.get_context_for_chunk(source_text, 0, 0)
+            
             translation, synopsis = ta.translate_chunk(
                 source_lang=config.source_lang,
                 target_lang=config.target_lang,
                 source_text=source_text,
                 outline_text=context,
-                vocab_dict={},
+                vocab_dict=vocab_dict,  # Use formatted vocabulary
                 country=config.country,
                 style='xml',
                 fast_mode=config.fast_trans,
