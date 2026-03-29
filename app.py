@@ -355,49 +355,81 @@ def load_vocab_from_file(file_path: str) -> dict:
 def _translate_vocabulary_batch(terms_text: str, source_lang: str, target_lang: str, country: str) -> str:
     """
     Translate vocabulary terms in batch using Primary LLM.
+    DEPRECATED: Use ta.vocabulary() with prompts.json instead.
+    """
+    # This function is deprecated - use ta.vocabulary() with proper prompts
+    raise NotImplementedError("Use ta.vocabulary() with prompts.json instead")
+
+
+def _save_vocabulary_formatted(translated_text: str, dict_file: str, original_terms: str):
+    """
+    Save vocabulary in proper format according to docs/DICTIONARY_FORMAT.md
+    
+    Format: source = target | category | gender | notes
     
     Args:
-        terms_text: Newline-separated list of terms to translate
-        source_lang: Source language
-        target_lang: Target language
-        country: Target country
-        
-    Returns:
-        Translated terms in "source = target" format
+        translated_text: Translated terms from LLM (format: "source = target")
+        dict_file: Output file path
+        original_terms: Original NER output with categories
     """
-    # Use Primary LLM for batch translation (faster than one-by-one)
-    prompt = f"""Translate the following {source_lang} terms to {target_lang} for {country}.
-Format each line as: source = target
-
-Terms to translate:
-{terms_text}
-
-Output only the translations in "source = target" format, one per line."""
-
-    # Use Primary LLM directly
-    import openai
-    client = openai.OpenAI(
-        api_key=config.api_key_translate,
-        base_url=config.base_url_translate,
-        timeout=config.timeout_translate
-    )
+    # Parse original terms to extract categories
+    original_categories = {}
+    for line in original_terms.strip().split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+        
+        # Extract term and category from NER output
+        # Format: "Term (CATEGORY)" or "Term"
+        match = re.match(r'^(.+?)\s*\(([^)]+)\)$', line)
+        if match:
+            term = match.group(1).strip().lower()
+            category = match.group(2).strip()
+            original_categories[term] = category
+        else:
+            # Common word without category
+            original_categories[line.lower()] = 'TERM'
     
-    response = client.chat.completions.create(
-        model=config.model_translate,
-        temperature=0.01,  # Low temp for consistency
-        max_tokens=4096,
-        messages=[
-            {"role": "system", "content": f"You are a professional terminology translator from {source_lang} to {target_lang}."},
-            {"role": "user", "content": prompt}
-        ]
-    )
+    # Parse translated terms
+    translations = {}
+    for line in translated_text.strip().split('\n'):
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        
+        if '=' in line:
+            parts = line.split('=', 1)
+            source = parts[0].strip()
+            target = parts[1].strip()
+            translations[source.lower()] = (source, target)
     
-    translated = response.choices[0].message.content.strip()
+    # Group by category
+    categories = {'PERSON': [], 'LOC': [], 'ORG': [], 'TERM': [], 'OTHER': []}
     
-    if config.debug:
-        logger.debug(f"Batch vocabulary translation: {len(translated)} chars")
+    for term_key, (source, target) in translations.items():
+        cat = original_categories.get(term_key, 'OTHER')
+        if cat not in categories:
+            cat = 'OTHER'
+        categories[cat].append((source, target, cat))
     
-    return translated
+    # Write dictionary in proper format
+    with open(dict_file, 'w', encoding='utf-8') as f:
+        f.write(f"# Vocabulary for {Path(dict_file).stem}\n")
+        f.write(f"# Format: source = target | category | gender | notes\n")
+        f.write(f"# Generated automatically by NER\n")
+        f.write(f"# Please review and edit as needed\n\n")
+        
+        for cat_name in ['PERSON', 'LOC', 'ORG', 'TERM', 'OTHER']:
+            entries = categories[cat_name]
+            if not entries:
+                continue
+            
+            f.write(f"# {cat_name} ({len(entries)} terms)\n")
+            for source, target, cat in entries:
+                # Format: source = target | category | gender | notes
+                f.write(f"{source} = {target} | {cat} | | \n")
+    
+    logger.info(f"Dictionary saved: {dict_file} ({len(translations)} entries)")
 
 
 def write_to_file(data, output_file: str):
@@ -463,16 +495,13 @@ def main():
                 print("Please edit the dictionary and restart.")
                 sys.exit(0)
             
-            # Translate vocabulary in batches using Primary LLM
-            print(f"Translating {len(vb.strip().split(chr(10)))} terms using Primary LLM...")
-            vocab_translated = _translate_vocabulary_batch(
-                vb, 
-                config.source_lang, 
-                config.target_lang, 
-                config.country
-            )
+            # Translate vocabulary using Secondary LLM with proper prompts
+            print(f"Translating {len(vb.strip().split(chr(10)))} terms using Secondary LLM...")
+            vocab_raw = ta.vocabulary(config.source_lang, config.target_lang, vb, config.country, "Proofread")
             
-            write_to_file(vocab_translated, dict_file)
+            # Parse and save in proper format
+            _save_vocabulary_formatted(vocab_raw, dict_file, vb)
+            
             print(f"Vocabulary created: {dict_file}")
             print("Please review and restart.")
             sys.exit(0)
