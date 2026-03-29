@@ -32,7 +32,7 @@
     },
     "vocabulary": {
         "system": "You are a terminology translator for {source_lang} to {target_lang} for {country}.",
-        "user": "<terms>\n{source_text}\n</terms>\n\nTranslate each name/term. Preserve meaning and cultural context. Format: Source = Target. Output one entry per line.",
+        "user": "Translate the following {source_lang} terms to {target_lang} for {country}.\n\nTerms:\n{source_text}\n\nFormat each line as: source = target\n\nOutput only the translations, one per line.",
         "user_hunyuan": "<terms>\n{source_text}\n</terms>\n\n参考下面的翻译格式：\n{source_term} 翻译成 {target_term}\n\n将以上术语从{source_lang}翻译成{target_lang}（针对{country}读者）。\n保留含义和文化背景。\n格式：原文 = 译文\n每行一个条目。\n只输出翻译结果，不要额外解释。"
     },
     "metadata_translation": {

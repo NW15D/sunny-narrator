@@ -943,8 +943,9 @@ def vocabulary(source_lang: str, target_lang: str, source_text: str,
         logger.warning("vocabulary() called with empty source_text")
         return ""
     
-    # Use Hunyuan-specific prompt if model is Hunyuan
-    prompt_key = "user_hunyuan" if config.model_translate == "Hunyuan" else "user"
+    # Use standard prompt for vocabulary translation (not Hunyuan-specific)
+    # Vocabulary translation uses Secondary LLM with standard prompt
+    prompt_key = "user"
     
     result = llm_service.get_completion(
         role=role,
