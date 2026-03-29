@@ -51,6 +51,8 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
         Entity (CATEGORY)
         common_word
     """
+    import gc
+    
     if config.debug:
         print("Starting Named Entity Recognition")
     if not text:
@@ -85,69 +87,84 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
         if config.debug:
             print(gpu)
         nlp = load_spacy_model(config.nermodel)
-        nlp.max_length = 110000
+        
+        # Increase max length limit for large documents
+        nlp.max_length = 200000
 
-        # Split text into chunks of up to 100,000 characters
-        chunk_size = 100000
+        # Split text into smaller chunks to avoid OOM (50k chars per chunk)
+        chunk_size = 50000
         text_chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
+        
+        if config.debug:
+            print(f"Split text into {len(text_chunks)} chunks of {chunk_size} chars each")
+        
         ner_category = ["ORG", "LOC", "GPE", "PERSON"]
         ents = []
-        for chunk in text_chunks:
-            # We only need NER here, so we can disable parser and lemmatizer to save time and avoid warnings
-            doc = nlp(chunk, disable=["parser", "lemmatizer", "attribute_ruler"])
-            ents.extend([
-                (ent.text.strip(), ent.label_, tuple(ent.vector.get()) if hasattr(ent.vector, 'get') else tuple(ent.vector) if ent.vector.size > 0 else None)
-                for ent in doc.ents if ent.vector_norm != 0 and ent.label_ in ner_category
-            ])
+        
+        for i, chunk in enumerate(text_chunks):
+            try:
+                # We only need NER here, so we can disable parser and lemmatizer to save time and avoid warnings
+                doc = nlp(chunk, disable=["parser", "lemmatizer", "attribute_ruler"])
+                ents.extend([
+                    (ent.text.strip(), ent.label_, tuple(ent.vector.get()) if hasattr(ent.vector, 'get') else tuple(ent.vector) if ent.vector.size > 0 else None)
+                    for ent in doc.ents if ent.vector_norm != 0 and ent.label_ in ner_category
+                ])
 
-            if config.debug:
-                print(f"Found entities: {len(ents)}")
+                if config.debug:
+                    print(f"Chunk {i+1}/{len(text_chunks)}: Found {len(doc.ents)} entities (total: {len(ents)})")
+                
+                # Clean up to free memory between chunks
+                del doc
+                gc.collect()
+                
+            except Exception as e:
+                if config.debug:
+                    print(f"Error processing chunk {i+1}: {e}")
+                continue
+
+        # Count occurrences of each entity
+        item_counts = Counter((text, label) for text, label, vector in ents)
+        unique_ents = [(text, label, next((vector for t2, l2, vector in ents if t2 == text and l2 == label), None), count)
+                       for (text, label), count in item_counts.items()]
+
+        if config.debug:
+            print(f"Unique entities before filtering by count: {len(unique_ents)}")
+
+        # Filter out entities with less than min_count_ner occurrences
+        unique_ents = [ent for ent in unique_ents if ent[3] >= min_count_ner]
+
+        if config.debug:
+            print(f"Unique entities after filtering by count (min={min_count_ner}): {len(unique_ents)}")
+
+        # Merge entities that contain substrings of other entities
+        merged_ents = []
+        for ent1 in unique_ents:
+            is_substring = False
+            for ent2 in unique_ents:
+                if ent1[0].lower() != ent2[0].lower() and ent1[0].lower() in ent2[0].lower():
+                    is_substring = True
+                    break
+            if not is_substring:
+                merged_ents.append(ent1)
+
+        # Further merging to ensure the longest entity is kept
+        final_merged_ents = []
+        for ent1 in merged_ents:
+            longer_ent_found = False
+            for ent2 in merged_ents:
+                if ent1[0].lower() != ent2[0].lower() and ent2[0].lower() in ent1[0].lower():
+                    longer_ent_found = True
+                    break
+            if not longer_ent_found:
+                final_merged_ents.append(ent1)
+
+        if config.debug:
+            print(f"Unique entities after merging: {len(final_merged_ents)}")
 
     except Exception as e:
         if config.debug:
             print(f"Error loading spaCy model: {e}")
         return
-
-    # Count occurrences of each entity
-    item_counts = Counter((text, label) for text, label, vector in ents)
-    unique_ents = [(text, label, next((vector for t2, l2, vector in ents if t2 == text and l2 == label), None), count)
-                   for (text, label), count in item_counts.items()]
-
-    if config.debug:
-        print(f"Unique entities before filtering by count: {len(unique_ents)}")
-
-    # Filter out entities with less than min_count_ner occurrences
-    unique_ents = [ent for ent in unique_ents if ent[3] >= min_count_ner]
-
-    if config.debug:
-        print(f"Unique entities after filtering by count (min={min_count_ner}): {len(unique_ents)}")
-
-    # Merge entities that contain substrings of other entities
-    merged_ents = []
-    for ent1 in unique_ents:
-        is_substring = False
-        for ent2 in unique_ents:
-            if ent1[0].lower() != ent2[0].lower() and ent1[0].lower() in ent2[0].lower():
-                is_substring = True
-                break
-        if not is_substring:
-            merged_ents.append(ent1)
-
-    # Further merging to ensure the longest entity is kept
-    final_merged_ents = []
-    for ent1 in merged_ents:
-        longer_ent_found = False
-        for ent2 in merged_ents:
-            if ent1[0].lower() != ent2[0].lower() and ent2[0].lower() in ent1[0].lower():
-                longer_ent_found = True
-                break
-        if not longer_ent_found:
-            final_merged_ents.append(ent1)
-
-    if config.debug:
-        print(f"Unique entities after merging: {len(final_merged_ents)}")
-
-    # Find most common words with count > min_count_word and length >= min_word_length
     word_counts = Counter(
         token.text for token in doc if token.is_alpha and token.text not in stop_words)
 
