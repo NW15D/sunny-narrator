@@ -1,232 +1,299 @@
+"""
+EPUB file handler.
+
+Handles parsing and conversion of EPUB files to FB2 format.
+Uses fb2_handler for common XML operations.
+"""
+
+import re
+import base64
+from pathlib import Path
+from datetime import datetime
+from bs4 import BeautifulSoup
 import ebooklib
 from ebooklib import epub
-from bs4 import BeautifulSoup
 
-import src.fb2_handler as fb2
 from src.config import Config
+from src.fb2_handler import (
+    extract_metadata,
+    update_header_with_metadata,
+    get_cover_image,
+    replace_cover_image,
+    prepare_chunks
+)
 
 config = Config()
-import base64
-import mimetypes
-from datetime import datetime
 
-def parse_epub(file_path):
+__all__ = [
+    'parse_epub',
+    'convert_epub_to_fb2_structure',
+    'extract_epub_metadata',
+    'extract_epub_body'
+]
+
+
+def parse_epub(file_path: str) -> tuple:
     """
-    Parses an EPUB file and converts its content into an FB2-like XML structure 
-    (body, header, footer) for compatibility with the existing translation pipeline.
+    Parses an EPUB file and converts to FB2-like structure.
+    
+    Args:
+        file_path: Path to EPUB file
+        
+    Returns:
+        Tuple of (body, header, footer)
     """
     try:
         book = epub.read_epub(file_path)
     except Exception as e:
         raise ValueError(f"Failed to read EPUB file: {e}")
+    
+    # Extract metadata
+    metadata = extract_epub_metadata(book)
+    
+    # Build FB2 header
+    header = build_fb2_header_from_metadata(metadata)
+    
+    # Extract body content
+    body = extract_epub_body(book)
+    
+    # Footer (empty for EPUB conversion, will be populated if images added)
+    footer = ""
+    
+    return body, header, footer
 
-    # --- Extract Metadata ---
+
+def extract_epub_metadata(book) -> dict:
+    """
+    Extract metadata from EPUB book.
+    
+    Args:
+        book: EPUB book object
+        
+    Returns:
+        Dictionary with metadata
+    """
+    metadata = {}
+    
     # Title
     title = book.get_metadata('DC', 'title')
-    title = title[0][0] if title else "Unknown Title"
+    metadata['book-title'] = title[0][0] if title else "Unknown Title"
     
     # Author
     creator = book.get_metadata('DC', 'creator')
-    author = creator[0][0] if creator else "Unknown Author"
+    author_name = creator[0][0] if creator else "Unknown Author"
+    
+    # Parse author name
     author_first = ""
-    author_last = author
-    if " " in author:
-        parts = author.rsplit(" ", 1)
+    author_last = author_name
+    if " " in author_name:
+        parts = author_name.rsplit(" ", 1)
         author_first = parts[0]
         author_last = parts[1]
-
+    
+    metadata['author'] = [{
+        'first-name': author_first,
+        'last-name': author_last
+    }]
+    
     # Description/Annotation
     description = book.get_metadata('DC', 'description')
     annotation = description[0][0] if description else ""
+    metadata['annotation'] = [annotation] if annotation else []
     
     # Language
     language_meta = book.get_metadata('DC', 'language')
-    lang = language_meta[0][0] if language_meta else "en"
-
+    metadata['lang'] = [language_meta[0][0] if language_meta else "en"]
+    
     # Date
     date_meta = book.get_metadata('DC', 'date')
-    date_str = date_meta[0][0] if date_meta else str(datetime.now().year)
-
+    metadata['date'] = date_meta[0][0] if date_meta else str(datetime.now().year)
+    
     # Genre (Subject)
     subject = book.get_metadata('DC', 'subject')
-    genre = subject[0][0] if subject else "unknown"
-
-    # Publisher
-    publisher_meta = book.get_metadata('DC', 'publisher')
-    publisher = publisher_meta[0][0] if publisher_meta else ""
-
-    # Cover Image
-    cover_image_id = None
-    # Try to find cover image id
-    # 1. Check metadata
-    if book.get_metadata('OPF', 'cover'):
-         cover_image_id = book.get_metadata('OPF', 'cover')[0][0]
+    metadata['genre'] = [subject[0][0] if subject else "unknown"]
     
-    # --- Process Images ---
-    images = {} # Map filename to base64 content
-    image_content_types = {}
+    # Series
+    series_name = ""
+    series_number = ""
     
-    # Iterate over all items to find images
-    for item in book.get_items():
-        if item.get_type() == ebooklib.ITEM_IMAGE:
-            # item.get_name() usually contains the path inside the epub, e.g. 'images/cover.jpg'
-            # We use the filename as ID for FB2 binary blocks
-            image_id = item.get_name() 
-            content = item.get_content()
-            b64_content = base64.b64encode(content).decode('utf-8')
-            media_type = item.media_type
-            
-            images[image_id] = b64_content
-            image_content_types[image_id] = media_type
+    calibre_series = book.get_metadata('OPF', 'calibre:series')
+    if calibre_series:
+        series_name = calibre_series[0][0]
+    
+    calibre_index = book.get_metadata('OPF', 'calibre:series_index')
+    if calibre_index:
+        series_number = calibre_index[0][0]
+    
+    if not series_name:
+        belongs_to = book.get_metadata('OPF', 'belongs-to-collection')
+        if belongs_to:
+            series_name = belongs_to[0][0]
+            group_position = book.get_metadata('OPF', 'group-position')
+            if group_position:
+                series_number = group_position[0][0]
+    
+    if series_name:
+        metadata['sequence'] = [{'name': series_name, 'number': series_number}]
+    else:
+        metadata['sequence'] = []
+    
+    return metadata
 
-    # Construct the binary blocks for the footer
-    binary_blocks = ""
-    for img_id, b64_data in images.items():
-        media_type = image_content_types.get(img_id, 'image/jpeg')
-        # FB2 binary id should simple, often people use the filename. 
-        # We need to make sure we reference it correctly in the body.
-        # Clean up the ID for FB2: remove folders if possible or keep as is? 
-        # Usually FB2 ids are just filenames. Let's keep the full item name but ensure it's valid.
-        # Actually FB2 hrefs are #id. 
+
+def build_fb2_header_from_metadata(metadata: dict) -> str:
+    """
+    Build FB2 header from metadata dictionary.
+    
+    Args:
+        metadata: Metadata dictionary
         
-        binary_blocks += f'<binary id="{img_id}" content-type="{media_type}">{b64_data}</binary>\n'
-
-    # --- Construct Header ---
+    Returns:
+        FB2 header string
+    """
+    # Build author tags
+    authors_xml = ""
+    for author in metadata.get('author', []):
+        authors_xml += "<author>"
+        if author.get('first-name'):
+            authors_xml += f"<first-name>{author['first-name']}</first-name>"
+        if author.get('last-name'):
+            authors_xml += f"<last-name>{author['last-name']}</last-name>"
+        authors_xml += "</author>"
     
-    # Format annotation if present
+    # Build annotation
     annotation_xml = ""
-    if annotation:
-        annotation_xml = f"<annotation><p>{annotation}</p></annotation>"
+    if metadata.get('annotation'):
+        annotation_xml = "<annotation>"
+        for para in metadata['annotation']:
+            annotation_xml += f"<p>{para}</p>"
+        annotation_xml += "</annotation>"
     
-    publisher_xml = ""
-    if publisher:
-        publisher_xml = f"<publisher>{publisher}</publisher>"
-
-    coverpage_xml = ""
-    # If we found a cover image, add it to title-info
-    # We need to find the filename associated with the cover_id if it was an ID
-    cover_href = ""
-    if cover_image_id:
-        # If the metadata gave us an ID, find the item name
-        item = book.get_item_with_id(cover_image_id)
-        if item:
-            cover_href = item.get_name()
+    # Build genres
+    genres_xml = ""
+    for genre in metadata.get('genre', []):
+        genres_xml += f"<genre>{genre}</genre>"
     
-    # Fallback: if no cover found in metadata, check if 'cover.jpg' or similar exists in images
-    if not cover_href:
-        for img_name in images.keys():
-            if 'cover' in img_name.lower():
-                cover_href = img_name
-                break
+    # Build languages
+    lang_xml = ""
+    for lang in metadata.get('lang', ['en']):
+        lang_xml += f"<lang>{lang}</lang>"
     
-    if cover_href:
-        coverpage_xml = f"<coverpage><image l:href=\"#{cover_href}\"/></coverpage>"
-
-    header = f"""<?xml version="1.0" encoding="utf-8"?>
-<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink">
+    # Build date
+    date_xml = f"<date>{metadata.get('date', '')}</date>" if metadata.get('date') else ""
+    
+    # Build sequence
+    sequence_xml = ""
+    for seq in metadata.get('sequence', []):
+        sequence_xml += f'<sequence name="{seq.get("name", "")}" number="{seq.get("number", "")}" />'
+    
+    header = f"""<?xml version="1.0" encoding="UTF-8"?>
+<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:xlink="http://www.w3.org/1999/xlink">
 <description>
-    <title-info>
-        <genre>{genre}</genre>
-        <author>
-            <first-name>{author_first}</first-name>
-            <last-name>{author_last}</last-name>
-        </author>
-        <book-title>{title}</book-title>
-        {annotation_xml}
-        <date>{date_str}</date>
-        {coverpage_xml}
-        <lang>{lang}</lang>
-        <translator><nickname>Sunny narrator opensource AI translator </nickname> <email>n@uwns.org</email> </translator>
-    </title-info>
-    <publish-info>
-        {publisher_xml}
-    </publish-info>
+<title-info>
+{genres_xml}
+<author>{authors_xml}</author>
+<book-title>{metadata.get('book-title', '')}</book-title>
+{annotation_xml}
+{date_xml}
+{lang_xml}
+{sequence_xml}
+</title-info>
 </description>
+<body>
 """
+    return header
 
-    footer = f"{binary_blocks}</FictionBook>"
 
-    # --- Process Body ---
-    body_content = ""
+def extract_epub_body(book) -> str:
+    """
+    Extract body content from EPUB book.
     
-    # Iterate through items of type DOCUMENT (HTML files)
-    for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
-        soup = BeautifulSoup(item.get_content(), 'html.parser')
+    Args:
+        book: EPUB book object
         
-        if soup.body:
-            # Cleanup
-            for script in soup(["script", "style", "title", "meta", "link"]):
-                script.decompose()
-            
-            # Handle Images in Body
-            # Update img src to point to our internal binary blocks
-            for img in soup.find_all('img'):
-                src = img.get('src')
-                if src:
-                    # In EPUB, src is relative to the document. 
-                    # We need to resolve it to the full path key in our 'images' dict.
-                    # This can be tricky.
-                    # Attempt 1: Just check if the basename matches any key (simplistic)
-                    # Attempt 2: Resolve path relative to item.get_name()
-                    
-                    # For now, let's try to match loosely or assume flatten structure if simple
-                    # But correct way:
-                    # item.get_name() checks 'Text/chapter1.html'. src might be '../Images/img1.jpg'.
-                    # We probably don't need full path resolution if we're lucky, but let's try.
-                    
-                    # Current strategy: if src is in images keys, use it.
-                    # The keys in `images` are `item.get_name()` (e.g. 'OEBPS/images/cat.jpg')
-                    
-                    # We need to resolve the relative path.
-                    # Since we don't have a full path resolver easily without os.path, 
-                    # let's try to find the image by suffix matching if exact fail.
-                    
-                    found_key = None
-                    if src in images:
-                        found_key = src
-                    else:
-                        # Try to resolve relative path?
-                        # Since `ebooklib` doesn't strictly enforce file system paths, 
-                        # let's try simple name matching if unique.
-                        src_name = src.split('/')[-1]
-                        for img_key in images:
-                             if img_key.endswith(src_name):
-                                 found_key = img_key
-                                 break
-                    
-                    if found_key:
-                        img['l:href'] = f"#{found_key}" # FB2 uses xlink:href usually l:href
-                        del img['src'] # Remove src
-                    else:
-                        # Image not found in package, remove or keep?
-                        pass
-
-            # Update 'a' tags href? standard parsing.
-
-            chapter_content = soup.body.decode_contents()
-            body_content += f"<section>\n{chapter_content}\n</section>\n"
-
-    # Combine into a single body block
-    body = f"<body>\n{body_content}\n</body>"
+    Returns:
+        FB2 body string
+    """
+    body_content = []
     
-    if config.debug:
-        print(len(body))
-    return body, header, footer
-def prepare_chunks(body, max_len_chunk):
-    """
-    Uses the existing FB2 chunking logic since we formatted the EPUB body 
-    to look like FB2 (sections).
-    """
-    return fb2.prepare_chunks(body, max_len_chunk)
+    # Get all documents (chapters)
+    items = list(book.get_items_of_kind('content'))
+    
+    for item in items:
+        if item.get_type() == ebooklib.ITEM_DOCUMENT:
+            # Parse HTML content
+            soup = BeautifulSoup(item.get_content(), 'html.parser')
+            
+            # Convert to FB2 format
+            fb2_section = convert_html_to_fb2_section(soup)
+            if fb2_section:
+                body_content.append(fb2_section)
+    
+    # Wrap in body tags
+    body = "<body>\n"
+    body += "\n".join(body_content)
+    body += "\n</body>\n"
+    
+    return body
 
-def get_cover_image(header, footer):
-    """
-    Wrapper for fb2_handler.get_cover_image since the structure is identical.
-    """
-    return fb2.get_cover_image(header, footer)
 
-def replace_cover_image(header, footer, body, new_content):
+def convert_html_to_fb2_section(soup) -> str:
     """
-    Wrapper for fb2_handler.replace_cover_image.
+    Convert HTML content to FB2 section.
+    
+    Args:
+        soup: BeautifulSoup object with HTML content
+        
+    Returns:
+        FB2 section string
     """
-    return fb2.replace_cover_image(header, footer, body, new_content)
+    section_parts = ['<section>']
+    
+    # Process paragraphs
+    for element in soup.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']):
+        tag_name = element.name
+        
+        if tag_name.startswith('h'):
+            # Convert heading to subtitle
+            section_parts.append(f"<subtitle>{element.get_text()}</subtitle>")
+        elif tag_name == 'p':
+            # Convert paragraph, preserving inline formatting
+            para_content = convert_inline_html(element)
+            section_parts.append(f"<p>{para_content}</p>")
+    
+    section_parts.append('</section>')
+    return "\n".join(section_parts)
+
+
+def convert_inline_html(element) -> str:
+    """
+    Convert inline HTML tags to FB2 inline tags.
+    
+    Args:
+        element: BeautifulSoup element
+        
+    Returns:
+        String with FB2 inline tags
+    """
+    content = ""
+    
+    for child in element.children:
+        if hasattr(child, 'name') and child.name:
+            tag_name = child.name
+            tag_content = child.get_text()
+            
+            # Map HTML tags to FB2 tags
+            if tag_name in ['b', 'strong']:
+                content += f"<strong>{tag_content}</strong>"
+            elif tag_name in ['i', 'em']:
+                content += f"<emphasis>{tag_content}</emphasis>"
+            elif tag_name == 'a':
+                href = child.get('href', '')
+                content += f'<a href="{href}">{tag_content}</a>'
+            else:
+                content += tag_content
+        else:
+            # Text node
+            content += str(child)
+    
+    return content
