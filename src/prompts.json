@@ -7,7 +7,7 @@
         "system": "You are a professional literary translator. Translate text accurately while preserving all XML structure. Output only the translated content within the specified tags.",
         "user_xml": "<context>\n<synopsis>{outline_text}</synopsis>\n<vocabulary>{vocab_dict}</vocabulary>\n</context>\n\n<source lang=\"{source_lang}\">\n{source_text}\n</source>\n\nTranslate the text inside <source> to {target_lang}.\n\nRequirements:\n1. Preserve all XML tags (<p>, <strong>, <em>, etc.) in their original positions\n2. Apply vocabulary terms where applicable\n3. Maintain the narrative style and tone\n4. Output ONLY the translated text wrapped in <ttext>...</ttext>",
         "user_text": "<context>\n<synopsis>{outline_text}</synopsis>\n</context>\n\n<source lang=\"{source_lang}\">\n{source_text}\n</source>\n\nTranslate to {target_lang}. Preserve any XML tags in position. Output the translation wrapped in <ttext>...</ttext>.",
-        "user_hunyuan": "{outline_text}\n\n参考上面的信息，把下面的文本翻译成{target_lang}，注意不需要翻译上文，也不要额外解释：\n\n<vocabulary>\n{vocab_dict}\n</vocabulary>\n\n<source>\n{source_text}\n</source>\n\n将以上<source>之间的文本翻译为{target_lang}，注意只需要输出翻译后的结果，不要额外解释，原文中的标签需要在译文中相应的位置保留。输出格式为：<ttext>翻译结果</ttext>"
+        "user_hunyuan": "{outline_text}\n\n参考上面的信息，把下面的文本翻译成{target_lang}，注意不需要翻译上文，也不要额外解释：\n\n<vocabulary>\nUse these terms consistently:\n{vocab_dict}\n</vocabulary>\n\n<source>\n{source_text}\n</source>\n\n将以上<source>之间的文本翻译为{target_lang}，注意只需要输出翻译后的结果，不要额外解释，原文中的标签需要在译文中相应的位置保留。输出格式为：<ttext>翻译结果</ttext>"
     },
     "editor": {
         "system": "Ты профессиональный редактор-переводчик для {target_lang} ({country}). Твоя задача — провести финальную вычитку перевода.",
