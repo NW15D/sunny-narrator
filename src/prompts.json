@@ -1,4 +1,8 @@
 {
+    "_comment": "Sunny Narrator Prompts - See docs/PROMPTS_GUIDE.md for details",
+    "_primary_llm": "Used for: initial_translation, synopsis (config.sys_not_promt_translate for Gemma)",
+    "_secondary_llm": "Used for: reflection, improve, editor (config.sys_not_promt_proofread for Gemma)",
+    
     "initial_translation": {
         "system": "You are a professional literary translator. Translate text accurately while preserving all XML structure. Output only the translated content within the specified tags.",
         "user_xml": "<context>\n<synopsis>{outline_text}</synopsis>\n<vocabulary>{vocab_dict}</vocabulary>\n</context>\n\n<source lang=\"{source_lang}\">\n{source_text}\n</source>\n\nTranslate the text inside <source> to {target_lang}.\n\nRequirements:\n1. Preserve all XML tags (<p>, <strong>, <em>, etc.) in their original positions\n2. Apply vocabulary terms where applicable\n3. Maintain the narrative style and tone\n4. Output ONLY the translated text wrapped in <ttext>...</ttext>",

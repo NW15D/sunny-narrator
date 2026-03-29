@@ -235,13 +235,46 @@ class LLMService:
         max_tokens: int = 8192,
         json_mode: bool = False
     ) -> str:
-        """Execute LLM completion with role-appropriate client."""
+        """
+        Execute LLM completion with role-appropriate client.
+        
+        Handles sys_not_promt mode for models that don't support system prompts:
+        - Gemma 2/3: System prompt merged into user prompt
+        - Mistral, Llama 3.x: System prompt sent separately
+        
+        Args:
+            role: LLMRole.PRIMARY or LLMRole.SECONDARY
+            system_prompt: System instruction (may be merged with user_prompt)
+            user_prompt: User message content
+            max_tokens: Maximum tokens to generate
+            json_mode: Enable JSON response format
+            
+        Returns:
+            Generated text from LLM
+        """
         client, model, temp = self.get_client(role)
         
+        # Determine if we need to merge system prompt into user prompt
+        # Models that DON'T support system prompts: Gemma 2, Gemma 3
+        # Config flags: config.sys_not_promt_translate / config.sys_not_promt_proofread
+        use_sys_not_promt = False
+        
+        if role == LLMRole.PRIMARY:
+            use_sys_not_promt = config.sys_not_promt_translate
+        else:
+            use_sys_not_promt = config.sys_not_promt_proofread
+        
         messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": user_prompt})
+        
+        if use_sys_not_promt and system_prompt:
+            # Merge system prompt into user prompt (for Gemma and similar)
+            merged_prompt = f"{system_prompt}\n\n{user_prompt}"
+            messages.append({"role": "user", "content": merged_prompt})
+        else:
+            # Standard mode: separate system and user messages
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": user_prompt})
         
         comp_kwargs = {
             "model": model,
@@ -253,7 +286,7 @@ class LLMService:
             comp_kwargs["response_format"] = {"type": "json_object"}
         
         if config.debug:
-            logger.debug(f"LLM Request [{role.value}]: {model}, {len(user_prompt)} chars")
+            logger.debug(f"LLM Request [{role.value}]: {model}, {len(user_prompt)} chars, sys_not_promt={use_sys_not_promt}")
         
         response = client.chat.completions.create(**comp_kwargs)
         result = response.choices[0].message.content
