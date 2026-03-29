@@ -122,7 +122,7 @@ class TranslationEngine:
         try:
             # Note: rechunking is now handled inside ta.translate_chunk()
             # Get vocabulary for this chunk (formatted for model)
-            vocab_dict = self.get_context_for_chunk(source_text, 0, 0)
+            vocab_dict = self.get_formatted_vocab_for_chunk(source_text, 0, 0)
             
             translation, synopsis = ta.translate_chunk(
                 source_lang=config.source_lang,
@@ -159,6 +159,10 @@ class TranslationEngine:
         source_text = chunk if isinstance(chunk, str) else str(chunk)
         source_len = len(source_text)
         
+        # Initialize variables
+        final_content = ""
+        synopsis = ""
+        
         # Retry loop for XML validation
         for attempt in range(3):
             try:
@@ -179,8 +183,7 @@ class TranslationEngine:
         else:
             # All retries failed
             logger.warning(f"All validation attempts failed for chunk {g_id}")
-            final_content = temp_content if 'temp_content' in locals() else ""
-            final_content = self._post_process_xml(source_text, final_content)
+            final_content = self._post_process_xml(source_text, "")
         
         # Log length statistics (no rechunking here - done in translate_chunk)
         target_len = len(final_content)
@@ -188,10 +191,6 @@ class TranslationEngine:
         
         if config.debug:
             logger.debug(f"Chunk {g_id} (depth {depth}): {source_len} → {target_len} chars ({percent_diff:.1f}%)")
-        
-        # Ensure synopsis is set
-        if not synopsis:
-            synopsis = ""
         
         return final_content, synopsis
 
