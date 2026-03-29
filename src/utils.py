@@ -31,8 +31,7 @@ import tiktoken
 
 from src.config import Config
 
-# Import new pipeline
-from src.translation_pipeline import translate_chunk, LLMService
+# LLMService, TranslationPipeline, translate_chunk are defined in this module
 
 
 # =============================================================================
@@ -184,17 +183,331 @@ LANG_MAP = {
 
 
 # =============================================================================
+# Dual-LLM Translation Pipeline
+# =============================================================================
+
+class LLMService:
+    """Service for LLM interactions with role-based client selection."""
+    
+    def __init__(self):
+        import openai
+        
+        # Primary LLM client (Hunyuan for translation)
+        self._primary_client = openai.OpenAI(
+            api_key=config.api_key_translate,
+            base_url=config.base_url_translate,
+            timeout=config.timeout_translate
+        )
+        
+        # Secondary LLM client (Instruction-based for quality/style)
+        self._secondary_client = openai.OpenAI(
+            api_key=config.api_key_proofread,
+            base_url=config.base_url_proofread,
+            timeout=config.timeout_proofread
+        )
+        
+        # Images client (separate)
+        self._images_client = openai.OpenAI(
+            api_key=config.api_key_images,
+            base_url=config.base_url_images,
+            timeout=config.timeout_images
+        )
+    
+    def get_client(self, role: LLMRole):
+        """Get appropriate client based on LLM role."""
+        if role == LLMRole.PRIMARY:
+            return self._primary_client, config.model_translate, config.temp_translate
+        else:
+            return self._secondary_client, config.model_proofread, config.temp_proofread
+    
+    def complete(
+        self,
+        role: LLMRole,
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int = 8192,
+        json_mode: bool = False
+    ) -> str:
+        """Execute LLM completion with role-appropriate client."""
+        client, model, temp = self.get_client(role)
+        
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": user_prompt})
+        
+        comp_kwargs = {
+            "model": model,
+            "temperature": temp,
+            "max_tokens": max_tokens,
+            "messages": messages
+        }
+        if json_mode:
+            comp_kwargs["response_format"] = {"type": "json_object"}
+        
+        if config.debug:
+            logger.debug(f"LLM Request [{role.value}]: {model}, {len(user_prompt)} chars")
+        
+        response = client.chat.completions.create(**comp_kwargs)
+        result = response.choices[0].message.content
+        
+        if config.debug:
+            logger.debug(f"LLM Response [{role.value}]: {len(result)} chars")
+        
+        return result
+
+
+# Global LLM service instance
+llm_service = LLMService()
+
+
+class TranslationPipeline:
+    """Main translation pipeline implementing dual-LLM workflow."""
+    
+    def __init__(self):
+        # Prompts are loaded from prompts.json via config.get_prompt()
+        pass
+    
+    @log_entry
+    def initial_translation(self, context: TranslationContext) -> TranslationResult:
+        """Stage 1: Primary LLM translation."""
+        if context.style == "xml":
+            user_prompt = config.get_prompt(
+                "initial_translation", "user_xml",
+                source_lang=context.source_lang,
+                target_lang=context.target_lang,
+                outline_text=context.outline_text,
+                vocab_dict=context.vocab_dict,
+                source_text=context.source_text
+            )
+        elif config.model_translate == "Hunyuan":
+            user_prompt = config.get_prompt(
+                "initial_translation", "user_hunyuan",
+                source_lang=context.source_lang,
+                target_lang=context.target_lang,
+                outline_text=context.outline_text,
+                vocab_dict=context.vocab_dict,
+                source_text=context.source_text
+            )
+        else:
+            user_prompt = config.get_prompt(
+                "initial_translation", "user_text",
+                source_lang=context.source_lang,
+                target_lang=context.target_lang,
+                outline_text=context.outline_text,
+                vocab_dict=context.vocab_dict,
+                source_text=context.source_text
+            )
+        
+        system_prompt = config.get_prompt("initial_translation", "system")
+        
+        text = llm_service.complete(
+            role=LLMRole.PRIMARY,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_tokens=config.max_len_chunk * 4
+        )
+        
+        text = remove_tags(text)
+        
+        return TranslationResult(
+            stage=TranslationStage.INITIAL,
+            llm_role=LLMRole.PRIMARY,
+            text=text,
+            metadata={"prompt_style": context.style}
+        )
+    
+    @log_entry
+    def generate_synopsis(self, context: TranslationContext, translation: str) -> TranslationResult:
+        """Stage 2: Generate synopsis using Primary LLM."""
+        if config.model_translate == "Hunyuan":
+            user_prompt = config.get_prompt(
+                "synopsis", "user_hunyuan",
+                target_lang=context.target_lang,
+                final_translation=translation
+            )
+        else:
+            user_prompt = config.get_prompt(
+                "synopsis", "user",
+                target_lang=context.target_lang,
+                final_translation=translation
+            )
+        system_prompt = config.get_prompt("synopsis", "system")
+        
+        text = llm_service.complete(
+            role=LLMRole.PRIMARY,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_tokens=160
+        )
+        
+        text = remove_tags(text)
+        
+        return TranslationResult(
+            stage=TranslationStage.SYNOPSIS,
+            llm_role=LLMRole.PRIMARY,
+            text=text
+        )
+    
+    @log_entry
+    def reflection(self, context: TranslationContext, translation: str) -> TranslationResult:
+        """Stage 3: Secondary LLM reflection."""
+        user_prompt = config.get_prompt(
+            "reflection", f"user_{context.style}",
+            source_lang=context.source_lang,
+            target_lang=context.target_lang,
+            source_text=context.source_text,
+            translation=translation,
+            vocab_dict=context.vocab_dict,
+            country=context.country
+        )
+        
+        system_prompt = config.get_prompt("reflection", "system",
+            target_lang=context.target_lang,
+            country=context.country
+        )
+        
+        text = llm_service.complete(
+            role=LLMRole.SECONDARY,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_tokens=config.max_len_chunk
+        )
+        
+        return TranslationResult(
+            stage=TranslationStage.REFLECTION,
+            llm_role=LLMRole.SECONDARY,
+            text=text
+        )
+    
+    @log_entry
+    def improve_translation(self, context: TranslationContext, translation: str, reflection: str) -> TranslationResult:
+        """Stage 4: Secondary LLM improvement."""
+        user_prompt = config.get_prompt(
+            "improve", f"user_{context.style}",
+            source_lang=context.source_lang,
+            target_lang=context.target_lang,
+            country=context.country,
+            source_text=context.source_text,
+            translation=translation,
+            reflection=reflection,
+            vocab_dict=context.vocab_dict
+        )
+        
+        system_prompt = config.get_prompt("improve", "system",
+            target_lang=context.target_lang,
+            country=context.country
+        )
+        
+        text = llm_service.complete(
+            role=LLMRole.SECONDARY,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_tokens=config.max_len_chunk * 4
+        )
+        
+        text = remove_tags(text)
+        
+        return TranslationResult(
+            stage=TranslationStage.IMPROVE,
+            llm_role=LLMRole.SECONDARY,
+            text=text
+        )
+    
+    def execute(self, source_lang: str, target_lang: str, source_text: str,
+                outline_text: str, vocab_dict: dict, country: str,
+                style: str = "text", fast_mode: bool = False) -> PipelineState:
+        """Execute the complete translation pipeline."""
+        context = TranslationContext(
+            source_lang=source_lang,
+            target_lang=target_lang,
+            source_text=source_text,
+            outline_text=outline_text,
+            vocab_dict=vocab_dict,
+            country=country,
+            style=style
+        )
+        
+        state = PipelineState(context=context)
+        state.start_time = time.time()
+        
+        # Stage 1: Initial Translation
+        initial_result = self.initial_translation(context)
+        state.add_result(initial_result)
+        
+        # Stage 2: Synopsis
+        synopsis_result = self.generate_synopsis(context, initial_result.text)
+        state.add_result(synopsis_result)
+        
+        if fast_mode:
+            final_result = TranslationResult(
+                stage=TranslationStage.FINAL,
+                llm_role=LLMRole.PRIMARY,
+                text=initial_result.text,
+                metadata={"fast_mode": True, "applied_reflection": False}
+            )
+            state.add_result(final_result)
+        else:
+            # Stage 3: Reflection
+            reflection_result = self.reflection(context, initial_result.text)
+            state.add_result(reflection_result)
+            
+            # Stage 4: Improve
+            improve_result = self.improve_translation(
+                context, initial_result.text, reflection_result.text
+            )
+            state.add_result(improve_result)
+            
+            final_result = TranslationResult(
+                stage=TranslationStage.FINAL,
+                llm_role=LLMRole.SECONDARY,
+                text=improve_result.text,
+                metadata={"fast_mode": False, "applied_reflection": True}
+            )
+            state.add_result(final_result)
+        
+        return state
+
+
+# Global pipeline instance
+_pipeline = TranslationPipeline()
+
+
+def translate_chunk(source_lang: str, target_lang: str, source_text: str,
+                    outline_text: str, vocab_dict: dict, country: str,
+                    style: str = "text", fast_mode: bool = False) -> tuple:
+    """
+    Translate a single chunk using the dual-LLM pipeline.
+    
+    Returns:
+        (final_translation, synopsis)
+    """
+    state = _pipeline.execute(
+        source_lang=source_lang,
+        target_lang=target_lang,
+        source_text=source_text,
+        outline_text=outline_text,
+        vocab_dict=vocab_dict,
+        country=country,
+        style=style,
+        fast_mode=fast_mode
+    )
+    
+    return state.final_translation, state.synopsis
+
+
+# =============================================================================
 # LLM Service (compatibility layer)
 # =============================================================================
 
 class LLMServiceCompat:
     """
     Compatibility layer for old LLMService interface.
-    Delegates to new translation_pipeline.LLMService.
+    Delegates to LLMService in the same module.
     """
     
     def __init__(self):
-        self._new_service = LLMService()
+        self._new_service = llm_service
     
     @property
     def clientTranslate(self):
