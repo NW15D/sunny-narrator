@@ -509,20 +509,25 @@ def main():
 
     # 3. Prepare Chunks
     print("Preparing chunks...")
-    sections = fb2.prepare_chunks(body, config.max_len_chunk)
-    chunks = [
-        {'chunk': chunk, 'section_idx': s_idx, 'chunk_idx': c_idx, 'global_id': idx}
-        for s_idx, section in enumerate(sections)
-        for c_idx, chunk in enumerate(section)
-        for idx in [s_idx * 100 + c_idx]  # Unique ID
-    ]
-    # Fix global_id
+    
+    # fb2.prepare_chunks() returns flat list of chunks
+    # Wrap each chunk in its own section for compatibility
+    flat_chunks = fb2.prepare_chunks(body, config.max_len_chunk)
+    sections = [[chunk] for chunk in flat_chunks]  # Wrap each chunk
+    
     chunks = []
     gid = 0
     for s_idx, section in enumerate(sections):
         for c_idx, chunk in enumerate(section):
-            chunks.append({'chunk': chunk, 'section_idx': s_idx, 'chunk_idx': c_idx, 'global_id': gid})
+            chunks.append({
+                'chunk': chunk,
+                'section_idx': s_idx,
+                'chunk_idx': c_idx,
+                'global_id': gid
+            })
             gid += 1
+    
+    print(f"Prepared {len(chunks)} chunks from {len(sections)} sections")
 
     # 4. Translate
     engine = TranslationEngine(output_tfile, book_path=myfile)
