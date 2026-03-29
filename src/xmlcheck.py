@@ -1,15 +1,32 @@
+"""
+XML validation utilities.
+
+Provides FB2 XML validation using XSD schema and tag cleaning.
+"""
+
+import os
 from bs4 import BeautifulSoup
 from lxml import etree
+
+
 def ic(*args):
+    """Debug print function (icecream replacement)."""
     if len(args) == 1:
         print(args[0])
     else:
         print(args)
 
-def rem_tags(xml_string):
+
+def rem_tags(xml_string: str) -> str:
     """
     Parses and cleans up XML tags, ensuring structure validity for FB2 <section>.
-    Uses lxml with recovery to fix unclosed tags and enforces a whitelist of FB2-compliant tags.
+    Uses lxml with recovery to fix unclosed tags and enforces FB2-compliant tags.
+    
+    Args:
+        xml_string: XML string to clean
+        
+    Returns:
+        Cleaned XML string
     """
     if not xml_string:
         return ""
@@ -32,7 +49,7 @@ def rem_tags(xml_string):
         'em': 'emphasis',
         'italic': 'emphasis',
         'bold': 'strong',
-        'u': 'emphasis', # Mapping u to emphasis as style needs a name attribute
+        'u': 'emphasis',
     }
 
     try:
@@ -84,7 +101,6 @@ def rem_tags(xml_string):
 
                 if not is_allowed:
                     # Recurse into grandchildren before stripping the tag
-                    # They keep the same is_block_level expectation as the tag being stripped
                     clean_node(child, is_block_level)
 
                     # Strip tag but keep content and children
@@ -98,14 +114,13 @@ def rem_tags(xml_string):
                     for i, grandchild in enumerate(list(child)):
                         parent.insert(index + i, grandchild)
                     
-                    # 2. Merge text: goes to tail of preceding node or parent text
+                    # 2. Merge text
                     if index == 0:
                         parent.text = (parent.text or "") + text
                     else:
                         parent[index-1].tail = (parent[index-1].tail or "") + text
                     
-                    # 3. Merge tail: goes to tail of the last moved grandchild,
-                    # or if no children, to where the text went.
+                    # 3. Merge tail
                     if len(child) > 0:
                         parent[index + len(child) - 1].tail = (parent[index + len(child) - 1].tail or "") + tail
                     else:
@@ -117,20 +132,17 @@ def rem_tags(xml_string):
                     parent.remove(child)
                 else:
                     # Recurse
-                    # Block level elements contain other block level elements
                     next_is_block = tag in {'section', 'cite', 'poem', 'annotation', 'epigraph', 'title', 'stanza', 'table', 'tr'}
                     clean_node(child, next_is_block)
 
-            # 2. Post-process block level nodes (like <section>) to wrap raw text in <p>
+            # 2. Post-process block level nodes to wrap raw text in <p>
             if is_block_level or node.tag == 'section':
-                # Move root text to a new <p> if it exists
                 if node.text and node.text.strip():
                     new_p = etree.Element('p')
                     new_p.text = node.text
                     node.insert(0, new_p)
                     node.text = None
 
-                # Check tails of children (text between tags)
                 for child in list(node):
                     if child.tail and child.tail.strip():
                         new_p = etree.Element('p')
@@ -142,28 +154,28 @@ def rem_tags(xml_string):
         clean_node(root, is_block_level=True)
 
         # Serialize back to string
-        # method='xml' ensures we get proper XML output
         cleaned_xml = etree.tostring(root, encoding='unicode', method='xml')
         
         return cleaned_xml.strip()
 
     except Exception as e:
-        if 'ic' in globals():
-            ic(f"Error in rem_tags: {e}")
+        ic(f"Error in rem_tags: {e}")
         return xml_string
 
-import os
 
-def validate_fb2(xml_string):
+def validate_fb2(xml_string: str) -> list:
     """
     Validates the FB2 XML string using lxml and the local XSD schema.
-    Returns a list of error strings with line numbers.
-    If valid, returns an empty list.
+    
+    Args:
+        xml_string: FB2 XML string to validate
+        
+    Returns:
+        List of error strings with line numbers. Empty list if valid.
     """
     errors = []
     try:
         # Load XSD Schema
-        # Assuming schemas are in src/schemas relative to this file
         base_dir = os.path.dirname(os.path.abspath(__file__))
         schema_path = os.path.join(base_dir, 'schemas', 'FictionBook.xsd')
         
@@ -174,7 +186,7 @@ def validate_fb2(xml_string):
         xml_schema = etree.XMLSchema(xml_schema_doc)
 
         # Parse XML string
-        parser = etree.XMLParser(recover=False) # strict parsing
+        parser = etree.XMLParser(recover=False)
         doc = etree.fromstring(xml_string.encode('utf-8'), parser)
         
         # Validate against schema
@@ -183,7 +195,6 @@ def validate_fb2(xml_string):
                  errors.append(f"Line {error.line}, Column {error.column}: {error.message}")
         
     except etree.XMLSyntaxError as e:
-        # Parsing error (malformed XML)
         for error in e.error_log:
             errors.append(f"Line {error.line}, Column {error.column}: {error.message}")
             

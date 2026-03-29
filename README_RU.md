@@ -1,43 +1,133 @@
-# Sunny Narrator v1.0
+# Sunny Narrator v1.9
 
-**AI-переводчик длинных текстов** (FB2, EPUB, TXT) с сохранением словаря и форматирования.
+Система AI-перевода с 5-стадийным контролем качества.
 
-## Возможности
-
-- 📚 Сохранение форматов: FB2/EPUB с целостностью XML
-- 🎯 Словарный перевод: NER для консистентности имён
-- 📝 Корректура: двухпроходный перевод
-- 🌍 Региональная адаптация
-- 🐳 Поддержка Docker с GPU
-
-## Быстрый старт
-
-### Docker
+## 🚀 Быстрый старт
 
 ```bash
-git clone https://github.com/neowisard/sunny_narrator
-cd sunny_narrator
-./scripts/check-gpu.sh
-docker-compose -f docker-compose.gpu.yml up
-```
-
-### Python
-
-```bash
+# Установить зависимости
 pip install -r requirements.txt
+
+# Настроить .env
+cp .env.example .env
+# Отредактировать .env с вашими ключами API
+
+# Запустить перевод
 python app.py
 ```
 
-## Требования
+## 📋 Конфигурация
 
-- GPU: NVIDIA 4GB+ VRAM
-- RAM: 8GB+
-- API: OpenAI-compatible
+### .env файл
 
-## Документация
+```bash
+# Primary LLM (Перевод)
+MODEL_TRANSLATE=google/gemma-2-27b-it
+API_BASE_TRANSLATE=http://localhost:11434/v1
+API_KEY_TRANSLATE=your-key
+S_PROMT_TRANSLATE=true          # ⚠️ true для Gemma 2/3!
+TEMP_TRANSLATE=0.01
 
-- [Docker](DOCKER_README.md)
-- [Wiki](https://github.com/NW15D/sunny-narrator/wiki)
+# Secondary LLM (Корректура)
+MODEL_PROOFREAD=Mistral
+API_BASE_PROOFREAD=http://localhost:11434/v1
+API_KEY_PROOFREAD=your-key
+S_PROMT_PROOFREAD=false
+TEMP_PROOFREAD=0.7
+
+# Температуры по стадиям
+TEMP_INITIAL=0.01               # Стадия 1: Primary LLM - Перевод
+TEMP_REFLECTION=0.4             # Стадия 2: Secondary LLM - Анализ
+TEMP_IMPROVE=0.4                # Стадия 3: Secondary LLM - Редактирование
+TEMP_FINAL_EDIT=0.15            # Стадия 4: Secondary LLM - Вычитка
+TEMP_SYNOPSIS=0.15              # Стадия 5: Secondary LLM - Синопсис
+
+# Языки
+SOURCE_LANG=english
+TARGET_LANG=russian
+COUNTRY=Россия
+
+# Обработка
+MAX_LEN_CHUNK=8192
+LENGTH_CHECK_THRESHOLD=20
+FAST_TRANS=false
+DEBUG=off
+```
+
+## ⚡ Режим FAST_TRANS
+
+**FAST_TRANS=true** (быстро, 2 стадии):
+- Stage 1: INITIAL (Primary LLM)
+- Stage 5: SYNOPSIS (Primary LLM)
+- ~2.5x быстрее, среднее качество
+
+**FAST_TRANS=false** (стандарт, 5 стадий):
+- Полный пайплайн с контролем качества
+- Высокое качество
+
+## 📊 5-Стадийный Пайплайн
+
+1. **INITIAL** (Primary, temp=0.01) — Черновик перевода
+2. **REFLECTION** (Secondary, temp=0.4) — Анализ замечаний
+3. **IMPROVE** (Secondary, temp=0.4) — Исправление по замечаниям
+4. **FINAL_EDIT** (Secondary, temp=0.15) — Финальная вычитка
+5. **SYNOPSIS** (Secondary, temp=0.15) — Синопсис для контекста
+
+## 📁 Форматы
+
+- **Вход:** FB2, EPUB, TXT
+- **Выход:** FB2, EPUB (с сохранением структуры)
+
+## 🎯 Словарь
+
+Автоматическое создание словаря через NER:
+```bash
+NER=true
+NERMODEL=en_core_web_lg
+```
+
+Формат словаря (.dic):
+```dic
+# Format: source = target, category, gender, notes
+Alice = Алиса, PERSON, she, 
+Wonderland = Страна Чудес, LOC, , 
+```
+
+## 🔧 sys_not_promt для Gemma
+
+Gemma 2/3 не поддерживают system prompts:
+```bash
+S_PROMT_TRANSLATE=true    # Для Gemma
+S_PROMT_PROOFREAD=false   # Для Mistral/Llama
+```
+
+## 📚 Документация
+
+- [Установка](docs/INSTALLATION.md)
+- [Промпты](docs/PROMPTS_GUIDE.md)
+- [Температуры](docs/TEMPERATURE_STRATEGY.md)
+- [Rechunking](docs/RECHUNKING_GUIDE.md)
+- [NER](docs/NER_GUIDE.md)
+- [Словарь](docs/DICTIONARY_FORMAT.md)
+- [Стадии перевода](docs/TRANSLATION_STAGES.md)
+
+## ⚠️ NER и GPU
+
+Если NVRTC ошибки:
+```bash
+# Использовать CPU для NER
+SPACY_USE_GPU=false
+
+# Или удалить cupy
+pip uninstall cupy cupy-cuda12x -y
+```
+
+## 📝 Версии
+
+- **v1.9** — 5-стадийный пайплайн, stage-specific температуры
+- **v1.8** — Rechunking с валидацией длины
+- **v1.7** — NER с CPU fallback
+- **v1.0** — Initial release
 
 ---
 

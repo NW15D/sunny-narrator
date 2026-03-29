@@ -234,7 +234,7 @@ Synopsis:"""
             user_prompt = self.USER_TEMPLATE.format(text=truncated)
             
             # Use secondary LLM for synopsis (faster, cheaper)
-            from src.translation_pipeline import llm_service, LLMRole
+            from src.utils import llm_service, LLMRole
             
             result = llm_service.complete(
                 role=LLMRole.SECONDARY,
