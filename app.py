@@ -352,6 +352,54 @@ def load_vocab_from_file(file_path: str) -> dict:
     return vocab
 
 
+def _translate_vocabulary_batch(terms_text: str, source_lang: str, target_lang: str, country: str) -> str:
+    """
+    Translate vocabulary terms in batch using Primary LLM.
+    
+    Args:
+        terms_text: Newline-separated list of terms to translate
+        source_lang: Source language
+        target_lang: Target language
+        country: Target country
+        
+    Returns:
+        Translated terms in "source = target" format
+    """
+    # Use Primary LLM for batch translation (faster than one-by-one)
+    prompt = f"""Translate the following {source_lang} terms to {target_lang} for {country}.
+Format each line as: source = target
+
+Terms to translate:
+{terms_text}
+
+Output only the translations in "source = target" format, one per line."""
+
+    # Use Primary LLM directly
+    import openai
+    client = openai.OpenAI(
+        api_key=config.api_key_translate,
+        base_url=config.base_url_translate,
+        timeout=config.timeout_translate
+    )
+    
+    response = client.chat.completions.create(
+        model=config.model_translate,
+        temperature=0.01,  # Low temp for consistency
+        max_tokens=4096,
+        messages=[
+            {"role": "system", "content": f"You are a professional terminology translator from {source_lang} to {target_lang}."},
+            {"role": "user", "content": prompt}
+        ]
+    )
+    
+    translated = response.choices[0].message.content.strip()
+    
+    if config.debug:
+        logger.debug(f"Batch vocabulary translation: {len(translated)} chars")
+    
+    return translated
+
+
 def write_to_file(data, output_file: str):
     """Write data to file."""
     if isinstance(data, str):
@@ -415,8 +463,16 @@ def main():
                 print("Please edit the dictionary and restart.")
                 sys.exit(0)
             
-            vocab_raw = ta.vocabulary(config.source_lang, config.target_lang, vb, config.country, "Proofread")
-            write_to_file(ta.remove_tags(vocab_raw), dict_file)
+            # Translate vocabulary in batches using Primary LLM
+            print(f"Translating {len(vb.strip().split(chr(10)))} terms using Primary LLM...")
+            vocab_translated = _translate_vocabulary_batch(
+                vb, 
+                config.source_lang, 
+                config.target_lang, 
+                config.country
+            )
+            
+            write_to_file(vocab_translated, dict_file)
             print(f"Vocabulary created: {dict_file}")
             print("Please review and restart.")
             sys.exit(0)
