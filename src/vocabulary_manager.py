@@ -108,7 +108,15 @@ class VocabularyManager:
             sys.exit(0)
     
     def _create_dictionary(self):
-        """Create dictionary from book using NER."""
+        """
+        Create dictionary from book using NER.
+        
+        Workflow:
+        1. Parse book to extract text
+        2. Run NER to find named entities and common words
+        3. Translate terms using LLM
+        4. Save to .dic file in standard format
+        """
         # Parse book to get text
         from src import fb2_handler, epub_handler, txt_handler
         
@@ -122,21 +130,37 @@ class VocabularyManager:
         
         # Run NER to extract entities
         if config.ner_opt and ner_module:
-            logger.info("Running NER to extract entities...")
-            entities_text = ner_module.make_vocab(body)
+            logger.info("Running NER to extract entities and common words...")
             
-            # Translate entities using LLM
-            from src import utils as ta
-            vocab_translated = ta.vocabulary(
-                config.source_lang, 
-                config.target_lang, 
-                entities_text, 
-                config.country, 
-                "Proofread"
+            # Use new structured dictionary creation
+            extracted_terms = ner_module.create_dictionary_from_text(
+                body,
+                min_count_ner=5,          # Entities with >= 5 occurrences
+                min_count_word=10,        # Words with >= 10 occurrences
+                min_word_length=5         # Words with length >= 5
             )
             
-            # Parse and save
-            self._parse_and_save(vocab_translated)
+            logger.info(f"Extracted {len(extracted_terms)} terms from text")
+            
+            if extracted_terms:
+                # Format terms for translation
+                terms_text = '\n'.join([term for term, cat, notes in extracted_terms])
+                
+                # Translate terms using LLM
+                from src import utils as ta
+                vocab_translated = ta.vocabulary(
+                    config.source_lang, 
+                    config.target_lang, 
+                    terms_text, 
+                    config.country, 
+                    "Proofread"
+                )
+                
+                # Parse and save with structured format
+                self._parse_and_save_structured(vocab_translated, extracted_terms)
+            else:
+                logger.warning("No terms extracted by NER")
+                self._create_template()
         else:
             # Create empty dictionary template
             self._create_template()
@@ -182,6 +206,66 @@ class VocabularyManager:
                     )
         
         logger.info(f"Dictionary saved: {self.dict_file}")
+    
+    def _parse_and_save_structured(self, vocab_text: str, extracted_terms: List[Tuple[str, str, str]]):
+        """
+        Parse translated vocabulary with structured format.
+        
+        Args:
+            vocab_text: Translated terms from LLM (format: "source = target")
+            extracted_terms: Original extracted terms with categories [(term, category, notes), ...]
+        """
+        # Parse translated lines into source=target pairs
+        translations = {}
+        for line in vocab_text.strip().split('\n'):
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            
+            if '=' in line:
+                parts = line.split('=', 1)
+                source = parts[0].strip()
+                target = parts[1].strip()
+                translations[source.lower()] = target
+        
+        # Write dictionary with proper format
+        with open(self.dict_file, 'w', encoding='utf-8') as f:
+            f.write(f"# Vocabulary for {self.book_name}\n")
+            f.write(f"# Format: source = target | category | gender | notes\n")
+            f.write(f"# Generated automatically by NER\n")
+            f.write(f"# Please review and edit as needed\n\n")
+            
+            # Group by category
+            categories = {'PERSON': [], 'LOC': [], 'ORG': [], 'TERM': [], 'OTHER': []}
+            
+            for term, category, notes in extracted_terms:
+                term_lower = term.lower()
+                if term_lower in translations:
+                    target = translations[term_lower]
+                    cat = category if category in ['PERSON', 'LOC', 'ORG'] else 'OTHER'
+                    categories[cat].append((term, target, category, notes))
+            
+            # Write sections
+            for cat_name in ['PERSON', 'LOC', 'ORG', 'TERM', 'OTHER']:
+                entries = categories[cat_name]
+                if not entries:
+                    continue
+                
+                f.write(f"\n# {cat_name} ({len(entries)} terms)\n")
+                for source, target, orig_cat, notes in entries:
+                    # Format: source = target | category | gender | notes
+                    f.write(f"{source} = {target} | {orig_cat} | | {notes}\n")
+                    
+                    # Add to memory
+                    key = source.replace(' ', '_').lower()
+                    self.vocab[key] = VocabEntry(
+                        source=source,
+                        target=target,
+                        category=orig_cat,
+                        notes=notes
+                    )
+        
+        logger.info(f"Dictionary saved: {self.dict_file} ({len(self.vocab)} entries)")
     
     def _create_template(self):
         """Create empty dictionary template."""

@@ -95,21 +95,79 @@ Gender используется для:
 
 ## Workflow работы со словарём
 
-### 1. Автоматическое создание
+### 1. Автоматическое создание (NER=True)
 
-При первом запуске перевода:
+При первом запуске перевода, если `.dic` файл не найден:
 
 ```bash
 # Если .dic файл не найден
 Dictionary not found: books/MyBook.dic
 Creating from NER...
+Running NER to extract entities and common words...
+Extracted 150 terms from text
+Dictionary saved: books/MyBook.dic (150 entries)
+
+Dictionary created: books/MyBook.dic
+Please review and edit the dictionary, then restart.
 ```
 
-Система:
-1. Запускает NER на всём тексте
-2. Извлекает имена собственные (PERSON, LOC, ORG)
-3. Предлагает переводы через LLM
-4. Сохраняет в `MyBook.dic`
+**Процесс создания:**
+
+1. **NER анализ текста:**
+   - Находит именованные сущности (PERSON, LOC, ORG, GPE)
+   - Фильтр: сущности встречаются ≥5 раз
+   - Фильтр: исключает вложенные сущности (оставляет longest)
+
+2. **Поиск частых слов:**
+   - Находит слова длиной ≥5 символов
+   - Фильтр: встречаются ≥10 раз
+   - Исключает stop words и уже найденные NER сущности
+
+3. **Перевод терминов:**
+   - Отправляет извлечённые термины на перевод через LLM
+   - Формат: "source = target"
+
+4. **Сохранение в .dic:**
+   - Группировка по категориям (PERSON, LOC, ORG, TERM, OTHER)
+   - Формат: `source = target | category | gender | notes`
+   - Добавление комментариев для удобства редактирования
+
+**Параметры NER (настраиваемые):**
+
+```python
+# В src/vocabulary_manager.py:_create_dictionary()
+extracted_terms = ner_module.create_dictionary_from_text(
+    body,
+    min_count_ner=5,          # Сущности с ≥5 повторениями
+    min_count_word=10,        # Слова с ≥10 повторениями
+    min_word_length=5         # Длина слова ≥5 символов
+)
+```
+
+**Пример созданного словаря:**
+
+```dic
+# Vocabulary for MyBook
+# Format: source = target | category | gender | notes
+# Generated automatically by NER
+# Please review and edit as needed
+
+# PERSON (50 terms)
+Alice = Алиса | PERSON | | 
+Mad Hatter = Шляпник | PERSON | | 
+Queen = Королева | PERSON | | 
+
+# LOC (30 terms)
+Wonderland = Страна Чудес | LOC | | 
+Rabbit Hole = Кроличья Нора | LOC | | 
+
+# ORG (10 terms)
+Queen's Court = Двор Королевы | ORG | | 
+
+# TERM (60 terms)
+wonderland = страна чудес | TERM | | frequent word
+curious = любопытный | TERM | | frequent word
+```
 
 ### 2. Ручное редактирование
 
