@@ -269,7 +269,18 @@ llm_service = LLMServiceCompat()
 
 @log_entry
 def remove_tags(text: str) -> str:
-    """Remove XML-style tags from text."""
+    """
+    Remove XML/HTML tags and artifacts from translation output.
+    Uses regex patterns to clean common LLM output artifacts.
+    
+    Note: For FB2 XML validation and cleaning, use xmlcheck.rem_tags()
+    
+    Args:
+        text: Text with XML tags to remove
+        
+    Returns:
+        Cleaned text without tags
+    """
     patterns = [
         r'<SOURCE_TEXT>[\s\S]*?</SOURCE_TEXT>',
         r'<DICTIONARY>[\s\S]*?</DICTIONARY>',
