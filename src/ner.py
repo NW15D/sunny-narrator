@@ -91,8 +91,8 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
         # Increase max length limit for large documents
         nlp.max_length = 200000
 
-        # Split text into smaller chunks to avoid OOM (50k chars per chunk)
-        chunk_size = 50000
+        # Split text into chunks (100k chars per chunk for balance of speed/memory)
+        chunk_size = 100000
         text_chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
         
         if config.debug:
@@ -161,12 +161,24 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
         if config.debug:
             print(f"Unique entities after merging: {len(final_merged_ents)}")
 
+        # Find most common words with count > min_count_word and length >= min_word_length
+        # Sample first 5 chunks for word counting to save memory
+        word_counts = Counter()
+        for chunk in text_chunks[:5]:  # Sample first 5 chunks for word counting
+            try:
+                doc = nlp(chunk, disable=["ner", "parser", "lemmatizer", "attribute_ruler"])
+                word_counts.update(
+                    token.text for token in doc if token.is_alpha and token.text not in stop_words
+                )
+                del doc
+                gc.collect()
+            except:
+                continue
+
     except Exception as e:
         if config.debug:
             print(f"Error loading spaCy model: {e}")
         return
-    word_counts = Counter(
-        token.text for token in doc if token.is_alpha and token.text not in stop_words)
 
     # Filter words with count > min_count_word and length >= min_word_length
     filtered_words_with_counts = [(word, count) for word, count in word_counts.items() if count > min_count_word and len(word) >= min_word_length]
