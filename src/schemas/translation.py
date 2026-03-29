@@ -9,6 +9,8 @@ Defines the structured workflow for dual-LLM translation architecture:
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any
 from enum import Enum
+from pathlib import Path
+import json
 
 
 class TranslationStage(Enum):
@@ -90,6 +92,30 @@ class PipelineState:
             self.final_translation = result.text
 
 
+class PromptLoader:
+    """Load prompts from external JSON file."""
+    
+    _prompts: Optional[Dict[str, Any]] = None
+    
+    @classmethod
+    def load(cls) -> Dict[str, Any]:
+        """Load prompts from prompts.json file."""
+        if cls._prompts is None:
+            prompts_path = Path(__file__).resolve().parent.parent / "prompts.json"
+            try:
+                with open(prompts_path, 'r', encoding='utf-8') as f:
+                    cls._prompts = json.load(f)
+            except Exception as e:
+                raise RuntimeError(f"Failed to load prompts from {prompts_path}: {e}")
+        return cls._prompts
+    
+    @classmethod
+    def get(cls, category: str, key: str, default: str = "") -> str:
+        """Get a specific prompt from the loaded prompts."""
+        prompts = cls.load()
+        return prompts.get(category, {}).get(key, default)
+
+
 @dataclass
 class ReflectionPrompt:
     """
@@ -100,8 +126,22 @@ class ReflectionPrompt:
     - quality_check (accuracy, terminology)
     
     Output: numbered list of specific improvements.
+    
+    Note: Prompts are loaded from prompts.json. These are fallback defaults.
     """
-    system: str = """You are a literary translation quality reviewer for {target_lang} ({country}).
+    
+    def get_system(self) -> str:
+        """Get system prompt from external file."""
+        return PromptLoader.get("reflection", "system", self._default_system())
+    
+    def get_user_template(self, style: str = "text") -> str:
+        """Get user prompt template from external file."""
+        key = f"user_{style}" if style in ("xml", "text") else "user_text"
+        return PromptLoader.get("reflection", key, self._default_user_template())
+    
+    def _default_system(self) -> str:
+        """Fallback default system prompt."""
+        return """You are a literary translation quality reviewer for {target_lang} ({country}).
 
 Review the translation against the source and identify:
 1. Accuracy issues (meaning changes, omissions, additions)
@@ -112,7 +152,9 @@ Review the translation against the source and identify:
 
 Output a numbered list of specific improvements."""
     
-    user_template: str = """<source lang="{source_lang}">
+    def _default_user_template(self) -> str:
+        """Fallback default user template."""
+        return """<source lang="{source_lang}">
 {source_text}
 </source>
 
@@ -144,8 +186,22 @@ class ImprovePrompt:
     - style_edit (preserve obscene, cultural nuances)
     
     Output: final polished translation.
+    
+    Note: Prompts are loaded from prompts.json. These are fallback defaults.
     """
-    system: str = """You are a literary translation editor for {target_lang} ({country}).
+    
+    def get_system(self) -> str:
+        """Get system prompt from external file."""
+        return PromptLoader.get("improve", "system", self._default_system())
+    
+    def get_user_template(self, style: str = "text") -> str:
+        """Get user prompt template from external file."""
+        key = f"user_{style}" if style in ("xml", "text") else "user_text"
+        return PromptLoader.get("improve", key, self._default_user_template())
+    
+    def _default_system(self) -> str:
+        """Fallback default system prompt."""
+        return """You are a literary translation editor for {target_lang} ({country}).
 
 Your task is to apply reflection suggestions while preserving:
 - Original narrative voice and tone
@@ -155,7 +211,9 @@ Your task is to apply reflection suggestions while preserving:
 
 Output the improved translation."""
     
-    user_template: str = """<source lang="{source_lang}">
+    def _default_user_template(self) -> str:
+        """Fallback default user template."""
+        return """<source lang="{source_lang}">
 {source_text}
 </source>
 

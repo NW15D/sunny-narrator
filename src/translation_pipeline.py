@@ -222,15 +222,16 @@ class TranslationPipeline:
         Stage 3: Secondary LLM reflection with literary focus.
         Merged: quality check + nuances + suggestions.
         """
-        user_prompt = self.reflection_prompt.user_template.format(
+        user_prompt = self.reflection_prompt.get_user_template(context.style).format(
             source_lang=context.source_lang,
             target_lang=context.target_lang,
             source_text=context.source_text,
             translation=translation,
-            vocab_dict=context.vocab_dict
+            vocab_dict=context.vocab_dict,
+            country=context.country
         )
         
-        system_prompt = self.reflection_prompt.system.format(
+        system_prompt = self.reflection_prompt.get_system().format(
             target_lang=context.target_lang,
             country=context.country
         )
@@ -259,7 +260,7 @@ class TranslationPipeline:
         Stage 4: Secondary LLM improvement.
         Apply reflection suggestions + preserve style + obscene language.
         """
-        user_prompt = self.improve_prompt.user_template.format(
+        user_prompt = self.improve_prompt.get_user_template(context.style).format(
             source_lang=context.source_lang,
             target_lang=context.target_lang,
             country=context.country,
@@ -269,7 +270,7 @@ class TranslationPipeline:
             vocab_dict=context.vocab_dict
         )
         
-        system_prompt = self.improve_prompt.system.format(
+        system_prompt = self.improve_prompt.get_system().format(
             target_lang=context.target_lang,
             country=context.country
         )
