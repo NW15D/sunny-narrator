@@ -402,6 +402,19 @@ def main():
         if not os.path.exists(dict_file):
             print("Generating vocabulary...")
             vb = ner.make_vocab(body)
+            
+            # Check if NER returned any terms
+            if not vb or not vb.strip():
+                print("Warning: NER did not extract any terms. Creating empty dictionary.")
+                # Create empty dictionary template
+                with open(dict_file, 'w', encoding='utf-8') as f:
+                    f.write(f"# Vocabulary for {file_name}\n")
+                    f.write(f"# Format: source = target | category | gender | notes\n")
+                    f.write(f"# No terms extracted by NER - please add terms manually\n\n")
+                print(f"Empty dictionary created: {dict_file}")
+                print("Please edit the dictionary and restart.")
+                sys.exit(0)
+            
             vocab_raw = ta.vocabulary(config.source_lang, config.target_lang, vb, config.country, "Proofread")
             write_to_file(ta.remove_tags(vocab_raw), dict_file)
             print(f"Vocabulary created: {dict_file}")
