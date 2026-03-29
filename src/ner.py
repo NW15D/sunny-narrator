@@ -168,8 +168,23 @@ def make_vocab(text, stop_words=None):
 
 
 def find_matching_words_with_cosine_similarity(text, vocab, lng, threshold=0.8, batch_size=1024):
+    """
+    Find vocabulary terms in text using cosine similarity (GPU-accelerated).
+    
+    Uses CuPy for GPU acceleration when available.
+    
+    Args:
+        text: Source text to search in
+        vocab: Vocabulary dictionary {key: {lng: source_term, ...}}
+        lng: Language code for source terms
+        threshold: Cosine similarity threshold (0.0-1.0)
+        batch_size: Batch size for processing tokens
+        
+    Returns:
+        List of matched vocabulary terms
+    """
     if config.debug:
-        print("Starting cosine similarity matching")
+        print("Starting cosine similarity matching (GPU)")
 
     if not text or not vocab:
         if config.debug:
@@ -208,7 +223,7 @@ def find_matching_words_with_cosine_similarity(text, vocab, lng, threshold=0.8, 
             print("No valid vectors in vocab.")
         return []
 
-    # numpy -> cupy
+    # numpy -> cupy (GPU acceleration)
     vocab_matrix = cp.asarray(np.vstack(vocab_vectors))
     vocab_matrix = vocab_matrix / cp.linalg.norm(vocab_matrix, axis=1, keepdims=True)
 
@@ -224,6 +239,87 @@ def find_matching_words_with_cosine_similarity(text, vocab, lng, threshold=0.8, 
         sims = cp.dot(token_vectors, vocab_matrix.T)
 
         best_matches = cp.where(sims > threshold)
+        for _, vi in zip(*best_matches):
+            matched_words_set.add(valid_vocab_words[int(vi)])
+
+    if config.debug:
+        print(f"Found matching words: {matched_words_set}")
+    return list(matched_words_set)
+
+
+def find_matching_words_with_cosine_similarity_cpu(text, vocab, lng, threshold=0.8, batch_size=256):
+    """
+    Find vocabulary terms in text using cosine similarity (CPU-only fallback).
+    
+    Uses NumPy instead of CuPy for systems without GPU.
+    Slower but works on any system.
+    
+    Args:
+        text: Source text to search in
+        vocab: Vocabulary dictionary {key: {lng: source_term, ...}}
+        lng: Language code for source terms
+        threshold: Cosine similarity threshold (0.0-1.0)
+        batch_size: Batch size for processing tokens (smaller for CPU)
+        
+    Returns:
+        List of matched vocabulary terms
+    """
+    if config.debug:
+        print("Starting cosine similarity matching (CPU)")
+
+    if not text or not vocab:
+        if config.debug:
+            print("No text or vocabulary to process.")
+        return []
+
+    try:
+        # CPU mode - don't call spacy.prefer_gpu()
+        nlp = load_spacy_model(config.nermodel)
+        nlp.max_length = 110000
+        # For cosine similarity, we only need vectors
+        doc = nlp(text, disable=["ner", "parser", "tagger", "lemmatizer", "attribute_ruler"])
+    except Exception as e:
+        if config.debug:
+            print(f"Error loading spaCy model: {e}")
+        return []
+
+    orig_values = [entry[lng] for entry in vocab.values() if lng in entry]
+    
+    valid_vocab_words = []
+    vocab_vectors = []
+
+    for phrase in orig_values:
+        sub_words = phrase.split()
+        sub_docs = list(nlp.pipe(sub_words, disable=["ner", "parser", "tagger", "lemmatizer", "attribute_ruler"]))
+        sub_vecs = [d.vector for d in sub_docs if d.vector_norm != 0]
+
+        if sub_vecs:
+            mean_vec = np.mean(np.vstack(sub_vecs), axis=0)
+            vocab_vectors.append(mean_vec)
+            valid_vocab_words.append(phrase)
+
+    if not vocab_vectors:
+        if config.debug:
+            print("No valid vectors in vocab.")
+        return []
+
+    # NumPy only (CPU) - no CuPy
+    vocab_matrix = np.vstack(vocab_vectors)
+    vocab_matrix = vocab_matrix / np.linalg.norm(vocab_matrix, axis=1, keepdims=True)
+
+    matched_words_set = set()
+
+    tokens = [t for t in doc if t.is_alpha and t.vector_norm != 0]
+    for i in range(0, len(tokens), batch_size):
+        batch_tokens = tokens[i:i+batch_size]
+        token_vectors = np.vstack([t.vector for t in batch_tokens])
+        token_vectors = token_vectors / np.linalg.norm(token_vectors, axis=1, keepdims=True)
+
+        # NumPy dot product (CPU)
+        sims = np.dot(token_vectors, vocab_matrix.T)
+
+        # Find matches above threshold
+        best_matches = np.where(sims > threshold)
         for _, vi in zip(*best_matches):
             matched_words_set.add(valid_vocab_words[int(vi)])
 

@@ -274,6 +274,15 @@ class VocabularyManager:
         Get vocabulary entries relevant to this chunk.
         
         Uses cosine similarity matching to find terms present in chunk.
+        Automatically selects GPU or CPU mode based on availability.
+        
+        Args:
+            chunk_text: Text to search for vocabulary terms
+            s_idx: Section index (for caching)
+            c_idx: Chunk index (for caching)
+            
+        Returns:
+            List of matched VocabEntry objects
         """
         cache_key = (s_idx, c_idx)
         
@@ -284,12 +293,29 @@ class VocabularyManager:
         if not config.ner_opt or not ner_module:
             return []
         
-        # Find matching terms using NER cosine similarity
-        matched = ner_module.find_matching_words_with_cosine_similarity(
-            chunk_text, 
-            self._vocab_to_ner_format(), 
-            config.source_lang
-        )
+        # Check if GPU is available and select appropriate function
+        use_gpu = False
+        try:
+            import torch
+            use_gpu = torch.cuda.is_available()
+        except ImportError:
+            use_gpu = False
+        
+        # Select matching function based on GPU availability
+        if use_gpu:
+            # GPU-accelerated version (faster)
+            matched = ner_module.find_matching_words_with_cosine_similarity(
+                chunk_text, 
+                self._vocab_to_ner_format(), 
+                config.source_lang
+            )
+        else:
+            # CPU-only version (slower but works everywhere)
+            matched = ner_module.find_matching_words_with_cosine_similarity_cpu(
+                chunk_text, 
+                self._vocab_to_ner_format(), 
+                config.source_lang
+            )
         
         # Convert to VocabEntry list
         entries = []
@@ -305,7 +331,8 @@ class VocabularyManager:
         self.matched_terms_cache[cache_key] = matched_keys
         
         if config.debug:
-            logger.debug(f"Chunk {s_idx}-{c_idx}: {len(entries)} vocab terms matched")
+            mode = "GPU" if use_gpu else "CPU"
+            logger.debug(f"Chunk {s_idx}-{c_idx} ({mode}): {len(entries)} vocab terms matched")
         
         return entries
     
