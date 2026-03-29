@@ -120,10 +120,17 @@ class TranslationEngine:
             (translated_text, synopsis)
         """
         try:
-            translation, synopsis = ta.translate(
-                config.source_lang, config.target_lang, source_text,
-                'xml', context, config.country, {},
-                temperature=config.temp_translate
+            # Note: rechunking is now handled inside ta.translate_chunk()
+            translation, synopsis = ta.translate_chunk(
+                source_lang=config.source_lang,
+                target_lang=config.target_lang,
+                source_text=source_text,
+                outline_text=context,
+                vocab_dict={},
+                country=config.country,
+                style='xml',
+                fast_mode=config.fast_trans,
+                depth=0  # Start at depth 0
             )
             
             if translation is None:
@@ -138,18 +145,21 @@ class TranslationEngine:
     def process_chunk_recursive(self, chunk: str, s_idx: int, c_idx: int, 
                                  g_id: int, context: str, depth: int = 0) -> tuple:
         """
-        Translate chunk with retry and rechunking on validation failure.
+        Translate chunk with XML validation.
+        
+        Note: Length-based rechunking is now handled inside ta.translate_chunk()
         
         - Translates plain text with XML tags
         - Post-processes XML via validation
-        - Splits chunk if length mismatch is high
+        - Retries on XML validation failure
         """
         source_text = chunk if isinstance(chunk, str) else str(chunk)
         source_len = len(source_text)
         
-        # Retry loop
+        # Retry loop for XML validation
         for attempt in range(3):
             try:
+                # Rechunking happens inside translate_chunk automatically
                 temp_content, synopsis = self.translate_chunk(source_text, context)
                 
                 if temp_content:
@@ -169,36 +179,18 @@ class TranslationEngine:
             final_content = temp_content if 'temp_content' in locals() else ""
             final_content = self._post_process_xml(source_text, final_content)
         
-        # Check for rechunking need
+        # Log length statistics (no rechunking here - done in translate_chunk)
         target_len = len(final_content)
         percent_diff = abs(target_len - source_len) / source_len * 100 if source_len > 0 else 0
         
         if config.debug:
             logger.debug(f"Chunk {g_id} (depth {depth}): {source_len} → {target_len} chars ({percent_diff:.1f}%)")
         
-        # Rechunking logic
-        MIN_CHUNK_SIZE = 1000
-        should_split = (
-            source_len >= MIN_CHUNK_SIZE and
-            depth < 3 and
-            percent_diff > config.length_check_threshold
-        )
-        
-        if should_split:
-            logger.info(f"Rechunking {g_id}: {percent_diff:.1f}% length difference")
-            
-            part1, part2 = ta.split_text_smartly(source_text)
-            
-            res1, syn1 = self.process_chunk_recursive(part1, s_idx, c_idx, g_id, context, depth + 1)
-            res2, syn2 = self.process_chunk_recursive(part2, s_idx, c_idx, g_id, context, depth + 1)
-            
-            return (res1 or "") + (res2 or ""), (syn1 or "") + " " + (syn2 or "")
-        
         # Ensure synopsis is set
-        if 'synopsis' not in dir():
+        if not synopsis:
             synopsis = ""
         
-        return final_content, synopsis if 'synopsis' in dir() else ""
+        return final_content, synopsis
 
     def _post_process_xml(self, source_text: str, translated_text: str) -> str:
         """
