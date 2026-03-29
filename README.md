@@ -50,9 +50,69 @@ COUNTRY=Россия
 # Processing
 MAX_LEN_CHUNK=8192
 LENGTH_CHECK_THRESHOLD=20       # Rechunk if length differs by >20%
-FAST_TRANS=false
+FAST_TRANS=false                # Fast translation mode (skip quality stages)
 DEBUG=off
 ```
+
+## ⚡ FAST_TRANS Mode
+
+### When to use `FAST_TRANS=true`:
+
+| Use Case | Recommended | Reason |
+|----------|-------------|--------|
+| **Draft translation** | ✅ **YES** | Fast, good enough for review |
+| **Technical docs** | ✅ **YES** | Less style-sensitive |
+| **Final publication** | ❌ No | Use full 5-stage pipeline |
+| **Literary translation** | ❌ No | Quality stages important |
+
+### What it does:
+
+**FAST_TRANS=false** (Standard, 5 stages):
+```
+Stage 1: INITIAL (Primary LLM)     → Translation
+Stage 2: REFLECTION (Secondary)    → Quality review
+Stage 3: IMPROVE (Secondary)       → Apply suggestions
+Stage 4: FINAL_EDIT (Secondary)    → Proofreading
+Stage 5: SYNOPSIS (Primary LLM)    → Summary
+```
+
+**FAST_TRANS=true** (Fast, 2 stages):
+```
+Stage 1: INITIAL (Primary LLM)     → Translation
+Stage 5: SYNOPSIS (Primary LLM)    → Summary
+(Stages 2-4 skipped)
+```
+
+### Performance comparison:
+
+| Mode | Stages | LLM Calls | Speed | Quality |
+|------|--------|-----------|-------|---------|
+| **Standard** | 5 | 5 (2 Primary + 3 Secondary) | 1.0x | High |
+| **FAST_TRANS** | 2 | 2 (2 Primary only) | ~2.5x faster | Medium |
+
+### Configuration:
+
+```bash
+# Fast mode - Primary LLM only, no iterative improvement
+FAST_TRANS=true
+
+# Standard mode - Full 5-stage pipeline
+FAST_TRANS=false
+```
+
+### Use cases:
+
+**FAST_TRANS=true:**
+- Quick drafts for review
+- Internal documentation
+- Technical manuals
+- Content where speed > style
+
+**FAST_TRANS=false:**
+- Literary translation
+- Published books
+- Style-sensitive content
+- Final versions
 
 ## 🔧 sys_not_promt Mode
 
