@@ -12,23 +12,23 @@
 
 ```
 # Vocabulary for BookName
-# Format: source = target | category | gender | notes
+# Format: source = target, category, gender, notes
 
 # Characters
-Alice = Алиса | PERSON | she | Main character, curious girl
-Mad Hatter = Шляпный Болван | PERSON | he | Eccentric tea party host
-Cheshire Cat = Чеширский Кот | PERSON | it | Mysterious, grinning cat
+Alice = Алиса, PERSON, she, Main character, curious girl
+Mad Hatter = Шляпный Болван, PERSON, he, Eccentric tea party host
+Cheshire Cat = Чеширский Кот, PERSON, it, Mysterious, grinning cat
 
 # Locations
-Wonderland = Страна Чудес | LOC | | Magical world setting
-Rabbit Hole = Кроличья Нора | LOC | | Entrance to Wonderland
+Wonderland = Страна Чудес, LOC, , 
+Rabbit Hole = Кроличья Нора, LOC, , 
 
 # Organizations
-Queen's Court = Двор Королевы | ORG | | Where trials happen
+Queen's Court = Двор Королевы, ORG, , 
 
 # Other terms
-Drink Me = Выпей меня | ITEM | | Potion label
-Eat Me = Съешь меня | ITEM | | Cake label
+Drink Me = Выпей меня, TERM, , 
+Eat Me = Съешь меня, TERM, , 
 ```
 
 ## Структура записи
@@ -37,39 +37,45 @@ Eat Me = Съешь меня | ITEM | | Cake label
 |------|---------------|----------|--------|
 | **source** | ✅ | Термин в исходном языке | `Alice` |
 | **target** | ✅ | Перевод термина | `Алиса` |
-| **category** | ⚪ | Тип сущности | `PERSON`, `LOC`, `ORG`, `ITEM` |
+| **category** | ⚪ | Тип сущности | `PERSON`, `LOC`, `ORG`, `TERM` |
 | **gender** | ⚪ | Гендер для персонажей | `he`, `she`, `it`, `they` |
 | **notes** | ⚪ | Комментарии пользователя | `Main character` |
 
 ### Разделитель
 
-Используйте `|` для разделения полей после перевода:
+Используйте запятую `,` для разделения полей:
 
 ```
-source = target | category | gender | notes
+source = target, category, gender, notes
+```
+
+Пустые поля можно оставлять пустыми:
+```
+Alice = Алиса, PERSON, she, 
+Wonderland = Страна Чудес, LOC, , 
 ```
 
 ### Legacy формат
 
-Старый формат без расширенных полей также поддерживается:
+Старый формат с `|` также поддерживается:
 
 ```
-Alice = Алиса
-Wonderland = Страна Чудес
+Alice = Алиса | PERSON | she | 
+Wonderland = Страна Чудес | LOC | | 
 ```
 
 ## Категории (category)
 
 | Категория | Описание | Примеры |
 |-----------|----------|---------|
-| **PERSON** | Люди, персонажи | `Alice = Алиса | PERSON | she` |
-| **LOC** | Локации, места | `Wonderland = Страна Чудес | LOC` |
-| **ORG** | Организации, группы | `Queen's Court = Двор Королевы | ORG` |
-| **ITEM** | Объекты, артефакты | `Magic Sword = Магический Меч | ITEM` |
-| **TERM** | Специфические термины | `Portals = Порталы | TERM` |
-| **TITLE** | Заголовки, титулы | `Queen = Королева | TITLE` |
+| **PERSON** | Люди, персонажи | `Alice = Алиса, PERSON, she` |
+| **LOC** | Локации, места | `Wonderland = Страна Чудес, LOC` |
+| **ORG** | Организации, группы | `Queen's Court = Двор Королевы, ORG` |
+| **TERM** | Специфические термины | `Portals = Порталы, TERM` |
+| **TITLE** | Заголовки, титулы | `Queen = Королева, TITLE` |
+| **OTHER** | Прочее (по умолчанию) | `item = предмет, OTHER` |
 
-Если category не указана, по умолчанию считается `PERSON` для_gender tracking.
+Если category не указана, по умолчанию считается `OTHER`.
 
 ## Gender (гендер)
 
@@ -92,6 +98,17 @@ Gender используется для:
 1. **Из текста**: LLM может推断 gender по местоимениям рядом с именем
 2. **Из словаря**: Пользователь указывает вручную в .dic файле
 3. **По умолчанию**: PERSON без gender → не отслеживается
+
+### Формат записи с gender
+
+```
+# С gender
+Alice = Алиса, PERSON, she, 
+Bob = Боб, PERSON, he, 
+
+# Без gender
+Wonderland = Страна Чудес, LOC, , 
+```
 
 ## Workflow работы со словарём
 

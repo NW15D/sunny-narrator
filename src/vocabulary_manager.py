@@ -455,7 +455,7 @@ class VocabularyManager:
         Format for Hunyuan MT model.
         
         Based on HY-MT1.5 documentation, Hunyuan supports terminology intervention.
-        Format: structured list with source=target pairs.
+        Format: comma-separated list with source=target pairs.
         """
         if not entries:
             return ""
@@ -473,29 +473,42 @@ class VocabularyManager:
         """
         Format for Gemma/TranslateGemma model.
         
-        Uses structured format with language codes.
+        Uses comma-separated format.
         """
         if not entries:
             return ""
         
         lines = []
         for entry in entries:
-            lines.append(f"  {entry.source} → {entry.target}")
+            if entry.category:
+                lines.append(f"  {entry.source} → {entry.target}, {entry.category}")
+            else:
+                lines.append(f"  {entry.source} → {entry.target}")
         
         return "\n".join(lines)
     
     def _format_standard(self, entries: List[VocabEntry]) -> str:
-        """Standard format for most models."""
+        """
+        Standard format for most models.
+        Uses comma-separated format: source = target, category, gender, notes
+        """
         if not entries:
             return ""
         
         lines = []
         for entry in entries:
             line = f"{entry.source} = {entry.target}"
+            parts = []
             if entry.category:
-                line += f" ({entry.category})"
+                parts.append(entry.category)
             if entry.gender:
-                line += f" [{entry.gender}]"
+                parts.append(entry.gender)
+            if entry.notes:
+                parts.append(entry.notes)
+            
+            if parts:
+                line += ", " + ", ".join(parts)
+            
             lines.append(line)
         
         return "\n".join(lines)
