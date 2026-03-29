@@ -1,4 +1,5 @@
 from collections import Counter
+import re
 import spacy
 import spacy.cli
 import torch
@@ -26,7 +27,30 @@ def load_spacy_model(model_name):
             print(f"Model {model_name} downloaded. Loading...")
         return spacy.load(model_name)
 
-def make_vocab(text, stop_words=None):
+def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_word_length=5):
+    """
+    Extract named entities and common words from text using NER.
+    
+    This function:
+    1. Finds named entities (PERSON, LOC, ORG, GPE) with count >= min_count_ner
+    2. Finds common words with count >= min_count_word and length >= min_word_length
+    3. Excludes stop words and XML tags
+    4. Merges overlapping entities (keeps longest)
+    
+    Args:
+        text: Source text to analyze
+        stop_words: Set of stop words to exclude (default: common English + XML tags)
+        min_count_ner: Minimum occurrences for NER entities (default: 5)
+        min_count_word: Minimum occurrences for common words (default: 10)
+        min_word_length: Minimum word length for common words (default: 5)
+        
+    Returns:
+        String with extracted terms (one per line), or None on error
+        
+    Format:
+        Entity (CATEGORY)
+        common_word
+    """
     if config.debug:
         print("Starting Named Entity Recognition")
     if not text:
@@ -36,7 +60,10 @@ def make_vocab(text, stop_words=None):
 
     # Define default stop words or use user provided
     default_stop_words = set([
-        "the", "and", "p", "emphasis", "section", "first", "second", "one", "two"
+        "the", "and", "p", "emphasis", "section", "first", "second", "one", "two",
+        "chapter", "part", "book", "volume", "title", "author", "name", "said",
+        "like", "just", "know", "think", "see", "look", "come", "take", "give",
+        "make", "find", "tell", "ask", "work", "seem", "feel", "try", "leave", "call"
     ])
 
     if stop_words is None:
@@ -89,11 +116,11 @@ def make_vocab(text, stop_words=None):
     if config.debug:
         print(f"Unique entities before filtering by count: {len(unique_ents)}")
 
-    # Filter out entities with less than 5 occurrences
-    unique_ents = [ent for ent in unique_ents if ent[3] >= 5]
+    # Filter out entities with less than min_count_ner occurrences
+    unique_ents = [ent for ent in unique_ents if ent[3] >= min_count_ner]
 
     if config.debug:
-        print(f"Unique entities after filtering by count: {len(unique_ents)}")
+        print(f"Unique entities after filtering by count (min={min_count_ner}): {len(unique_ents)}")
 
     # Merge entities that contain substrings of other entities
     merged_ents = []
@@ -120,18 +147,18 @@ def make_vocab(text, stop_words=None):
     if config.debug:
         print(f"Unique entities after merging: {len(final_merged_ents)}")
 
-    # Find most common words with count > 10 and length > 5
+    # Find most common words with count > min_count_word and length >= min_word_length
     word_counts = Counter(
         token.text for token in doc if token.is_alpha and token.text not in stop_words)
 
-    # Filter words with count > 4 and length > 5
-    filtered_words_with_counts = [(word, count) for word, count in word_counts.items() if count > 10 and len(word) > 5]
+    # Filter words with count > min_count_word and length >= min_word_length
+    filtered_words_with_counts = [(word, count) for word, count in word_counts.items() if count > min_count_word and len(word) >= min_word_length]
 
     sorted_common_words_with_counts = sorted(filtered_words_with_counts, key=lambda x: x[1], reverse=True)
     top_common_words = [word for word, count in sorted_common_words_with_counts]
 
     if config.debug:
-        print(f"Top common words with counts: {sorted_common_words_with_counts}")
+        print(f"Top common words with counts (min={min_count_word}, len>={min_word_length}): {sorted_common_words_with_counts[:20]}")
 
     # Normalize final_merged_ents
     seen_entities = set()
@@ -165,6 +192,53 @@ def make_vocab(text, stop_words=None):
     if config.debug:
         print("Finished processing.")
     return '\n'.join(result_list) + '\n'
+
+
+def create_dictionary_from_text(text, stop_words=None, min_count_ner=5, min_count_word=10, min_word_length=5):
+    """
+    Create dictionary from text using NER.
+    
+    Similar to make_vocab() but returns structured data for .dic file format.
+    
+    Args:
+        text: Source text to analyze
+        stop_words: Set of stop words to exclude
+        min_count_ner: Minimum occurrences for NER entities
+        min_count_word: Minimum occurrences for common words
+        min_word_length: Minimum word length for common words
+        
+    Returns:
+        List of tuples: [(source_term, category, notes), ...]
+        - For NER entities: ("Alice", "PERSON", "")
+        - For common words: ("wonderland", "TERM", "frequent word")
+    """
+    if not text:
+        return []
+    
+    # Use make_vocab to get extracted terms
+    extracted = make_vocab(text, stop_words, min_count_ner, min_count_word, min_word_length)
+    
+    if not extracted:
+        return []
+    
+    # Parse extracted terms into structured format
+    result = []
+    for line in extracted.strip().split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+        
+        # Check if it's an entity with category: "Term (CATEGORY)"
+        match = re.match(r'^(.+?)\s*\(([^)]+)\)$', line)
+        if match:
+            term = match.group(1).strip()
+            category = match.group(2).strip()
+            result.append((term, category, ""))
+        else:
+            # Common word without category
+            result.append((line, "TERM", "frequent word"))
+    
+    return result
 
 
 def find_matching_words_with_cosine_similarity(text, vocab, lng, threshold=0.8, batch_size=1024):
