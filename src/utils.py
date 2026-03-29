@@ -227,13 +227,49 @@ class LLMService:
         else:
             return self._secondary_client, config.model_proofread, config.temp_proofread
     
+    def get_temperature_for_stage(self, stage: TranslationStage, role: LLMRole) -> float:
+        """
+        Get temperature for specific pipeline stage.
+        
+        Stage-specific temperatures provide better quality than single temperature:
+        - INITIAL: Low temp (0.01) for consistent translation
+        - REFLECTION: Medium temp (0.4) for creative analysis
+        - IMPROVE: Medium temp (0.4) for flexible editing
+        - FINAL_EDIT: Low temp (0.15) for precise proofreading
+        - SYNOPSIS: Low temp (0.15) for accurate summary
+        
+        Args:
+            stage: TranslationStage enum
+            role: LLMRole (PRIMARY or SECONDARY)
+            
+        Returns:
+            Temperature value for the stage
+        """
+        if stage == TranslationStage.INITIAL:
+            return config.temp_initial
+        elif stage == TranslationStage.REFLECTION:
+            return config.temp_reflection
+        elif stage == TranslationStage.IMPROVE:
+            return config.temp_improve
+        elif stage == TranslationStage.FINAL:
+            return config.temp_final_edit
+        elif stage == TranslationStage.SYNOPSIS:
+            return config.temp_synopsis
+        else:
+            # Fallback to role-based default
+            if role == LLMRole.PRIMARY:
+                return config.temp_translate
+            else:
+                return config.temp_proofread
+    
     def complete(
         self,
         role: LLMRole,
         system_prompt: str,
         user_prompt: str,
         max_tokens: int = 8192,
-        json_mode: bool = False
+        json_mode: bool = False,
+        stage: TranslationStage = None  # NEW: for stage-specific temperature
     ) -> str:
         """
         Execute LLM completion with role-appropriate client.
@@ -248,11 +284,16 @@ class LLMService:
             user_prompt: User message content
             max_tokens: Maximum tokens to generate
             json_mode: Enable JSON response format
+            stage: TranslationStage for temperature selection (optional)
             
         Returns:
             Generated text from LLM
         """
         client, model, temp = self.get_client(role)
+        
+        # Use stage-specific temperature if provided
+        if stage is not None:
+            temp = self.get_temperature_for_stage(stage, role)
         
         # Determine if we need to merge system prompt into user prompt
         # Models that DON'T support system prompts: Gemma 2, Gemma 3
@@ -286,7 +327,7 @@ class LLMService:
             comp_kwargs["response_format"] = {"type": "json_object"}
         
         if config.debug:
-            logger.debug(f"LLM Request [{role.value}]: {model}, {len(user_prompt)} chars, sys_not_promt={use_sys_not_promt}")
+            logger.debug(f"LLM Request [{role.value}]: {model}, {len(user_prompt)} chars, temp={temp:.2f}, sys_not_promt={use_sys_not_promt}")
         
         response = client.chat.completions.create(**comp_kwargs)
         result = response.choices[0].message.content
@@ -345,7 +386,8 @@ class TranslationPipeline:
             role=LLMRole.PRIMARY,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
-            max_tokens=config.max_len_chunk * 4
+            max_tokens=config.max_len_chunk * 4,
+            stage=TranslationStage.INITIAL  # Stage-specific temperature
         )
         
         text = remove_tags(text)
@@ -378,7 +420,8 @@ class TranslationPipeline:
             role=LLMRole.PRIMARY,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
-            max_tokens=160
+            max_tokens=160,
+            stage=TranslationStage.SYNOPSIS  # Stage-specific temperature
         )
         
         text = remove_tags(text)
@@ -414,7 +457,8 @@ class TranslationPipeline:
             role=LLMRole.SECONDARY,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
-            max_tokens=config.max_len_chunk
+            max_tokens=config.max_len_chunk,
+            stage=TranslationStage.REFLECTION  # Stage-specific temperature
         )
         
         return TranslationResult(
@@ -446,7 +490,8 @@ class TranslationPipeline:
             role=LLMRole.SECONDARY,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
-            max_tokens=config.max_len_chunk * 4
+            max_tokens=config.max_len_chunk * 4,
+            stage=TranslationStage.IMPROVE  # Stage-specific temperature
         )
         
         text = remove_tags(text)
@@ -482,7 +527,8 @@ class TranslationPipeline:
             role=LLMRole.SECONDARY,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
-            max_tokens=config.max_len_chunk * 4
+            max_tokens=config.max_len_chunk * 4,
+            stage=TranslationStage.FINAL  # Stage-specific temperature
         )
         
         text = remove_tags(text)

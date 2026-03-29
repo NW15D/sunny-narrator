@@ -26,14 +26,21 @@ MODEL_TRANSLATE=google/gemma-2-27b-it
 API_BASE_TRANSLATE=http://localhost:11434/v1
 API_KEY_TRANSLATE=your-key
 S_PROMT_TRANSLATE=true          # ⚠️ true для Gemma 2/3!
-TEMP_TRANSLATE=0.01
+TEMP_TRANSLATE=0.01             # Base temperature (fallback)
 
 # Secondary LLM (Proofreading)
 MODEL_PROOFREAD=Mistral
 API_BASE_PROOFREAD=http://localhost:11434/v1
 API_KEY_PROOFREAD=your-key
 S_PROMT_PROOFREAD=false         # false для Mistral/Llama
-TEMP_PROOFREAD=0.7
+TEMP_PROOFREAD=0.7              # Base temperature (fallback)
+
+# Stage-Specific Temperatures (NEW!)
+TEMP_INITIAL=0.01               # Stage 1: Translation consistency
+TEMP_REFLECTION=0.4             # Stage 2: Analysis creativity
+TEMP_IMPROVE=0.4                # Stage 3: Editing flexibility
+TEMP_FINAL_EDIT=0.15            # Stage 4: Proofreading precision
+TEMP_SYNOPSIS=0.15              # Stage 5: Summary accuracy
 
 # Languages
 SOURCE_LANG=english
@@ -42,6 +49,7 @@ COUNTRY=Россия
 
 # Processing
 MAX_LEN_CHUNK=8192
+LENGTH_CHECK_THRESHOLD=20       # Rechunk if length differs by >20%
 FAST_TRANS=false
 DEBUG=off
 ```
