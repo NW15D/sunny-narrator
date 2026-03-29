@@ -18,6 +18,18 @@ class Config:
         self.temp_translate = float(os.getenv('TEMP_TRANSLATE', os.getenv('TEMP', 0.01)))
         self.timeout_translate = int(os.getenv('TIMEOUT_TRANSLATE', os.getenv('TIMEOUT', 6000)))
         self.nothink_translate = bool(os.getenv('NOTHINK_TRANSLATE', os.getenv('NOTHINK2')))
+        
+        # Stage-specific temperatures (override general temp_translate/temp_proofread)
+        # Stage 1: INITIAL translation
+        self.temp_initial = float(os.getenv('TEMP_INITIAL', self.temp_translate))
+        # Stage 2: REFLECTION (quality review)
+        self.temp_reflection = float(os.getenv('TEMP_REFLECTION', 0.4))
+        # Stage 3: IMPROVE (apply suggestions)
+        self.temp_improve = float(os.getenv('TEMP_IMPROVE', 0.4))
+        # Stage 4: FINAL_EDIT (proofreading)
+        self.temp_final_edit = float(os.getenv('TEMP_FINAL_EDIT', 0.15))
+        # Stage 5: SYNOPSIS
+        self.temp_synopsis = float(os.getenv('TEMP_SYNOPSIS', 0.15))
 
         # Proofread API (Secondary/Small model)
         self.api_key_proofread = os.getenv('API_KEY_PROOFREAD', os.getenv('API_KEY2', 'a132b20c-96be-467f-a15a-ed08aed67345'))
