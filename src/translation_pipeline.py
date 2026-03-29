@@ -20,8 +20,7 @@ import re
 from src.config import Config
 from src.schemas.translation import (
     TranslationStage, LLMRole, TranslationContext, 
-    TranslationResult, PipelineState,
-    ReflectionPrompt, ImprovePrompt
+    TranslationResult, PipelineState
 )
 
 config = Config()
@@ -121,8 +120,8 @@ class TranslationPipeline:
     """Main translation pipeline implementing dual-LLM workflow."""
     
     def __init__(self):
-        self.reflection_prompt = ReflectionPrompt()
-        self.improve_prompt = ImprovePrompt()
+        # Prompts are loaded from prompts.json via config.get_prompt()
+        pass
     
     @log_stage
     def initial_translation(
@@ -190,11 +189,19 @@ class TranslationPipeline:
         """
         Generate synopsis using Primary LLM.
         """
-        user_prompt = config.get_prompt(
-            "synopsis", "user",
-            target_lang=context.target_lang,
-            final_translation=translation
-        )
+        # Use Hunyuan-specific prompt if model is Hunyuan
+        if config.model_translate == "Hunyuan":
+            user_prompt = config.get_prompt(
+                "synopsis", "user_hunyuan",
+                target_lang=context.target_lang,
+                final_translation=translation
+            )
+        else:
+            user_prompt = config.get_prompt(
+                "synopsis", "user",
+                target_lang=context.target_lang,
+                final_translation=translation
+            )
         system_prompt = config.get_prompt("synopsis", "system")
         
         text = llm_service.complete(
@@ -221,8 +228,12 @@ class TranslationPipeline:
         """
         Stage 3: Secondary LLM reflection with literary focus.
         Merged: quality check + nuances + suggestions.
+        Note: Secondary LLM uses universal prompts (no Hunyuan-specific optimizations).
         """
-        user_prompt = self.reflection_prompt.get_user_template(context.style).format(
+        # Load prompts from external file (prompts.json)
+        # Use style-specific template (xml/text)
+        user_prompt = config.get_prompt(
+            "reflection", f"user_{context.style}",
             source_lang=context.source_lang,
             target_lang=context.target_lang,
             source_text=context.source_text,
@@ -231,7 +242,7 @@ class TranslationPipeline:
             country=context.country
         )
         
-        system_prompt = self.reflection_prompt.get_system().format(
+        system_prompt = config.get_prompt("reflection", "system",
             target_lang=context.target_lang,
             country=context.country
         )
@@ -259,8 +270,12 @@ class TranslationPipeline:
         """
         Stage 4: Secondary LLM improvement.
         Apply reflection suggestions + preserve style + obscene language.
+        Note: Secondary LLM uses universal prompts (no Hunyuan-specific optimizations).
         """
-        user_prompt = self.improve_prompt.get_user_template(context.style).format(
+        # Load prompts from external file (prompts.json)
+        # Use style-specific template (xml/text)
+        user_prompt = config.get_prompt(
+            "improve", f"user_{context.style}",
             source_lang=context.source_lang,
             target_lang=context.target_lang,
             country=context.country,
@@ -270,7 +285,7 @@ class TranslationPipeline:
             vocab_dict=context.vocab_dict
         )
         
-        system_prompt = self.improve_prompt.get_system().format(
+        system_prompt = config.get_prompt("improve", "system",
             target_lang=context.target_lang,
             country=context.country
         )
