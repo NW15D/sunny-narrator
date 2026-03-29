@@ -18,10 +18,77 @@ from typing import Optional, Callable
 import re
 
 from src.config import Config
-from src.schemas.translation import (
-    TranslationStage, LLMRole, TranslationContext, 
-    TranslationResult, PipelineState
-)
+# Import schema classes directly to avoid circular import
+# (utils.py imports from this file, so we can't import from utils)
+from dataclasses import dataclass, field
+from typing import Optional, List, Dict, Any
+from enum import Enum
+
+
+class TranslationStage(Enum):
+    """Stages in the translation pipeline."""
+    INITIAL = "initial"
+    SYNOPSIS = "synopsis"
+    REFLECTION = "reflection"
+    IMPROVE = "improve"
+    FINAL = "final"
+
+
+class LLMRole(Enum):
+    """LLM roles in the translation workflow."""
+    PRIMARY = "primary"
+    SECONDARY = "secondary"
+
+
+@dataclass
+class TranslationContext:
+    """Context passed through the translation pipeline."""
+    source_lang: str
+    target_lang: str
+    source_text: str
+    outline_text: str = ""
+    vocab_dict: Dict[str, str] = field(default_factory=dict)
+    country: str = ""
+    style: str = "text"
+
+
+@dataclass
+class TranslationResult:
+    """Result from a single translation stage."""
+    stage: TranslationStage
+    llm_role: LLMRole
+    text: str
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    processing_time: float = 0.0
+    tokens_used: int = 0
+
+
+@dataclass
+class PipelineState:
+    """Complete state of the translation pipeline."""
+    context: TranslationContext
+    initial_translation: Optional[str] = None
+    synopsis: Optional[str] = None
+    reflection: Optional[str] = None
+    final_translation: Optional[str] = None
+    stage_results: List[TranslationResult] = field(default_factory=list)
+    start_time: float = 0.0
+    total_tokens: int = 0
+    
+    def add_result(self, result: TranslationResult):
+        """Add a stage result and update state."""
+        self.stage_results.append(result)
+        self.total_tokens += result.tokens_used
+        if result.stage == TranslationStage.INITIAL:
+            self.initial_translation = result.text
+        elif result.stage == TranslationStage.SYNOPSIS:
+            self.synopsis = result.text
+        elif result.stage == TranslationStage.REFLECTION:
+            self.reflection = result.text
+        elif result.stage == TranslationStage.IMPROVE:
+            self.final_translation = result.text
+        elif result.stage == TranslationStage.FINAL:
+            self.final_translation = result.text
 
 config = Config()
 logger = logging.getLogger(__name__)
