@@ -173,7 +173,7 @@ def log_entry(func):
 
 
 # Constants
-MAX_TOKENS_PER_CHUNK = config.max_len_chunk * 4
+MAX_TOKENS_PER_CHUNK = config.max_len_chunk * 2  # 2x chunk size for translation overhead
 
 # Language mapping for models requiring ISO codes
 LANG_MAP = {
@@ -395,7 +395,7 @@ class TranslationPipeline:
             role=LLMRole.PRIMARY,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
-            max_tokens=config.max_len_chunk * 4,
+            max_tokens=MAX_TOKENS_PER_CHUNK,
             stage=TranslationStage.INITIAL  # Stage-specific temperature
         )
         
@@ -499,7 +499,7 @@ class TranslationPipeline:
             role=LLMRole.SECONDARY,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
-            max_tokens=config.max_len_chunk * 4,
+            max_tokens=MAX_TOKENS_PER_CHUNK,
             stage=TranslationStage.IMPROVE  # Stage-specific temperature
         )
         
@@ -536,7 +536,7 @@ class TranslationPipeline:
             role=LLMRole.SECONDARY,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
-            max_tokens=config.max_len_chunk * 4,
+            max_tokens=MAX_TOKENS_PER_CHUNK,
             stage=TranslationStage.FINAL  # Stage-specific temperature
         )
         
