@@ -410,7 +410,7 @@ class TranslationPipeline:
     
     @log_entry
     def generate_synopsis(self, context: TranslationContext, translation: str) -> TranslationResult:
-        """Stage 5: Generate synopsis from FINAL translation (moved to end)."""
+        """Stage 5: Generate synopsis from FINAL translation using Secondary LLM."""
         if config.model_translate == "Hunyuan":
             user_prompt = config.get_prompt(
                 "synopsis", "user_hunyuan",
@@ -426,7 +426,7 @@ class TranslationPipeline:
         system_prompt = config.get_prompt("synopsis", "system")
         
         text = llm_service.complete(
-            role=LLMRole.PRIMARY,
+            role=LLMRole.SECONDARY,  # Changed from PRIMARY to SECONDARY
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             max_tokens=160,
@@ -437,7 +437,7 @@ class TranslationPipeline:
         
         return TranslationResult(
             stage=TranslationStage.SYNOPSIS,
-            llm_role=LLMRole.PRIMARY,
+            llm_role=LLMRole.SECONDARY,  # Changed from PRIMARY to SECONDARY
             text=text
         )
     

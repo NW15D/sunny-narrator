@@ -70,7 +70,7 @@ DEBUG=off
 2. **REFLECTION** (Secondary, temp=0.4) — Revisão de qualidade
 3. **IMPROVE** (Secondary, temp=0.4) — Aplicar sugestões
 4. **FINAL_EDIT** (Secondary, temp=0.15) — Revisão final
-5. **SYNOPSIS** (Primary, temp=0.15) — Sinopse para contexto
+5. **SYNOPSIS** (Secondary, temp=0.15) — Sinopse para contexto
 
 ## 📁 Formatos
 

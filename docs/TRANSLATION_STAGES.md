@@ -293,7 +293,7 @@ Task: Final proofreading - output corrected translation ONLY
 
 ## 📖 Stage 5: SYNOPSIS (Синопсис)
 
-**LLM:** Primary (Hunyuan/Gemma/etc.)  
+**LLM:** Secondary (Mistral/Qwen/etc.)  
 **Температура:** 0.15 (точность)  
 **Выход:** Краткий синопсис (80 слов)
 
@@ -301,7 +301,7 @@ Task: Final proofreading - output corrected translation ONLY
 
 **System:**
 ```
-You are an expert summarizer. Create concise, informative synopses.
+You are an expert summarizer. Create concise, informative synopses for translation context.
 ```
 
 **User:**
@@ -370,7 +370,7 @@ Create a synopsis in {target_lang} (max 80 words). Requirements:
 | **2. REFLECTION** | Secondary | 0.4 | source, translation | suggestions (list) | reflection |
 | **3. IMPROVE** | Secondary | 0.4 | translation, suggestions | improved_translation | improve |
 | **4. FINAL_EDIT** | Secondary | 0.15 | improved_translation, source | final_translation | editor |
-| **5. SYNOPSIS** | Primary | 0.15 | final_translation | synopsis | synopsis |
+| **5. SYNOPSIS** | **Secondary** | 0.15 | final_translation | synopsis | synopsis |
 
 ---
 

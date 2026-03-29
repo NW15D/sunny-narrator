@@ -70,7 +70,7 @@ DEBUG=off
 2. **REFLECTION** (Secondary, temp=0.4) — 质量审查
 3. **IMPROVE** (Secondary, temp=0.4) — 应用建议
 4. **FINAL_EDIT** (Secondary, temp=0.15) — 最终校对
-5. **SYNOPSIS** (Primary, temp=0.15) — 上下文摘要
+5. **SYNOPSIS** (Secondary, temp=0.15) — 上下文摘要
 
 ## 📁 格式
 

@@ -71,7 +71,7 @@ DEBUG=off
 2. **REFLECTION** (Secondary, temp=0.4) — Анализ замечаний
 3. **IMPROVE** (Secondary, temp=0.4) — Исправление по замечаниям
 4. **FINAL_EDIT** (Secondary, temp=0.15) — Финальная вычитка
-5. **SYNOPSIS** (Primary, temp=0.15) — Синопсис для контекста
+5. **SYNOPSIS** (Secondary, temp=0.15) — Синопсис для контекста
 
 ## 📁 Форматы
 

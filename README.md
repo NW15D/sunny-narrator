@@ -69,17 +69,17 @@ DEBUG=off
 
 **FAST_TRANS=false** (Standard, 5 stages):
 ```
-Stage 1: INITIAL (Primary LLM)     → Translation
-Stage 2: REFLECTION (Secondary)    → Quality review
-Stage 3: IMPROVE (Secondary)       → Apply suggestions
-Stage 4: FINAL_EDIT (Secondary)    → Proofreading
-Stage 5: SYNOPSIS (Primary LLM)    → Summary
+Stage 1: INITIAL (Primary LLM)      → Translation
+Stage 2: REFLECTION (Secondary)     → Quality review
+Stage 3: IMPROVE (Secondary)        → Apply suggestions
+Stage 4: FINAL_EDIT (Secondary)     → Proofreading
+Stage 5: SYNOPSIS (Secondary LLM)   → Summary
 ```
 
 **FAST_TRANS=true** (Fast, 2 stages):
 ```
-Stage 1: INITIAL (Primary LLM)     → Translation
-Stage 5: SYNOPSIS (Primary LLM)    → Summary
+Stage 1: INITIAL (Primary LLM)      → Translation
+Stage 5: SYNOPSIS (Secondary LLM)   → Summary
 (Stages 2-4 skipped)
 ```
 
@@ -87,8 +87,8 @@ Stage 5: SYNOPSIS (Primary LLM)    → Summary
 
 | Mode | Stages | LLM Calls | Speed | Quality |
 |------|--------|-----------|-------|---------|
-| **Standard** | 5 | 5 (2 Primary + 3 Secondary) | 1.0x | High |
-| **FAST_TRANS** | 2 | 2 (2 Primary only) | ~2.5x faster | Medium |
+| **Standard** | 5 | 5 (1 Primary + 4 Secondary) | 1.0x | High |
+| **FAST_TRANS** | 2 | 2 (1 Primary + 1 Secondary) | ~2.5x faster | Medium |
 
 ### Configuration:
 
