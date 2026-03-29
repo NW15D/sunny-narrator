@@ -36,11 +36,11 @@ S_PROMT_PROOFREAD=false
 TEMP_PROOFREAD=0.7
 
 # Температуры по стадиям
-TEMP_INITIAL=0.01               # Стадия 1: Консистентность
-TEMP_REFLECTION=0.4             # Стадия 2: Анализ
-TEMP_IMPROVE=0.4                # Стадия 3: Редактирование
-TEMP_FINAL_EDIT=0.15            # Стадия 4: Вычитка
-TEMP_SYNOPSIS=0.15              # Стадия 5: Синопсис
+TEMP_INITIAL=0.01               # Стадия 1: Primary LLM - Перевод
+TEMP_REFLECTION=0.4             # Стадия 2: Secondary LLM - Анализ
+TEMP_IMPROVE=0.4                # Стадия 3: Secondary LLM - Редактирование
+TEMP_FINAL_EDIT=0.15            # Стадия 4: Secondary LLM - Вычитка
+TEMP_SYNOPSIS=0.15              # Стадия 5: Secondary LLM - Синопсис
 
 # Языки
 SOURCE_LANG=english
