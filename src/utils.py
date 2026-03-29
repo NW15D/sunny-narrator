@@ -118,31 +118,37 @@ class PipelineState:
             self.final_translation = result.text
 
 
-# Workflow definition (merged reflection approach)
+# Workflow definition (5 stages - NEW ORDER)
 TRANSLATION_WORKFLOW = [
     {
         "stage": TranslationStage.INITIAL,
         "llm_role": LLMRole.PRIMARY,
         "function": "initial_translation",
-        "description": "Primary translation with dictionary and synopsis"
-    },
-    {
-        "stage": TranslationStage.SYNOPSIS,
-        "llm_role": LLMRole.PRIMARY,
-        "function": "generate_synopsis",
-        "description": "Summary for next chunk context"
+        "description": "Primary translation with dictionary and synopsis context"
     },
     {
         "stage": TranslationStage.REFLECTION,
         "llm_role": LLMRole.SECONDARY,
         "function": "reflection",
-        "description": "Quality + nuances + suggestions (merged)"
+        "description": "Quality review + suggestions (country-aware)"
     },
     {
         "stage": TranslationStage.IMPROVE,
         "llm_role": LLMRole.SECONDARY,
         "function": "improve_translation",
-        "description": "Apply reflection suggestions + preserve style"
+        "description": "Apply reflection suggestions"
+    },
+    {
+        "stage": TranslationStage.FINAL,
+        "llm_role": LLMRole.SECONDARY,
+        "function": "final_edit",
+        "description": "Final proofreading against original (XML tag restoration)"
+    },
+    {
+        "stage": TranslationStage.SYNOPSIS,
+        "llm_role": LLMRole.PRIMARY,
+        "function": "generate_synopsis",
+        "description": "Summary from final translation (for next chunk context)"
     },
 ]
 
@@ -415,10 +421,52 @@ class TranslationPipeline:
             text=text
         )
     
+    @log_entry
+    def final_edit(self, context: TranslationContext, translation: str) -> TranslationResult:
+        """Stage 5: Final editing/proofreading - compare with original and fix XML tags."""
+        user_prompt = config.get_prompt(
+            "editor", f"user_{context.style}",
+            source_lang=context.source_lang,
+            target_lang=context.target_lang,
+            country=context.country,
+            source_text=context.source_text,
+            translation=translation
+        )
+        
+        system_prompt = config.get_prompt("editor", "system",
+            target_lang=context.target_lang,
+            country=context.country
+        )
+        
+        text = llm_service.complete(
+            role=LLMRole.SECONDARY,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_tokens=config.max_len_chunk * 4
+        )
+        
+        text = remove_tags(text)
+        
+        return TranslationResult(
+            stage=TranslationStage.FINAL,
+            llm_role=LLMRole.SECONDARY,
+            text=text,
+            metadata={"stage": "final_edit", "compared_with_original": True}
+        )
+    
     def execute(self, source_lang: str, target_lang: str, source_text: str,
                 outline_text: str, vocab_dict: dict, country: str,
                 style: str = "text", fast_mode: bool = False) -> PipelineState:
-        """Execute the complete translation pipeline."""
+        """
+        Execute the complete translation pipeline.
+        
+        NEW ORDER (5 stages):
+        1. INITIAL - Primary LLM translation
+        2. REFLECTION - Secondary LLM quality review
+        3. IMPROVE - Apply reflection suggestions
+        4. FINAL_EDIT - Final proofreading against original (NEW)
+        5. SYNOPSIS - Create summary from final translation (MOVED TO END)
+        """
         context = TranslationContext(
             source_lang=source_lang,
             target_lang=target_lang,
@@ -432,15 +480,12 @@ class TranslationPipeline:
         state = PipelineState(context=context)
         state.start_time = time.time()
         
-        # Stage 1: Initial Translation
+        # Stage 1: Initial Translation (Primary LLM)
         initial_result = self.initial_translation(context)
         state.add_result(initial_result)
         
-        # Stage 2: Synopsis
-        synopsis_result = self.generate_synopsis(context, initial_result.text)
-        state.add_result(synopsis_result)
-        
         if fast_mode:
+            # Fast path: skip reflection/improve/final_edit, return initial translation
             final_result = TranslationResult(
                 stage=TranslationStage.FINAL,
                 llm_role=LLMRole.PRIMARY,
@@ -448,22 +493,34 @@ class TranslationPipeline:
                 metadata={"fast_mode": True, "applied_reflection": False}
             )
             state.add_result(final_result)
+            
+            # Even in fast mode, generate synopsis from final translation
+            synopsis_result = self.generate_synopsis(context, initial_result.text)
+            state.add_result(synopsis_result)
         else:
-            # Stage 3: Reflection
+            # Stage 2: Reflection (Secondary LLM)
             reflection_result = self.reflection(context, initial_result.text)
             state.add_result(reflection_result)
             
-            # Stage 4: Improve
+            # Stage 3: Improve (Secondary LLM)
             improve_result = self.improve_translation(
                 context, initial_result.text, reflection_result.text
             )
             state.add_result(improve_result)
             
+            # Stage 4: Final Edit (Secondary LLM) - NEW
+            final_edit_result = self.final_edit(context, improve_result.text)
+            state.add_result(final_edit_result)
+            
+            # Stage 5: Synopsis (Primary LLM) - MOVED TO END
+            synopsis_result = self.generate_synopsis(context, final_edit_result.text)
+            state.add_result(synopsis_result)
+            
             final_result = TranslationResult(
                 stage=TranslationStage.FINAL,
                 llm_role=LLMRole.SECONDARY,
-                text=improve_result.text,
-                metadata={"fast_mode": False, "applied_reflection": True}
+                text=final_edit_result.text,
+                metadata={"fast_mode": False, "applied_reflection": True, "final_edit": True}
             )
             state.add_result(final_result)
         
