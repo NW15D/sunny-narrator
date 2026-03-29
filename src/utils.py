@@ -352,6 +352,15 @@ class TranslationPipeline:
     @log_entry
     def initial_translation(self, context: TranslationContext) -> TranslationResult:
         """Stage 1: Primary LLM translation."""
+        # Handle empty or very short input
+        if not context.source_text or len(context.source_text.strip()) < 2:
+            return TranslationResult(
+                stage=TranslationStage.INITIAL,
+                llm_role=LLMRole.PRIMARY,
+                text="",
+                metadata={"prompt_style": context.style, "skipped": "empty_input"}
+            )
+        
         if context.style == "xml":
             user_prompt = config.get_prompt(
                 "initial_translation", "user_xml",
@@ -854,6 +863,15 @@ def remove_tags(text: str) -> str:
     Returns:
         Cleaned text without tags
     """
+    if not text:
+        return ""
+    
+    # Remove meta-commentary from LLM (common pattern)
+    # E.g., "I'm ready to help...", "Could you please provide...", etc.
+    if "I'm ready to help" in text or "Could you please" in text or "I don't see any" in text:
+        logger.warning("LLM returned meta-commentary instead of translation")
+        return ""
+    
     patterns = [
         r'<SOURCE_TEXT>[\s\S]*?</SOURCE_TEXT>',
         r'<DICTIONARY>[\s\S]*?</DICTIONARY>',
