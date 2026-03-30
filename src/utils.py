@@ -36,6 +36,98 @@ from src.config import Config
 
 
 # =============================================================================
+# Translation Metrics Tracker
+# =============================================================================
+
+class TranslationMetrics:
+    """
+    Track translation quality metrics and token usage.
+    
+    Logs:
+    - Rechunking events (ERROR)
+    - Retry tokens (ERROR)
+    - XML repairs (ERROR)
+    - Language mismatch retries (ERROR)
+    - Successful translations (INFO)
+    """
+    
+    def __init__(self):
+        self.total_tokens = 0
+        self.retry_tokens = 0
+        self.rechunk_count = 0
+        self.xml_repair_count = 0
+        self.language_mismatch_retries = 0
+        self.successful_translations = 0
+        self.failed_translations = 0
+        
+    def log_retry(self, tokens: int, reason: str):
+        """Log retry event (ERROR level)."""
+        self.retry_tokens += tokens
+        logger.error(f"RETRY: {reason} (tokens: {tokens:,})")
+        
+    def log_rechunk(self, depth: int, percent_diff: float):
+        """Log rechunk event (ERROR level)."""
+        self.rechunk_count += 1
+        logger.error(f"RECHUNK #{self.rechunk_count} at depth {depth}: {percent_diff:.1f}% length difference")
+        
+    def log_xml_repair(self, issue: str):
+        """Log XML repair event (ERROR level)."""
+        self.xml_repair_count += 1
+        logger.error(f"XML REPAIR #{self.xml_repair_count}: {issue}")
+        
+    def log_language_mismatch(self, tokens: int):
+        """Log language mismatch retry (ERROR level)."""
+        self.language_mismatch_retries += 1
+        self.retry_tokens += tokens
+        logger.error(f"LANGUAGE MISMATCH RETRY #{self.language_mismatch_retries} (tokens: {tokens:,})")
+        
+    def log_success(self, tokens: int):
+        """Log successful translation (INFO level)."""
+        self.successful_translations += 1
+        self.total_tokens += tokens
+        logger.info(f"Translation successful (tokens: {tokens:,}, total: {self.total_tokens:,})")
+        
+    def log_failure(self, reason: str):
+        """Log failed translation (ERROR level)."""
+        self.failed_translations += 1
+        logger.error(f"TRANSLATION FAILED: {reason}")
+        
+    def get_report(self) -> dict:
+        """Generate metrics report."""
+        total = max(1, self.total_tokens + self.retry_tokens)
+        return {
+            "successful_translations": self.successful_translations,
+            "failed_translations": self.failed_translations,
+            "total_tokens": self.total_tokens,
+            "retry_tokens": self.retry_tokens,
+            "retry_percentage": (self.retry_tokens / total) * 100,
+            "rechunk_count": self.rechunk_count,
+            "xml_repair_count": self.xml_repair_count,
+            "language_mismatch_retries": self.language_mismatch_retries
+        }
+        
+    def print_report(self):
+        """Print formatted metrics report."""
+        report = self.get_report()
+        
+        logger.info("=" * 60)
+        logger.info("TRANSLATION METRICS REPORT")
+        logger.info("=" * 60)
+        logger.info(f"Successful translations: {report['successful_translations']}")
+        logger.info(f"Failed translations: {report['failed_translations']}")
+        logger.info(f"Total tokens: {report['total_tokens']:,}")
+        logger.info(f"Retry tokens: {report['retry_tokens']:,} ({report['retry_percentage']:.1f}%)")
+        logger.info(f"Rechunk events: {report['rechunk_count']}")
+        logger.info(f"XML repairs: {report['xml_repair_count']}")
+        logger.info(f"Language mismatch retries: {report['language_mismatch_retries']}")
+        logger.info("=" * 60)
+
+
+# Global metrics instance
+metrics = TranslationMetrics()
+
+
+# =============================================================================
 # Schema Definitions (moved from src/schemas/translation.py)
 # =============================================================================
 
@@ -725,9 +817,9 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
         source_text, state.final_translation, "FINAL"
     )
     
-    # Rechunking if needed
+    # Rechunking if needed (ERROR logging)
     if should_split and depth < MAX_DEPTH:
-        logger.info(f"Rechunking at depth {depth}: {percent_diff:.1f}% length difference")
+        metrics.log_rechunk(depth, percent_diff)  # ERROR level
         
         # Split source text
         part1, part2 = split_text_smartly(source_text)
@@ -747,6 +839,10 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
         combined_synopsis = (syn1 or "") + " " + (syn2 or "")
         
         return combined_translation, combined_synopsis
+    
+    # Success - log tokens
+    tokens = state.final_result.tokens_used if hasattr(state, 'final_result') and hasattr(state.final_result, 'tokens_used') else 0
+    metrics.log_success(tokens)  # INFO level
     
     return state.final_translation, state.synopsis
 
@@ -870,7 +966,7 @@ llm_service = LLMServiceCompat()
 def remove_tags(text: str) -> str:
     """
     Remove XML/HTML tags and artifacts from translation output.
-    Uses regex patterns to clean common LLM output artifacts.
+    Logs all repairs as ERROR level.
     
     Note: For FB2 XML validation and cleaning, use xmlcheck.rem_tags()
     
@@ -883,47 +979,61 @@ def remove_tags(text: str) -> str:
     if not text:
         return ""
     
-    # Remove meta-commentary from LLM (common pattern)
-    # E.g., "I'm ready to help...", "Could you please provide...", etc.
-    if "I'm ready to help" in text or "Could you please" in text or "I don't see any" in text:
-        logger.warning("LLM returned meta-commentary instead of translation")
-        return ""
+    original_text = text
+    cleaned = False
+    repair_reasons = []
     
-    patterns = [
-        # Remove source text blocks (LLM sometimes includes original text)
-        r'<source[^>]*>[\s\S]*?</source>',
-        r'<SOURCE[^>]*>[\s\S]*?</SOURCE>',
-        r'<original[^>]*>[\s\S]*?</original>',
-        r'<ORIGINAL[^>]*>[\s\S]*?</ORIGINAL>',
-        
-        # Remove context sections that shouldn't be in translation
-        r'<vocabulary>[\s\S]*?</vocabulary>',
-        r'<synopsis>[\s\S]*?</synopsis>',
-        r'<context>[\s\S]*?</context>',
-        r'<task>[\s\S]*?</task>',
-        r'<suggestions>[\s\S]*?</suggestions>',
-        
-        # Remove source text artifacts
-        r'<SOURCE_TEXT>[\s\S]*?</SOURCE_TEXT>',
-        r'<DICTIONARY>[\s\S]*?</DICTIONARY>',
-        r'<EXPERT_SUGGESTIONS>[\s\S]*?</EXPERT_SUGGESTIONS>',
-        r'<SYNOPSIS>[\s\S]*?</SYNOPSIS>',
-        r'<INITIAL_TRANSLATION>[\s\S]*?</INITIAL_TRANSLATION>',
-        r'<FIRST_TRANSLATION>[\s\S]*?</FIRST_TRANSLATION>',
-        r'<TRANSLATION>[\s\S]*?</TRANSLATION>',
-        
-        # Remove markdown code blocks
-        r'```xml', r'```',
-        
-        # Remove translation wrapper tags (keep content)
-        r'</?(?:section|IMPROVED_TRANSLATION|target|TTEXT|TRANS)>',
-        
-        # Remove special tokens
-        r'<\|im_end\|>', r'<\|file_separator\|>'
+    # Remove meta-commentary from LLM (common pattern)
+    meta_patterns = [
+        ("I'm ready to help", "Meta-commentary: 'I'm ready to help'"),
+        ("Could you please", "Meta-commentary: 'Could you please'"),
+        ("I don't see any", "Meta-commentary: 'I don't see any'"),
+        ("I apologize", "Meta-commentary: 'I apologize'"),
+        ("Let me translate", "Meta-commentary: 'Let me translate'"),
+        ("Here's the translation", "Meta-commentary: 'Here's the translation'")
     ]
     
-    for pattern in patterns:
+    for pattern, description in meta_patterns:
+        if pattern.lower() in text.lower():
+            metrics.log_xml_repair(description)  # ERROR level
+            repair_reasons.append(description)
+            cleaned = True
+            break
+    
+    # Define patterns with descriptions for logging
+    patterns_with_desc = [
+        (r'<source[^>]*>[\s\S]*?</source>', 'source block'),
+        (r'<SOURCE[^>]*>[\s\S]*?</SOURCE>', 'source block'),
+        (r'<original[^>]*>[\s\S]*?</original>', 'original block'),
+        (r'<vocabulary>[\s\S]*?</vocabulary>', 'vocabulary section'),
+        (r'<synopsis>[\s\S]*?</synopsis>', 'synopsis section'),
+        (r'<context>[\s\S]*?</context>', 'context section'),
+        (r'<task>[\s\S]*?</task>', 'task section'),
+        (r'<suggestions>[\s\S]*?</suggestions>', 'suggestions section'),
+        (r'<SOURCE_TEXT>[\s\S]*?</SOURCE_TEXT>', 'SOURCE_TEXT block'),
+        (r'<DICTIONARY>[\s\S]*?</DICTIONARY>', 'DICTIONARY block'),
+        (r'<EXPERT_SUGGESTIONS>[\s\S]*?</EXPERT_SUGGESTIONS>', 'EXPERT_SUGGESTIONS block'),
+        (r'<SYNOPSIS>[\s\S]*?</SYNOPSIS>', 'SYNOPSIS block'),
+        (r'<INITIAL_TRANSLATION>[\s\S]*?</INITIAL_TRANSLATION>', 'INITIAL_TRANSLATION block'),
+        (r'<FIRST_TRANSLATION>[\s\S]*?</FIRST_TRANSLATION>', 'FIRST_TRANSLATION block'),
+        (r'<TRANSLATION>[\s\S]*?</TRANSLATION>', 'TRANSLATION block'),
+        (r'```xml', 'markdown code block'),
+        (r'```', 'markdown code block'),
+        (r'</?(?:section|IMPROVED_TRANSLATION|target|TTEXT|TRANS)>', 'wrapper tags'),
+        (r'<\|im_end\|>', 'special token'),
+        (r'<\|file_separator\|>', 'special token')
+    ]
+    
+    for pattern, description in patterns_with_desc:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        if matches:
+            metrics.log_xml_repair(f"Removed {description} ({len(matches)} occurrences)")  # ERROR level
+            repair_reasons.append(f"{description} x{len(matches)}")
+            cleaned = True
         text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+    
+    if cleaned:
+        logger.error(f"Tag cleanup performed: {len(original_text)} → {len(text)} chars | {', '.join(repair_reasons[:3])}")
     
     return text.strip()
 
@@ -1235,3 +1345,12 @@ def num_tokens_in_string(input_str: str, encoding_name: str = "cl100k_base") -> 
     except Exception:
         encoding = tiktoken.get_encoding("cl100k_base")
     return len(encoding.encode(input_str))
+
+
+# =============================================================================
+# Translation Report
+# =============================================================================
+
+def print_translation_report():
+    """Print translation metrics summary at end of translation."""
+    metrics.print_report()
