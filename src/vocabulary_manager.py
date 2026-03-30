@@ -209,12 +209,14 @@ class VocabularyManager:
     
     def _parse_and_save_structured(self, vocab_text: str, extracted_terms: List[Tuple[str, str, str]]):
         """
-        Parse translated vocabulary with structured format.
+        Parse translated vocabulary and save in JSON format.
         
         Args:
             vocab_text: Translated terms from LLM (format: "source = target")
             extracted_terms: Original extracted terms with categories [(term, category, notes), ...]
         """
+        import json
+        
         # Parse translated lines into source=target pairs
         translations = {}
         for line in vocab_text.strip().split('\n'):
@@ -228,103 +230,130 @@ class VocabularyManager:
                 target = parts[1].strip()
                 translations[source.lower()] = target
         
-        # Write dictionary with proper format
+        # Build vocabulary list
+        vocab_list = []
+        
+        for term, category, notes in extracted_terms:
+            term_lower = term.lower()
+            if term_lower in translations:
+                target = translations[term_lower]
+                entry = {
+                    "source": term,
+                    "target": target,
+                    "category": category if category in ['PERSON', 'LOC', 'ORG'] else 'TERM',
+                    "gender": "",
+                    "notes": notes
+                }
+                vocab_list.append(entry)
+                
+                # Add to memory
+                key = term.replace(' ', '_').lower()
+                self.vocab[key] = VocabEntry(
+                    source=term,
+                    target=target,
+                    category=entry["category"],
+                    gender="",
+                    notes=notes
+                )
+        
+        # Write dictionary in JSON format
         with open(self.dict_file, 'w', encoding='utf-8') as f:
             f.write(f"# Vocabulary for {self.book_name}\n")
-            f.write(f"# Format: source = target | category | gender | notes\n")
+            f.write(f"# Format: JSON array of vocabulary entries\n")
             f.write(f"# Generated automatically by NER\n")
             f.write(f"# Please review and edit as needed\n\n")
-            
-            # Group by category
-            categories = {'PERSON': [], 'LOC': [], 'ORG': [], 'TERM': [], 'OTHER': []}
-            
-            for term, category, notes in extracted_terms:
-                term_lower = term.lower()
-                if term_lower in translations:
-                    target = translations[term_lower]
-                    cat = category if category in ['PERSON', 'LOC', 'ORG'] else 'OTHER'
-                    categories[cat].append((term, target, category, notes))
-            
-            # Write sections
-            for cat_name in ['PERSON', 'LOC', 'ORG', 'TERM', 'OTHER']:
-                entries = categories[cat_name]
-                if not entries:
-                    continue
-                
-                f.write(f"\n# {cat_name} ({len(entries)} terms)\n")
-                for source, target, orig_cat, notes in entries:
-                    # Format: source = target | category | gender | notes
-                    f.write(f"{source} = {target} | {orig_cat} | | {notes}\n")
-                    
-                    # Add to memory
-                    key = source.replace(' ', '_').lower()
-                    self.vocab[key] = VocabEntry(
-                        source=source,
-                        target=target,
-                        category=orig_cat,
-                        notes=notes
-                    )
+            json.dump(vocab_list, f, indent=2, ensure_ascii=False)
         
         logger.info(f"Dictionary saved: {self.dict_file} ({len(self.vocab)} entries)")
     
     def _create_template(self):
-        """Create empty dictionary template."""
+        """Create empty dictionary template with JSON format."""
         with open(self.dict_file, 'w', encoding='utf-8') as f:
             f.write(f"# Vocabulary for {self.book_name}\n")
-            f.write(f"# Format: source = target | category | gender | notes\n\n")
+            f.write(f"# Format: JSON array of vocabulary entries\n")
+            f.write(f"# Each entry: {{\"source\": \"...\", \"target\": \"...\", \"category\": \"PERSON|LOC|ORG|TERM\", \"gender\": \"he|she|it\", \"notes\": \"...\"}}\n\n")
             f.write("# Example:\n")
-            f.write("# Alice = Алиса | PERSON | she | Main character\n")
-            f.write("# Wonderland = Страна чудес | LOC | | Setting\n")
+            f.write("[\n")
+            f.write("  {\"source\": \"Alice\", \"target\": \"Алиса\", \"category\": \"PERSON\", \"gender\": \"she\", \"notes\": \"Main character\"},\n")
+            f.write("  {\"source\": \"Wonderland\", \"target\": \"Страна чудес\", \"category\": \"LOC\", \"gender\": \"\", \"notes\": \"Setting\"}\n")
+            f.write("]\n")
         
         logger.info(f"Template dictionary created: {self.dict_file}")
     
     def _load_from_file(self) -> Dict[str, VocabEntry]:
-        """Load vocabulary from .dic file."""
+        """Load vocabulary from .dic file (supports JSON or legacy format)."""
+        import json
+        
         vocab = {}
         
         with open(self.dict_file, 'r', encoding='utf-8') as f:
-            for line_num, line in enumerate(f, 1):
-                line = line.strip()
-                if not line or line.startswith('#'):
+            content = f.read()
+        
+        # Try JSON format first
+        try:
+            # Find JSON array in content (skip comments)
+            json_match = re.search(r'\[([\s\S]*?)\]', content)
+            if json_match:
+                vocab_list = json.loads(json_match.group(0))
+                for entry in vocab_list:
+                    if isinstance(entry, dict):
+                        key = entry.get('source', '').replace(' ', '_').lower()
+                        vocab[key] = VocabEntry(
+                            source=entry.get('source', ''),
+                            target=entry.get('target', ''),
+                            category=entry.get('category', ''),
+                            gender=entry.get('gender', ''),
+                            notes=entry.get('notes', '')
+                        )
+                logger.info(f"Loaded {len(vocab)} entries from JSON format")
+                return vocab
+        except (json.JSONDecodeError, AttributeError) as e:
+            logger.debug(f"JSON parse failed, trying legacy format: {e}")
+        
+        # Fallback to legacy format (line-by-line)
+        for line_num, line in enumerate(content.split('\n'), 1):
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            
+            try:
+                # Format: source = target | category | gender | notes
+                # OR: source = target (legacy format)
+                
+                # Split by = first
+                if '=' not in line:
                     continue
                 
-                try:
-                    # Format: source = target | category | gender | notes
-                    # OR: source = target (legacy format)
-                    
-                    # Split by = first
-                    if '=' not in line:
-                        continue
-                    
-                    parts = line.split('=', 1)
-                    source = parts[0].strip()
-                    rest = parts[1].strip()
-                    
-                    # Split rest by | for extended format
-                    if '|' in rest:
-                        subparts = rest.split('|')
-                        target = subparts[0].strip()
-                        category = subparts[1].strip() if len(subparts) > 1 else ""
-                        gender = subparts[2].strip() if len(subparts) > 2 else ""
-                        notes = subparts[3].strip() if len(subparts) > 3 else ""
-                    else:
-                        target = rest
-                        category = ""
-                        gender = ""
-                        notes = ""
-                    
-                    key = source.replace(' ', '_').lower()
-                    vocab[key] = VocabEntry(
-                        source=source,
-                        target=target,
-                        category=category,
-                        gender=gender,
-                        notes=notes
-                    )
-                    
-                except Exception as e:
-                    logger.warning(f"Error parsing line {line_num}: {line} - {e}")
+                parts = line.split('=', 1)
+                source = parts[0].strip()
+                rest = parts[1].strip()
+                
+                # Split rest by | for extended format
+                if '|' in rest:
+                    subparts = rest.split('|')
+                    target = subparts[0].strip()
+                    category = subparts[1].strip() if len(subparts) > 1 else ""
+                    gender = subparts[2].strip() if len(subparts) > 2 else ""
+                    notes = subparts[3].strip() if len(subparts) > 3 else ""
+                else:
+                    target = rest
+                    category = ""
+                    gender = ""
+                    notes = ""
+                
+                key = source.replace(' ', '_').lower()
+                vocab[key] = VocabEntry(
+                    source=source,
+                    target=target,
+                    category=category,
+                    gender=gender,
+                    notes=notes
+                )
+                
+            except Exception as e:
+                logger.warning(f"Error parsing line {line_num}: {line} - {e}")
         
+        logger.info(f"Loaded {len(vocab)} entries from legacy format")
         return vocab
     
     def _extract_characters(self):
