@@ -1,5 +1,6 @@
-# Sunny Narrator v1.9
+# Sunny Narrator
 
+**Версия:** 1.11  
 Система AI-перевода с 5-стадийным контролем качества.
 
 ## 🚀 Быстрый старт
@@ -26,21 +27,21 @@ MODEL_TRANSLATE=google/gemma-2-27b-it
 API_BASE_TRANSLATE=http://localhost:11434/v1
 API_KEY_TRANSLATE=your-key
 S_PROMT_TRANSLATE=true          # ⚠️ true для Gemma 2/3!
-TEMP_TRANSLATE=0.01
+# TEMP_TRANSLATE=0.01           # Базовая температура (fallback, используется если TEMP_INITIAL не задан)
 
 # Secondary LLM (Корректура)
 MODEL_PROOFREAD=Mistral
 API_BASE_PROOFREAD=http://localhost:11434/v1
 API_KEY_PROOFREAD=your-key
 S_PROMT_PROOFREAD=false
-TEMP_PROOFREAD=0.7
+# TEMP_PROOFREAD=0.7            # Базовая температура (fallback, используется если stage-specific не заданы)
 
-# Температуры по стадиям
-TEMP_INITIAL=0.01               # Стадия 1: Primary LLM - Перевод
-TEMP_REFLECTION=0.4             # Стадия 2: Secondary LLM - Анализ
-TEMP_IMPROVE=0.4                # Стадия 3: Secondary LLM - Редактирование
-TEMP_FINAL_EDIT=0.15            # Стадия 4: Secondary LLM - Вычитка
-TEMP_SYNOPSIS=0.15              # Стадия 5: Secondary LLM - Синопсис
+# Температуры по стадиям (рекомендуется для точной настройки)
+TEMP_INITIAL=0.01               # Стадия 1: Primary LLM - Перевод (консистентность)
+TEMP_REFLECTION=0.4             # Стадия 2: Secondary LLM - Анализ (креативный)
+TEMP_IMPROVE=0.4                # Стадия 3: Secondary LLM - Редактирование (гибкий)
+TEMP_FINAL_EDIT=0.15            # Стадия 4: Secondary LLM - Вычитка (точность)
+TEMP_SYNOPSIS=0.15              # Стадия 5: Secondary LLM - Синопсис (точность)
 
 # Языки
 SOURCE_LANG=english
@@ -216,10 +217,22 @@ pip uninstall cupy cupy-cuda12x -y
 
 ## 📝 Версии
 
+- **v1.11** — Checkpoint/resume после сбоя, fallback для пустого ответа, debug статистика
+- **v1.10** — Упрощение remove_tags, исправление статистики токенов, fallback для empty LLM response
 - **v1.9** — 5-стадийный пайплайн, stage-specific температуры
 - **v1.8** — Rechunking с валидацией длины
 - **v1.7** — NER с CPU fallback
 - **v1.0** — Initial release
+
+## 📝 Changelog
+
+### 2026-03-30 (v1.11)
+- ✅ Checkpoint files для resume после сбоя (сохранение/восстановление прогресса)
+- ✅ Fallback для пустого ответа LLM когда токены > 0 (предотвращение циклических retry)
+- ✅ Debug режим: статистика после каждого чанка (разница длин, процент успеха)
+- ✅ remove_tags() упрощён: извлечение из wrapper, fallback к оригиналу
+- ✅ Статистика токенов исправлена: retry_tokens не может превышать total_tokens
+- ✅ Документация: RESUME.md руководство, обновлены README
 
 ---
 
