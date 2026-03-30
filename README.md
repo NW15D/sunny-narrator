@@ -112,6 +112,7 @@ docker-compose -f docker-compose.gpu.yml up -d
 |-------|------|
 | **Installation** | [docs/INSTALLATION.md](docs/INSTALLATION.md) |
 | **Configuration** | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) |
+| **FAST_TRANS Mode** | [docs/FAST_TRANS.md](docs/FAST_TRANS.md) |
 | **Translation Stages** | [docs/TRANSLATION_STAGES.md](docs/TRANSLATION_STAGES.md) |
 | **Temperature Strategy** | [docs/TEMPERATURE_STRATEGY.md](docs/TEMPERATURE_STRATEGY.md) |
 | **Rechunking** | [docs/RECHUNKING_GUIDE.md](docs/RECHUNKING_GUIDE.md) |
