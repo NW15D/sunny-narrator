@@ -1,5 +1,6 @@
-# Sunny Narrator v1.9
+# Sunny Narrator
 
+**Versão:** 1.11  
 Sistema de tradução AI com controle de qualidade em 5 estágios.
 
 ## 🚀 Início Rápido
@@ -11,153 +12,115 @@ pip install -r requirements.txt
 # Configurar .env
 cp .env.example .env
 
-# Rodar tradução
+# Executar tradução
 python app.py
 ```
 
+**Documentação completa:** [docs/](docs/)
+
+---
+
 ## 📋 Configuração
 
-### Arquivo .env
+### .env Básico
 
 ```bash
-# Primary LLM (Tradução)
-MODEL_TRANSLATE=google/gemma-2-27b-it
-API_BASE_TRANSLATE=http://localhost:11434/v1
+# Configurações de API
 API_KEY_TRANSLATE=your-key
-S_PROMT_TRANSLATE=true          # ⚠️ true para Gemma 2/3!
-TEMP_TRANSLATE=0.01
+API_BASE_TRANSLATE=http://localhost:11434/v1
 
-# Secondary LLM (Revisão)
-MODEL_PROOFREAD=Mistral
-API_BASE_PROOFREAD=http://localhost:11434/v1
 API_KEY_PROOFREAD=your-key
-S_PROMT_PROOFREAD=false
-TEMP_PROOFREAD=0.7
-
-# Temperaturas por Estágio
-TEMP_INITIAL=0.01               # Estágio 1: Primary LLM - Tradução
-TEMP_REFLECTION=0.4             # Estágio 2: Secondary LLM - Análise
-TEMP_IMPROVE=0.4                # Estágio 3: Secondary LLM - Edição
-TEMP_FINAL_EDIT=0.15            # Estágio 4: Secondary LLM - Revisão
-TEMP_SYNOPSIS=0.15              # Estágio 5: Secondary LLM - Sinopse
+API_BASE_PROOFREAD=http://localhost:11434/v1
 
 # Idiomas
 SOURCE_LANG=english
 TARGET_LANG=portuguese
-COUNTRY=Brasil
 
 # Processamento
-MAX_LEN_CHUNK=8192
-LENGTH_CHECK_THRESHOLD=20
-FAST_TRANS=false
+FAST_TRANS=false    # Modo rápido
 DEBUG=off
 ```
 
+**Todas opções:** [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
+
+---
+
 ## ⚡ Modo FAST_TRANS
 
-**FAST_TRANS=true** (rápido, 2 estágios):
-- Stage 1: INITIAL (Primary LLM)
-- Stage 5: SYNOPSIS (Primary LLM)
-- ~2.5x mais rápido, qualidade média
+**Usar `FAST_TRANS=true` para:**
+- ✅ Rascunho de tradução
+- ✅ Documentos técnicos
+- ❌ Não para publicação final ou tradução literária
 
-**FAST_TRANS=false** (padrão, 5 estágios):
-- Pipeline completo com controle de qualidade
-- Alta qualidade
+**Velocidade:** ~2.5x mais rápido
 
-## 📊 Pipeline de 5 Estágios
+**Detalhes:** [docs/FAST_TRANS.md](docs/FAST_TRANS.md)
 
-1. **INITIAL** (Primary, temp=0.01) — Rascunho da tradução
-2. **REFLECTION** (Secondary, temp=0.4) — Revisão de qualidade
-3. **IMPROVE** (Secondary, temp=0.4) — Aplicar sugestões
-4. **FINAL_EDIT** (Secondary, temp=0.15) — Revisão final
-5. **SYNOPSIS** (Secondary, temp=0.15) — Sinopse para contexto
+---
 
-## 📁 Formatos
+## 📎 Vocabulário
 
-- **Entrada:** FB2, EPUB, TXT
-- **Saída:** FB2, EPUB (estrutura preservada)
+Arquivo de dicionário (`*.dic`) garante consistência de terminologia:
 
-## 🎯 Vocabulário
-
-Criação automática via NER:
-```bash
-NER=true
-NERMODEL=pt_core_news_lg
-```
-
-Formato do vocabulário (.dic):
 ```dic
-# Format: source = target, category, gender, notes
-Alice = Alice, PERSON, she, 
-Wonderland = País das Maravilhas, LOC, , 
+# Formato: source = target, category, gender, notes
+Alice = Alice, PERSON, she, Personagem principal
 ```
 
-## 🔧 sys_not_promt para Gemma
+**Formato:** [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md)
 
-Gemma 2/3 não suportam system prompts:
-```bash
-S_PROMT_TRANSLATE=true    # Necessário para Gemma
-S_PROMT_PROOFREAD=false   # Mistral/Llama
-```
+---
 
-## 🔧 Controle de JSON Mode
+## 💾 Retomar após Falha
 
-### Quando desabilitar JSON mode:
-
-| Família de Modelos | Configuração | Motivo |
-|-------------------|--------------|--------|
-| **Gemma 2/3** | `true` (padrão) | Problemas com JSON mode, use texto simples |
-| **Mistral** | `true` (padrão) | Pode retornar respostas vazias em JSON mode |
-| **Llama 3.x** | `true` (padrão) | Versões locais geralmente não suportam JSON mode |
-| **Hunyuan** | `false` | Suporta JSON mode |
-| **Qwen** | `false` | Suporta JSON mode |
-| **OpenAI/GPT** | `false` | Suporta JSON mode |
-
-### Configuração:
+Salvamento automático de progresso após cada chunk:
 
 ```bash
-# Padrão: JSON mode desabilitado (mais seguro para LLMs locais)
-DISABLE_JSON_MODE_TRANSLATE=true
-DISABLE_JSON_MODE_PROOFREAD=true
+# Interrompido em 50%
+python app.py  # Ctrl+C
 
-# Para modelos de API que suportam JSON mode:
-DISABLE_JSON_MODE_TRANSLATE=false
-DISABLE_JSON_MODE_PROOFREAD=false
+# Retomar automaticamente
+python app.py  # ✓ Retomando do chunk 51/100
 ```
 
-### Tratamento de Respostas Vazias
+**Detalhes:** [docs/RESUME.md](docs/RESUME.md)
 
-Quando JSON mode está desabilitado ou LLM retorna resposta vazia:
-- **Retry automático**: Até 2 tentativas com log de ERROR
-- **Saída de debug**: Conteúdo original logado quando `remove_tags()` resulta em texto vazio
-- **Formato de erro**: `ERROR - Ответ 0 [stage/role]: X chars → 0 chars after remove_tags`
+---
+
+## 🐳 Docker
+
+**CPU-only (padrão):**
+```bash
+docker-compose up -d
+```
+
+**GPU (NVIDIA):**
+```bash
+docker-compose -f docker-compose.gpu.yml up -d
+```
+
+**Guia:** [docs/DOCKER_CPU_GUIDE.md](docs/DOCKER_CPU_GUIDE.md)
+
+---
 
 ## 📚 Documentação
 
-- [Instalação](docs/INSTALLATION.md)
-- [Prompts](docs/PROMPTS_GUIDE.md)
-- [Temperaturas](docs/TEMPERATURE_STRATEGY.md)
-- [Rechunking](docs/RECHUNKING_GUIDE.md)
-- [NER](docs/NER_GUIDE.md)
-- [Vocabulário](docs/DICTIONARY_FORMAT.md)
-- [Estágios](docs/TRANSLATION_STAGES.md)
+| Tópico | Arquivo |
+|--------|---------|
+| **Instalação** | [docs/INSTALLATION.md](docs/INSTALLATION.md) |
+| **Configuração** | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) |
+| **Estágios de Tradução** | [docs/TRANSLATION_STAGES.md](docs/TRANSLATION_STAGES.md) |
+| **Formato de Dicionário** | [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md) |
+| **Retomar após Falha** | [docs/RESUME.md](docs/RESUME.md) |
+| **Docker** | [docs/DOCKER_CPU_GUIDE.md](docs/DOCKER_CPU_GUIDE.md) |
 
-## ⚠️ NER e GPU
-
-Se erros NVRTC:
-```bash
-# Usar CPU para NER
-SPACY_USE_GPU=false
-
-# Ou remover cupy
-pip uninstall cupy cupy-cuda12x -y
-```
+---
 
 ## 📝 Versões
 
-- **v1.9** — Pipeline de 5 estágios, temperaturas específicas
-- **v1.8** — Rechunking com validação de comprimento
-- **v1.7** — NER com fallback CPU
+- **v1.11** — Checkpoint/resume, Docker CPU
+- **v1.10** — Simplificação remove_tags
+- **v1.9** — Pipeline de 5 estágios
 - **v1.0** — Lançamento inicial
 
 ---

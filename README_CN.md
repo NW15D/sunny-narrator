@@ -1,5 +1,6 @@
-# Sunny Narrator v1.9
+# Sunny Narrator
 
+**版本:** 1.11  
 具有 5 阶段质量控制的 AI 翻译系统。
 
 ## 🚀 快速开始
@@ -15,149 +16,111 @@ cp .env.example .env
 python app.py
 ```
 
+**完整文档:** [docs/](docs/)
+
+---
+
 ## 📋 配置
 
-### .env 文件
+### 基本 .env
 
 ```bash
-# Primary LLM (翻译)
-MODEL_TRANSLATE=google/gemma-2-27b-it
-API_BASE_TRANSLATE=http://localhost:11434/v1
+# API 设置
 API_KEY_TRANSLATE=your-key
-S_PROMT_TRANSLATE=true          # ⚠️ Gemma 2/3 需要 true!
-TEMP_TRANSLATE=0.01
+API_BASE_TRANSLATE=http://localhost:11434/v1
 
-# Secondary LLM (校对)
-MODEL_PROOFREAD=Mistral
-API_BASE_PROOFREAD=http://localhost:11434/v1
 API_KEY_PROOFREAD=your-key
-S_PROMT_PROOFREAD=false
-TEMP_PROOFREAD=0.7
-
-# 阶段特定温度
-TEMP_INITIAL=0.01               # 阶段 1: Primary LLM - 翻译
-TEMP_REFLECTION=0.4             # 阶段 2: Secondary LLM - 分析
-TEMP_IMPROVE=0.4                # 阶段 3: Secondary LLM - 编辑
-TEMP_FINAL_EDIT=0.15            # 阶段 4: Secondary LLM - 校对
-TEMP_SYNOPSIS=0.15              # 阶段 5: Secondary LLM - 摘要
+API_BASE_PROOFREAD=http://localhost:11434/v1
 
 # 语言
 SOURCE_LANG=english
 TARGET_LANG=chinese
-COUNTRY=中国
 
 # 处理
-MAX_LEN_CHUNK=8192
-LENGTH_CHECK_THRESHOLD=20
-FAST_TRANS=false
+FAST_TRANS=false    # 快速模式
 DEBUG=off
 ```
 
+**所有选项:** [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
+
+---
+
 ## ⚡ FAST_TRANS 模式
 
-**FAST_TRANS=true** (快速，2 阶段):
-- Stage 1: INITIAL (Primary LLM)
-- Stage 5: SYNOPSIS (Primary LLM)
-- ~2.5x 更快，中等质量
+**使用 `FAST_TRANS=true`:**
+- ✅ 草稿翻译
+- ✅ 技术文档
+- ❌ 不适用于最终出版物或文学翻译
 
-**FAST_TRANS=false** (标准，5 阶段):
-- 完整质量控制流程
-- 高质量
+**速度:** ~2.5x 更快
 
-## 📊 5 阶段流程
+**详情:** [docs/FAST_TRANS.md](docs/FAST_TRANS.md)
 
-1. **INITIAL** (Primary, temp=0.01) — 翻译草稿
-2. **REFLECTION** (Secondary, temp=0.4) — 质量审查
-3. **IMPROVE** (Secondary, temp=0.4) — 应用建议
-4. **FINAL_EDIT** (Secondary, temp=0.15) — 最终校对
-5. **SYNOPSIS** (Secondary, temp=0.15) — 上下文摘要
+---
 
-## 📁 格式
+## 📎 词典
 
-- **输入:** FB2, EPUB, TXT
-- **输出:** FB2, EPUB (保留结构)
+词典文件 (`*.dic`) 确保术语一致性:
 
-## 🎯 词汇表
-
-通过 NER 自动创建词汇表:
-```bash
-NER=true
-NERMODEL=zh_core_web_lg
-```
-
-词汇表格式 (.dic):
 ```dic
-# Format: source = target, category, gender, notes
-Alice = 爱丽丝，PERSON, she, 
-Wonderland = 仙境，LOC, , 
+# 格式：source = target, category, gender, notes
+Alice = 爱丽丝，PERSON, she, 主角
 ```
 
-## 🔧 Gemma 的 sys_not_promt
+**格式:** [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md)
 
-Gemma 2/3 不支持 system prompts:
-```bash
-S_PROMT_TRANSLATE=true    # Gemma 需要
-S_PROMT_PROOFREAD=false   # Mistral/Llama
-```
+---
 
-## 🔧 JSON Mode 控制
+## 💾 崩溃后恢复
 
-### 何时禁用 JSON mode:
-
-| 模型系列 | 设置 | 原因 |
-|----------|------|------|
-| **Gemma 2/3** | `true` (默认) | JSON mode 有问题，使用纯文本 |
-| **Mistral** | `true` (默认) | JSON mode 可能返回空响应 |
-| **Llama 3.x** | `true` (默认) | 本地版本通常不支持 JSON mode |
-| **Hunyuan** | `false` | 支持 JSON mode |
-| **Qwen** | `false` | 支持 JSON mode |
-| **OpenAI/GPT** | `false` | 支持 JSON mode |
-
-### 配置:
+每个 chunk 后自动保存进度:
 
 ```bash
-# 默认: JSON mode 禁用 (本地 LLM 更安全)
-DISABLE_JSON_MODE_TRANSLATE=true
-DISABLE_JSON_MODE_PROOFREAD=true
+# 50% 时中断
+python app.py  # Ctrl+C
 
-# 对于支持 JSON mode 的 API 模型:
-DISABLE_JSON_MODE_TRANSLATE=false
-DISABLE_JSON_MODE_PROOFREAD=false
+# 自动恢复
+python app.py  # ✓ 从 chunk 51/100 继续
 ```
 
-### 空响应处理
+**详情:** [docs/RESUME.md](docs/RESUME.md)
 
-当 JSON mode 禁用或 LLM 返回空响应时:
-- **自动重试**: 最多 2 次尝试，记录 ERROR
-- **调试输出**: 如果 `remove_tags()` 结果为空，记录原始内容
-- **错误格式**: `ERROR - Ответ 0 [stage/role]: X chars → 0 chars after remove_tags`
+---
+
+## 🐳 Docker
+
+**CPU-only (默认):**
+```bash
+docker-compose up -d
+```
+
+**GPU (NVIDIA):**
+```bash
+docker-compose -f docker-compose.gpu.yml up -d
+```
+
+**指南:** [docs/DOCKER_CPU_GUIDE.md](docs/DOCKER_CPU_GUIDE.md)
+
+---
 
 ## 📚 文档
 
-- [安装](docs/INSTALLATION.md)
-- [提示词](docs/PROMPTS_GUIDE.md)
-- [温度策略](docs/TEMPERATURE_STRATEGY.md)
-- [Rechunking](docs/RECHUNKING_GUIDE.md)
-- [NER](docs/NER_GUIDE.md)
-- [词汇表](docs/DICTIONARY_FORMAT.md)
-- [翻译阶段](docs/TRANSLATION_STAGES.md)
+| 主题 | 文件 |
+|------|------|
+| **安装** | [docs/INSTALLATION.md](docs/INSTALLATION.md) |
+| **配置** | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) |
+| **翻译阶段** | [docs/TRANSLATION_STAGES.md](docs/TRANSLATION_STAGES.md) |
+| **词典格式** | [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md) |
+| **崩溃恢复** | [docs/RESUME.md](docs/RESUME.md) |
+| **Docker** | [docs/DOCKER_CPU_GUIDE.md](docs/DOCKER_CPU_GUIDE.md) |
 
-## ⚠️ NER 和 GPU
-
-如果 NVRTC 错误:
-```bash
-# 使用 CPU 进行 NER
-SPACY_USE_GPU=false
-
-# 或删除 cupy
-pip uninstall cupy cupy-cuda12x -y
-```
+---
 
 ## 📝 版本
 
-- **v1.9** — 5 阶段流程，阶段特定温度
-- **v1.8** — 长度验证 Rechunking
-- **v1.7** — NER CPU fallback
+- **v1.11** — Checkpoint/resume, CPU Docker
+- **v1.10** — remove_tags 简化
+- **v1.9** — 5 阶段流程
 - **v1.0** — 初始版本
 
 ---
