@@ -75,8 +75,9 @@ class Character:
         return " ".join(parts)
     
     def to_vocab_format(self) -> str:
-        """Format for vocabulary file."""
-        return f"{self.name} = {self.target_name} | {self.category} | {self.gender} | {self.notes}"
+        """Format for vocabulary file (NEW comma-separated format)."""
+        metadata = [self.category, self.gender, self.notes]
+        return f"{self.name} = {self.target_name}, {', '.join(metadata)}"
 
 
 class CharacterRegistry:
@@ -182,6 +183,10 @@ class CharacterRegistry:
             )
             self.characters[key] = char
             self._index_character(char)
+            
+            # Track gender stats
+            if gender:
+                self.gender_stats[gender] += 1
         
         return char
     

@@ -163,6 +163,32 @@ else:
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
+# =============================================================================
+# Global Statistics Counters (for metrics reporting)
+# =============================================================================
+
+class TranslationStats:
+    """Global counters for translation statistics."""
+    
+    def __init__(self):
+        self.rechunk_events = 0
+        self.language_mismatch_retries = 0
+    
+    def reset(self):
+        self.rechunk_events = 0
+        self.language_mismatch_retries = 0
+    
+    def get_stats(self) -> dict:
+        return {
+            'rechunk_events': self.rechunk_events,
+            'language_mismatch_retries': self.language_mismatch_retries,
+        }
+
+
+# Global statistics instance
+translation_stats = TranslationStats()
+
+
 def log_entry(func):
     """Decorator to log function entry for key functions."""
     @functools.wraps(func)
@@ -404,6 +430,7 @@ class TranslationPipeline:
         # Check if translation is in correct language (detect if LLM returned source language)
         if _detect_language_mismatch(text, context.target_lang, context.source_text):
             logger.error("Translation returned in wrong language! Retrying...")
+            translation_stats.language_mismatch_retries += 1
             # Retry once with stronger instruction
             user_prompt = f"TRANSLATE to {context.target_lang} ONLY. DO NOT output English/source text.\n\n{user_prompt}"
             text = llm_service.complete(
@@ -728,6 +755,7 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
     # Rechunking if needed
     if should_split and depth < MAX_DEPTH:
         logger.info(f"Rechunking at depth {depth}: {percent_diff:.1f}% length difference")
+        translation_stats.rechunk_events += 1
         
         # Split source text
         part1, part2 = split_text_smartly(source_text)
@@ -869,8 +897,15 @@ llm_service = LLMServiceCompat()
 @log_entry
 def remove_tags(text: str) -> str:
     """
-    Remove XML/HTML tags and artifacts from translation output.
-    Uses regex patterns to clean common LLM output artifacts.
+    Умная очистка перевода с приоритетом извлечения из wrapper тэгов.
+    
+    Приоритет извлечения:
+    1. <ttext>...</ttext> (основной тэг из промта)
+    2. <translated>...</translated>
+    3. <IMPROVED_TRANSLATION>...</IMPROVED_TRANSLATION>
+    4. <target>...</target>
+    5. <TRANS>...</TRANS>
+    6. Фоллбэк: очистка от служебных блоков и мета-комментариев
     
     Note: For FB2 XML validation and cleaning, use xmlcheck.rem_tags()
     
@@ -883,49 +918,76 @@ def remove_tags(text: str) -> str:
     if not text:
         return ""
     
-    # Remove meta-commentary from LLM (common pattern)
-    # E.g., "I'm ready to help...", "Could you please provide...", etc.
+    # Шаг 1: Проверка на мета-комментарии LLM
     if "I'm ready to help" in text or "Could you please" in text or "I don't see any" in text:
         logger.warning("LLM returned meta-commentary instead of translation")
+        # Попытаться извлечь хоть что-то через extract_translation
+        extracted = _extract_translation(text)
+        if extracted:
+            return extracted
+    
+    # Шаг 2: Извлечение с приоритетом тэгов
+    extracted = _extract_translation(text)
+    
+    # Шаг 3: Если ничего не найдено, очистить от служебных блоков
+    if extracted == text:
+        # Удалить служебные секции
+        service_blocks = [
+            r'<(vocabulary|synopsis|context|task|suggestions|SOURCE_TEXT|DICTIONARY|EXPERT_SUGGESTIONS)[^>]*>[\s\S]*?</\1>',
+            r'```(?:xml|json)?[\s\S]*?```',
+            r'<\|im_end\|>',
+            r'<\|file_separator\|>',
+        ]
+        for pattern in service_blocks:
+            extracted = re.sub(pattern, '', extracted, flags=re.IGNORECASE)
+    
+    # Шаг 4: Валидация результата
+    if not extracted.strip():
+        logger.error(f"Empty result after tag removal. Original: {text[:200]}...")
         return ""
     
-    patterns = [
-        # Remove source text blocks (LLM sometimes includes original text)
-        r'<source[^>]*>[\s\S]*?</source>',
-        r'<SOURCE[^>]*>[\s\S]*?</SOURCE>',
-        r'<original[^>]*>[\s\S]*?</original>',
-        r'<ORIGINAL[^>]*>[\s\S]*?</ORIGINAL>',
-        
-        # Remove context sections that shouldn't be in translation
-        r'<vocabulary>[\s\S]*?</vocabulary>',
-        r'<synopsis>[\s\S]*?</synopsis>',
-        r'<context>[\s\S]*?</context>',
-        r'<task>[\s\S]*?</task>',
-        r'<suggestions>[\s\S]*?</suggestions>',
-        
-        # Remove source text artifacts
-        r'<SOURCE_TEXT>[\s\S]*?</SOURCE_TEXT>',
-        r'<DICTIONARY>[\s\S]*?</DICTIONARY>',
-        r'<EXPERT_SUGGESTIONS>[\s\S]*?</EXPERT_SUGGESTIONS>',
-        r'<SYNOPSIS>[\s\S]*?</SYNOPSIS>',
-        r'<INITIAL_TRANSLATION>[\s\S]*?</INITIAL_TRANSLATION>',
-        r'<FIRST_TRANSLATION>[\s\S]*?</FIRST_TRANSLATION>',
-        r'<TRANSLATION>[\s\S]*?</TRANSLATION>',
-        
-        # Remove markdown code blocks
-        r'```xml', r'```',
-        
-        # Remove translation wrapper tags (keep content)
-        r'</?(?:section|IMPROVED_TRANSLATION|target|TTEXT|TRANS)>',
-        
-        # Remove special tokens
-        r'<\|im_end\|>', r'<\|file_separator\|>'
-    ]
+    return extracted.strip()
+
+
+def _extract_translation(text: str) -> str:
+    """
+    Извлечь перевод с приоритетом тэгов-обёрток.
     
-    for pattern in patterns:
-        text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+    Приоритет: <ttext> → <translated> → <IMPROVED_TRANSLATION> → <target> → <TRANS> → весь текст
     
-    return text.strip()
+    Args:
+        text: Raw LLM response
+        
+    Returns:
+        Extracted translation or original text if no wrapper found
+    """
+    # Приоритет 1: <ttext> (основной тэг из промта)
+    match = re.search(r'<ttext[^>]*>([\s\S]*?)</ttext>', text, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    
+    # Приоритет 2: <translated>
+    match = re.search(r'<translated[^>]*>([\s\S]*?)</translated>', text, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    
+    # Приоритет 3: <IMPROVED_TRANSLATION>
+    match = re.search(r'<IMPROVED_TRANSLATION[^>]*>([\s\S]*?)</IMPROVED_TRANSLATION>', text, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    
+    # Приоритет 4: <target>
+    match = re.search(r'<target[^>]*>([\s\S]*?)</target>', text, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    
+    # Приоритет 5: <TRANS>
+    match = re.search(r'<TRANS[^>]*>([\s\S]*?)</TRANS>', text, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    
+    # Фоллбэк: вернуть весь текст (будет обработан в remove_tags)
+    return text
 
 
 def _detect_language_mismatch(text: str, expected_lang: str, source_text: str) -> bool:
@@ -1235,3 +1297,13 @@ def num_tokens_in_string(input_str: str, encoding_name: str = "cl100k_base") -> 
     except Exception:
         encoding = tiktoken.get_encoding("cl100k_base")
     return len(encoding.encode(input_str))
+
+
+def get_translation_stats() -> dict:
+    """Get global translation statistics."""
+    return translation_stats.get_stats()
+
+
+def reset_translation_stats():
+    """Reset global translation statistics."""
+    translation_stats.reset()

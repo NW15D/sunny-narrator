@@ -279,7 +279,14 @@ class VocabularyManager:
         logger.info(f"Template dictionary created: {self.dict_file}")
     
     def _load_from_file(self) -> Dict[str, VocabEntry]:
-        """Load vocabulary from .dic file."""
+        """
+        Load vocabulary from .dic file.
+        
+        Supports both formats:
+        - NEW: source = target, category, gender, notes (comma-separated)
+        - OLD: source = target | category | gender | notes (pipe-separated)
+        - LEGACY: source = target (no metadata)
+        """
         vocab = {}
         
         with open(self.dict_file, 'r', encoding='utf-8') as f:
@@ -289,9 +296,6 @@ class VocabularyManager:
                     continue
                 
                 try:
-                    # Format: source = target | category | gender | notes
-                    # OR: source = target (legacy format)
-                    
                     # Split by = first
                     if '=' not in line:
                         continue
@@ -300,13 +304,23 @@ class VocabularyManager:
                     source = parts[0].strip()
                     rest = parts[1].strip()
                     
-                    # Split rest by | for extended format
-                    if '|' in rest:
+                    # Try comma-separated format first (NEW)
+                    if ',' in rest:
+                        subparts = [p.strip() for p in rest.split(',')]
+                        target = subparts[0].strip()
+                        category = subparts[1] if len(subparts) > 1 and subparts[1] else ""
+                        gender = subparts[2] if len(subparts) > 2 and subparts[2] else ""
+                        notes = subparts[3] if len(subparts) > 3 and subparts[3] else ""
+                    
+                    # Try pipe-separated format (OLD)
+                    elif '|' in rest:
                         subparts = rest.split('|')
                         target = subparts[0].strip()
                         category = subparts[1].strip() if len(subparts) > 1 else ""
                         gender = subparts[2].strip() if len(subparts) > 2 else ""
                         notes = subparts[3].strip() if len(subparts) > 3 else ""
+                    
+                    # Legacy format (no metadata)
                     else:
                         target = rest
                         category = ""
