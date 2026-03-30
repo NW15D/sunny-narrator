@@ -1194,13 +1194,15 @@ def remove_tags_with_check(text: str, stage_name: str = "", role: LLMRole = None
     """
     Remove tags and check for empty result. Log ERROR if result is empty.
     
+    FALLBACK: If cleanup returns empty, return original text (prevents lost translations).
+    
     Args:
         text: Raw LLM response
         stage_name: Name of pipeline stage for logging
         role: LLM role for context
         
     Returns:
-        Cleaned text (may be empty if input was empty)
+        Cleaned text, or original text if cleanup failed
     """
     if not text:
         logger.error(f"ERROR - Ответ 0 [{stage_name}]: LLM returned None/empty before remove_tags")
@@ -1213,12 +1215,16 @@ def remove_tags_with_check(text: str, stage_name: str = "", role: LLMRole = None
     # Check if result became empty after cleanup
     if original_len > 0 and cleaned_len == 0:
         role_str = role.value if role else "unknown"
-        logger.error(f"ERROR - Ответ 0 [{stage_name}/{role_str}]: {original_len} chars → 0 chars after remove_tags")
-        # Log the original content that became empty (for debugging)
+        logger.warning(f"⚠️ FALLBACK [{stage_name}/{role_str}]: {original_len} chars → 0 chars after remove_tags, using original text")
+        # Log the original content for debugging
         preview = text[:500].replace('\n', ' ').replace('\r', ' ')
         logger.debug(f"DEBUG - Content that became empty [{stage_name}]: {preview}")
         if len(text) > 500:
             logger.debug(f"DEBUG - ... (truncated, total {original_len} chars)")
+        
+        # FALLBACK: Return original text instead of empty string
+        # This prevents losing valid translations when remove_tags fails to extract
+        return text.strip()
     
     return cleaned
 
