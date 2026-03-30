@@ -135,9 +135,6 @@ class TranslationEngine:
             # Get vocabulary for this chunk (formatted for model)
             vocab_dict = self.get_formatted_vocab_for_chunk(source_text, 0, 0)
             
-            # Count tokens before translation
-            source_tokens = ta.num_tokens_in_string(source_text)
-            
             translation, synopsis = ta.translate_chunk(
                 source_lang=config.source_lang,
                 target_lang=config.target_lang,
@@ -152,10 +149,6 @@ class TranslationEngine:
             
             if translation is None:
                 raise ValueError("Translation returned None")
-            
-            # Count tokens after translation
-            target_tokens = ta.num_tokens_in_string(translation)
-            self.stats['total_tokens'] += source_tokens + target_tokens
             
             return translation, synopsis
             
@@ -181,6 +174,9 @@ class TranslationEngine:
         final_content = ""
         synopsis = ""
         retry_count = 0
+        
+        # Count source tokens once (before retry loop)
+        source_tokens = ta.num_tokens_in_string(source_text)
         
         # Retry loop for XML validation
         for attempt in range(3):
@@ -214,6 +210,10 @@ class TranslationEngine:
         
         # Count successful translation
         self.stats['successful'] += 1
+        
+        # Count total tokens (source + target) after successful translation
+        target_tokens = ta.num_tokens_in_string(final_content)
+        self.stats['total_tokens'] += source_tokens + target_tokens
         
         # Log length statistics (no rechunking here - done in translate_chunk)
         target_len = len(final_content)
