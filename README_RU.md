@@ -133,6 +133,65 @@ DISABLE_JSON_MODE_PROOFREAD=false
 - **Debug вывод**: Оригинальное содержимое логируется, если `remove_tags()` даёт пустой результат
 - **Формат ошибки**: `ERROR - Ответ 0 [stage/role]: X chars → 0 chars after remove_tags`
 
+## 💾 Resume после сбоя
+
+**Автоматическое сохранение прогресса** после каждого чанка в `.checkpoint.json` файл.
+
+### Как работает:
+
+1. **Сохранение:** После перевода каждого чанка создаётся checkpoint с:
+   - Статистика (успешные/неуспешные)
+   - Длины (source/target)
+   - Synopsis history (контекст для следующих чанков)
+   - Номер последнего обработанного чанка
+
+2. **Восстановление:** При перезапуске:
+   - Находит существующий checkpoint
+   - Восстанавливает статистику и контекст
+   - Продолжает с места остановки
+
+3. **Очистка:** После успешного завершения checkpoint удаляется
+
+### Пример:
+
+```bash
+# Запуск перевода
+python app.py
+
+# Прерывание на 50% (Ctrl+C или crash)
+# ...
+
+# Перезапуск — автоматический resume
+python app.py
+# ✓ Checkpoint found: books/ExampleBook_ru_1929-3003.checkpoint.json
+# ✓ Resuming from previous session...
+# ✓ Resuming from chunk 51/100
+```
+
+### Структура checkpoint:
+
+```json
+{
+  "version": 1,
+  "book_path": "/path/to/book.fb2",
+  "last_chunk": 49,
+  "stats": {
+    "successful": 50,
+    "failed": 0,
+    "total_tokens": 123456
+  },
+  "lengths": {
+    "total_source_len": 450000,
+    "total_target_len": 380000
+  },
+  "synopsis_history": {...},
+  "created_at": "2026-03-30T23:00:00Z",
+  "updated_at": "2026-03-30T23:30:00Z"
+}
+```
+
+**Подробнее:** [docs/RESUME.md](docs/RESUME.md)
+
 ## 📚 Документация
 
 - [Установка](docs/INSTALLATION.md)
@@ -142,6 +201,7 @@ DISABLE_JSON_MODE_PROOFREAD=false
 - [NER](docs/NER_GUIDE.md)
 - [Словарь](docs/DICTIONARY_FORMAT.md)
 - [Стадии перевода](docs/TRANSLATION_STAGES.md)
+- [Resume после сбоя](docs/RESUME.md) ← **NEW**
 
 ## ⚠️ NER и GPU
 
