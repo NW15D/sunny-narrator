@@ -361,7 +361,8 @@ class LLMService:
         user_prompt: str,
         max_tokens: int = 8192,
         json_mode: bool = False,
-        stage: TranslationStage = None  # NEW: for stage-specific temperature
+        stage: TranslationStage = None,  # NEW: for stage-specific temperature
+        retry_count: int = 0  # NEW: retry counter for empty responses
     ) -> str:
         """
         Execute LLM completion with role-appropriate client.
@@ -370,6 +371,9 @@ class LLMService:
         - Gemma 2/3: System prompt merged into user prompt
         - Mistral, Llama 3.x: System prompt sent separately
         
+        NEW: Automatic retry on empty response (max 2 retries).
+        NEW: Configurable JSON mode disable for local LLMs.
+        
         Args:
             role: LLMRole.PRIMARY or LLMRole.SECONDARY
             system_prompt: System instruction (may be merged with user_prompt)
@@ -377,6 +381,7 @@ class LLMService:
             max_tokens: Maximum tokens to generate
             json_mode: Enable JSON response format
             stage: TranslationStage for temperature selection (optional)
+            retry_count: Internal retry counter (do not set manually)
             
         Returns:
             Generated text from LLM
@@ -396,6 +401,18 @@ class LLMService:
             use_sys_not_promt = config.sys_not_promt_translate
         else:
             use_sys_not_promt = config.sys_not_promt_proofread
+        
+        # Check if JSON mode should be disabled for this role (for local LLMs)
+        disable_json = False
+        if role == LLMRole.PRIMARY:
+            disable_json = config.disable_json_mode_translate
+        else:
+            disable_json = config.disable_json_mode_proofread
+        
+        if disable_json and json_mode:
+            json_mode = False
+            if config.debug:
+                logger.debug(f"JSON mode disabled for {role.value} LLM via config")
         
         messages = []
         
@@ -419,13 +436,32 @@ class LLMService:
             comp_kwargs["response_format"] = {"type": "json_object"}
         
         if config.debug:
-            logger.debug(f"LLM Request [{role.value}]: {model}, {len(user_prompt)} chars, temp={temp:.2f}, sys_not_promt={use_sys_not_promt}")
+            logger.debug(f"LLM Request [{role.value}]: {model}, {len(user_prompt)} chars, temp={temp:.2f}, sys_not_promt={use_sys_not_promt}, json_mode={json_mode}")
         
         response = client.chat.completions.create(**comp_kwargs)
         result = response.choices[0].message.content
         
         if config.debug:
-            logger.debug(f"LLM Response [{role.value}]: {len(result)} chars")
+            logger.debug(f"LLM Response [{role.value}]: {len(result) if result else 0} chars")
+        
+        # Check for empty response and retry
+        if not result or len(result.strip()) == 0:
+            logger.error(f"ERROR - Ответ 0 [{role.value}]: LLM returned empty response (retry {retry_count + 1}/2)")
+            if retry_count < 2:  # Max 2 retries
+                logger.error(f"Retrying current step [{role.value}]...")
+                # Small delay before retry
+                time.sleep(0.5)
+                return self.complete(
+                    role=role,
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    max_tokens=max_tokens,
+                    json_mode=json_mode,
+                    stage=stage,
+                    retry_count=retry_count + 1
+                )
+            else:
+                logger.error(f"Max retries exceeded for [{role.value}], returning empty result")
         
         return result
 
@@ -491,7 +527,7 @@ class TranslationPipeline:
             stage=TranslationStage.INITIAL  # Stage-specific temperature
         )
         
-        text = remove_tags(text)
+        text = remove_tags_with_check(text, "initial_translation", LLMRole.PRIMARY)
         
         # Check if translation is in correct language (detect if LLM returned source language)
         if _detect_language_mismatch(text, context.target_lang, context.source_text):
@@ -505,7 +541,7 @@ class TranslationPipeline:
                 max_tokens=MAX_TOKENS_PER_CHUNK,
                 stage=TranslationStage.INITIAL
             )
-            text = remove_tags(text)
+            text = remove_tags_with_check(text, "initial_translation_retry", LLMRole.PRIMARY)
         
         return TranslationResult(
             stage=TranslationStage.INITIAL,
@@ -539,7 +575,7 @@ class TranslationPipeline:
             stage=TranslationStage.SYNOPSIS  # Stage-specific temperature
         )
         
-        text = remove_tags(text)
+        text = remove_tags_with_check(text, "generate_synopsis", LLMRole.SECONDARY)
         
         return TranslationResult(
             stage=TranslationStage.SYNOPSIS,
@@ -612,7 +648,7 @@ class TranslationPipeline:
             stage=TranslationStage.IMPROVE  # Stage-specific temperature
         )
         
-        text = remove_tags(text)
+        text = remove_tags_with_check(text, "improve_translation", LLMRole.SECONDARY)
         
         return TranslationResult(
             stage=TranslationStage.IMPROVE,
@@ -649,7 +685,7 @@ class TranslationPipeline:
             stage=TranslationStage.FINAL  # Stage-specific temperature
         )
         
-        text = remove_tags(text)
+        text = remove_tags_with_check(text, "final_edit", LLMRole.SECONDARY)
         
         return TranslationResult(
             stage=TranslationStage.FINAL,
@@ -1086,6 +1122,39 @@ def remove_tags(text: str) -> str:
         logger.error(f"Tag cleanup performed: {len(original_text)} → {len(text)} chars | {', '.join(repair_reasons[:3])}")
     
     return text.strip()
+
+
+def remove_tags_with_check(text: str, stage_name: str = "", role: LLMRole = None) -> str:
+    """
+    Remove tags and check for empty result. Log ERROR if result is empty.
+    
+    Args:
+        text: Raw LLM response
+        stage_name: Name of pipeline stage for logging
+        role: LLM role for context
+        
+    Returns:
+        Cleaned text (may be empty if input was empty)
+    """
+    if not text:
+        logger.error(f"ERROR - Ответ 0 [{stage_name}]: LLM returned None/empty before remove_tags")
+        return ""
+    
+    original_len = len(text)
+    cleaned = remove_tags(text)
+    cleaned_len = len(cleaned)
+    
+    # Check if result became empty after cleanup
+    if original_len > 0 and cleaned_len == 0:
+        role_str = role.value if role else "unknown"
+        logger.error(f"ERROR - Ответ 0 [{stage_name}/{role_str}]: {original_len} chars → 0 chars after remove_tags")
+        # Log the original content that became empty (for debugging)
+        preview = text[:500].replace('\n', ' ').replace('\r', ' ')
+        logger.debug(f"DEBUG - Content that became empty [{stage_name}]: {preview}")
+        if len(text) > 500:
+            logger.debug(f"DEBUG - ... (truncated, total {original_len} chars)")
+    
+    return cleaned
 
 
 def _detect_language_mismatch(text: str, expected_lang: str, source_text: str) -> bool:
