@@ -203,22 +203,21 @@ class TranslationEngine:
 
     def _post_process_xml(self, source_text: str, translated_text: str) -> str:
         """
-        Validate and repair XML structure after translation.
+        Basic XML cleanup after translation.
         
-        - Removes artifacts
-        - Checks tag balance
-        - Repairs via LLM if needed
+        NOTE: Does NOT repair tag structure for chunks.
+        Chunks may have intentionally unbalanced tags
+        (e.g., <title> opened in one chunk, closed in another).
+        Full XML validation happens only on final assembled document.
+        
+        - Removes artifacts via rem_tags()
+        - Does NOT use LLM repair (would break chunk structure)
         """
+        # Only basic cleanup - no structural repair for chunks
         cleaned = xc.rem_tags(translated_text)
         
-        source_tags = self._count_tags(source_text)
-        translated_tags = self._count_tags(cleaned)
-        
-        diff = self._tag_difference(source_tags, translated_tags)
-        
-        if diff > 0.1:
-            logger.debug(f"XML repair needed (diff={diff:.1%})")
-            cleaned = self._llm_repair_xml(source_text, cleaned)
+        # NOTE: Disabled LLM repair for chunks as it breaks document structure
+        # Full validation happens on final assembled document only
         
         return cleaned
 
