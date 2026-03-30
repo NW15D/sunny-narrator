@@ -212,6 +212,40 @@ All prompts are in `src/prompts.json`:
 
 See [docs/PROMPTS_GUIDE.md](docs/PROMPTS_GUIDE.md) for details.
 
+## 📎 Vocabulary Management
+
+Sunny Narrator uses a dictionary file (`*.dic`) to ensure terminology consistency.
+
+### Dictionary Format (JSON)
+
+```json
+# Vocabulary for MyBook
+[
+  {"source": "Alice", "target": "Алиса", "category": "PERSON", "gender": "she", "notes": "Main character"},
+  {"source": "Wonderland", "target": "Страна Чудес", "category": "LOC", "gender": "", "notes": ""}
+]
+```
+
+### Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `source` | ✅ | Term in source language |
+| `target` | ✅ | Translation |
+| `category` | ⚪ | `PERSON`, `LOC`, `ORG`, `TERM` |
+| `gender` | ⚪ | `he`, `she`, `it`, `they` |
+| `notes` | ⚪ | Comments |
+
+### Workflow
+
+1. **Automatic creation:** NER extracts terms on first run
+2. **Manual editing:** Edit `.dic` file before translation
+3. **Validation:** `python -c "from src.vocabulary_manager import validate_dictionary; print(validate_dictionary('books/mybook.dic'))"`
+
+**See also:** [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md)
+
+---
+
 ## 🧪 Testing
 
 ```python

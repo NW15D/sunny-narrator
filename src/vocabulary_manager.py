@@ -31,6 +31,87 @@ config = Config()
 logger = logging.getLogger(__name__)
 
 
+def validate_dictionary(dict_file: str) -> List[str]:
+    """
+    Validate JSON dictionary format.
+    
+    Args:
+        dict_file: Path to .dic file
+        
+    Returns:
+        List of validation errors (empty if valid)
+    """
+    import json
+    
+    errors = []
+    
+    try:
+        with open(dict_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Try to find JSON array in content (skip comments)
+        json_match = re.search(r'\[([\s\S]*?)\]', content)
+        if not json_match:
+            errors.append("No JSON array found in dictionary file")
+            return errors
+        
+        vocab_list = json.loads(json_match.group(0))
+        
+        if not isinstance(vocab_list, list):
+            errors.append("Dictionary must be a JSON array")
+            return errors
+        
+        valid_categories = {'PERSON', 'LOC', 'ORG', 'TERM', 'OTHER', ''}
+        valid_genders = {'he', 'she', 'it', 'they', ''}
+        
+        for i, entry in enumerate(vocab_list):
+            if not isinstance(entry, dict):
+                errors.append(f"Entry {i}: must be an object, got {type(entry).__name__}")
+                continue
+            
+            # Check required fields
+            if 'source' not in entry:
+                errors.append(f"Entry {i}: missing required field 'source'")
+            elif not isinstance(entry['source'], str) or not entry['source'].strip():
+                errors.append(f"Entry {i}: 'source' must be a non-empty string")
+            
+            if 'target' not in entry:
+                errors.append(f"Entry {i}: missing required field 'target'")
+            elif not isinstance(entry['target'], str) or not entry['target'].strip():
+                errors.append(f"Entry {i}: 'target' must be a non-empty string")
+            
+            # Check optional fields
+            if 'category' in entry:
+                if not isinstance(entry['category'], str):
+                    errors.append(f"Entry {i}: 'category' must be a string")
+                elif entry['category'] not in valid_categories:
+                    errors.append(f"Entry {i}: invalid category '{entry['category']}'. Valid: {valid_categories}")
+            
+            if 'gender' in entry:
+                if not isinstance(entry['gender'], str):
+                    errors.append(f"Entry {i}: 'gender' must be a string")
+                elif entry['gender'] not in valid_genders:
+                    errors.append(f"Entry {i}: invalid gender '{entry['gender']}'. Valid: {valid_genders}")
+            
+            if 'notes' in entry and not isinstance(entry['notes'], str):
+                errors.append(f"Entry {i}: 'notes' must be a string")
+        
+        # Check for duplicates
+        sources = [entry.get('source', '').lower() for entry in vocab_list if isinstance(entry, dict)]
+        duplicates = set([s for s in sources if sources.count(s) > 1])
+        if duplicates:
+            errors.append(f"Duplicate source terms: {', '.join(duplicates)}")
+        
+    except json.JSONDecodeError as e:
+        errors.append(f"Invalid JSON: {e}")
+    except FileNotFoundError:
+        errors.append(f"Dictionary file not found: {dict_file}")
+    except Exception as e:
+        errors.append(f"Unexpected error: {e}")
+    
+    return errors
+
+
 @dataclass
 class VocabEntry:
     """Single vocabulary entry."""
