@@ -492,9 +492,6 @@ class LLMService:
 # Global LLM service instance (for pipeline - returns tuple)
 llm_service = LLMService()
 
-# Compatibility layer (for legacy code - returns string only)
-llm_service_compat = LLMServiceCompat()
-
 
 class TranslationPipeline:
     """Main translation pipeline implementing dual-LLM workflow."""
