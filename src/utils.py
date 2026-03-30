@@ -1104,108 +1104,53 @@ llm_service_compat = LLMServiceCompat()
 @log_entry
 def remove_tags(text: str) -> str:
     """
-    Remove XML/HTML tags and artifacts from translation output.
-    Logs all repairs as ERROR level.
+    Extract translation from wrapper tags. Minimal cleanup.
     
-    Supports multiple output formats:
-    1. JSON: {"translation": "..."}  ← PREFERRED
-    2. XML: <ttext>...</ttext>
-    3. Plain text (no wrapper)
+    Priority:
+    1. JSON: {"translation": "..."}
+    2. <ttext>...</ttext>
+    3. <translated>...</translated>
+    4. <TRANSLATION>...</TRANSLATION>
+    5. Fallback: return entire text (no cleanup)
+    
+    This conservative approach prevents false positives where valid translation
+    content was being removed by aggressive cleanup patterns.
     
     Args:
-        text: Text with XML tags to remove
+        text: Raw LLM response (may contain wrapper tags)
         
     Returns:
-        Cleaned text without tags
+        Extracted translation or full text if no wrapper found
     """
     if not text:
         return ""
     
-    original_text = text
-    cleaned = False
-    repair_reasons = []
-    
     # STEP 1: Try to extract from JSON format (PREFERRED)
     json_match = re.search(r'\{[\s]*["\']translation["\'][\s]*:[\s]*["\']([\s\S]*?)["\'][\s]*\}', text)
     if json_match:
-        text = json_match.group(1)
         logger.debug("Extracted translation from JSON format")
-        cleaned = True
-        repair_reasons.append("Extracted from JSON")
-    else:
-        # STEP 2: Try to extract from <ttext> wrapper if JSON not found
-        ttext_match = re.search(r'<ttext[^>]*>([\s\S]*?)</ttext>', text, re.IGNORECASE)
-        if ttext_match:
-            text = ttext_match.group(1)
-            logger.debug("Extracted content from <ttext> wrapper")
-            cleaned = True
-            repair_reasons.append("Extracted from <ttext>")
-        else:
-            # STEP 3: Try other wrapper tags
-            for tag in ['TTEXT', 'TRANS', 'target']:
-                pattern = rf'<{tag}[^>]*>([\s\S]*?)</{tag}>'
-                match = re.search(pattern, text, re.IGNORECASE)
-                if match and match.group(1).strip():
-                    text = match.group(1)
-                    logger.debug(f"Extracted content from <{tag}> wrapper")
-                    cleaned = True
-                    repair_reasons.append(f"Extracted from <{tag}>")
-                    break
+        return json_match.group(1).strip()
     
-    # Remove meta-commentary from LLM (common pattern)
-    meta_patterns = [
-        ("I'm ready to help", "Meta-commentary: 'I'm ready to help'"),
-        ("Could you please", "Meta-commentary: 'Could you please'"),
-        ("I don't see any", "Meta-commentary: 'I don't see any'"),
-        ("I apologize", "Meta-commentary: 'I apologize'"),
-        ("Let me translate", "Meta-commentary: 'Let me translate'"),
-        ("Here's the translation", "Meta-commentary: 'Here's the translation'")
+    # STEP 2: Try wrapper tags in priority order
+    # These are the tags we explicitly ask LLM to use in prompts
+    wrapper_tags = [
+        'ttext',           # Primary wrapper tag (used in most prompts)
+        'translated',      # Alternative wrapper
+        'TRANSLATION',     # Fallback wrapper
+        'TRANS',           # Short form
+        'target',          # From older prompts
+        'IMPROVED_TRANSLATION'  # From reflection pipeline
     ]
     
-    for pattern, description in meta_patterns:
-        if pattern.lower() in text.lower():
-            metrics.log_xml_repair(description)  # ERROR level
-            repair_reasons.append(description)
-            cleaned = True
-            break
+    for tag in wrapper_tags:
+        match = re.search(rf'<{tag}[^>]*>([\s\S]*?)</{tag}>', text, re.IGNORECASE)
+        if match and match.group(1).strip():
+            logger.debug(f"Extracted content from <{tag}> wrapper")
+            return match.group(1).strip()
     
-    # STEP 4: Remove unwanted tags and artifacts
-    patterns_with_desc = [
-        (r'<source[^>]*>[\s\S]*?</source>', 'source block'),
-        (r'<SOURCE[^>]*>[\s\S]*?</SOURCE>', 'source block'),
-        (r'<original[^>]*>[\s\S]*?</original>', 'original block'),
-        (r'<vocabulary>[\s\S]*?</vocabulary>', 'vocabulary section'),
-        (r'<synopsis>[\s\S]*?</synopsis>', 'synopsis section'),
-        (r'<context>[\s\S]*?</context>', 'context section'),
-        (r'<task>[\s\S]*?</task>', 'task section'),
-        (r'<suggestions>[\s\S]*?</suggestions>', 'suggestions section'),
-        (r'<SOURCE_TEXT>[\s\S]*?</SOURCE_TEXT>', 'SOURCE_TEXT block'),
-        (r'<DICTIONARY>[\s\S]*?</DICTIONARY>', 'DICTIONARY block'),
-        (r'<EXPERT_SUGGESTIONS>[\s\S]*?</EXPERT_SUGGESTIONS>', 'EXPERT_SUGGESTIONS block'),
-        (r'<SYNOPSIS>[\s\S]*?</SYNOPSIS>', 'SYNOPSIS block'),
-        (r'<INITIAL_TRANSLATION>[\s\S]*?</INITIAL_TRANSLATION>', 'INITIAL_TRANSLATION block'),
-        (r'<FIRST_TRANSLATION>[\s\S]*?</FIRST_TRANSLATION>', 'FIRST_TRANSLATION block'),
-        (r'<TRANSLATION>[\s\S]*?</TRANSLATION>', 'TRANSLATION block'),
-        (r'```json', 'markdown code block'),
-        (r'```xml', 'markdown code block'),
-        (r'```', 'markdown code block'),
-        # Remove any remaining wrapper tags
-        (r'</?(?:section|IMPROVED_TRANSLATION|TTEXT|TRANS|target)>', 'wrapper tags'),
-        (r'<\|im_end\|>', 'special token'),
-        (r'<\|file_separator\|>', 'special token')
-    ]
-    
-    for pattern, description in patterns_with_desc:
-        matches = re.findall(pattern, text, re.IGNORECASE)
-        if matches:
-            metrics.log_xml_repair(f"Removed {description} ({len(matches)} occurrences)")  # ERROR level
-            repair_reasons.append(f"{description} x{len(matches)}")
-            cleaned = True
-        text = re.sub(pattern, '', text, flags=re.IGNORECASE)
-    
-    if cleaned:
-        logger.error(f"Tag cleanup performed: {len(original_text)} → {len(text)} chars | {', '.join(repair_reasons[:3])}")
-    
+    # STEP 3: Fallback — return entire text without any cleanup
+    # This prevents losing valid translation when LLM doesn't use wrapper tags
+    logger.debug("No wrapper tags found, returning full text")
     return text.strip()
 
 
