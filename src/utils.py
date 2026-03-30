@@ -493,6 +493,15 @@ class LLMService:
                 logger.debug(f"LLM Response [{role.value}]: {len(result) if result else 0} chars")
         
         # Check for empty response and retry (unless allow_empty is True)
+        # FALLBACK: If tokens > 0 but result is empty/None, use raw response
+        if (not result or len(result.strip()) == 0) and tokens_used > 0:
+            logger.warning(f"⚠️ FALLBACK [{role.value}]: LLM returned {tokens_used} tokens but result=None/empty, using raw response")
+            # Try to extract from response structure
+            if hasattr(response.choices[0], 'message') and hasattr(response.choices[0].message, 'content'):
+                result = str(response.choices[0].message.content) if response.choices[0].message.content else ""
+            if not result and hasattr(response, 'choices') and response.choices:
+                result = str(response.choices[0])
+        
         if not result or len(result.strip()) == 0:
             if allow_empty:
                 # For stages where empty response is acceptable (e.g., synopsis)
