@@ -362,8 +362,9 @@ class LLMService:
         max_tokens: int = 8192,
         json_mode: bool = False,
         stage: TranslationStage = None,  # NEW: for stage-specific temperature
-        retry_count: int = 0  # NEW: retry counter for empty responses
-    ) -> str:
+        retry_count: int = 0,  # NEW: retry counter for empty responses
+        track_tokens: bool = True  # NEW: extract token usage from response
+    ) -> tuple:
         """
         Execute LLM completion with role-appropriate client.
         
@@ -373,6 +374,7 @@ class LLMService:
         
         NEW: Automatic retry on empty response (max 2 retries).
         NEW: Configurable JSON mode disable for local LLMs.
+        NEW: Returns token usage from API response.
         
         Args:
             role: LLMRole.PRIMARY or LLMRole.SECONDARY
@@ -382,9 +384,10 @@ class LLMService:
             json_mode: Enable JSON response format
             stage: TranslationStage for temperature selection (optional)
             retry_count: Internal retry counter (do not set manually)
+            track_tokens: Whether to extract token usage from response
             
         Returns:
-            Generated text from LLM
+            Tuple of (generated_text, tokens_used)
         """
         client, model, temp = self.get_client(role)
         
@@ -441,8 +444,15 @@ class LLMService:
         response = client.chat.completions.create(**comp_kwargs)
         result = response.choices[0].message.content
         
-        if config.debug:
-            logger.debug(f"LLM Response [{role.value}]: {len(result) if result else 0} chars")
+        # Extract token usage from response
+        tokens_used = 0
+        if track_tokens and hasattr(response, 'usage') and response.usage:
+            tokens_used = response.usage.total_tokens or 0
+            if config.debug:
+                logger.debug(f"LLM Response [{role.value}]: {len(result) if result else 0} chars, {tokens_used} tokens")
+        else:
+            if config.debug:
+                logger.debug(f"LLM Response [{role.value}]: {len(result) if result else 0} chars")
         
         # Check for empty response and retry
         if not result or len(result.strip()) == 0:
@@ -451,19 +461,24 @@ class LLMService:
                 logger.error(f"Retrying current step [{role.value}]...")
                 # Small delay before retry
                 time.sleep(0.5)
-                return self.complete(
+                retry_result, retry_tokens = self.complete(
                     role=role,
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
                     max_tokens=max_tokens,
                     json_mode=json_mode,
                     stage=stage,
-                    retry_count=retry_count + 1
+                    retry_count=retry_count + 1,
+                    track_tokens=track_tokens
                 )
+                # Add retry tokens to metrics
+                if retry_tokens > 0:
+                    metrics.log_retry(retry_tokens, f"Empty response retry [{role.value}]")
+                return retry_result, retry_tokens
             else:
                 logger.error(f"Max retries exceeded for [{role.value}], returning empty result")
         
-        return result
+        return result, tokens_used
 
 
 # Global LLM service instance
@@ -519,7 +534,7 @@ class TranslationPipeline:
         
         system_prompt = config.get_prompt("initial_translation", "system")
         
-        text = llm_service.complete(
+        text, tokens_used = llm_service.complete(
             role=LLMRole.PRIMARY,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
@@ -534,20 +549,23 @@ class TranslationPipeline:
             logger.error("Translation returned in wrong language! Retrying...")
             # Retry once with stronger instruction
             user_prompt = f"TRANSLATE to {context.target_lang} ONLY. DO NOT output English/source text.\n\n{user_prompt}"
-            text = llm_service.complete(
+            retry_text, retry_tokens = llm_service.complete(
                 role=LLMRole.PRIMARY,
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 max_tokens=MAX_TOKENS_PER_CHUNK,
                 stage=TranslationStage.INITIAL
             )
-            text = remove_tags_with_check(text, "initial_translation_retry", LLMRole.PRIMARY)
+            text = remove_tags_with_check(retry_text, "initial_translation_retry", LLMRole.PRIMARY)
+            tokens_used += retry_tokens
+            metrics.log_language_mismatch(retry_tokens)
         
         return TranslationResult(
             stage=TranslationStage.INITIAL,
             llm_role=LLMRole.PRIMARY,
             text=text,
-            metadata={"prompt_style": context.style}
+            metadata={"prompt_style": context.style},
+            tokens_used=tokens_used
         )
     
     @log_entry
@@ -567,7 +585,7 @@ class TranslationPipeline:
             )
         system_prompt = config.get_prompt("synopsis", "system")
         
-        text = llm_service.complete(
+        text, tokens_used = llm_service.complete(
             role=LLMRole.SECONDARY,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
@@ -585,7 +603,8 @@ class TranslationPipeline:
         return TranslationResult(
             stage=TranslationStage.SYNOPSIS,
             llm_role=LLMRole.SECONDARY,
-            text=text
+            text=text,
+            tokens_used=tokens_used
         )
     
     @log_entry
@@ -611,7 +630,7 @@ class TranslationPipeline:
             country=context.country
         )
         
-        text = llm_service.complete(
+        text, tokens_used = llm_service.complete(
             role=LLMRole.SECONDARY,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
@@ -623,7 +642,8 @@ class TranslationPipeline:
             stage=TranslationStage.REFLECTION,
             llm_role=LLMRole.SECONDARY,
             text=text,
-            metadata={"stage": "reflection", "output_type": "suggestions_only", "vocabulary_checked": True}
+            metadata={"stage": "reflection", "output_type": "suggestions_only", "vocabulary_checked": True},
+            tokens_used=tokens_used
         )
     
     @log_entry
@@ -645,7 +665,7 @@ class TranslationPipeline:
             country=context.country
         )
         
-        text = llm_service.complete(
+        text, tokens_used = llm_service.complete(
             role=LLMRole.SECONDARY,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
@@ -658,7 +678,8 @@ class TranslationPipeline:
         return TranslationResult(
             stage=TranslationStage.IMPROVE,
             llm_role=LLMRole.SECONDARY,
-            text=text
+            text=text,
+            tokens_used=tokens_used
         )
     
     @log_entry
@@ -682,7 +703,7 @@ class TranslationPipeline:
             country=context.country
         )
         
-        text = llm_service.complete(
+        text, tokens_used = llm_service.complete(
             role=LLMRole.SECONDARY,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
@@ -696,7 +717,8 @@ class TranslationPipeline:
             stage=TranslationStage.FINAL,
             llm_role=LLMRole.SECONDARY,
             text=text,
-            metadata={"stage": "final_edit", "compared_with_original": True, "vocabulary_used": True}
+            metadata={"stage": "final_edit", "compared_with_original": True, "vocabulary_used": True},
+            tokens_used=tokens_used
         )
     
     def execute(self, source_lang: str, target_lang: str, source_text: str,
@@ -950,16 +972,18 @@ class LLMServiceCompat:
             stage: TranslationStage for temperature selection (optional)
             
         Returns:
-            Generated text from LLM
+            Generated text from LLM (tokens_used discarded for compatibility)
         """
-        return self._new_service.complete(
+        text, _ = self._new_service.complete(
             role=role,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             max_tokens=max_tokens,
             json_mode=json_mode,
-            stage=stage  # Pass stage for temperature selection
+            stage=stage,  # Pass stage for temperature selection
+            track_tokens=False  # Don't track tokens for compatibility layer
         )
+        return text
     
     def get_completion(self, role: str, prompt_category: str, prompt_key: str = None,
                        temperature: float = None, max_tokens: int = None, json_mode: bool = False,
@@ -1002,15 +1026,17 @@ class LLMServiceCompat:
         # Determine LLM role
         llm_role = LLMRole.PRIMARY if role == "Translate" else LLMRole.SECONDARY
         
-        # Get completion
-        return self._new_service.complete(
+        # Get completion (discard tokens for compatibility)
+        text, _ = self._new_service.complete(
             role=llm_role,
             system_prompt="",  # Prompts are self-contained
             user_prompt=user_prompt,
             max_tokens=max_tokens or MAX_TOKENS_PER_CHUNK,
             json_mode=json_mode,
-            stage=stage  # Pass stage for temperature selection
+            stage=stage,  # Pass stage for temperature selection
+            track_tokens=False
         )
+        return text
 
 
 # Global LLM service instance
