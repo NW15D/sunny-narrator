@@ -275,33 +275,39 @@ See [docs/PROMPTS_GUIDE.md](docs/PROMPTS_GUIDE.md) for details.
 
 Sunny Narrator uses a dictionary file (`*.dic`) to ensure terminology consistency.
 
-### Dictionary Format (JSON)
+### Dictionary Format (CSV with commas)
 
-```json
+```dic
 # Vocabulary for MyBook
-[
-  {"source": "Alice", "target": "Алиса", "category": "PERSON", "gender": "she", "notes": "Main character"},
-  {"source": "Wonderland", "target": "Страна Чудес", "category": "LOC", "gender": "", "notes": ""}
-]
+# Format: source = target, category, gender, notes
+
+# PERSON (2 terms)
+Alice = Алиса, PERSON, she, Main character
+Mad Hatter = Шляпный Болван, PERSON, he, Eccentric character
+
+# LOC (1 term)
+Wonderland = Страна Чудес, LOC, , 
 ```
+
+**Important:** Format uses **commas** (not JSON or pipes). See [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md) for details.
 
 ### Fields
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `source` | ✅ | Term in source language |
-| `target` | ✅ | Translation |
-| `category` | ⚪ | `PERSON`, `LOC`, `ORG`, `TERM` |
-| `gender` | ⚪ | `he`, `she`, `it`, `they` |
-| `notes` | ⚪ | Comments |
+| Field | Required | Description | Example |
+|-------|----------|-------------|---------|
+| `source` | ✅ | Term in source language | `Alice` |
+| `target` | ✅ | Translation | `Алиса` |
+| `category` | ⚪ | Entity type | `PERSON`, `LOC`, `ORG`, `TERM` |
+| `gender` | ⚪ | Gender for characters | `he`, `she`, `it` |
+| `notes` | ⚪ | Comments | `Main character` |
 
 ### Workflow
 
 1. **Automatic creation:** NER extracts terms on first run
 2. **Manual editing:** Edit `.dic` file before translation
-3. **Validation:** `python -c "from src.vocabulary_manager import validate_dictionary; print(validate_dictionary('books/mybook.dic'))"`
+3. **Validation:** Check format manually or use text editor
 
-**See also:** [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md)
+**See also:** [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md) — Complete format guide
 
 ---
 
