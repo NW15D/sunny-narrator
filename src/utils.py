@@ -552,6 +552,21 @@ class TranslationPipeline:
         
         text = remove_tags_with_check(text, "initial_translation", LLMRole.PRIMARY)
         
+        # Retry if text became empty after remove_tags
+        if not text or len(text.strip()) == 0:
+            logger.error(f"Text became empty after remove_tags, retrying...")
+            retry_text, retry_tokens = llm_service.complete(
+                role=LLMRole.PRIMARY,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                max_tokens=MAX_TOKENS_PER_CHUNK,
+                stage=TranslationStage.INITIAL
+            )
+            text = remove_tags_with_check(retry_text, "initial_translation_retry", LLMRole.PRIMARY)
+            tokens_used += retry_tokens
+            if retry_tokens > 0:
+                metrics.log_retry(retry_tokens, "Empty after remove_tags retry [initial]")
+        
         # Check if translation is in correct language (detect if LLM returned source language)
         if _detect_language_mismatch(text, context.target_lang, context.source_text):
             logger.error("Translation returned in wrong language! Retrying...")
@@ -684,6 +699,21 @@ class TranslationPipeline:
         
         text = remove_tags_with_check(text, "improve_translation", LLMRole.SECONDARY)
         
+        # Retry if text became empty after remove_tags
+        if not text or len(text.strip()) == 0 and tokens_used > 0:
+            logger.error(f"Text became empty after remove_tags (used {tokens_used} tokens), retrying...")
+            retry_text, retry_tokens = llm_service.complete(
+                role=LLMRole.SECONDARY,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                max_tokens=MAX_TOKENS_PER_CHUNK,
+                stage=TranslationStage.IMPROVE
+            )
+            text = remove_tags_with_check(retry_text, "improve_translation_retry", LLMRole.SECONDARY)
+            tokens_used += retry_tokens
+            if retry_tokens > 0:
+                metrics.log_retry(retry_tokens, "Empty after remove_tags retry [improve]")
+        
         return TranslationResult(
             stage=TranslationStage.IMPROVE,
             llm_role=LLMRole.SECONDARY,
@@ -721,6 +751,21 @@ class TranslationPipeline:
         )
         
         text = remove_tags_with_check(text, "final_edit", LLMRole.SECONDARY)
+        
+        # Retry if text became empty after remove_tags
+        if not text or len(text.strip()) == 0 and tokens_used > 0:
+            logger.error(f"Text became empty after remove_tags (used {tokens_used} tokens), retrying...")
+            retry_text, retry_tokens = llm_service.complete(
+                role=LLMRole.SECONDARY,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                max_tokens=MAX_TOKENS_PER_CHUNK,
+                stage=TranslationStage.FINAL
+            )
+            text = remove_tags_with_check(retry_text, "final_edit_retry", LLMRole.SECONDARY)
+            tokens_used += retry_tokens
+            if retry_tokens > 0:
+                metrics.log_retry(retry_tokens, "Empty after remove_tags retry [final]")
         
         return TranslationResult(
             stage=TranslationStage.FINAL,
