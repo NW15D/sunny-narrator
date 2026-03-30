@@ -101,6 +101,38 @@ S_PROMT_TRANSLATE=true    # Для Gemma
 S_PROMT_PROOFREAD=false   # Для Mistral/Llama
 ```
 
+## 🔧 Управление JSON Mode
+
+### Когда отключать JSON mode:
+
+| Семейство моделей | Значение | Причина |
+|-------------------|----------|---------|
+| **Gemma 2/3** | `true` (по умолчанию) | Проблемы с JSON mode, используйте plain text |
+| **Mistral** | `true` (по умолчанию) | Может возвращать пустые ответы в JSON mode |
+| **Llama 3.x** | `true` (по умолчанию) | Локальные версии часто не работают с JSON mode |
+| **Hunyuan** | `false` | Поддерживает JSON mode |
+| **Qwen** | `false` | Поддерживает JSON mode |
+| **OpenAI/GPT** | `false` | Поддерживает JSON mode |
+
+### Конфигурация:
+
+```bash
+# По умолчанию: JSON mode отключен (безопаснее для локальных LLM)
+DISABLE_JSON_MODE_TRANSLATE=true
+DISABLE_JSON_MODE_PROOFREAD=true
+
+# Для API моделей с поддержкой JSON mode:
+DISABLE_JSON_MODE_TRANSLATE=false
+DISABLE_JSON_MODE_PROOFREAD=false
+```
+
+### Обработка пустых ответов
+
+При отключенном JSON mode или пустом ответе LLM:
+- **Автоматический retry**: До 2 попыток с логированием ERROR
+- **Debug вывод**: Оригинальное содержимое логируется, если `remove_tags()` даёт пустой результат
+- **Формат ошибки**: `ERROR - Ответ 0 [stage/role]: X chars → 0 chars after remove_tags`
+
 ## 📚 Документация
 
 - [Установка](docs/INSTALLATION.md)
