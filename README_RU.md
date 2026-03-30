@@ -11,228 +11,126 @@ pip install -r requirements.txt
 
 # Настроить .env
 cp .env.example .env
-# Отредактировать .env с вашими ключами API
+# Отредактировать с вашими ключами API
 
 # Запустить перевод
 python app.py
 ```
 
+**Полная документация:** [docs/](docs/)
+
+---
+
 ## 📋 Конфигурация
 
-### .env файл
+### Базовый .env
 
 ```bash
-# Primary LLM (Перевод)
-MODEL_TRANSLATE=google/gemma-2-27b-it
+# API настройки
+API_KEY_TRANSLATE=ваш-ключ
 API_BASE_TRANSLATE=http://localhost:11434/v1
-API_KEY_TRANSLATE=your-key
-S_PROMT_TRANSLATE=true          # ⚠️ true для Gemma 2/3!
-# TEMP_TRANSLATE=0.01           # Базовая температура (fallback, используется если TEMP_INITIAL не задан)
+MODEL_TRANSLATE=google/gemma-2-27b-it
 
-# Secondary LLM (Корректура)
-MODEL_PROOFREAD=Mistral
+API_KEY_PROOFREAD=ваш-ключ
 API_BASE_PROOFREAD=http://localhost:11434/v1
-API_KEY_PROOFREAD=your-key
-S_PROMT_PROOFREAD=false
-# TEMP_PROOFREAD=0.7            # Базовая температура (fallback, используется если stage-specific не заданы)
-
-# Температуры по стадиям (рекомендуется для точной настройки)
-TEMP_INITIAL=0.01               # Стадия 1: Primary LLM - Перевод (консистентность)
-TEMP_REFLECTION=0.4             # Стадия 2: Secondary LLM - Анализ (креативный)
-TEMP_IMPROVE=0.4                # Стадия 3: Secondary LLM - Редактирование (гибкий)
-TEMP_FINAL_EDIT=0.15            # Стадия 4: Secondary LLM - Вычитка (точность)
-TEMP_SYNOPSIS=0.15              # Стадия 5: Secondary LLM - Синопсис (точность)
+MODEL_PROOFREAD=Mistral
 
 # Языки
 SOURCE_LANG=english
 TARGET_LANG=russian
-COUNTRY=Россия
 
 # Обработка
-MAX_LEN_CHUNK=8192
-LENGTH_CHECK_THRESHOLD=20
-FAST_TRANS=false
+FAST_TRANS=false    # Быстрый режим (пропуск стадий качества)
 DEBUG=off
 ```
 
+**Все опции:** [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
+
+---
+
 ## ⚡ Режим FAST_TRANS
 
-**FAST_TRANS=true** (быстро, 2 стадии):
-- Stage 1: INITIAL (Primary LLM)
-- Stage 5: SYNOPSIS (Primary LLM)
-- ~2.5x быстрее, среднее качество
+**Использовать `FAST_TRANS=true` для:**
+- ✅ Чернового перевода
+- ✅ Технических документов
+- ❌ НЕ для финальных публикаций или художественного перевода
 
-**FAST_TRANS=false** (стандарт, 5 стадий):
-- Полный пайплайн с контролем качества
-- Высокое качество
+**Скорость:** ~2.5x быстрее (2 стадии вместо 5)
 
-## 📊 5-Стадийный Пайплайн
+**Подробности:** [docs/FAST_TRANS.md](docs/FAST_TRANS.md)
 
-1. **INITIAL** (Primary, temp=0.01) — Черновик перевода
-2. **REFLECTION** (Secondary, temp=0.4) — Анализ замечаний
-3. **IMPROVE** (Secondary, temp=0.4) — Исправление по замечаниям
-4. **FINAL_EDIT** (Secondary, temp=0.15) — Финальная вычитка
-5. **SYNOPSIS** (Secondary, temp=0.15) — Синопсис для контекста
+---
 
-## 📁 Форматы
+## 📎 Словарь
 
-- **Вход:** FB2, EPUB, TXT
-- **Выход:** FB2, EPUB (с сохранением структуры)
+Файл словаря (`.dic`) обеспечивает консистентность терминологии:
 
-## 🎯 Словарь
-
-Автоматическое создание словаря через NER:
-```bash
-NER=true
-NERMODEL=en_core_web_lg
-```
-
-Формат словаря (.dic):
 ```dic
-# Format: source = target, category, gender, notes
-Alice = Алиса, PERSON, she, 
-Wonderland = Страна Чудес, LOC, , 
+# Формат: source = target, category, gender, notes
+Alice = Алиса, PERSON, she, Главный персонаж
 ```
 
-## 🔧 sys_not_promt для Gemma
+**Формат:** [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md)
 
-Gemma 2/3 не поддерживают system prompts:
-```bash
-S_PROMT_TRANSLATE=true    # Для Gemma
-S_PROMT_PROOFREAD=false   # Для Mistral/Llama
-```
-
-## 🔧 Управление JSON Mode
-
-### Когда отключать JSON mode:
-
-| Семейство моделей | Значение | Причина |
-|-------------------|----------|---------|
-| **Gemma 2/3** | `true` (по умолчанию) | Проблемы с JSON mode, используйте plain text |
-| **Mistral** | `true` (по умолчанию) | Может возвращать пустые ответы в JSON mode |
-| **Llama 3.x** | `true` (по умолчанию) | Локальные версии часто не работают с JSON mode |
-| **Hunyuan** | `false` | Поддерживает JSON mode |
-| **Qwen** | `false` | Поддерживает JSON mode |
-| **OpenAI/GPT** | `false` | Поддерживает JSON mode |
-
-### Конфигурация:
-
-```bash
-# По умолчанию: JSON mode отключен (безопаснее для локальных LLM)
-DISABLE_JSON_MODE_TRANSLATE=true
-DISABLE_JSON_MODE_PROOFREAD=true
-
-# Для API моделей с поддержкой JSON mode:
-DISABLE_JSON_MODE_TRANSLATE=false
-DISABLE_JSON_MODE_PROOFREAD=false
-```
-
-### Обработка пустых ответов
-
-При отключенном JSON mode или пустом ответе LLM:
-- **Автоматический retry**: До 2 попыток с логированием ERROR
-- **Debug вывод**: Оригинальное содержимое логируется, если `remove_tags()` даёт пустой результат
-- **Формат ошибки**: `ERROR - Ответ 0 [stage/role]: X chars → 0 chars after remove_tags`
+---
 
 ## 💾 Resume после сбоя
 
-**Автоматическое сохранение прогресса** после каждого чанка в `.checkpoint.json` файл.
-
-### Как работает:
-
-1. **Сохранение:** После перевода каждого чанка создаётся checkpoint с:
-   - Статистика (успешные/неуспешные)
-   - Длины (source/target)
-   - Synopsis history (контекст для следующих чанков)
-   - Номер последнего обработанного чанка
-
-2. **Восстановление:** При перезапуске:
-   - Находит существующий checkpoint
-   - Восстанавливает статистику и контекст
-   - Продолжает с места остановки
-
-3. **Очистка:** После успешного завершения checkpoint удаляется
-
-### Пример:
+Автоматическое сохранение прогресса после каждого чанка:
 
 ```bash
-# Запуск перевода
-python app.py
+# Прервано на 50%
+python app.py  # Ctrl+C
 
-# Прерывание на 50% (Ctrl+C или crash)
-# ...
-
-# Перезапуск — автоматический resume
-python app.py
-# ✓ Checkpoint found: books/ExampleBook_ru_1929-3003.checkpoint.json
-# ✓ Resuming from previous session...
-# ✓ Resuming from chunk 51/100
+# Автоматическое возобновление
+python app.py  # ✓ Продолжено с чанка 51/100
 ```
 
-### Структура checkpoint:
+**Подробности:** [docs/RESUME.md](docs/RESUME.md)
 
-```json
-{
-  "version": 1,
-  "book_path": "/path/to/book.fb2",
-  "last_chunk": 49,
-  "stats": {
-    "successful": 50,
-    "failed": 0,
-    "total_tokens": 123456
-  },
-  "lengths": {
-    "total_source_len": 450000,
-    "total_target_len": 380000
-  },
-  "synopsis_history": {...},
-  "created_at": "2026-03-30T23:00:00Z",
-  "updated_at": "2026-03-30T23:30:00Z"
-}
+---
+
+## 🐳 Docker
+
+**CPU-only (по умолчанию):**
+```bash
+docker-compose up -d
 ```
 
-**Подробнее:** [docs/RESUME.md](docs/RESUME.md)
+**GPU (NVIDIA):**
+```bash
+docker-compose -f docker-compose.gpu.yml up -d
+```
+
+**Руководство:** [docs/DOCKER_CPU_GUIDE.md](docs/DOCKER_CPU_GUIDE.md)
+
+---
 
 ## 📚 Документация
 
-- [Установка](docs/INSTALLATION.md)
-- [Промпты](docs/PROMPTS_GUIDE.md)
-- [Температуры](docs/TEMPERATURE_STRATEGY.md)
-- [Rechunking](docs/RECHUNKING_GUIDE.md)
-- [NER](docs/NER_GUIDE.md)
-- [Словарь](docs/DICTIONARY_FORMAT.md)
-- [Стадии перевода](docs/TRANSLATION_STAGES.md)
-- [Resume после сбоя](docs/RESUME.md) ← **NEW**
+| Тема | Файл |
+|------|------|
+| **Установка** | [docs/INSTALLATION.md](docs/INSTALLATION.md) |
+| **Конфигурация** | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) |
+| **Стадии перевода** | [docs/TRANSLATION_STAGES.md](docs/TRANSLATION_STAGES.md) |
+| **Температуры** | [docs/TEMPERATURE_STRATEGY.md](docs/TEMPERATURE_STRATEGY.md) |
+| **Rechunking** | [docs/RECHUNKING_GUIDE.md](docs/RECHUNKING_GUIDE.md) |
+| **NER** | [docs/NER_GUIDE.md](docs/NER_GUIDE.md) |
+| **Формат словаря** | [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md) |
+| **Resume после сбоя** | [docs/RESUME.md](docs/RESUME.md) |
+| **Docker (CPU/GPU)** | [docs/DOCKER_CPU_GUIDE.md](docs/DOCKER_CPU_GUIDE.md) |
+| **JSON Mode** | [docs/JSON_MODE_ANALYSIS.md](docs/JSON_MODE_ANALYSIS.md) |
+| **NER CPU Fallback** | [docs/NER_CPU_FALLBACK_ANALYSIS.md](docs/NER_CPU_FALLBACK_ANALYSIS.md) |
+| **Промпты** | [docs/PROMPTS_GUIDE.md](docs/PROMPTS_GUIDE.md) |
 
-## ⚠️ NER и GPU
-
-Если NVRTC ошибки:
-```bash
-# Использовать CPU для NER
-SPACY_USE_GPU=false
-
-# Или удалить cupy
-pip uninstall cupy cupy-cuda12x -y
-```
+---
 
 ## 📝 Версии
 
-- **v1.11** — Checkpoint/resume после сбоя, fallback для пустого ответа, debug статистика
-- **v1.10** — Упрощение remove_tags, исправление статистики токенов, fallback для empty LLM response
+- **v1.11** — Checkpoint/resume, fallback для пустого ответа, CPU Docker
+- **v1.10** — Упрощение remove_tags, исправление статистики токенов
 - **v1.9** — 5-стадийный пайплайн, stage-specific температуры
-- **v1.8** — Rechunking с валидацией длины
-- **v1.7** — NER с CPU fallback
-- **v1.0** — Initial release
-
-## 📝 Changelog
-
-### 2026-03-30 (v1.11)
-- ✅ Checkpoint files для resume после сбоя (сохранение/восстановление прогресса)
-- ✅ Fallback для пустого ответа LLM когда токены > 0 (предотвращение циклических retry)
-- ✅ Debug режим: статистика после каждого чанка (разница длин, процент успеха)
-- ✅ remove_tags() упрощён: извлечение из wrapper, fallback к оригиналу
-- ✅ Статистика токенов исправлена: retry_tokens не может превышать total_tokens
-- ✅ Документация: RESUME.md руководство, обновлены README
+- **v1.0** — Начальный релиз
 
 ---
 
