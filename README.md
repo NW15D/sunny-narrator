@@ -1,5 +1,6 @@
-# Sunny Narrator v1.9
+# Sunny Narrator
 
+**Version:** 1.11  
 Dual-LLM translation system with 5-stage quality control.
 
 ## 🚀 Quick Start
@@ -26,21 +27,21 @@ MODEL_TRANSLATE=google/gemma-2-27b-it
 API_BASE_TRANSLATE=http://localhost:11434/v1
 API_KEY_TRANSLATE=your-key
 S_PROMT_TRANSLATE=true          # ⚠️ true для Gemma 2/3!
-TEMP_TRANSLATE=0.01             # Base temperature (fallback)
+# TEMP_TRANSLATE=0.01           # Base temperature (fallback, used if TEMP_INITIAL not set)
 
 # Secondary LLM (Proofreading)
 MODEL_PROOFREAD=Mistral
 API_BASE_PROOFREAD=http://localhost:11434/v1
 API_KEY_PROOFREAD=your-key
 S_PROMT_PROOFREAD=false         # false для Mistral/Llama
-TEMP_PROOFREAD=0.7              # Base temperature (fallback)
+# TEMP_PROOFREAD=0.7            # Base temperature (fallback, used if stage-specific not set)
 
-# Stage-Specific Temperatures (NEW!)
-TEMP_INITIAL=0.01               # Stage 1: Primary LLM - Translation
-TEMP_REFLECTION=0.4             # Stage 2: Secondary LLM - Analysis
-TEMP_IMPROVE=0.4                # Stage 3: Secondary LLM - Editing
-TEMP_FINAL_EDIT=0.15            # Stage 4: Secondary LLM - Proofreading
-TEMP_SYNOPSIS=0.15              # Stage 5: Secondary LLM - Summary
+# Stage-Specific Temperatures (Recommended for fine-tuned control)
+TEMP_INITIAL=0.01               # Stage 1: Primary LLM - Translation (consistency)
+TEMP_REFLECTION=0.4             # Stage 2: Secondary LLM - Analysis (creative)
+TEMP_IMPROVE=0.4                # Stage 3: Secondary LLM - Editing (flexible)
+TEMP_FINAL_EDIT=0.15            # Stage 4: Secondary LLM - Proofreading (precision)
+TEMP_SYNOPSIS=0.15              # Stage 5: Secondary LLM - Summary (accuracy)
 
 # Languages
 SOURCE_LANG=english
@@ -365,12 +366,22 @@ print(f"Synopsis: {synopsis}")
 
 ## 📝 Versions
 
+- **v1.11** — Checkpoint/resume after crash, empty response fallback, debug stats
+- **v1.10** — remove_tags simplification, token stats fix, fallback for empty LLM response
 - **v1.9** — 5-stage pipeline, stage-specific temperatures, profanity preservation
 - **v1.8** — Rechunking with length validation
 - **v1.7** — NER with CPU fallback
 - **v1.0** — Initial release
 
 ## 📝 Changelog
+
+### 2026-03-30 (v1.11)
+- ✅ Checkpoint files for resume after crash (save/restore progress)
+- ✅ Fallback for empty LLM response when tokens > 0 (prevent cyclic retry)
+- ✅ Debug mode: print stats after each chunk (length diff, success rate)
+- ✅ remove_tags() simplified: extract from wrapper, fallback to original text
+- ✅ Token statistics fixed: retry_tokens cannot exceed total_tokens
+- ✅ Documentation: RESUME.md guide, updated READMEs
 
 ### 2026-03-29 (v1.9)
 - ✅ 5-stage translation pipeline (INITIAL → REFLECTION → IMPROVE → FINAL_EDIT → SYNOPSIS)
