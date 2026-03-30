@@ -986,7 +986,10 @@ def remove_tags(text: str) -> str:
     Remove XML/HTML tags and artifacts from translation output.
     Logs all repairs as ERROR level.
     
-    Note: For FB2 XML validation and cleaning, use xmlcheck.rem_tags()
+    Supports multiple output formats:
+    1. JSON: {"translation": "..."}  ← PREFERRED
+    2. XML: <ttext>...</ttext>
+    3. Plain text (no wrapper)
     
     Args:
         text: Text with XML tags to remove
@@ -1000,6 +1003,33 @@ def remove_tags(text: str) -> str:
     original_text = text
     cleaned = False
     repair_reasons = []
+    
+    # STEP 1: Try to extract from JSON format (PREFERRED)
+    json_match = re.search(r'\{[\s]*["\']translation["\'][\s]*:[\s]*["\']([\s\S]*?)["\'][\s]*\}', text)
+    if json_match:
+        text = json_match.group(1)
+        logger.debug("Extracted translation from JSON format")
+        cleaned = True
+        repair_reasons.append("Extracted from JSON")
+    else:
+        # STEP 2: Try to extract from <ttext> wrapper if JSON not found
+        ttext_match = re.search(r'<ttext[^>]*>([\s\S]*?)</ttext>', text, re.IGNORECASE)
+        if ttext_match:
+            text = ttext_match.group(1)
+            logger.debug("Extracted content from <ttext> wrapper")
+            cleaned = True
+            repair_reasons.append("Extracted from <ttext>")
+        else:
+            # STEP 3: Try other wrapper tags
+            for tag in ['TTEXT', 'TRANS', 'target']:
+                pattern = rf'<{tag}[^>]*>([\s\S]*?)</{tag}>'
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match and match.group(1).strip():
+                    text = match.group(1)
+                    logger.debug(f"Extracted content from <{tag}> wrapper")
+                    cleaned = True
+                    repair_reasons.append(f"Extracted from <{tag}>")
+                    break
     
     # Remove meta-commentary from LLM (common pattern)
     meta_patterns = [
@@ -1018,7 +1048,7 @@ def remove_tags(text: str) -> str:
             cleaned = True
             break
     
-    # Define patterns with descriptions for logging
+    # STEP 4: Remove unwanted tags and artifacts
     patterns_with_desc = [
         (r'<source[^>]*>[\s\S]*?</source>', 'source block'),
         (r'<SOURCE[^>]*>[\s\S]*?</SOURCE>', 'source block'),
@@ -1035,9 +1065,11 @@ def remove_tags(text: str) -> str:
         (r'<INITIAL_TRANSLATION>[\s\S]*?</INITIAL_TRANSLATION>', 'INITIAL_TRANSLATION block'),
         (r'<FIRST_TRANSLATION>[\s\S]*?</FIRST_TRANSLATION>', 'FIRST_TRANSLATION block'),
         (r'<TRANSLATION>[\s\S]*?</TRANSLATION>', 'TRANSLATION block'),
+        (r'```json', 'markdown code block'),
         (r'```xml', 'markdown code block'),
         (r'```', 'markdown code block'),
-        (r'</?(?:section|IMPROVED_TRANSLATION|target|TTEXT|TRANS)>', 'wrapper tags'),
+        # Remove any remaining wrapper tags
+        (r'</?(?:section|IMPROVED_TRANSLATION|TTEXT|TRANS|target)>', 'wrapper tags'),
         (r'<\|im_end\|>', 'special token'),
         (r'<\|file_separator\|>', 'special token')
     ]
