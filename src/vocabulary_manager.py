@@ -375,7 +375,11 @@ class VocabularyManager:
             return [self.vocab[k] for k in matched_keys if k in self.vocab]
         
         if not config.ner_opt or not ner_module:
-            return []
+            if config.debug:
+                logger.warning(f"get_vocab_for_chunk: NER disabled or module not available (ner_opt={config.ner_opt}, ner_module={ner_module is not None})")
+            # Fallback: return all vocabulary entries (no chunk-specific matching)
+            # This ensures vocabulary is still used even without NER matching
+            return list(self.vocab.values())
         
         # Check if GPU is available and select appropriate function
         use_gpu = False
