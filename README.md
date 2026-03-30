@@ -304,6 +304,45 @@ Sunny Narrator uses a dictionary file (`*.dic`) to ensure terminology consistenc
 
 ---
 
+## 💾 Resume after Crash
+
+**Automatic progress saving** after each chunk to `.checkpoint.json` file.
+
+### How it works:
+
+1. **Save:** After each chunk translation, checkpoint is created with:
+   - Statistics (successful/failed)
+   - Lengths (source/target)
+   - Synopsis history (context for next chunks)
+   - Last processed chunk number
+
+2. **Resume:** On restart:
+   - Finds existing checkpoint
+   - Restores statistics and context
+   - Continues from where it stopped
+
+3. **Cleanup:** After successful completion, checkpoint is removed
+
+### Example:
+
+```bash
+# Start translation
+python app.py
+
+# Interrupt at 50% (Ctrl+C or crash)
+# ...
+
+# Restart — automatic resume
+python app.py
+# ✓ Checkpoint found: books/ExampleBook_ru_1929-3003.checkpoint.json
+# ✓ Resuming from previous session...
+# ✓ Resuming from chunk 51/100
+```
+
+**Learn more:** [docs/RESUME.md](docs/RESUME.md)
+
+---
+
 ## 🧪 Testing
 
 ```python
