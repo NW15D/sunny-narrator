@@ -139,6 +139,64 @@ FAST_TRANS=false
   [{"role": "user", "content": "system_prompt\n\nuser_prompt"}]
   ```
 
+## 🔧 JSON Mode Control
+
+### When to use `DISABLE_JSON_MODE_TRANSLATE` and `DISABLE_JSON_MODE_PROOFREAD`:
+
+| Model Family | Set to `false`? | Reason |
+|--------------|-----------------|--------|
+| **Gemma 2/3** | ❌ No (keep `true`) | Struggles with JSON mode, use plain text |
+| **Mistral** | ❌ No (keep `true`) | May return empty responses in JSON mode |
+| **Llama 3.x** | ❌ No (keep `true`) | Local versions often fail JSON mode |
+| **Hunyuan** | ✅ **YES** | Supports JSON mode correctly |
+| **Qwen** | ✅ **YES** | Supports JSON mode correctly |
+| **OpenAI/GPT** | ✅ **YES** | Supports JSON mode correctly |
+
+### What it does:
+
+- **true** (default): Disables `response_format={"type": "json_object"}` — LLM returns plain text
+- **false**: Enables JSON mode — LLM must return valid JSON
+
+### Configuration:
+
+```bash
+# Default: JSON mode disabled (safer for local LLMs)
+DISABLE_JSON_MODE_TRANSLATE=true
+DISABLE_JSON_MODE_PROOFREAD=true
+
+# For API models that support JSON mode:
+DISABLE_JSON_MODE_TRANSLATE=false
+DISABLE_JSON_MODE_PROOFREAD=false
+```
+
+### Empty Response Handling
+
+When JSON mode is disabled or LLM returns empty response:
+- **Automatic retry**: Up to 2 retries with ERROR logging
+- **Debug output**: Original content logged when `remove_tags()` results in empty text
+- **Error format**: `ERROR - Ответ 0 [stage/role]: X chars → 0 chars after remove_tags`
+
+| Model Family | Set to `true`? | Reason |
+|--------------|----------------|--------|
+| **Gemma 2** (google/gemma-2-9b-it, google/gemma-2-27b-it) | ✅ **YES** | Doesn't support system role |
+| **Gemma 3** (google/gemma-3-12b-it) | ✅ **YES** | Doesn't support system role |
+| **Mistral** (Mistral-7B, Mistral-Large) | ❌ No | Supports system role |
+| **Llama 3.2/3.3** | ❌ No | Supports system role |
+| **Hunyuan** | ❌ No | Supports system role |
+| **Qwen** | ❌ No | Supports system role |
+
+### What it does:
+
+- **false** (default): Sends system and user prompts as separate messages
+  ```json
+  [{"role": "system", "content": "..."}, {"role": "user", "content": "..."}]
+  ```
+
+- **true**: Merges system prompt into user prompt
+  ```json
+  [{"role": "user", "content": "system_prompt\n\nuser_prompt"}]
+  ```
+
 ## 📊 Translation Workflow (5 Stages)
 
 ```
@@ -211,6 +269,40 @@ All prompts are in `src/prompts.json`:
 - `image_generation` — Cover generation
 
 See [docs/PROMPTS_GUIDE.md](docs/PROMPTS_GUIDE.md) for details.
+
+## 📎 Vocabulary Management
+
+Sunny Narrator uses a dictionary file (`*.dic`) to ensure terminology consistency.
+
+### Dictionary Format (JSON)
+
+```json
+# Vocabulary for MyBook
+[
+  {"source": "Alice", "target": "Алиса", "category": "PERSON", "gender": "she", "notes": "Main character"},
+  {"source": "Wonderland", "target": "Страна Чудес", "category": "LOC", "gender": "", "notes": ""}
+]
+```
+
+### Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `source` | ✅ | Term in source language |
+| `target` | ✅ | Translation |
+| `category` | ⚪ | `PERSON`, `LOC`, `ORG`, `TERM` |
+| `gender` | ⚪ | `he`, `she`, `it`, `they` |
+| `notes` | ⚪ | Comments |
+
+### Workflow
+
+1. **Automatic creation:** NER extracts terms on first run
+2. **Manual editing:** Edit `.dic` file before translation
+3. **Validation:** `python -c "from src.vocabulary_manager import validate_dictionary; print(validate_dictionary('books/mybook.dic'))"`
+
+**See also:** [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md)
+
+---
 
 ## 🧪 Testing
 

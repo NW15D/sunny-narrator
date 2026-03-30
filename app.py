@@ -105,17 +105,24 @@ class TranslationEngine:
         Returns vocabulary formatted for the current model (Hunyuan, Gemma, etc.)
         """
         if not self.vocab_manager:
+            logger.warning("vocab_manager not initialized - returning empty vocabulary")
             return ""
         
         entries = self.vocab_manager.get_vocab_for_chunk(chunk, s_idx, c_idx)
         
         if not entries:
-            return ""
+            logger.warning(f"get_vocab_for_chunk returned 0 entries for chunk {s_idx}-{c_idx} (vocab_manager has {len(self.vocab_manager.vocab) if self.vocab_manager else 0} total entries)")
+            # Don't return empty - use full vocabulary if available
+            if self.vocab_manager and self.vocab_manager.vocab:
+                logger.info(f"Fallback: using full vocabulary ({len(self.vocab_manager.vocab)} entries)")
+                entries = list(self.vocab_manager.vocab.values())
         
         formatted = self.vocab_manager.format_for_model(entries, config.model_translate)
         
-        if config.debug and formatted:
-            logger.debug(f"Vocab for chunk {s_idx}-{c_idx}: {len(entries)} terms")
+        if config.debug:
+            logger.debug(f"Vocab for chunk {s_idx}-{c_idx}: {len(entries)} terms, formatted_len={len(formatted) if formatted else 0}")
+        elif formatted:
+            logger.info(f"Vocabulary: {len(entries)} terms for chunk {s_idx}-{c_idx}")
         
         return formatted
 
@@ -226,29 +233,21 @@ class TranslationEngine:
 
     def _post_process_xml(self, source_text: str, translated_text: str) -> str:
         """
-        Validate and repair XML structure after translation.
+        Basic XML cleanup after translation.
         
-        - Removes artifacts
-        - Checks tag balance
-        - Repairs via LLM if needed
+        NOTE: Does NOT repair tag structure for chunks.
+        Chunks may have intentionally unbalanced tags
+        (e.g., <title> opened in one chunk, closed in another).
+        Full XML validation happens only on final assembled document.
+        
+        - Removes artifacts via rem_tags()
+        - Does NOT use LLM repair (would break chunk structure)
         """
-        original_len = len(translated_text)
+        # Only basic cleanup - no structural repair for chunks
         cleaned = xc.rem_tags(translated_text)
-        cleaned_len = len(cleaned)
         
-        # Log tag cleanup as DEBUG (normal operation)
-        if config.debug and original_len != cleaned_len:
-            logger.debug(f"Tag cleanup: {original_len} → {cleaned_len} chars ({original_len - cleaned_len:+d})")
-        
-        source_tags = self._count_tags(source_text)
-        translated_tags = self._count_tags(cleaned)
-        
-        diff = self._tag_difference(source_tags, translated_tags)
-        
-        if diff > 0.1:
-            logger.debug(f"XML repair needed (diff={diff:.1%})")
-            cleaned = self._llm_repair_xml(source_text, cleaned)
-            self.stats['xml_repairs'] += 1
+        # NOTE: Disabled LLM repair for chunks as it breaks document structure
+        # Full validation happens on final assembled document only
         
         return cleaned
 
@@ -666,18 +665,12 @@ def main():
         print(f"Length diff: {diff:+.1f}%")
     print("------------------\n")
     
-    # Detailed metrics
-    logger.info("=" * 60)
-    logger.info("TRANSLATION METRICS REPORT")
-    logger.info("=" * 60)
-    logger.info(f"Successful translations: {engine.stats['successful']}")
-    logger.info(f"Failed translations: {engine.stats['failed']}")
-    logger.info(f"Total tokens: {engine.stats['total_tokens']:,}")
-    logger.info(f"Retry tokens: {engine.stats['retry_tokens']:,} ({retry_pct:.1f}%)")
-    logger.info(f"Rechunk events: {global_stats['rechunk_events']}")
-    logger.info(f"XML repairs: {engine.stats['xml_repairs']}")
-    logger.info(f"Language mismatch retries: {global_stats['language_mismatch_retries']}")
-    logger.info("=" * 60)
+    # Translation Metrics Report
+    try:
+        from src.utils import print_translation_report
+        print_translation_report()
+    except Exception as e:
+        logger.error(f"Failed to print translation report: {e}")
 
 
 if __name__ == '__main__':
