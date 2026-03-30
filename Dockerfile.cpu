@@ -1,6 +1,5 @@
-# CPU-only Dockerfile for Sunny Narrator (DEFAULT)
+# CPU-only Dockerfile for Sunny Narrator
 # Use this for systems without NVIDIA GPU
-# For GPU support, use Dockerfile.gpu instead
 
 FROM python:3.10-slim
 
@@ -32,16 +31,23 @@ COPY requirements.txt .
 
 # Install Python dependencies (CPU-only)
 # Note: requirements.txt uses CPU versions by default
+# For GPU support, use Dockerfile.gpu instead
 RUN python3 -m pip install --no-cache-dir -r requirements.txt && \
     python3 -m pip install --no-cache-dir spacy
 
 # Download spaCy models (multi-language support)
 RUN python3 -m spacy download en_core_web_lg && \
-    python3 -m spacy download ru_core_news_lg
+    python3 -m spacy download ru_core_news_lg && \
+    python3 -m spacy download de_core_news_lg && \
+    python3 -m spacy download fr_core_news_lg && \
+    python3 -m spacy download es_core_news_lg
 
 # Copy application code
 COPY app.py .
 COPY src/ ./src/
+COPY docs/ ./docs/
+COPY README*.md .
+COPY requirements.txt .
 
 # Create directories for volumes
 RUN mkdir -p /app/books /app/output
@@ -52,12 +58,13 @@ ENV NER=true
 
 # Health check (CPU mode)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD python3 -c "import spacy; nlp = spacy.load('en_core_web_lg'); print('spaCy CPU: OK')" || exit 1
+    CMD python3 -c "import spacy; nlp = spacy.load('en_core_web_lg'); print('SPAcy CPU: OK')" || exit 1
 
 # Default entrypoint
-CMD ["python3", "app.py"]
+ENTRYPOINT ["python3", "app.py"]
 
 # Labels for documentation
 LABEL version="1.11"
 LABEL description="Sunny Narrator - AI-powered book translation (CPU-only)"
 LABEL gpu="false"
+LABEL author="Sunny Narrator Team"
