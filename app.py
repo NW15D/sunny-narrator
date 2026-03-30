@@ -619,6 +619,13 @@ def main():
         diff = (engine.total_target_len - engine.total_source_len) / engine.total_source_len * 100
         print(f"Length diff: {diff:+.1f}%")
     print("------------------\n")
+    
+    # Translation Metrics Report
+    try:
+        from src.utils import print_translation_report
+        print_translation_report()
+    except Exception as e:
+        logger.error(f"Failed to print translation report: {e}")
 
 
 if __name__ == '__main__':
