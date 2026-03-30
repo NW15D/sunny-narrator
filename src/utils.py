@@ -551,7 +551,7 @@ class TranslationPipeline:
         )
     
     @log_entry
-    def generate_synopsis(self, context: TranslationContext, translation: str, retry_count: int = 0) -> TranslationResult:
+    def generate_synopsis(self, context: TranslationContext, translation: str) -> TranslationResult:
         """Stage 5: Generate synopsis from FINAL translation using Secondary LLM."""
         if config.model_translate == "Hunyuan":
             user_prompt = config.get_prompt(
@@ -577,17 +577,10 @@ class TranslationPipeline:
         
         text = remove_tags_with_check(text, "generate_synopsis", LLMRole.SECONDARY)
         
-        # Check for empty synopsis and retry
+        # Synopsis can be empty - pipeline continues without it
         if not text or len(text.strip()) == 0:
-            logger.error(f"ERROR - Ответ 0 [synopsis]: Empty synopsis returned (retry {retry_count + 1}/2)")
-            if retry_count < 2:
-                logger.error("Retrying synopsis generation...")
-                time.sleep(0.5)
-                return self.generate_synopsis(context, translation, retry_count + 1)
-            else:
-                logger.error("Max retries exceeded for synopsis, using fallback")
-                # Return empty synopsis - pipeline can continue without it
-                text = ""
+            logger.warning(f"WARNING [synopsis]: Empty synopsis returned, continuing without synopsis")
+            text = ""
         
         return TranslationResult(
             stage=TranslationStage.SYNOPSIS,
