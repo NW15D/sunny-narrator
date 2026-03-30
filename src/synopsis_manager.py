@@ -234,9 +234,9 @@ Synopsis:"""
             user_prompt = self.USER_TEMPLATE.format(text=truncated)
             
             # Use secondary LLM for synopsis (faster, cheaper)
-            from src.utils import llm_service, LLMRole
+            from src.utils import llm_service_compat, LLMRole
             
-            result = llm_service.complete(
+            result = llm_service_compat.complete(
                 role=LLMRole.SECONDARY,
                 system_prompt=self.SYSTEM_PROMPT,
                 user_prompt=user_prompt,

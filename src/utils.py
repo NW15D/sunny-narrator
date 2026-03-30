@@ -489,8 +489,11 @@ class LLMService:
         return result, tokens_used
 
 
-# Global LLM service instance
+# Global LLM service instance (for pipeline - returns tuple)
 llm_service = LLMService()
+
+# Compatibility layer (for legacy code - returns string only)
+llm_service_compat = LLMServiceCompat()
 
 
 class TranslationPipeline:
@@ -1048,8 +1051,8 @@ class LLMServiceCompat:
         return text
 
 
-# Global LLM service instance
-llm_service = LLMServiceCompat()
+# Compatibility layer for legacy code
+llm_service_compat = LLMServiceCompat()
 
 
 # =============================================================================
@@ -1332,7 +1335,7 @@ def vocabulary(source_lang: str, target_lang: str, source_text: str,
     # Vocabulary translation uses Secondary LLM with standard prompt
     prompt_key = "user"
     
-    result = llm_service.get_completion(
+    result = llm_service_compat.get_completion(
         role=role,
         prompt_category="vocabulary",
         prompt_key=prompt_key,
@@ -1358,7 +1361,7 @@ def translate_metadata(metadata: dict, source_lang: str, target_lang: str,
         # Use Hunyuan-specific prompt if model is Hunyuan
         prompt_key = "user_hunyuan" if config.model_translate == "Hunyuan" else "user"
         
-        response = llm_service.get_completion(
+        response = llm_service_compat.get_completion(
             role="Proofread",
             prompt_category="metadata_translation",
             prompt_key=prompt_key,
