@@ -36,6 +36,98 @@ from src.config import Config
 
 
 # =============================================================================
+# Translation Metrics Tracker
+# =============================================================================
+
+class TranslationMetrics:
+    """
+    Track translation quality metrics and token usage.
+    
+    Logs:
+    - Rechunking events (ERROR)
+    - Retry tokens (ERROR)
+    - XML repairs (ERROR)
+    - Language mismatch retries (ERROR)
+    - Successful translations (INFO)
+    """
+    
+    def __init__(self):
+        self.total_tokens = 0
+        self.retry_tokens = 0
+        self.rechunk_count = 0
+        self.xml_repair_count = 0
+        self.language_mismatch_retries = 0
+        self.successful_translations = 0
+        self.failed_translations = 0
+        
+    def log_retry(self, tokens: int, reason: str):
+        """Log retry event (ERROR level)."""
+        self.retry_tokens += tokens
+        logger.error(f"RETRY: {reason} (tokens: {tokens:,})")
+        
+    def log_rechunk(self, depth: int, percent_diff: float):
+        """Log rechunk event (ERROR level)."""
+        self.rechunk_count += 1
+        logger.error(f"RECHUNK #{self.rechunk_count} at depth {depth}: {percent_diff:.1f}% length difference")
+        
+    def log_xml_repair(self, issue: str):
+        """Log XML repair event (ERROR level)."""
+        self.xml_repair_count += 1
+        logger.error(f"XML REPAIR #{self.xml_repair_count}: {issue}")
+        
+    def log_language_mismatch(self, tokens: int):
+        """Log language mismatch retry (ERROR level)."""
+        self.language_mismatch_retries += 1
+        self.retry_tokens += tokens
+        logger.error(f"LANGUAGE MISMATCH RETRY #{self.language_mismatch_retries} (tokens: {tokens:,})")
+        
+    def log_success(self, tokens: int):
+        """Log successful translation (INFO level)."""
+        self.successful_translations += 1
+        self.total_tokens += tokens
+        logger.info(f"Translation successful (tokens: {tokens:,}, total: {self.total_tokens:,})")
+        
+    def log_failure(self, reason: str):
+        """Log failed translation (ERROR level)."""
+        self.failed_translations += 1
+        logger.error(f"TRANSLATION FAILED: {reason}")
+        
+    def get_report(self) -> dict:
+        """Generate metrics report."""
+        total = max(1, self.total_tokens + self.retry_tokens)
+        return {
+            "successful_translations": self.successful_translations,
+            "failed_translations": self.failed_translations,
+            "total_tokens": self.total_tokens,
+            "retry_tokens": self.retry_tokens,
+            "retry_percentage": (self.retry_tokens / total) * 100,
+            "rechunk_count": self.rechunk_count,
+            "xml_repair_count": self.xml_repair_count,
+            "language_mismatch_retries": self.language_mismatch_retries
+        }
+        
+    def print_report(self):
+        """Print formatted metrics report."""
+        report = self.get_report()
+        
+        logger.info("=" * 60)
+        logger.info("TRANSLATION METRICS REPORT")
+        logger.info("=" * 60)
+        logger.info(f"Successful translations: {report['successful_translations']}")
+        logger.info(f"Failed translations: {report['failed_translations']}")
+        logger.info(f"Total tokens: {report['total_tokens']:,}")
+        logger.info(f"Retry tokens: {report['retry_tokens']:,} ({report['retry_percentage']:.1f}%)")
+        logger.info(f"Rechunk events: {report['rechunk_count']}")
+        logger.info(f"XML repairs: {report['xml_repair_count']}")
+        logger.info(f"Language mismatch retries: {report['language_mismatch_retries']}")
+        logger.info("=" * 60)
+
+
+# Global metrics instance
+metrics = TranslationMetrics()
+
+
+# =============================================================================
 # Schema Definitions (moved from src/schemas/translation.py)
 # =============================================================================
 
@@ -163,32 +255,6 @@ else:
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
-# =============================================================================
-# Global Statistics Counters (for metrics reporting)
-# =============================================================================
-
-class TranslationStats:
-    """Global counters for translation statistics."""
-    
-    def __init__(self):
-        self.rechunk_events = 0
-        self.language_mismatch_retries = 0
-    
-    def reset(self):
-        self.rechunk_events = 0
-        self.language_mismatch_retries = 0
-    
-    def get_stats(self) -> dict:
-        return {
-            'rechunk_events': self.rechunk_events,
-            'language_mismatch_retries': self.language_mismatch_retries,
-        }
-
-
-# Global statistics instance
-translation_stats = TranslationStats()
-
-
 def log_entry(func):
     """Decorator to log function entry for key functions."""
     @functools.wraps(func)
@@ -295,14 +361,21 @@ class LLMService:
         user_prompt: str,
         max_tokens: int = 8192,
         json_mode: bool = False,
-        stage: TranslationStage = None  # NEW: for stage-specific temperature
-    ) -> str:
+        stage: TranslationStage = None,  # NEW: for stage-specific temperature
+        retry_count: int = 0,  # NEW: retry counter for empty responses
+        track_tokens: bool = True,  # NEW: extract token usage from response
+        allow_empty: bool = False  # NEW: if True, don't retry on empty response (for synopsis)
+    ) -> tuple:
         """
         Execute LLM completion with role-appropriate client.
         
         Handles sys_not_promt mode for models that don't support system prompts:
         - Gemma 2/3: System prompt merged into user prompt
         - Mistral, Llama 3.x: System prompt sent separately
+        
+        NEW: Automatic retry on empty response (max 2 retries).
+        NEW: Configurable JSON mode disable for local LLMs.
+        NEW: Returns token usage from API response.
         
         Args:
             role: LLMRole.PRIMARY or LLMRole.SECONDARY
@@ -311,9 +384,12 @@ class LLMService:
             max_tokens: Maximum tokens to generate
             json_mode: Enable JSON response format
             stage: TranslationStage for temperature selection (optional)
+            retry_count: Internal retry counter (do not set manually)
+            track_tokens: Whether to extract token usage from response
+            allow_empty: If True, accept empty response without retry (for synopsis stage)
             
         Returns:
-            Generated text from LLM
+            Tuple of (generated_text, tokens_used)
         """
         client, model, temp = self.get_client(role)
         
@@ -330,6 +406,18 @@ class LLMService:
             use_sys_not_promt = config.sys_not_promt_translate
         else:
             use_sys_not_promt = config.sys_not_promt_proofread
+        
+        # Check if JSON mode should be disabled for this role (for local LLMs)
+        disable_json = False
+        if role == LLMRole.PRIMARY:
+            disable_json = config.disable_json_mode_translate
+        else:
+            disable_json = config.disable_json_mode_proofread
+        
+        if disable_json and json_mode:
+            json_mode = False
+            if config.debug:
+                logger.debug(f"JSON mode disabled for {role.value} LLM via config")
         
         messages = []
         
@@ -353,18 +441,55 @@ class LLMService:
             comp_kwargs["response_format"] = {"type": "json_object"}
         
         if config.debug:
-            logger.debug(f"LLM Request [{role.value}]: {model}, {len(user_prompt)} chars, temp={temp:.2f}, sys_not_promt={use_sys_not_promt}")
+            logger.debug(f"LLM Request [{role.value}]: {model}, {len(user_prompt)} chars, temp={temp:.2f}, sys_not_promt={use_sys_not_promt}, json_mode={json_mode}")
         
         response = client.chat.completions.create(**comp_kwargs)
         result = response.choices[0].message.content
         
-        if config.debug:
-            logger.debug(f"LLM Response [{role.value}]: {len(result)} chars")
+        # Extract token usage from response
+        tokens_used = 0
+        if track_tokens and hasattr(response, 'usage') and response.usage:
+            tokens_used = response.usage.total_tokens or 0
+            if config.debug:
+                logger.debug(f"LLM Response [{role.value}]: {len(result) if result else 0} chars, {tokens_used} tokens")
+        else:
+            if config.debug:
+                logger.debug(f"LLM Response [{role.value}]: {len(result) if result else 0} chars")
         
-        return result
+        # Check for empty response and retry (unless allow_empty is True)
+        if not result or len(result.strip()) == 0:
+            if allow_empty:
+                # For stages where empty response is acceptable (e.g., synopsis)
+                logger.debug(f"Empty response for [{role.value}] - continuing (allow_empty=True)")
+                return result or "", tokens_used
+            
+            logger.error(f"ERROR - Ответ 0 [{role.value}]: LLM returned empty response (retry {retry_count + 1}/2)")
+            if retry_count < 2:  # Max 2 retries
+                logger.error(f"Retrying current step [{role.value}]...")
+                # Small delay before retry
+                time.sleep(0.5)
+                retry_result, retry_tokens = self.complete(
+                    role=role,
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    max_tokens=max_tokens,
+                    json_mode=json_mode,
+                    stage=stage,
+                    retry_count=retry_count + 1,
+                    track_tokens=track_tokens,
+                    allow_empty=allow_empty
+                )
+                # Add retry tokens to metrics
+                if retry_tokens > 0:
+                    metrics.log_retry(retry_tokens, f"Empty response retry [{role.value}]")
+                return retry_result, retry_tokens
+            else:
+                logger.error(f"Max retries exceeded for [{role.value}], returning empty result")
+        
+        return result, tokens_used
 
 
-# Global LLM service instance
+# Global LLM service instance (for pipeline - returns tuple)
 llm_service = LLMService()
 
 
@@ -417,7 +542,7 @@ class TranslationPipeline:
         
         system_prompt = config.get_prompt("initial_translation", "system")
         
-        text = llm_service.complete(
+        text, tokens_used = llm_service.complete(
             role=LLMRole.PRIMARY,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
@@ -425,28 +550,45 @@ class TranslationPipeline:
             stage=TranslationStage.INITIAL  # Stage-specific temperature
         )
         
-        text = remove_tags(text)
+        text = remove_tags_with_check(text, "initial_translation", LLMRole.PRIMARY)
         
-        # Check if translation is in correct language (detect if LLM returned source language)
-        if _detect_language_mismatch(text, context.target_lang, context.source_text):
-            logger.error("Translation returned in wrong language! Retrying...")
-            translation_stats.language_mismatch_retries += 1
-            # Retry once with stronger instruction
-            user_prompt = f"TRANSLATE to {context.target_lang} ONLY. DO NOT output English/source text.\n\n{user_prompt}"
-            text = llm_service.complete(
+        # Retry if text became empty after remove_tags
+        if not text or len(text.strip()) == 0:
+            logger.error(f"Text became empty after remove_tags, retrying...")
+            retry_text, retry_tokens = llm_service.complete(
                 role=LLMRole.PRIMARY,
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 max_tokens=MAX_TOKENS_PER_CHUNK,
                 stage=TranslationStage.INITIAL
             )
-            text = remove_tags(text)
+            text = remove_tags_with_check(retry_text, "initial_translation_retry", LLMRole.PRIMARY)
+            tokens_used += retry_tokens
+            if retry_tokens > 0:
+                metrics.log_retry(retry_tokens, "Empty after remove_tags retry [initial]")
+        
+        # Check if translation is in correct language (detect if LLM returned source language)
+        if _detect_language_mismatch(text, context.target_lang, context.source_text):
+            logger.error("Translation returned in wrong language! Retrying...")
+            # Retry once with stronger instruction
+            user_prompt = f"TRANSLATE to {context.target_lang} ONLY. DO NOT output English/source text.\n\n{user_prompt}"
+            retry_text, retry_tokens = llm_service.complete(
+                role=LLMRole.PRIMARY,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                max_tokens=MAX_TOKENS_PER_CHUNK,
+                stage=TranslationStage.INITIAL
+            )
+            text = remove_tags_with_check(retry_text, "initial_translation_retry", LLMRole.PRIMARY)
+            tokens_used += retry_tokens
+            metrics.log_language_mismatch(retry_tokens)
         
         return TranslationResult(
             stage=TranslationStage.INITIAL,
             llm_role=LLMRole.PRIMARY,
             text=text,
-            metadata={"prompt_style": context.style}
+            metadata={"prompt_style": context.style},
+            tokens_used=tokens_used
         )
     
     @log_entry
@@ -466,20 +608,27 @@ class TranslationPipeline:
             )
         system_prompt = config.get_prompt("synopsis", "system")
         
-        text = llm_service.complete(
-            role=LLMRole.SECONDARY,  # Changed from PRIMARY to SECONDARY
+        text, tokens_used = llm_service.complete(
+            role=LLMRole.SECONDARY,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             max_tokens=160,
-            stage=TranslationStage.SYNOPSIS  # Stage-specific temperature
+            stage=TranslationStage.SYNOPSIS,
+            allow_empty=True  # Synopsis can be empty - no retry needed
         )
         
-        text = remove_tags(text)
+        text = remove_tags_with_check(text, "generate_synopsis", LLMRole.SECONDARY)
+        
+        # Synopsis can be empty - pipeline continues without it
+        if not text or len(text.strip()) == 0:
+            logger.warning(f"WARNING [synopsis]: Empty synopsis returned, continuing without synopsis")
+            text = ""
         
         return TranslationResult(
             stage=TranslationStage.SYNOPSIS,
-            llm_role=LLMRole.SECONDARY,  # Changed from PRIMARY to SECONDARY
-            text=text
+            llm_role=LLMRole.SECONDARY,
+            text=text,
+            tokens_used=tokens_used
         )
     
     @log_entry
@@ -505,7 +654,7 @@ class TranslationPipeline:
             country=context.country
         )
         
-        text = llm_service.complete(
+        text, tokens_used = llm_service.complete(
             role=LLMRole.SECONDARY,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
@@ -517,7 +666,8 @@ class TranslationPipeline:
             stage=TranslationStage.REFLECTION,
             llm_role=LLMRole.SECONDARY,
             text=text,
-            metadata={"stage": "reflection", "output_type": "suggestions_only", "vocabulary_checked": True}
+            metadata={"stage": "reflection", "output_type": "suggestions_only", "vocabulary_checked": True},
+            tokens_used=tokens_used
         )
     
     @log_entry
@@ -539,7 +689,7 @@ class TranslationPipeline:
             country=context.country
         )
         
-        text = llm_service.complete(
+        text, tokens_used = llm_service.complete(
             role=LLMRole.SECONDARY,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
@@ -547,12 +697,28 @@ class TranslationPipeline:
             stage=TranslationStage.IMPROVE  # Stage-specific temperature
         )
         
-        text = remove_tags(text)
+        text = remove_tags_with_check(text, "improve_translation", LLMRole.SECONDARY)
+        
+        # Retry if text became empty after remove_tags
+        if not text or len(text.strip()) == 0 and tokens_used > 0:
+            logger.error(f"Text became empty after remove_tags (used {tokens_used} tokens), retrying...")
+            retry_text, retry_tokens = llm_service.complete(
+                role=LLMRole.SECONDARY,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                max_tokens=MAX_TOKENS_PER_CHUNK,
+                stage=TranslationStage.IMPROVE
+            )
+            text = remove_tags_with_check(retry_text, "improve_translation_retry", LLMRole.SECONDARY)
+            tokens_used += retry_tokens
+            if retry_tokens > 0:
+                metrics.log_retry(retry_tokens, "Empty after remove_tags retry [improve]")
         
         return TranslationResult(
             stage=TranslationStage.IMPROVE,
             llm_role=LLMRole.SECONDARY,
-            text=text
+            text=text,
+            tokens_used=tokens_used
         )
     
     @log_entry
@@ -576,7 +742,7 @@ class TranslationPipeline:
             country=context.country
         )
         
-        text = llm_service.complete(
+        text, tokens_used = llm_service.complete(
             role=LLMRole.SECONDARY,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
@@ -584,13 +750,29 @@ class TranslationPipeline:
             stage=TranslationStage.FINAL  # Stage-specific temperature
         )
         
-        text = remove_tags(text)
+        text = remove_tags_with_check(text, "final_edit", LLMRole.SECONDARY)
+        
+        # Retry if text became empty after remove_tags
+        if not text or len(text.strip()) == 0 and tokens_used > 0:
+            logger.error(f"Text became empty after remove_tags (used {tokens_used} tokens), retrying...")
+            retry_text, retry_tokens = llm_service.complete(
+                role=LLMRole.SECONDARY,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                max_tokens=MAX_TOKENS_PER_CHUNK,
+                stage=TranslationStage.FINAL
+            )
+            text = remove_tags_with_check(retry_text, "final_edit_retry", LLMRole.SECONDARY)
+            tokens_used += retry_tokens
+            if retry_tokens > 0:
+                metrics.log_retry(retry_tokens, "Empty after remove_tags retry [final]")
         
         return TranslationResult(
             stage=TranslationStage.FINAL,
             llm_role=LLMRole.SECONDARY,
             text=text,
-            metadata={"stage": "final_edit", "compared_with_original": True, "vocabulary_used": True}
+            metadata={"stage": "final_edit", "compared_with_original": True, "vocabulary_used": True},
+            tokens_used=tokens_used
         )
     
     def execute(self, source_lang: str, target_lang: str, source_text: str,
@@ -735,6 +917,11 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
     Returns:
         Tuple of (final_translation, synopsis)
     """
+    # Debug: Log vocabulary status
+    if config.debug:
+        vocab_count = len(vocab_dict) if vocab_dict else 0
+        logger.debug(f"translate_chunk: vocab_dict has {vocab_count} terms, outline_len={len(outline_text) if outline_text else 0}")
+    
     # Execute pipeline
     state = _pipeline.execute(
         source_lang=source_lang,
@@ -752,10 +939,22 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
         source_text, state.final_translation, "FINAL"
     )
     
-    # Rechunking if needed
+    # Check for empty translation (indicates LLM failure)
+    if not state.final_translation or len(state.final_translation.strip()) == 0:
+        metrics.log_failure("Empty translation from LLM")
+        logger.error(f"EMPTY TRANSLATION at depth {depth}: LLM returned empty result")
+        # Don't rechunk - retry with same chunk
+        if depth < MAX_DEPTH:
+            logger.error(f"Retrying translation at depth {depth}...")
+            return translate_chunk(
+                source_lang, target_lang, source_text, outline_text,
+                vocab_dict, country, style, fast_mode, depth + 1
+            )
+        return "", ""
+    
+    # Rechunking if needed (ERROR logging)
     if should_split and depth < MAX_DEPTH:
-        logger.info(f"Rechunking at depth {depth}: {percent_diff:.1f}% length difference")
-        translation_stats.rechunk_events += 1
+        metrics.log_rechunk(depth, percent_diff)  # ERROR level
         
         # Split source text
         part1, part2 = split_text_smartly(source_text)
@@ -775,6 +974,10 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
         combined_synopsis = (syn1 or "") + " " + (syn2 or "")
         
         return combined_translation, combined_synopsis
+    
+    # Success - log tokens
+    tokens = state.final_result.tokens_used if hasattr(state, 'final_result') and hasattr(state.final_result, 'tokens_used') else 0
+    metrics.log_success(tokens)  # INFO level
     
     return state.final_translation, state.synopsis
 
@@ -823,16 +1026,18 @@ class LLMServiceCompat:
             stage: TranslationStage for temperature selection (optional)
             
         Returns:
-            Generated text from LLM
+            Generated text from LLM (tokens_used discarded for compatibility)
         """
-        return self._new_service.complete(
+        text, _ = self._new_service.complete(
             role=role,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             max_tokens=max_tokens,
             json_mode=json_mode,
-            stage=stage  # Pass stage for temperature selection
+            stage=stage,  # Pass stage for temperature selection
+            track_tokens=False  # Don't track tokens for compatibility layer
         )
+        return text
     
     def get_completion(self, role: str, prompt_category: str, prompt_key: str = None,
                        temperature: float = None, max_tokens: int = None, json_mode: bool = False,
@@ -875,19 +1080,21 @@ class LLMServiceCompat:
         # Determine LLM role
         llm_role = LLMRole.PRIMARY if role == "Translate" else LLMRole.SECONDARY
         
-        # Get completion
-        return self._new_service.complete(
+        # Get completion (discard tokens for compatibility)
+        text, _ = self._new_service.complete(
             role=llm_role,
             system_prompt="",  # Prompts are self-contained
             user_prompt=user_prompt,
             max_tokens=max_tokens or MAX_TOKENS_PER_CHUNK,
             json_mode=json_mode,
-            stage=stage  # Pass stage for temperature selection
+            stage=stage,  # Pass stage for temperature selection
+            track_tokens=False
         )
+        return text
 
 
-# Global LLM service instance
-llm_service = LLMServiceCompat()
+# Compatibility layer for legacy code
+llm_service_compat = LLMServiceCompat()
 
 
 # =============================================================================
@@ -897,17 +1104,13 @@ llm_service = LLMServiceCompat()
 @log_entry
 def remove_tags(text: str) -> str:
     """
-    Умная очистка перевода с приоритетом извлечения из wrapper тэгов.
+    Remove XML/HTML tags and artifacts from translation output.
+    Logs all repairs as ERROR level.
     
-    Приоритет извлечения:
-    1. <ttext>...</ttext> (основной тэг из промта)
-    2. <translated>...</translated>
-    3. <IMPROVED_TRANSLATION>...</IMPROVED_TRANSLATION>
-    4. <target>...</target>
-    5. <TRANS>...</TRANS>
-    6. Фоллбэк: очистка от служебных блоков и мета-комментариев
-    
-    Note: For FB2 XML validation and cleaning, use xmlcheck.rem_tags()
+    Supports multiple output formats:
+    1. JSON: {"translation": "..."}  ← PREFERRED
+    2. XML: <ttext>...</ttext>
+    3. Plain text (no wrapper)
     
     Args:
         text: Text with XML tags to remove
@@ -918,76 +1121,125 @@ def remove_tags(text: str) -> str:
     if not text:
         return ""
     
-    # Шаг 1: Проверка на мета-комментарии LLM
-    if "I'm ready to help" in text or "Could you please" in text or "I don't see any" in text:
-        logger.warning("LLM returned meta-commentary instead of translation")
-        # Попытаться извлечь хоть что-то через extract_translation
-        extracted = _extract_translation(text)
-        if extracted:
-            return extracted
+    original_text = text
+    cleaned = False
+    repair_reasons = []
     
-    # Шаг 2: Извлечение с приоритетом тэгов
-    extracted = _extract_translation(text)
+    # STEP 1: Try to extract from JSON format (PREFERRED)
+    json_match = re.search(r'\{[\s]*["\']translation["\'][\s]*:[\s]*["\']([\s\S]*?)["\'][\s]*\}', text)
+    if json_match:
+        text = json_match.group(1)
+        logger.debug("Extracted translation from JSON format")
+        cleaned = True
+        repair_reasons.append("Extracted from JSON")
+    else:
+        # STEP 2: Try to extract from <ttext> wrapper if JSON not found
+        ttext_match = re.search(r'<ttext[^>]*>([\s\S]*?)</ttext>', text, re.IGNORECASE)
+        if ttext_match:
+            text = ttext_match.group(1)
+            logger.debug("Extracted content from <ttext> wrapper")
+            cleaned = True
+            repair_reasons.append("Extracted from <ttext>")
+        else:
+            # STEP 3: Try other wrapper tags
+            for tag in ['TTEXT', 'TRANS', 'target']:
+                pattern = rf'<{tag}[^>]*>([\s\S]*?)</{tag}>'
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match and match.group(1).strip():
+                    text = match.group(1)
+                    logger.debug(f"Extracted content from <{tag}> wrapper")
+                    cleaned = True
+                    repair_reasons.append(f"Extracted from <{tag}>")
+                    break
     
-    # Шаг 3: Если ничего не найдено, очистить от служебных блоков
-    if extracted == text:
-        # Удалить служебные секции
-        service_blocks = [
-            r'<(vocabulary|synopsis|context|task|suggestions|SOURCE_TEXT|DICTIONARY|EXPERT_SUGGESTIONS)[^>]*>[\s\S]*?</\1>',
-            r'```(?:xml|json)?[\s\S]*?```',
-            r'<\|im_end\|>',
-            r'<\|file_separator\|>',
-        ]
-        for pattern in service_blocks:
-            extracted = re.sub(pattern, '', extracted, flags=re.IGNORECASE)
+    # Remove meta-commentary from LLM (common pattern)
+    meta_patterns = [
+        ("I'm ready to help", "Meta-commentary: 'I'm ready to help'"),
+        ("Could you please", "Meta-commentary: 'Could you please'"),
+        ("I don't see any", "Meta-commentary: 'I don't see any'"),
+        ("I apologize", "Meta-commentary: 'I apologize'"),
+        ("Let me translate", "Meta-commentary: 'Let me translate'"),
+        ("Here's the translation", "Meta-commentary: 'Here's the translation'")
+    ]
     
-    # Шаг 4: Валидация результата
-    if not extracted.strip():
-        logger.error(f"Empty result after tag removal. Original: {text[:200]}...")
-        return ""
+    for pattern, description in meta_patterns:
+        if pattern.lower() in text.lower():
+            metrics.log_xml_repair(description)  # ERROR level
+            repair_reasons.append(description)
+            cleaned = True
+            break
     
-    return extracted.strip()
+    # STEP 4: Remove unwanted tags and artifacts
+    patterns_with_desc = [
+        (r'<source[^>]*>[\s\S]*?</source>', 'source block'),
+        (r'<SOURCE[^>]*>[\s\S]*?</SOURCE>', 'source block'),
+        (r'<original[^>]*>[\s\S]*?</original>', 'original block'),
+        (r'<vocabulary>[\s\S]*?</vocabulary>', 'vocabulary section'),
+        (r'<synopsis>[\s\S]*?</synopsis>', 'synopsis section'),
+        (r'<context>[\s\S]*?</context>', 'context section'),
+        (r'<task>[\s\S]*?</task>', 'task section'),
+        (r'<suggestions>[\s\S]*?</suggestions>', 'suggestions section'),
+        (r'<SOURCE_TEXT>[\s\S]*?</SOURCE_TEXT>', 'SOURCE_TEXT block'),
+        (r'<DICTIONARY>[\s\S]*?</DICTIONARY>', 'DICTIONARY block'),
+        (r'<EXPERT_SUGGESTIONS>[\s\S]*?</EXPERT_SUGGESTIONS>', 'EXPERT_SUGGESTIONS block'),
+        (r'<SYNOPSIS>[\s\S]*?</SYNOPSIS>', 'SYNOPSIS block'),
+        (r'<INITIAL_TRANSLATION>[\s\S]*?</INITIAL_TRANSLATION>', 'INITIAL_TRANSLATION block'),
+        (r'<FIRST_TRANSLATION>[\s\S]*?</FIRST_TRANSLATION>', 'FIRST_TRANSLATION block'),
+        (r'<TRANSLATION>[\s\S]*?</TRANSLATION>', 'TRANSLATION block'),
+        (r'```json', 'markdown code block'),
+        (r'```xml', 'markdown code block'),
+        (r'```', 'markdown code block'),
+        # Remove any remaining wrapper tags
+        (r'</?(?:section|IMPROVED_TRANSLATION|TTEXT|TRANS|target)>', 'wrapper tags'),
+        (r'<\|im_end\|>', 'special token'),
+        (r'<\|file_separator\|>', 'special token')
+    ]
+    
+    for pattern, description in patterns_with_desc:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        if matches:
+            metrics.log_xml_repair(f"Removed {description} ({len(matches)} occurrences)")  # ERROR level
+            repair_reasons.append(f"{description} x{len(matches)}")
+            cleaned = True
+        text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+    
+    if cleaned:
+        logger.error(f"Tag cleanup performed: {len(original_text)} → {len(text)} chars | {', '.join(repair_reasons[:3])}")
+    
+    return text.strip()
 
 
-def _extract_translation(text: str) -> str:
+def remove_tags_with_check(text: str, stage_name: str = "", role: LLMRole = None) -> str:
     """
-    Извлечь перевод с приоритетом тэгов-обёрток.
-    
-    Приоритет: <ttext> → <translated> → <IMPROVED_TRANSLATION> → <target> → <TRANS> → весь текст
+    Remove tags and check for empty result. Log ERROR if result is empty.
     
     Args:
         text: Raw LLM response
+        stage_name: Name of pipeline stage for logging
+        role: LLM role for context
         
     Returns:
-        Extracted translation or original text if no wrapper found
+        Cleaned text (may be empty if input was empty)
     """
-    # Приоритет 1: <ttext> (основной тэг из промта)
-    match = re.search(r'<ttext[^>]*>([\s\S]*?)</ttext>', text, re.IGNORECASE)
-    if match:
-        return match.group(1).strip()
+    if not text:
+        logger.error(f"ERROR - Ответ 0 [{stage_name}]: LLM returned None/empty before remove_tags")
+        return ""
     
-    # Приоритет 2: <translated>
-    match = re.search(r'<translated[^>]*>([\s\S]*?)</translated>', text, re.IGNORECASE)
-    if match:
-        return match.group(1).strip()
+    original_len = len(text)
+    cleaned = remove_tags(text)
+    cleaned_len = len(cleaned)
     
-    # Приоритет 3: <IMPROVED_TRANSLATION>
-    match = re.search(r'<IMPROVED_TRANSLATION[^>]*>([\s\S]*?)</IMPROVED_TRANSLATION>', text, re.IGNORECASE)
-    if match:
-        return match.group(1).strip()
+    # Check if result became empty after cleanup
+    if original_len > 0 and cleaned_len == 0:
+        role_str = role.value if role else "unknown"
+        logger.error(f"ERROR - Ответ 0 [{stage_name}/{role_str}]: {original_len} chars → 0 chars after remove_tags")
+        # Log the original content that became empty (for debugging)
+        preview = text[:500].replace('\n', ' ').replace('\r', ' ')
+        logger.debug(f"DEBUG - Content that became empty [{stage_name}]: {preview}")
+        if len(text) > 500:
+            logger.debug(f"DEBUG - ... (truncated, total {original_len} chars)")
     
-    # Приоритет 4: <target>
-    match = re.search(r'<target[^>]*>([\s\S]*?)</target>', text, re.IGNORECASE)
-    if match:
-        return match.group(1).strip()
-    
-    # Приоритет 5: <TRANS>
-    match = re.search(r'<TRANS[^>]*>([\s\S]*?)</TRANS>', text, re.IGNORECASE)
-    if match:
-        return match.group(1).strip()
-    
-    # Фоллбэк: вернуть весь текст (будет обработан в remove_tags)
-    return text
+    return cleaned
 
 
 def _detect_language_mismatch(text: str, expected_lang: str, source_text: str) -> bool:
@@ -1125,7 +1377,7 @@ def vocabulary(source_lang: str, target_lang: str, source_text: str,
     # Vocabulary translation uses Secondary LLM with standard prompt
     prompt_key = "user"
     
-    result = llm_service.get_completion(
+    result = llm_service_compat.get_completion(
         role=role,
         prompt_category="vocabulary",
         prompt_key=prompt_key,
@@ -1151,7 +1403,7 @@ def translate_metadata(metadata: dict, source_lang: str, target_lang: str,
         # Use Hunyuan-specific prompt if model is Hunyuan
         prompt_key = "user_hunyuan" if config.model_translate == "Hunyuan" else "user"
         
-        response = llm_service.get_completion(
+        response = llm_service_compat.get_completion(
             role="Proofread",
             prompt_category="metadata_translation",
             prompt_key=prompt_key,
@@ -1299,11 +1551,10 @@ def num_tokens_in_string(input_str: str, encoding_name: str = "cl100k_base") -> 
     return len(encoding.encode(input_str))
 
 
-def get_translation_stats() -> dict:
-    """Get global translation statistics."""
-    return translation_stats.get_stats()
+# =============================================================================
+# Translation Report
+# =============================================================================
 
-
-def reset_translation_stats():
-    """Reset global translation statistics."""
-    translation_stats.reset()
+def print_translation_report():
+    """Print translation metrics summary at end of translation."""
+    metrics.print_report()
