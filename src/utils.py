@@ -800,6 +800,11 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
     Returns:
         Tuple of (final_translation, synopsis)
     """
+    # Debug: Log vocabulary status
+    if config.debug:
+        vocab_count = len(vocab_dict) if vocab_dict else 0
+        logger.debug(f"translate_chunk: vocab_dict has {vocab_count} terms, outline_len={len(outline_text) if outline_text else 0}")
+    
     # Execute pipeline
     state = _pipeline.execute(
         source_lang=source_lang,
@@ -816,6 +821,19 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
     is_valid, percent_diff, should_split = validate_translation_length(
         source_text, state.final_translation, "FINAL"
     )
+    
+    # Check for empty translation (indicates LLM failure)
+    if not state.final_translation or len(state.final_translation.strip()) == 0:
+        metrics.log_failure("Empty translation from LLM")
+        logger.error(f"EMPTY TRANSLATION at depth {depth}: LLM returned empty result")
+        # Don't rechunk - retry with same chunk
+        if depth < MAX_DEPTH:
+            logger.error(f"Retrying translation at depth {depth}...")
+            return translate_chunk(
+                source_lang, target_lang, source_text, outline_text,
+                vocab_dict, country, style, fast_mode, depth + 1
+            )
+        return "", ""
     
     # Rechunking if needed (ERROR logging)
     if should_split and depth < MAX_DEPTH:
