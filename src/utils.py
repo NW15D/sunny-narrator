@@ -128,6 +128,42 @@ metrics = TranslationMetrics()
 
 
 # =============================================================================
+# Global Statistics Counters (for metrics reporting)
+# =============================================================================
+
+class TranslationStats:
+    """Global counters for translation statistics."""
+    
+    def __init__(self):
+        self.rechunk_events = 0
+        self.language_mismatch_retries = 0
+    
+    def reset(self):
+        self.rechunk_events = 0
+        self.language_mismatch_retries = 0
+    
+    def get_stats(self) -> dict:
+        return {
+            'rechunk_events': self.rechunk_events,
+            'language_mismatch_retries': self.language_mismatch_retries,
+        }
+
+
+# Global statistics instance
+translation_stats = TranslationStats()
+
+
+def get_translation_stats() -> dict:
+    """Get global translation statistics."""
+    return translation_stats.get_stats()
+
+
+def reset_translation_stats():
+    """Reset global translation statistics."""
+    translation_stats.reset()
+
+
+# =============================================================================
 # Schema Definitions (moved from src/schemas/translation.py)
 # =============================================================================
 
