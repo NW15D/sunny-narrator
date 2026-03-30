@@ -361,6 +361,13 @@ class TranslationEngine:
                 
                 with open(output_tfile, 'a', encoding='utf-8') as f:
                     f.write(section_content + "\n")
+            
+            # DEBUG: Print stats after each chunk
+            if config.debug:
+                length_diff = len(final_content) - len(chunk) if final_content else 0
+                length_diff_pct = (length_diff / len(chunk) * 100) if chunk and len(chunk) > 0 else 0
+                status = "✓" if final_content else "✗ EMPTY"
+                print(f"  [{status}] {len(chunk)} → {len(final_content):,} chars ({length_diff_pct:+.1f}%) | Successful: {self.stats['successful']}/{self.stats['failed'] + self.stats['successful']}")
         
         return all_content
 
