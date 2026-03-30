@@ -1,409 +1,371 @@
-# Формат словаря (.dic файл)
+# Dictionary Format (.dic file) — JSON Format
 
-## Обзор
+**Version:** 2.0 (JSON)  
+**Last Updated:** 2026-03-30
 
-Словарь (`*.dic`) — это файл с терминами для обеспечения консистентности перевода. Он содержит:
-- Переводы имен персонажей
-- Географические названия
-- Специфическую терминологию
-- Gender информацию для корректного использования местоимений
+---
 
-## Формат файла
+## Overview
+
+The dictionary file (`*.dic`) ensures terminology consistency throughout translation. It contains:
+- Character name translations
+- Geographic locations
+- Domain-specific terminology
+- Gender information for correct pronoun usage
+
+---
+
+## File Format (JSON)
+
+**New format (v2.0):**
+
+```json
+# Vocabulary for AliceInWonderland
+# Format: JSON array of vocabulary entries
+[
+  {"source": "Alice", "target": "Алиса", "category": "PERSON", "gender": "she", "notes": "Main character, curious girl"},
+  {"source": "Mad Hatter", "target": "Шляпный Болван", "category": "PERSON", "gender": "he", "notes": "Eccentric tea party host"},
+  {"source": "Cheshire Cat", "target": "Чеширский Кот", "category": "PERSON", "gender": "it", "notes": "Mysterious, grinning cat"},
+  {"source": "Wonderland", "target": "Страна Чудес", "category": "LOC", "gender": "", "notes": ""},
+  {"source": "Rabbit Hole", "target": "Кроличья Нора", "category": "LOC", "gender": "", "notes": ""},
+  {"source": "Queen's Court", "target": "Двор Королевы", "category": "ORG", "gender": "", "notes": ""}
+]
+```
+
+---
+
+## Entry Structure
+
+| Field | Required | Type | Description | Example |
+|-------|----------|------|-------------|---------|
+| **source** | ✅ | string | Term in source language | `"Alice"` |
+| **target** | ✅ | string | Translation | `"Алиса"` |
+| **category** | ⚪ | string | Entity type | `"PERSON"`, `"LOC"`, `"ORG"`, `"TERM"` |
+| **gender** | ⚪ | string | Gender for characters | `"he"`, `"she"`, `"it"`, `"they"` |
+| **notes** | ⚪ | string | User comments | `"Main character"` |
+
+### JSON Schema
+
+```json
+{
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["source", "target"],
+    "properties": {
+      "source": {"type": "string"},
+      "target": {"type": "string"},
+      "category": {"type": "string", "enum": ["PERSON", "LOC", "ORG", "TERM", "OTHER"]},
+      "gender": {"type": "string", "enum": ["he", "she", "it", "they", ""]},
+      "notes": {"type": "string"}
+    }
+  }
+}
+```
+
+---
+
+## Categories
+
+| Category | Description | Examples |
+|----------|-------------|----------|
+| **PERSON** | People, characters | `{"source": "Alice", "category": "PERSON"}` |
+| **LOC** | Locations, places | `{"source": "Wonderland", "category": "LOC"}` |
+| **ORG** | Organizations, groups | `{"source": "Queen's Court", "category": "ORG"}` |
+| **TERM** | Domain-specific terms | `{"source": "Portals", "category": "TERM"}` |
+| **OTHER** | Default/uncategorized | `{"source": "item", "category": "OTHER"}` |
+
+**Default:** If `category` is omitted, defaults to `"TERM"`.
+
+---
+
+## Gender
+
+Gender is used for:
+1. Correct pronouns in translation (he/she/it → он/она/оно)
+2. Character tracking in SynopsisManager
+3. Consistency across chunks
+
+### Values
+
+| Value | Description | Pronouns (EN) | Pronouns (RU) |
+|-------|-------------|---------------|---------------|
+| `he` | Male | he, his, him | он, его, ему |
+| `she` | Female | she, her, hers | она, её, ей |
+| `it` | Inanimate/object | it, its | оно, его |
+| `they` | Plural/unspecified | they, their, them | они, их, им |
+| `""` | Not specified | — | — |
+
+### Determining Gender
+
+1. **From text:** LLM infers gender from pronouns near the name
+2. **From dictionary:** User specifies manually in `.dic`
+3. **Default:** PERSON without gender → not tracked
+
+---
+
+## Legacy Format Support
+
+**Old format (v1.0) is still supported for reading:**
 
 ```
 # Vocabulary for BookName
-# Format: source = target, category, gender, notes
-
-# Characters
-Alice = Алиса, PERSON, she, Main character, curious girl
-Mad Hatter = Шляпный Болван, PERSON, he, Eccentric tea party host
-Cheshire Cat = Чеширский Кот, PERSON, it, Mysterious, grinning cat
-
-# Locations
-Wonderland = Страна Чудес, LOC, , 
-Rabbit Hole = Кроличья Нора, LOC, , 
-
-# Organizations
-Queen's Court = Двор Королевы, ORG, , 
-
-# Other terms
-Drink Me = Выпей меня, TERM, , 
-Eat Me = Съешь меня, TERM, , 
-```
-
-## Структура записи
-
-| Поле | Обязательное | Описание | Пример |
-|------|---------------|----------|--------|
-| **source** | ✅ | Термин в исходном языке | `Alice` |
-| **target** | ✅ | Перевод термина | `Алиса` |
-| **category** | ⚪ | Тип сущности | `PERSON`, `LOC`, `ORG`, `TERM` |
-| **gender** | ⚪ | Гендер для персонажей | `he`, `she`, `it`, `they` |
-| **notes** | ⚪ | Комментарии пользователя | `Main character` |
-
-### Разделитель
-
-Используйте запятую `,` для разделения полей:
-
-```
-source = target, category, gender, notes
-```
-
-Пустые поля можно оставлять пустыми:
-```
-Alice = Алиса, PERSON, she, 
-Wonderland = Страна Чудес, LOC, , 
-```
-
-### Legacy формат
-
-Старый формат с `|` также поддерживается:
-
-```
-Alice = Алиса | PERSON | she | 
-Wonderland = Страна Чудес | LOC | | 
-```
-
-## Категории (category)
-
-| Категория | Описание | Примеры |
-|-----------|----------|---------|
-| **PERSON** | Люди, персонажи | `Alice = Алиса, PERSON, she` |
-| **LOC** | Локации, места | `Wonderland = Страна Чудес, LOC` |
-| **ORG** | Организации, группы | `Queen's Court = Двор Королевы, ORG` |
-| **TERM** | Специфические термины | `Portals = Порталы, TERM` |
-| **TITLE** | Заголовки, титулы | `Queen = Королева, TITLE` |
-| **OTHER** | Прочее (по умолчанию) | `item = предмет, OTHER` |
-
-Если category не указана, по умолчанию считается `OTHER`.
-
-## Gender (гендер)
-
-Gender используется для:
-1. Корректных местоимений в переводе (he/she/it → он/она/оно)
-2. Character tracking в SynopsisManager
-3. Consistency across chunks
-
-### Значения gender
-
-| Значение | Описание | Местоимения |
-|----------|----------|-------------|
-| `he` | Мужской | он, его, ему |
-| `she` | Женский | она, её, ей |
-| `it` | Неодушевлённое | оно, его |
-| `they` | Множественное/неопределённое | они, их |
-
-### Как определить gender
-
-1. **Из текста**: LLM может推断 gender по местоимениям рядом с именем
-2. **Из словаря**: Пользователь указывает вручную в .dic файле
-3. **По умолчанию**: PERSON без gender → не отслеживается
-
-### Формат записи с gender
-
-```
-# С gender
-Alice = Алиса, PERSON, she, 
-Bob = Боб, PERSON, he, 
-
-# Без gender
-Wonderland = Страна Чудес, LOC, , 
-```
-
-## Workflow работы со словарём
-
-### 1. Автоматическое создание (NER=True)
-
-При первом запуске перевода, если `.dic` файл не найден:
-
-```bash
-# Если .dic файл не найден
-Dictionary not found: books/MyBook.dic
-Creating from NER...
-Running NER to extract entities and common words...
-Extracted 150 terms from text
-Dictionary saved: books/MyBook.dic (150 entries)
-
-Dictionary created: books/MyBook.dic
-Please review and edit the dictionary, then restart.
-```
-
-**Процесс создания:**
-
-1. **NER анализ текста:**
-   - Находит именованные сущности (PERSON, LOC, ORG, GPE)
-   - Фильтр: сущности встречаются ≥5 раз
-   - Фильтр: исключает вложенные сущности (оставляет longest)
-
-2. **Поиск частых слов:**
-   - Находит слова длиной ≥5 символов
-   - Фильтр: встречаются ≥10 раз
-   - Исключает stop words и уже найденные NER сущности
-
-3. **Перевод терминов:**
-   - Отправляет извлечённые термины на перевод через LLM
-   - Формат: "source = target"
-
-4. **Сохранение в .dic:**
-   - Группировка по категориям (PERSON, LOC, ORG, TERM, OTHER)
-   - Формат: `source = target | category | gender | notes`
-   - Добавление комментариев для удобства редактирования
-
-**Параметры NER (настраиваемые):**
-
-```python
-# В src/vocabulary_manager.py:_create_dictionary()
-extracted_terms = ner_module.create_dictionary_from_text(
-    body,
-    min_count_ner=5,          # Сущности с ≥5 повторениями
-    min_count_word=10,        # Слова с ≥10 повторениями
-    min_word_length=5         # Длина слова ≥5 символов
-)
-```
-
-**Пример созданного словаря:**
-
-```dic
-# Vocabulary for MyBook
 # Format: source = target | category | gender | notes
-# Generated automatically by NER
-# Please review and edit as needed
 
-# PERSON (50 terms)
-Alice = Алиса | PERSON | | 
-Mad Hatter = Шляпник | PERSON | | 
-Queen = Королева | PERSON | | 
-
-# LOC (30 terms)
+Alice = Алиса | PERSON | she | Main character
 Wonderland = Страна Чудес | LOC | | 
-Rabbit Hole = Кроличья Нора | LOC | | 
-
-# ORG (10 terms)
-Queen's Court = Двор Королевы | ORG | | 
-
-# TERM (60 terms)
-wonderland = страна чудес | TERM | | frequent word
-curious = любопытный | TERM | | frequent word
 ```
 
-### 2. Ручное редактирование
+**On next save, legacy files are automatically converted to JSON.**
 
-Пользователь редактирует `.dic` файл:
+---
 
+## Workflow
+
+### 1. Dictionary Creation
+
+**Automatic (NER):**
 ```bash
-# Отредактировать словарь
-nano books/MyBook.dic
-
-# Добавить гендер для персонажей
-Alice = Алиса | PERSON | she
-Bob = Боб | PERSON | he
+python app.py books/mybook.fb2
+# NER extracts entities → creates mybook.dic
 ```
 
-### 3. Использование при переводе
+**Manual:**
+```bash
+# Create empty template
+touch books/mybook.dic
 
-При переводе каждого чанка:
-
-```python
-# VocabularyManager автоматически:
-# 1. Находит термины в чанке (cosine similarity)
-# 2. Форматирует для модели (Hunyuan/Gemma/standard)
-# 3. Вставляет в промпт
+# Edit with your terms
+nano books/mybook.dic
 ```
 
-## Форматирование для разных моделей
+### 2. Dictionary Editing
 
-### Hunyuan (Primary LLM)
+**Recommended editors:**
+- VS Code (with JSON extension)
+- jq (command-line JSON processor)
+- Any text editor
 
-```
-Alice=Aлиса(PERSON) | Wonderland=Страна Чудес(LOC) | Queen=Королева(TITLE)
-```
+**Example with jq:**
+```bash
+# Add new entry
+jq '. += [{"source": "NewTerm", "target": "НовыйТермин", "category": "TERM"}]' books/mybook.dic > tmp && mv tmp books/mybook.dic
 
-**Особенности:**
-- Разделитель: ` | `
-- Категория в скобках: `(PERSON)`
-- Без gender (Hunyuan не использует)
-
-### Gemma
-
-```
-  Alice → Алиса
-  Wonderland → Страна Чудес
-  Queen → Королева
+# Validate JSON
+jq '.' books/mybook.dic > /dev/null && echo "Valid JSON"
 ```
 
-**Особенности:**
-- Стрелка: `→`
-- Отступ для читаемости
+### 3. Dictionary Usage
 
-### Standard (Mistral, Llama, Qwen)
-
-```
-Alice = Алиса (PERSON) [she]
-Wonderland = Страна Чудес (LOC)
-Queen = Королева (TITLE)
-```
-
-**Особенности:**
-- Равенство: `=`
-- Категория в скобках: `(PERSON)`
-- Gender в квадратных скобках: `[she]`
-
-## Интеграция с промптами
-
-### initial_translation (Stage 1)
-
-```xml
-<context>
-<synopsis>Previous context...</synopsis>
-<vocabulary>
-Alice=Aлиса(PERSON) | Wonderland=Страна Чудес(LOC)
-</vocabulary>
-</context>
-
-<source lang="english">
-Alice went to Wonderland.
-</source>
-
-Translate to russian...
-```
-
-### improve (Stage 3)
-
-```xml
-<vocabulary>
-Alice=Aлиса(PERSON) | Wonderland=Страна Чудес(LOC)
-</vocabulary>
-
-Apply vocabulary terms correctly.
-```
-
-### editor (Stage 4 - FINAL_EDIT)
-
-```xml
-<vocabulary>
-Alice=Aлиса(PERSON) | Wonderland=Страна Чудес(LOC)
-</vocabulary>
-
-Проверь соответствие терминов словарю (используй строго).
-```
-
-## API VocabularyManager
-
-### Основные методы
+Dictionary is automatically loaded by `VocabularyManager`:
 
 ```python
 from src.vocabulary_manager import VocabularyManager
 
-# Инициализация
-manager = VocabularyManager(book_path="books/MyBook.fb2")
-vocab = manager.initialize()
+manager = VocabularyManager(book_path="books/mybook.fb2")
+vocab = manager.initialize()  # Loads or creates .dic
 
-# Получить словарь для чанка
-entries = manager.get_vocab_for_chunk(chunk_text, s_idx=0, c_idx=0)
+# Get vocabulary for chunk
+chunk_vocab = manager.get_vocab_for_chunk(chunk_text, 0, 0)
 
-# Форматировать для модели
-formatted = manager.format_for_model(entries, model="Hunyuan")
-# Результат: "Alice=Aлиса(PERSON) | Wonderland=Страна Чудес(LOC)"
-
-# Получить гендер персонажа
-gender = manager.get_character_gender("Alice")  # "she"
+# Format for model
+formatted = manager.format_for_model(chunk_vocab, model="Hunyuan")
 ```
 
-### format_for_model()
+---
 
-Автоматически выбирает формат по названию модели:
+## Validation
 
-| Модель | Формат |
-|--------|--------|
-| `Hunyuan`, `HY-MT` | `source=target(CAT)` |
-| `Gemma` | `  source → target` |
-| Остальные | `source = target (CAT) [gender]` |
+### Built-in Validation
+
+```python
+from src.vocabulary_manager import validate_dictionary
+
+# Validate dictionary file
+errors = validate_dictionary("books/mybook.dic")
+if errors:
+    print("Validation errors:")
+    for error in errors:
+        print(f"  - {error}")
+else:
+    print("Dictionary is valid!")
+```
+
+### Manual Validation
+
+**Using jq:**
+```bash
+# Check JSON syntax
+jq '.' books/mybook.dic > /dev/null && echo "✓ Valid JSON"
+
+# Check required fields
+jq '.[] | select(.source == null or .target == null)' books/mybook.dic
+# (empty output = all entries have source and target)
+
+# Check categories
+jq '.[].category' books/mybook.dic | sort | uniq -c
+```
+
+**Using Python:**
+```python
+import json
+
+with open('books/mybook.dic') as f:
+    # Skip comments
+    content = ''.join(line for line in f if not line.startswith('#'))
+    data = json.loads(content)
+
+for i, entry in enumerate(data):
+    assert 'source' in entry, f"Entry {i}: missing 'source'"
+    assert 'target' in entry, f"Entry {i}: missing 'target'"
+    assert entry['category'] in ['PERSON', 'LOC', 'ORG', 'TERM', 'OTHER', ''], \
+        f"Entry {i}: invalid category '{entry['category']}'"
+    assert entry['gender'] in ['he', 'she', 'it', 'they', ''], \
+        f"Entry {i}: invalid gender '{entry['gender']}'"
+```
+
+---
+
+## Migration from Legacy Format
+
+**Automatic:**
+- Legacy `.dic` files load automatically
+- On next save, converted to JSON
+- No manual action required
+
+**Manual conversion:**
+```bash
+# Use provided script
+python scripts/convert_dict_legacy_to_json.py books/oldbook.dic
+```
+
+**Example conversion:**
+
+**Before (legacy):**
+```
+Alice = Алиса | PERSON | she | Main character
+```
+
+**After (JSON):**
+```json
+{"source": "Alice", "target": "Алиса", "category": "PERSON", "gender": "she", "notes": "Main character"}
+```
+
+---
 
 ## Best Practices
 
-### 1. Всегда указывайте gender для PERSON
+### 1. Keep Dictionary Focused
 
-```dic
-# Хорошо
-Alice = Алиса | PERSON | she
-Bob = Боб | PERSON | he
+**DO:**
+- Add character names
+- Add key locations
+- Add domain-specific terms
 
-# Плохо (gender неизвестен)
-Alice = Алиса | PERSON
+**DON'T:**
+- Add common words (the, a, is)
+- Add every proper noun
+- Over-populate (>500 terms may slow down)
+
+### 2. Use Consistent Categories
+
+```json
+// ✅ Good
+{"source": "Alice", "category": "PERSON"}
+{"source": "Wonderland", "category": "LOC"}
+
+// ❌ Inconsistent
+{"source": "Alice", "category": "Character"}  // Should be PERSON
+{"source": "Wonderland", "category": "Place"}  // Should be LOC
 ```
 
-### 2. Используйте category для всех терминов
+### 3. Fill Gender for Characters
 
-```dic
-# Хорошо
-Hogwarts = Хогвартс | LOC
-Ministry of Magic = Министерство Магии | ORG
-Wand = Палочка | ITEM
+```json
+// ✅ Good - gender specified
+{"source": "Alice", "category": "PERSON", "gender": "she"}
+{"source": "Mad Hatter", "category": "PERSON", "gender": "he"}
 
-# Плохо (неясен тип)
-Hogwarts = Хогвартс
+// ❌ Missing gender (pronouns may be wrong)
+{"source": "Alice", "category": "PERSON", "gender": ""}
 ```
 
-### 3. Добавляйте notes для сложных терминов
+### 4. Add Helpful Notes
 
-```dic
-# С комментариями
-Sorting Hat = Распределяющая Шляпа | ITEM | | Magical hat that sorts students
-The Dark Lord = Тёмный Лорд | TITLE | he | Voldemort's title
+```json
+// ✅ Good notes
+{"source": "Cheshire Cat", "target": "Чеширский Кот", 
+ "notes": "Mysterious, grinning cat. Appears/disappears frequently."}
+
+// ❌ Not helpful
+{"source": "Cheshire Cat", "target": "Чеширский Кот", 
+ "notes": "cat"}
 ```
 
-### 4. Проверяйте consistency
-
-Периодически запускайте проверку:
-
-```bash
-# Проверить использование терминов
-grep -c "Алиса" translation_output.fb2
-grep -c "Элис" translation_output.fb2  # Должно быть 0
-```
+---
 
 ## Troubleshooting
 
-### Термины не применяются
+### Dictionary Not Loading
 
-**Проверьте:**
-1. Формат словаря соответствует модели?
-2. Термины найдены в чанке (cosine similarity)?
-3. Словарь загружен (`vocab_dict` не пуст)?
+**Check:**
+1. File exists: `ls books/*.dic`
+2. Valid JSON: `jq '.' books/mybook.dic`
+3. Correct encoding: `file -i books/mybook.dic` (should be `utf-8`)
 
-**Решение:**
-```python
-# Debug: проверить словарь
-print(f"Vocab entries: {len(entries)}")
-print(f"Formatted: {formatted}")
-```
+### Terms Not Applied
 
-### Gender не отслеживается
+**Check:**
+1. Category matches: `jq '.[].category' books/mybook.dic`
+2. Source text matches exactly (case-sensitive)
+3. NER matching enabled: `grep NER .env`
 
-**Проверьте:**
-1. Указан ли gender в .dic файле?
-2. Категория PERSON или пустая?
+### JSON Syntax Errors
 
-**Решение:**
-```dic
-# Добавить gender
-Alice = Алиса | PERSON | she
-```
+**Common issues:**
+- Missing comma between entries
+- Unescaped quotes in notes
+- Trailing comma after last entry
 
-### NER не находит термины
-
-**Проверьте:**
-1. Включён ли NER (`NER=true` в .env)?
-2. Установлена ли spaCy модель?
-
-**Решение:**
+**Fix:**
 ```bash
-# Установить модель
-python -m spacy download en_core_web_lg
+# Validate and find line number
+python3 -m json.tool books/mybook.dic 2>&1 | grep "line"
 ```
 
-## Changelog
+---
 
-- **2026-03-29:** Обновлена документация по форматированию для Hunyuan
-- **2026-03-29:** Добавлено описание format_for_model()
-- **Previous:** Initial dictionary format documentation
+## Examples
+
+### Minimal Dictionary
+
+```json
+[
+  {"source": "Alice", "target": "Алиса", "category": "PERSON", "gender": "she"}
+]
+```
+
+### Full Example
+
+```json
+# Vocabulary for AliceInWonderland
+[
+  {"source": "Alice", "target": "Алиса", "category": "PERSON", "gender": "she", "notes": "Main character"},
+  {"source": "Mad Hatter", "target": "Шляпный Болван", "category": "PERSON", "gender": "he", "notes": "Tea party host"},
+  {"source": "Cheshire Cat", "target": "Чеширский Кот", "category": "PERSON", "gender": "it", "notes": "Grinning cat"},
+  {"source": "White Rabbit", "target": "Белый Кролик", "category": "PERSON", "gender": "he", "notes": "Late for meeting"},
+  {"source": "Queen of Hearts", "target": "Королева Червей", "category": "PERSON", "gender": "she", "notes": "Off with their heads!"},
+  {"source": "Wonderland", "target": "Страна Чудес", "category": "LOC", "gender": "", "notes": "Main setting"},
+  {"source": "Rabbit Hole", "target": "Кроличья Нора", "category": "LOC", "gender": "", "notes": "Entrance to Wonderland"},
+  {"source": "Tea Party", "target": "Чаепитие", "category": "TERM", "gender": "", "notes": "Mad Hatter's endless tea party"},
+  {"source": "Croquet", "target": "Крокет", "category": "TERM", "gender": "", "notes": "Game with flamingos as mallets"}
+]
+```
+
+---
+
+## See Also
+
+- [NER_GUIDE.md](NER_GUIDE.md) — How NER extracts terms
+- [VOCABULARY_REFACTOR_PLAN.md](VOCABULARY_REFACTOR_PLAN.md) — Vocabulary system design
+- [TRANSLATION_STAGES.md](TRANSLATION_STAGES.md) — How vocabulary is used in translation

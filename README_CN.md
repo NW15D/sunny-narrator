@@ -100,6 +100,38 @@ S_PROMT_TRANSLATE=true    # Gemma 需要
 S_PROMT_PROOFREAD=false   # Mistral/Llama
 ```
 
+## 🔧 JSON Mode 控制
+
+### 何时禁用 JSON mode:
+
+| 模型系列 | 设置 | 原因 |
+|----------|------|------|
+| **Gemma 2/3** | `true` (默认) | JSON mode 有问题，使用纯文本 |
+| **Mistral** | `true` (默认) | JSON mode 可能返回空响应 |
+| **Llama 3.x** | `true` (默认) | 本地版本通常不支持 JSON mode |
+| **Hunyuan** | `false` | 支持 JSON mode |
+| **Qwen** | `false` | 支持 JSON mode |
+| **OpenAI/GPT** | `false` | 支持 JSON mode |
+
+### 配置:
+
+```bash
+# 默认: JSON mode 禁用 (本地 LLM 更安全)
+DISABLE_JSON_MODE_TRANSLATE=true
+DISABLE_JSON_MODE_PROOFREAD=true
+
+# 对于支持 JSON mode 的 API 模型:
+DISABLE_JSON_MODE_TRANSLATE=false
+DISABLE_JSON_MODE_PROOFREAD=false
+```
+
+### 空响应处理
+
+当 JSON mode 禁用或 LLM 返回空响应时:
+- **自动重试**: 最多 2 次尝试，记录 ERROR
+- **调试输出**: 如果 `remove_tags()` 结果为空，记录原始内容
+- **错误格式**: `ERROR - Ответ 0 [stage/role]: X chars → 0 chars after remove_tags`
+
 ## 📚 文档
 
 - [安装](docs/INSTALLATION.md)

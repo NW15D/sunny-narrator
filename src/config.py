@@ -22,6 +22,11 @@ class Config:
         # Stage-specific temperatures (override general temp_translate/temp_proofread)
         # Stage 1: INITIAL translation
         self.temp_initial = float(os.getenv('TEMP_INITIAL', self.temp_translate))
+        
+        # JSON mode control for local LLMs that may not support it correctly
+        # Default: true (disabled) - local LLMs often struggle with JSON mode
+        self.disable_json_mode_translate = os.getenv('DISABLE_JSON_MODE_TRANSLATE', 'true').lower() in ['true', '1', 't', 'on', 'yes']
+        self.disable_json_mode_proofread = os.getenv('DISABLE_JSON_MODE_PROOFREAD', 'true').lower() in ['true', '1', 't', 'on', 'yes']
         # Stage 2: REFLECTION (quality review)
         self.temp_reflection = float(os.getenv('TEMP_REFLECTION', 0.4))
         # Stage 3: IMPROVE (apply suggestions)
