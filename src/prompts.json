@@ -7,7 +7,7 @@
         "system": "You are a professional literary translator. Translate text accurately while preserving all XML structure. Output ONLY the translated content within <ttext>...</ttext> tags. DO NOT output any explanations, questions, meta-commentary, vocabulary lists, or synopses. If the input is empty or unclear, output <ttext></ttext>.",
         "user_xml": "<context>\n<synopsis>{outline_text}</synopsis>\n<vocabulary>{vocab_dict}</vocabulary>\n</context>\n\n<source lang=\"{source_lang}\">\n{source_text}\n</source>\n\nTranslate the text inside <source> to {target_lang}.\n\nRequirements:\n1. Preserve all XML tags (<p>, <strong>, <em>, etc.) in their original positions\n2. Apply vocabulary terms where applicable\n3. Maintain the narrative style and tone\n4. Output ONLY the translated text wrapped in <ttext>...</ttext>\n5. DO NOT include <vocabulary> or <synopsis> sections in your output",
         "user_text": "<context>\n<synopsis>{outline_text}</synopsis>\n</context>\n\n<source lang=\"{source_lang}\">\n{source_text}\n</source>\n\nTranslate to {target_lang}. Preserve any XML tags in position. Output the translation wrapped in <ttext>...</ttext>.",
-        "user_hunyuan": "{outline_text}\n\n参考上面的信息，把下面的文本翻译成{target_lang}，注意不需要翻译上文，也不要额外解释：\n\n<vocabulary>\nUse these terms consistently:\n{vocab_dict}\n</vocabulary>\n\n<source>\n{source_text}\n</source>\n\n将以上<source>之间的文本翻译为{target_lang}，注意只需要输出翻译后的结果，不要额外解释，原文中的标签需要在译文中相应的位置保留。输出格式为：<ttext>翻译结果</ttext>"
+        "user_hunyuan": "{outline_text}\n\nTranslate the text below into {target_lang}. Reference the context above but do NOT translate it. Output ONLY the translation result without additional explanation. Preserve XML tags in their original positions.\n\n<vocabulary>\nUse these terms consistently:\n{vocab_dict}\n</vocabulary>\n\n<source>\n{source_text}\n</source>\n\nOutput format: <ttext>translation result</ttext>"
     },
     "editor": {
         "system": "Ты профессиональный редактор-переводчик для {target_lang} ({country}). Твоя задача — провести финальную вычитку перевода.\n\nВыведи ТОЛЬКО исправленный перевод, без объяснений, словарей или синопсисов.\n\nВАЖНО: Сохраняй обсценную лексику, ругательства и грубые выражения как в оригинале. НЕ смягчай, НЕ цензурируй, НЕ заменяй эвфемизмами.",
@@ -28,7 +28,7 @@
     "synopsis": {
         "system": "You are an expert summarizer. Create concise, informative synopses for translation context.",
         "user": "<text>\n{final_translation}\n</text>\n\nCreate a synopsis in {target_lang} (max 80 words). Requirements:\n- Plain text only (no markdown, no bold/italics)\n- No header like 'Synopsis:' or 'Summary:'\n- Include character gender if naturally possible\n- Output only the synopsis content",
-        "user_hunyuan": "<text>\n{final_translation}\n</text>\n\n请用{target_lang}创建一个摘要（最多 80 字）。要求：\n- 纯文本（无 markdown，无粗体/斜体）\n- 不要带'摘要：'或'总结：'之类的标题\n- 如有可能请包含人物性别\n- 只输出摘要内容"
+        "user_hunyuan": "<text>\n{final_translation}\n</text>\n\nCreate a synopsis in {target_lang} (max 80 words) from the text below. Requirements:\n- Plain text only (no markdown, no bold/italics)\n- No header like 'Synopsis:' or 'Summary:'\n- Include character gender if naturally possible\n- Output only the synopsis content"
     },
     "vocabulary": {
         "system": "You are a terminology translator for {source_lang} to {target_lang} for {country}.",
