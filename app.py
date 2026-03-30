@@ -15,6 +15,7 @@ import warnings
 import base64
 import logging
 import re
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -72,8 +73,13 @@ class TranslationEngine:
     
     def __init__(self, output_tfile: str, book_path: str = None):
         self.output_tfile = output_tfile
+        self.book_path = book_path
         self.total_source_len = 0
         self.total_target_len = 0
+        self.last_processed_chunk = -1
+        self.last_section_idx = 0
+        self.last_chunk_idx = 0
+        self.start_time = datetime.now()
         
         # Statistics counters
         self.stats = {
@@ -302,7 +308,7 @@ class TranslationEngine:
             return translated_text
 
     def process_all_chunks(self, all_chunks: list, orig_sections: list, 
-                           vocab: dict, output_tfile: str) -> str:
+                           vocab: dict, output_tfile: str, checkpoint_file: str = None) -> str:
         """
         Process all chunks sequentially.
         
@@ -311,6 +317,7 @@ class TranslationEngine:
             orig_sections: Original sections structure
             vocab: Vocabulary dictionary
             output_tfile: Temp output file path
+            checkpoint_file: Path to checkpoint JSON file (optional)
         
         Returns:
             Combined translated content
@@ -362,6 +369,15 @@ class TranslationEngine:
                 with open(output_tfile, 'a', encoding='utf-8') as f:
                     f.write(section_content + "\n")
             
+            # Update last processed chunk
+            self.last_processed_chunk = g_id
+            self.last_section_idx = s_idx
+            self.last_chunk_idx = c_idx
+            
+            # Save checkpoint after each chunk
+            if checkpoint_file:
+                self.save_checkpoint(checkpoint_file)
+            
             # DEBUG: Print stats after each chunk
             if config.debug:
                 length_diff = len(final_content) - len(chunk) if final_content else 0
@@ -370,6 +386,66 @@ class TranslationEngine:
                 print(f"  [{status}] {len(chunk)} → {len(final_content):,} chars ({length_diff_pct:+.1f}%) | Successful: {self.stats['successful']}/{self.stats['failed'] + self.stats['successful']}")
         
         return all_content
+
+    def save_checkpoint(self, checkpoint_file: str):
+        """
+        Save translation progress to checkpoint file (atomic write).
+        
+        Args:
+            checkpoint_file: Path to checkpoint JSON file
+        """
+        checkpoint = {
+            "version": 1,
+            "book_path": self.book_path,
+            "last_chunk": self.last_processed_chunk,
+            "last_section_idx": self.last_section_idx,
+            "last_chunk_idx": self.last_chunk_idx,
+            "stats": self.stats,
+            "lengths": {
+                "total_source_len": self.total_source_len,
+                "total_target_len": self.total_target_len
+            },
+            "synopsis_history": self.synopsis_manager.synopsis_cache,
+            "created_at": self.start_time.isoformat(),
+            "updated_at": datetime.now().isoformat()
+        }
+        
+        # Atomic write (temp + rename)
+        temp_file = checkpoint_file + ".tmp"
+        try:
+            with open(temp_file, "w", encoding="utf-8") as f:
+                json.dump(checkpoint, f, indent=2, ensure_ascii=False)
+            os.replace(temp_file, checkpoint_file)
+            logger.debug(f"Checkpoint saved: {checkpoint_file}")
+        except Exception as e:
+            logger.error(f"Failed to save checkpoint: {e}")
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+
+    def restore_from_checkpoint(self, checkpoint: dict):
+        """
+        Restore translation state from checkpoint.
+        
+        Args:
+            checkpoint: Checkpoint dict loaded from JSON
+        """
+        self.stats = checkpoint.get("stats", self.stats)
+        self.total_source_len = checkpoint.get("lengths", {}).get("total_source_len", 0)
+        self.total_target_len = checkpoint.get("lengths", {}).get("total_target_len", 0)
+        self.last_processed_chunk = checkpoint.get("last_chunk", -1)
+        self.last_section_idx = checkpoint.get("last_section_idx", 0)
+        self.last_chunk_idx = checkpoint.get("last_chunk_idx", 0)
+        
+        # Restore synopsis history
+        synopsis_history = checkpoint.get("synopsis_history", {})
+        if synopsis_history:
+            # Convert string keys back to tuple keys
+            self.synopsis_manager.synopsis_cache = {
+                tuple(k.split(",")): v for k, v in synopsis_history.items()
+            }
+        
+        logger.info(f"Restored from checkpoint: chunk {self.last_processed_chunk + 1}, "
+                   f"successful: {self.stats['successful']}, failed: {self.stats['failed']}")
 
 
 # =============================================================================
@@ -534,6 +610,7 @@ def main():
     output_base = f"{output_dir}/{file_name}_{config.target_lang}_{timestamp}"
     output_file = f"{output_base}.{config.output_format}"
     output_tfile = f"{output_dir}/{file_name}_{config.target_lang}_tmp_{timestamp}.fb2"
+    checkpoint_file = f"{output_base}.checkpoint.json"
 
     # 1. Parse Input
     print(f"Parsing {file_ext.upper()} file...")
@@ -601,14 +678,45 @@ def main():
     # 4. Translate
     engine = TranslationEngine(output_tfile, book_path=myfile)
     
-    if engine.vocab_manager:
+    # Check for existing checkpoint and resume
+    resume_from_chunk = 0
+    if os.path.exists(checkpoint_file):
+        print(f"\n{'='*60}")
+        print(f"Checkpoint found: {checkpoint_file}")
+        print("Resuming from previous session...")
+        print(f"{'='*60}\n")
+        
+        try:
+            with open(checkpoint_file, 'r', encoding='utf-8') as f:
+                checkpoint = json.load(f)
+            
+            engine.restore_from_checkpoint(checkpoint)
+            resume_from_chunk = checkpoint["last_chunk"] + 1
+            chunks = chunks[resume_from_chunk:]
+            
+            if not chunks:
+                print("All chunks already processed!")
+                # Remove checkpoint and proceed to finalize
+                os.remove(checkpoint_file)
+                chunks = []  # Empty, skip translation loop
+            else:
+                print(f"Resuming from chunk {resume_from_chunk + 1}/{len(chunks) + resume_from_chunk}")
+        except Exception as e:
+            logger.error(f"Failed to load checkpoint: {e}")
+            print("Starting fresh (checkpoint ignored)")
+    else:
+        print("No checkpoint found, starting fresh.")
+    
+    if engine.vocab_manager and resume_from_chunk == 0:
         try:
             vocab = engine.vocab_manager.initialize()
             print(f"Vocabulary loaded: {len(vocab)} entries")
         except SystemExit:
             return
     
-    content = engine.process_all_chunks(chunks, sections, vocab, output_tfile)
+    content = ""
+    if chunks:
+        content = engine.process_all_chunks(chunks, sections, vocab, output_tfile, checkpoint_file)
 
     # 5. Metadata & Cover
     if header:
@@ -678,6 +786,11 @@ def main():
         print_translation_report()
     except Exception as e:
         logger.error(f"Failed to print translation report: {e}")
+    
+    # Remove checkpoint after successful completion
+    if os.path.exists(checkpoint_file):
+        os.remove(checkpoint_file)
+        logger.info(f"Checkpoint removed: {checkpoint_file}")
 
 
 if __name__ == '__main__':
