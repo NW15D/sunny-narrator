@@ -2,20 +2,22 @@ services:
   sunny-narrator:
     build:
       context: .
-      dockerfile: Dockerfile
-    image: sunny-narrator:latest
+      dockerfile: Dockerfile  # CPU-only by default
+    image: sunny-narrator:cpu
     container_name: sunny-narrator
     env_file:
       - .env
     volumes:
-      - ./books:/app/books
-      - ./src/prompts.json:/app/src/prompts.json
-      # Optional: mount .env if you want to change it without rebuilding
-      # - .env:/app/.env
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [ gpu ]
+      - ./books:/app/books:ro
+      - ./output:/app/output
+      # Optional: mount .env for runtime changes
+      # - ./.env:/app/.env:ro
+    environment:
+      # Force CPU mode
+      - GPU=false
+      - NER=true
+    # No GPU resources needed for CPU version
+    # For GPU support, use docker-compose.gpu.yml instead
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
