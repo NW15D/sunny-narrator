@@ -75,6 +75,17 @@ class TranslationEngine:
         self.total_source_len = 0
         self.total_target_len = 0
         
+        # Statistics counters
+        self.stats = {
+            'successful': 0,
+            'failed': 0,
+            'total_tokens': 0,
+            'retry_tokens': 0,
+            'rechunk_events': 0,
+            'xml_repairs': 0,
+            'language_mismatch_retries': 0,
+        }
+        
         # Character registry (shared between synopsis and vocabulary)
         reset_character_registry()
         self.character_registry = get_character_registry()
@@ -124,6 +135,9 @@ class TranslationEngine:
             # Get vocabulary for this chunk (formatted for model)
             vocab_dict = self.get_formatted_vocab_for_chunk(source_text, 0, 0)
             
+            # Count tokens before translation
+            source_tokens = ta.num_tokens_in_string(source_text)
+            
             translation, synopsis = ta.translate_chunk(
                 source_lang=config.source_lang,
                 target_lang=config.target_lang,
@@ -138,6 +152,10 @@ class TranslationEngine:
             
             if translation is None:
                 raise ValueError("Translation returned None")
+            
+            # Count tokens after translation
+            target_tokens = ta.num_tokens_in_string(translation)
+            self.stats['total_tokens'] += source_tokens + target_tokens
             
             return translation, synopsis
             
@@ -162,6 +180,7 @@ class TranslationEngine:
         # Initialize variables
         final_content = ""
         synopsis = ""
+        retry_count = 0
         
         # Retry loop for XML validation
         for attempt in range(3):
@@ -175,15 +194,26 @@ class TranslationEngine:
                     if config.debug and attempt > 0:
                         logger.debug(f"XML validation passed on attempt {attempt + 1}")
                     
+                    # Count retry tokens if not first attempt
+                    if attempt > 0:
+                        retry_tokens = ta.num_tokens_in_string(temp_content)
+                        self.stats['retry_tokens'] += retry_tokens
+                    
                     break
                     
             except Exception as e:
                 logger.warning(f"Translation attempt {attempt + 1} failed: {e}")
+                retry_count += 1
         
         else:
             # All retries failed
             logger.warning(f"All validation attempts failed for chunk {g_id}")
             final_content = self._post_process_xml(source_text, "")
+            self.stats['failed'] += 1
+            return final_content, synopsis
+        
+        # Count successful translation
+        self.stats['successful'] += 1
         
         # Log length statistics (no rechunking here - done in translate_chunk)
         target_len = len(final_content)
@@ -202,7 +232,13 @@ class TranslationEngine:
         - Checks tag balance
         - Repairs via LLM if needed
         """
+        original_len = len(translated_text)
         cleaned = xc.rem_tags(translated_text)
+        cleaned_len = len(cleaned)
+        
+        # Log tag cleanup as DEBUG (normal operation)
+        if config.debug and original_len != cleaned_len:
+            logger.debug(f"Tag cleanup: {original_len} → {cleaned_len} chars ({original_len - cleaned_len:+d})")
         
         source_tags = self._count_tags(source_text)
         translated_tags = self._count_tags(cleaned)
@@ -212,6 +248,7 @@ class TranslationEngine:
         if diff > 0.1:
             logger.debug(f"XML repair needed (diff={diff:.1%})")
             cleaned = self._llm_repair_xml(source_text, cleaned)
+            self.stats['xml_repairs'] += 1
         
         return cleaned
 
@@ -469,6 +506,9 @@ def write_to_file(data, output_file: str):
 
 def main():
     """Main translation workflow."""
+    # Reset translation statistics
+    ta.reset_translation_stats()
+    
     # Check input file
     myfile = config.myfile
     if not os.path.exists(myfile):
@@ -611,6 +651,12 @@ def main():
         write_to_file(xml_str, output_file)
         print(f"\n✓ FB2 created: {output_file}")
 
+    # Get global translation stats
+    global_stats = ta.get_translation_stats()
+    
+    # Calculate retry token percentage
+    retry_pct = (engine.stats['retry_tokens'] / engine.stats['total_tokens'] * 100) if engine.stats['total_tokens'] > 0 else 0
+    
     # Statistics
     print("\n--- Statistics ---")
     print(f"Source: {engine.total_source_len:,} chars")
@@ -619,6 +665,19 @@ def main():
         diff = (engine.total_target_len - engine.total_source_len) / engine.total_source_len * 100
         print(f"Length diff: {diff:+.1f}%")
     print("------------------\n")
+    
+    # Detailed metrics
+    logger.info("=" * 60)
+    logger.info("TRANSLATION METRICS REPORT")
+    logger.info("=" * 60)
+    logger.info(f"Successful translations: {engine.stats['successful']}")
+    logger.info(f"Failed translations: {engine.stats['failed']}")
+    logger.info(f"Total tokens: {engine.stats['total_tokens']:,}")
+    logger.info(f"Retry tokens: {engine.stats['retry_tokens']:,} ({retry_pct:.1f}%)")
+    logger.info(f"Rechunk events: {global_stats['rechunk_events']}")
+    logger.info(f"XML repairs: {engine.stats['xml_repairs']}")
+    logger.info(f"Language mismatch retries: {global_stats['language_mismatch_retries']}")
+    logger.info("=" * 60)
 
 
 if __name__ == '__main__':
