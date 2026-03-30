@@ -76,6 +76,37 @@ class SynopsisManager:
         
         # Character registry for gender tracking
         self.character_registry = character_registry or get_character_registry()
+    
+    @property
+    def synopsis_cache(self) -> dict:
+        """
+        Get synopsis history as serializable dict.
+        
+        Returns:
+            Dict with string keys "section_idx,chunk_idx" and synopsis values
+        """
+        cache = {}
+        for section_idx, section in self.section_contexts.items():
+            # Store chunk synopses list
+            cache[f"section_{section_idx}"] = section.chunk_synopses
+        return cache
+    
+    @synopsis_cache.setter
+    def synopsis_cache(self, cache: dict):
+        """
+        Restore synopsis history from serializable dict.
+        
+        Args:
+            cache: Dict with keys "section_X" and list of synopsis values
+        """
+        self.section_contexts = {}
+        for key, chunk_synopses in cache.items():
+            if key.startswith("section_"):
+                section_idx = int(key.split("_")[1])
+                section = self._get_or_create_section(section_idx)
+                section.chunk_synopses = chunk_synopses
+                # Rebuild accumulated synopsis
+                section._update_accumulated_synopsis()
         
     def _get_or_create_section(self, section_idx: int) -> SectionContext:
         """Get or create section context."""
