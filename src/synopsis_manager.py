@@ -236,11 +236,12 @@ Synopsis:"""
             # Use secondary LLM for synopsis (faster, cheaper)
             from src.utils import llm_service, LLMRole
             
-            result = llm_service.complete(
+            result, _ = llm_service.complete(
                 role=LLMRole.SECONDARY,
                 system_prompt=self.SYSTEM_PROMPT,
                 user_prompt=user_prompt,
-                max_tokens=150
+                max_tokens=150,
+                track_tokens=False  # Don't track tokens in synopsis manager
             )
             
             return result.strip()
