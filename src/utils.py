@@ -363,7 +363,8 @@ class LLMService:
         json_mode: bool = False,
         stage: TranslationStage = None,  # NEW: for stage-specific temperature
         retry_count: int = 0,  # NEW: retry counter for empty responses
-        track_tokens: bool = True  # NEW: extract token usage from response
+        track_tokens: bool = True,  # NEW: extract token usage from response
+        allow_empty: bool = False  # NEW: if True, don't retry on empty response (for synopsis)
     ) -> tuple:
         """
         Execute LLM completion with role-appropriate client.
@@ -385,6 +386,7 @@ class LLMService:
             stage: TranslationStage for temperature selection (optional)
             retry_count: Internal retry counter (do not set manually)
             track_tokens: Whether to extract token usage from response
+            allow_empty: If True, accept empty response without retry (for synopsis stage)
             
         Returns:
             Tuple of (generated_text, tokens_used)
@@ -454,8 +456,13 @@ class LLMService:
             if config.debug:
                 logger.debug(f"LLM Response [{role.value}]: {len(result) if result else 0} chars")
         
-        # Check for empty response and retry
+        # Check for empty response and retry (unless allow_empty is True)
         if not result or len(result.strip()) == 0:
+            if allow_empty:
+                # For stages where empty response is acceptable (e.g., synopsis)
+                logger.debug(f"Empty response for [{role.value}] - continuing (allow_empty=True)")
+                return result or "", tokens_used
+            
             logger.error(f"ERROR - Ответ 0 [{role.value}]: LLM returned empty response (retry {retry_count + 1}/2)")
             if retry_count < 2:  # Max 2 retries
                 logger.error(f"Retrying current step [{role.value}]...")
@@ -469,7 +476,8 @@ class LLMService:
                     json_mode=json_mode,
                     stage=stage,
                     retry_count=retry_count + 1,
-                    track_tokens=track_tokens
+                    track_tokens=track_tokens,
+                    allow_empty=allow_empty
                 )
                 # Add retry tokens to metrics
                 if retry_tokens > 0:
@@ -590,7 +598,8 @@ class TranslationPipeline:
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             max_tokens=160,
-            stage=TranslationStage.SYNOPSIS
+            stage=TranslationStage.SYNOPSIS,
+            allow_empty=True  # Synopsis can be empty - no retry needed
         )
         
         text = remove_tags_with_check(text, "generate_synopsis", LLMRole.SECONDARY)
