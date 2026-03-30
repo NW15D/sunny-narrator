@@ -717,16 +717,13 @@ class TranslationPipeline:
     
     @log_entry
     def improve_translation(self, context: TranslationContext, translation: str, reflection: str) -> TranslationResult:
-        """Stage 4: Secondary LLM improvement."""
+        """Stage 3: Apply reflection suggestions to improve translation."""
         user_prompt = config.get_prompt(
             "improve", f"user_{context.style}",
-            source_lang=context.source_lang,
             target_lang=context.target_lang,
             country=context.country,
-            source_text=context.source_text,
             translation=translation,
-            reflection=reflection,
-            vocab_dict=context.vocab_dict
+            reflection=reflection
         )
         
         system_prompt = config.get_prompt("improve", "system",
