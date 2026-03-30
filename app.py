@@ -94,17 +94,24 @@ class TranslationEngine:
         Returns vocabulary formatted for the current model (Hunyuan, Gemma, etc.)
         """
         if not self.vocab_manager:
+            logger.warning("vocab_manager not initialized - returning empty vocabulary")
             return ""
         
         entries = self.vocab_manager.get_vocab_for_chunk(chunk, s_idx, c_idx)
         
         if not entries:
-            return ""
+            logger.warning(f"get_vocab_for_chunk returned 0 entries for chunk {s_idx}-{c_idx} (vocab_manager has {len(self.vocab_manager.vocab) if self.vocab_manager else 0} total entries)")
+            # Don't return empty - use full vocabulary if available
+            if self.vocab_manager and self.vocab_manager.vocab:
+                logger.info(f"Fallback: using full vocabulary ({len(self.vocab_manager.vocab)} entries)")
+                entries = list(self.vocab_manager.vocab.values())
         
         formatted = self.vocab_manager.format_for_model(entries, config.model_translate)
         
-        if config.debug and formatted:
-            logger.debug(f"Vocab for chunk {s_idx}-{c_idx}: {len(entries)} terms")
+        if config.debug:
+            logger.debug(f"Vocab for chunk {s_idx}-{c_idx}: {len(entries)} terms, formatted_len={len(formatted) if formatted else 0}")
+        elif formatted:
+            logger.info(f"Vocabulary: {len(entries)} terms for chunk {s_idx}-{c_idx}")
         
         return formatted
 
