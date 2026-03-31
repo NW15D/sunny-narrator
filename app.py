@@ -579,13 +579,30 @@ def _save_vocabulary_formatted(translated_text: str, dict_file: str, original_te
     logger.info(f"Dictionary saved: {dict_file} ({len(translations)} entries)")
 
 
-def write_to_file(data, output_file: str):
-    """Write data to file."""
+def write_to_file(data, output_file: str, auto_repair_fb2: bool = True):
+    """Write data to file with optional FB2 auto-repair."""
     if isinstance(data, str):
         data = [data]
+    
+    content = '\n'.join(data)
+    
+    # Auto-repair FB2 if it's an FB2 file
+    if auto_repair_fb2 and output_file.endswith('.fb2'):
+        from src.fb2_repair import repair_and_validate
+        
+        repaired, repairs, errors = repair_and_validate(content)
+        
+        if repairs:
+            logger.info("FB2 Auto-Repair: " + " | ".join(repairs))
+            content = repaired
+        
+        if errors:
+            logger.warning(f"FB2 validation errors remaining: {len(errors)}")
+            for error in errors[:5]:
+                logger.warning(f"  {error}")
+    
     with open(output_file, 'w', encoding='utf-8') as f:
-        for line in data:
-            f.write(line + '\n')
+        f.write(content)
 
 
 # =============================================================================
