@@ -579,7 +579,7 @@ def _save_vocabulary_formatted(translated_text: str, dict_file: str, original_te
     logger.info(f"Dictionary saved: {dict_file} ({len(translations)} entries)")
 
 
-def write_to_file(data, output_file: str, auto_repair_fb2: bool = True):
+def write_to_file(data, output_file: str, auto_repair_fb2: bool = False):
     """Write data to file with optional FB2 auto-repair."""
     if isinstance(data, str):
         data = [data]
@@ -701,6 +701,9 @@ def main():
     # 4. Translate
     engine = TranslationEngine(output_tfile, book_path=myfile)
     
+    # Initialize content variable - will be populated during translation or loaded from temp file
+    content = ""
+    
     # Check for existing checkpoint and resume
     resume_from_chunk = 0
     if os.path.exists(checkpoint_file):
@@ -722,6 +725,11 @@ def main():
                 # Remove checkpoint and proceed to finalize
                 os.remove(checkpoint_file)
                 chunks = []  # Empty, skip translation loop
+                # Load translated content from temp file
+                if os.path.exists(output_tfile):
+                    print(f"Loading translated content from {output_tfile}")
+                    with open(output_tfile, 'r', encoding='utf-8') as f:
+                        content = f.read()
             else:
                 print(f"Resuming from chunk {resume_from_chunk + 1}/{len(chunks) + resume_from_chunk}")
         except Exception as e:
@@ -737,7 +745,7 @@ def main():
         except SystemExit:
             return
     
-    content = ""
+    # Process chunks if any remain, or content was already loaded from temp file above
     if chunks:
         content = engine.process_all_chunks(chunks, sections, vocab, output_tfile, checkpoint_file)
 

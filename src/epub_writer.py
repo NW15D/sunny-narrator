@@ -228,19 +228,34 @@ def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) 
         print(f"  Images: {len(images)}")
     
     # --- Validate and Auto-Repair EPUB ---
+    # DISABLED: Auto-repair temporarily disabled for further analysis
+    # try:
+    #     repaired_path, repairs, errors = validate_and_repair_epub(epub_path)
+    #     
+    #     if repairs and repairs[0] != "EPUB is valid":
+    #         import logging
+    #         logger = logging.getLogger(__name__)
+    #         logger.info("EPUB Auto-Repair: " + " | ".join(repairs))
+    #     
+    #     if errors:
+    #         import logging
+    #         logger = logging.getLogger(__name__)
+    #         logger.warning(f"EPUB validation errors remaining: {len(errors)}")
+    #         for error in errors[:5]:
+    #             logger.warning(f"  {error}")
+    # except Exception as e:
+    #     import logging
+    #     logger = logging.getLogger(__name__)
+    #     logger.warning(f"EPUB repair failed: {e}")
     try:
-        repaired_path, repairs, errors = validate_and_repair_epub(epub_path)
-        
-        if repairs and repairs[0] != "EPUB is valid":
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.info("EPUB Auto-Repair: " + " | ".join(repairs))
-        
+        # Just validate without repair for now
+        from .epub_repair import validate_epub
+        errors = validate_epub(epub_path)
         if errors:
             import logging
             logger = logging.getLogger(__name__)
-            logger.warning(f"EPUB validation errors remaining: {len(errors)}")
-            for error in errors[:5]:
+            logger.warning(f"EPUB validation warnings: {len(errors)}")
+            for error in errors[:3]:
                 logger.warning(f"  {error}")
     except Exception as e:
         # Don't fail if validation/repair fails
