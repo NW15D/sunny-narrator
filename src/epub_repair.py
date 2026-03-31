@@ -72,13 +72,14 @@ def validate_epub(epub_path: str) -> List[str]:
     return errors
 
 
-def repair_epub(epub_path: str, output_path: Optional[str] = None) -> Tuple[str, List[str]]:
+def repair_epub(epub_path: str, output_path: Optional[str] = None, max_iterations: int = 3) -> Tuple[str, List[str]]:
     """
     Attempt to repair common EPUB errors.
     
     Args:
         epub_path: Path to EPUB file to repair
         output_path: Output path for repaired file (default: overwrite original)
+        max_iterations: Maximum repair iterations to prevent infinite loops
         
     Returns:
         Tuple of (output_path, list_of_repairs_made)
@@ -89,6 +90,7 @@ def repair_epub(epub_path: str, output_path: Optional[str] = None) -> Tuple[str,
         output_path = epub_path
     
     temp_path = epub_path + '.repair.tmp'
+    backup_path = epub_path + '.backup'
     
     try:
         with zipfile.ZipFile(epub_path, 'r') as zf_in:
@@ -140,6 +142,10 @@ def repair_epub(epub_path: str, output_path: Optional[str] = None) -> Tuple[str,
                         repairs.extend(file_repairs)
                     
                     zf_out.writestr(file_name, content)
+        
+        # Create backup before overwriting original
+        if output_path == epub_path and os.path.exists(epub_path):
+            os.replace(epub_path, backup_path)
         
         # Replace original with repaired
         if output_path == epub_path:
@@ -267,27 +273,39 @@ def _repair_xhtml(content: bytes, file_name: str) -> Tuple[bytes, List[str]]:
     return content_str.encode('utf-8'), repairs
 
 
-def validate_and_repair_epub(epub_path: str, output_path: Optional[str] = None) -> Tuple[str, List[str], List[str]]:
+def validate_and_repair_epub(epub_path: str, output_path: Optional[str] = None, max_iterations: int = 3) -> Tuple[str, List[str], List[str]]:
     """
     Validate EPUB and repair if needed.
     
     Args:
         epub_path: Path to EPUB file
         output_path: Output path for repaired file (default: overwrite)
+        max_iterations: Maximum repair iterations to prevent infinite loops
         
     Returns:
         Tuple of (output_path, repairs_made, remaining_errors)
     """
-    # First validate
-    errors = validate_epub(epub_path)
+    all_repairs = []
+    current_path = epub_path
     
-    if not errors:
-        return epub_path, ["EPUB is valid"], []
+    for iteration in range(max_iterations):
+        # Validate
+        errors = validate_epub(current_path)
+        
+        if not errors:
+            if not all_repairs:
+                return current_path, ["EPUB is valid"], []
+            return current_path, all_repairs, []
+        
+        # Attempt repair
+        current_path, repairs = repair_epub(current_path, output_path if iteration == 0 else None, max_iterations=1)
+        all_repairs.extend(repairs)
+        
+        # Check if any repairs were made
+        if len(repairs) <= 1:  # Only header message, no actual fixes
+            break
     
-    # Attempt repair
-    output_path, repairs = repair_epub(epub_path, output_path)
+    # Final validation
+    remaining_errors = validate_epub(current_path)
     
-    # Validate again
-    remaining_errors = validate_epub(output_path)
-    
-    return output_path, repairs, remaining_errors
+    return current_path, all_repairs, remaining_errors
