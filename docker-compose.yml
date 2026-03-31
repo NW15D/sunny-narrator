@@ -1,3 +1,5 @@
+version: "3.8"
+
 services:
   sunny-narrator:
     build:
@@ -9,13 +11,10 @@ services:
       - .env
     volumes:
       - ./books:/app/books
+      - ./output:/app/output
+      - ./logs:/app/logs
       - ./src/prompts.json:/app/src/prompts.json
-      # Optional: mount .env if you want to change it without rebuilding
-      # - .env:/app/.env
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [ gpu ]
+    stdin_open: true
+    tty: true
+    # Uncomment for debugging
+    # command: ["bash"]
