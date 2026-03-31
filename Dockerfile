@@ -1,5 +1,6 @@
-# Sunny Narrator - CPU-only Dockerfile
+# Sunny Narrator - CPU-only Dockerfile (DEFAULT)
 # Lightweight image for systems without NVIDIA GPU
+# For GPU support, see docs/GPU_DOCKER.md
 
 FROM python:3.11-slim-bookworm
 
@@ -8,6 +9,8 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONPATH=/app
+ENV GPU=false
+ENV NER=true
 
 # Set working directory
 WORKDIR /app
@@ -31,8 +34,9 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Download spaCy model (English for NER)
-RUN python3 -m spacy download en_core_web_lg
+# Download spaCy models (multi-language support)
+RUN python3 -m spacy download en_core_web_lg && \
+    python3 -m spacy download ru_core_news_lg
 
 # Copy application code
 COPY app.py .
@@ -48,3 +52,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 
 # Default entrypoint
 ENTRYPOINT ["python3", "app.py"]
+
+# Labels for documentation
+LABEL version="1.11"
+LABEL description="Sunny Narrator - AI-powered book translation (CPU-only)"
+LABEL gpu="false"

@@ -10,11 +10,15 @@ services:
     env_file:
       - .env
     volumes:
-      - ./books:/app/books
+      - ./books:/app/books:ro
       - ./output:/app/output
       - ./logs:/app/logs
       - ./src/prompts.json:/app/src/prompts.json
+    environment:
+      - GPU=false
+      - NER=true
     stdin_open: true
     tty: true
+    restart: unless-stopped
     # Uncomment for debugging
     # command: ["bash"]
