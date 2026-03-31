@@ -925,7 +925,7 @@ _pipeline = TranslationPipeline()
 # Length Validation (Rechunking Support)
 # =============================================================================
 
-MIN_CHUNK_SIZE = 1000  # Minimum chunk size for rechunking
+MIN_CHUNK_SIZE = 2000  # Minimum chunk size for rechunking
 MAX_DEPTH = 3  # Maximum recursion depth
 
 
@@ -956,9 +956,10 @@ def validate_translation_length(source_text: str, translated_text: str,
         percent_diff > config.length_check_threshold
     )
     
-    if config.debug:
-        status = "⚠ SPLIT" if should_split else "✓ OK"
-        logger.debug(f"[{stage_name}] {source_len} → {target_len} chars ({percent_diff:.1f}%) {status}")
+    if should_split:
+        logger.error(f"⚠ SPLIT [{stage_name}] {source_len} → {target_len} chars ({percent_diff:.1f}%) - rechunking needed")
+    elif config.debug:
+        logger.debug(f"[{stage_name}] {source_len} → {target_len} chars ({percent_diff:.1f}%) ✓ OK")
     
     return not should_split, percent_diff, should_split
 
