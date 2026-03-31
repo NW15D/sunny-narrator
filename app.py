@@ -30,6 +30,7 @@ import src.epub_handler as epub
 import src.txt_handler as txt
 from src.config import Config
 from src.synopsis_manager import SynopsisManager
+from src.llm_logger import init_llm_logger
 from src.vocabulary_manager import get_vocabulary_manager
 from src.character_registry import get_character_registry, reset_character_registry
 from src.epub_writer import create_epub_from_fb2
@@ -43,6 +44,11 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Initialize LLM logger if enabled
+if config.llm_logging_enabled:
+    init_llm_logger(log_dir=config.llm_logging_dir, enabled=True)
+    logger.info(f"LLM logging enabled. Logs will be written to: {config.llm_logging_dir}/")
 
 # Conditional import of NER module
 ner = None
