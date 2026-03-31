@@ -13,6 +13,7 @@ import ebooklib
 from ebooklib import epub
 
 from src.config import Config
+from .epub_repair import validate_and_repair_epub
 
 config = Config()
 
@@ -225,6 +226,26 @@ def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) 
         print(f"EPUB created: {epub_path}")
         print(f"  Chapters: {len(chapters)}")
         print(f"  Images: {len(images)}")
+    
+    # --- Validate and Auto-Repair EPUB ---
+    try:
+        repaired_path, repairs, errors = validate_and_repair_epub(epub_path)
+        
+        if repairs and repairs[0] != "EPUB is valid":
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info("EPUB Auto-Repair: " + " | ".join(repairs))
+        
+        if errors:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"EPUB validation errors remaining: {len(errors)}")
+            for error in errors[:5]:
+                logger.warning(f"  {error}")
+    except Exception as e:
+        # Don't fail if validation/repair fails
+        if config.debug:
+            print(f"EPUB validation warning: {e}")
     
     return epub_path
 
