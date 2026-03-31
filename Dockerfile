@@ -1,39 +1,50 @@
-# Use NVIDIA CUDA 12.2 Development image
-FROM nvidia/cuda:12.2.0-devel-ubuntu22.04
+# Sunny Narrator - CPU-only Dockerfile
+# Lightweight image for systems without NVIDIA GPU
+
+FROM python:3.11-slim-bookworm
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONPATH=/app
 
 # Set working directory
 WORKDIR /app
 
-# Install Python and build dependencies
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 \
-    python3-pip \
-    python3-dev \
     build-essential \
     libxml2-dev \
     libxslt1-dev \
     git \
-    && rm -rf /var/lib/apt/lists/*
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
-# Copy requirements
+# Upgrade pip
+RUN pip install --upgrade pip setuptools wheel
+
+# Copy requirements first for better layer caching
 COPY requirements.txt .
 
-# Upgrade pip and install dependencies
-RUN python3 -m pip install --upgrade pip && \
-    python3 -m pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Download spaCy model
+# Download spaCy model (English for NER)
 RUN python3 -m spacy download en_core_web_lg
 
 # Copy application code
-COPY . .
+COPY app.py .
+COPY setup.py .
+COPY src/ ./src/
 
-# NOTE: The .env file should be provided via --env-file at runtime
-# or mapped as a volume if needed.
-# The CMD assumes app.py is the entry point
-CMD ["python3", "app.py"]
+# Create directories for volumes
+RUN mkdir -p /app/books /app/output /app/logs
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD python3 -c "import src.utils; print('OK')" || exit 1
+
+# Default entrypoint
+ENTRYPOINT ["python3", "app.py"]
