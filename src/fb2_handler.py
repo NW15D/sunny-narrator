@@ -96,7 +96,7 @@ def add_translator_info(header: str) -> str:
     return header
 
 
-def save_fb2(body: str, header: str, footer: str, output_path: str, auto_repair: bool = True) -> None:
+def save_fb2(body: str, header: str, footer: str, output_path: str, auto_repair: bool = False) -> None:
     """
     Save FB2 file from components.
     
