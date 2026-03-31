@@ -582,7 +582,7 @@ def _save_vocabulary_formatted(translated_text: str, dict_file: str, original_te
     logger.info(f"Dictionary saved: {dict_file} ({len(translations)} entries)")
 
 
-def write_to_file(data, output_file: str, auto_repair_fb2: bool = False):
+def write_to_file(data, output_file: str, auto_repair_fb2: bool = True):
     """Write data to file with optional FB2 auto-repair."""
     if isinstance(data, str):
         data = [data]
