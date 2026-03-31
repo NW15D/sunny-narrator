@@ -129,6 +129,42 @@ metrics = TranslationMetrics()
 
 
 # =============================================================================
+# Global Statistics Counters (for metrics reporting)
+# =============================================================================
+
+class TranslationStats:
+    """Global counters for translation statistics."""
+    
+    def __init__(self):
+        self.rechunk_events = 0
+        self.language_mismatch_retries = 0
+    
+    def reset(self):
+        self.rechunk_events = 0
+        self.language_mismatch_retries = 0
+    
+    def get_stats(self) -> dict:
+        return {
+            'rechunk_events': self.rechunk_events,
+            'language_mismatch_retries': self.language_mismatch_retries,
+        }
+
+
+# Global statistics instance
+translation_stats = TranslationStats()
+
+
+def get_translation_stats() -> dict:
+    """Get global translation statistics."""
+    return translation_stats.get_stats()
+
+
+def reset_translation_stats():
+    """Reset global translation statistics."""
+    translation_stats.reset()
+
+
+# =============================================================================
 # Schema Definitions (moved from src/schemas/translation.py)
 # =============================================================================
 
@@ -487,6 +523,15 @@ class LLMService:
             )
         
         # Check for empty response and retry (unless allow_empty is True)
+        # FALLBACK: If tokens > 0 but result is empty/None, use raw response
+        if (not result or len(result.strip()) == 0) and tokens_used > 0:
+            logger.warning(f"⚠️ FALLBACK [{role.value}]: LLM returned {tokens_used} tokens but result=None/empty, using raw response")
+            # Try to extract from response structure
+            if hasattr(response.choices[0], 'message') and hasattr(response.choices[0].message, 'content'):
+                result = str(response.choices[0].message.content) if response.choices[0].message.content else ""
+            if not result and hasattr(response, 'choices') and response.choices:
+                result = str(response.choices[0])
+        
         if not result or len(result.strip()) == 0:
             if allow_empty:
                 # For stages where empty response is acceptable (e.g., synopsis)
@@ -702,16 +747,13 @@ class TranslationPipeline:
     
     @log_entry
     def improve_translation(self, context: TranslationContext, translation: str, reflection: str) -> TranslationResult:
-        """Stage 4: Secondary LLM improvement."""
+        """Stage 3: Apply reflection suggestions to improve translation."""
         user_prompt = config.get_prompt(
             "improve", f"user_{context.style}",
-            source_lang=context.source_lang,
             target_lang=context.target_lang,
             country=context.country,
-            source_text=context.source_text,
             translation=translation,
-            reflection=reflection,
-            vocab_dict=context.vocab_dict
+            reflection=reflection
         )
         
         system_prompt = config.get_prompt("improve", "system",
@@ -754,17 +796,14 @@ class TranslationPipeline:
     @log_entry
     def final_edit(self, context: TranslationContext, translation: str) -> TranslationResult:
         """
-        Stage 4: Final editing/proofreading - compare with original and fix XML tags.
-        Uses vocabulary to verify terminology consistency.
+        Stage 4: Final editing/proofreading - fix grammar, style, XML tags.
+        Receives ONLY the improved translation (no original/vocabulary).
         """
         user_prompt = config.get_prompt(
             "editor", f"user_{context.style}",
-            source_lang=context.source_lang,
             target_lang=context.target_lang,
             country=context.country,
-            source_text=context.source_text,
-            translation=translation,
-            vocab_dict=context.vocab_dict  # Added for terminology verification
+            translation=translation
         )
         
         system_prompt = config.get_prompt("editor", "system",
@@ -1134,108 +1173,53 @@ llm_service_compat = LLMServiceCompat()
 @log_entry
 def remove_tags(text: str) -> str:
     """
-    Remove XML/HTML tags and artifacts from translation output.
-    Logs all repairs as ERROR level.
+    Extract translation from wrapper tags. Minimal cleanup.
     
-    Supports multiple output formats:
-    1. JSON: {"translation": "..."}  ← PREFERRED
-    2. XML: <ttext>...</ttext>
-    3. Plain text (no wrapper)
+    Priority:
+    1. JSON: {"translation": "..."}
+    2. <ttext>...</ttext>
+    3. <translated>...</translated>
+    4. <TRANSLATION>...</TRANSLATION>
+    5. Fallback: return entire text (no cleanup)
+    
+    This conservative approach prevents false positives where valid translation
+    content was being removed by aggressive cleanup patterns.
     
     Args:
-        text: Text with XML tags to remove
+        text: Raw LLM response (may contain wrapper tags)
         
     Returns:
-        Cleaned text without tags
+        Extracted translation or full text if no wrapper found
     """
     if not text:
         return ""
     
-    original_text = text
-    cleaned = False
-    repair_reasons = []
-    
     # STEP 1: Try to extract from JSON format (PREFERRED)
     json_match = re.search(r'\{[\s]*["\']translation["\'][\s]*:[\s]*["\']([\s\S]*?)["\'][\s]*\}', text)
     if json_match:
-        text = json_match.group(1)
         logger.debug("Extracted translation from JSON format")
-        cleaned = True
-        repair_reasons.append("Extracted from JSON")
-    else:
-        # STEP 2: Try to extract from <ttext> wrapper if JSON not found
-        ttext_match = re.search(r'<ttext[^>]*>([\s\S]*?)</ttext>', text, re.IGNORECASE)
-        if ttext_match:
-            text = ttext_match.group(1)
-            logger.debug("Extracted content from <ttext> wrapper")
-            cleaned = True
-            repair_reasons.append("Extracted from <ttext>")
-        else:
-            # STEP 3: Try other wrapper tags
-            for tag in ['TTEXT', 'TRANS', 'target']:
-                pattern = rf'<{tag}[^>]*>([\s\S]*?)</{tag}>'
-                match = re.search(pattern, text, re.IGNORECASE)
-                if match and match.group(1).strip():
-                    text = match.group(1)
-                    logger.debug(f"Extracted content from <{tag}> wrapper")
-                    cleaned = True
-                    repair_reasons.append(f"Extracted from <{tag}>")
-                    break
+        return json_match.group(1).strip()
     
-    # Remove meta-commentary from LLM (common pattern)
-    meta_patterns = [
-        ("I'm ready to help", "Meta-commentary: 'I'm ready to help'"),
-        ("Could you please", "Meta-commentary: 'Could you please'"),
-        ("I don't see any", "Meta-commentary: 'I don't see any'"),
-        ("I apologize", "Meta-commentary: 'I apologize'"),
-        ("Let me translate", "Meta-commentary: 'Let me translate'"),
-        ("Here's the translation", "Meta-commentary: 'Here's the translation'")
+    # STEP 2: Try wrapper tags in priority order
+    # These are the tags we explicitly ask LLM to use in prompts
+    wrapper_tags = [
+        'ttext',           # Primary wrapper tag (used in most prompts)
+        'translated',      # Alternative wrapper
+        'TRANSLATION',     # Fallback wrapper
+        'TRANS',           # Short form
+        'target',          # From older prompts
+        'IMPROVED_TRANSLATION'  # From reflection pipeline
     ]
     
-    for pattern, description in meta_patterns:
-        if pattern.lower() in text.lower():
-            metrics.log_xml_repair(description)  # ERROR level
-            repair_reasons.append(description)
-            cleaned = True
-            break
+    for tag in wrapper_tags:
+        match = re.search(rf'<{tag}[^>]*>([\s\S]*?)</{tag}>', text, re.IGNORECASE)
+        if match and match.group(1).strip():
+            logger.debug(f"Extracted content from <{tag}> wrapper")
+            return match.group(1).strip()
     
-    # STEP 4: Remove unwanted tags and artifacts
-    patterns_with_desc = [
-        (r'<source[^>]*>[\s\S]*?</source>', 'source block'),
-        (r'<SOURCE[^>]*>[\s\S]*?</SOURCE>', 'source block'),
-        (r'<original[^>]*>[\s\S]*?</original>', 'original block'),
-        (r'<vocabulary>[\s\S]*?</vocabulary>', 'vocabulary section'),
-        (r'<synopsis>[\s\S]*?</synopsis>', 'synopsis section'),
-        (r'<context>[\s\S]*?</context>', 'context section'),
-        (r'<task>[\s\S]*?</task>', 'task section'),
-        (r'<suggestions>[\s\S]*?</suggestions>', 'suggestions section'),
-        (r'<SOURCE_TEXT>[\s\S]*?</SOURCE_TEXT>', 'SOURCE_TEXT block'),
-        (r'<DICTIONARY>[\s\S]*?</DICTIONARY>', 'DICTIONARY block'),
-        (r'<EXPERT_SUGGESTIONS>[\s\S]*?</EXPERT_SUGGESTIONS>', 'EXPERT_SUGGESTIONS block'),
-        (r'<SYNOPSIS>[\s\S]*?</SYNOPSIS>', 'SYNOPSIS block'),
-        (r'<INITIAL_TRANSLATION>[\s\S]*?</INITIAL_TRANSLATION>', 'INITIAL_TRANSLATION block'),
-        (r'<FIRST_TRANSLATION>[\s\S]*?</FIRST_TRANSLATION>', 'FIRST_TRANSLATION block'),
-        (r'<TRANSLATION>[\s\S]*?</TRANSLATION>', 'TRANSLATION block'),
-        (r'```json', 'markdown code block'),
-        (r'```xml', 'markdown code block'),
-        (r'```', 'markdown code block'),
-        # Remove any remaining wrapper tags
-        (r'</?(?:section|IMPROVED_TRANSLATION|TTEXT|TRANS|target)>', 'wrapper tags'),
-        (r'<\|im_end\|>', 'special token'),
-        (r'<\|file_separator\|>', 'special token')
-    ]
-    
-    for pattern, description in patterns_with_desc:
-        matches = re.findall(pattern, text, re.IGNORECASE)
-        if matches:
-            metrics.log_xml_repair(f"Removed {description} ({len(matches)} occurrences)")  # ERROR level
-            repair_reasons.append(f"{description} x{len(matches)}")
-            cleaned = True
-        text = re.sub(pattern, '', text, flags=re.IGNORECASE)
-    
-    if cleaned:
-        logger.error(f"Tag cleanup performed: {len(original_text)} → {len(text)} chars | {', '.join(repair_reasons[:3])}")
-    
+    # STEP 3: Fallback — return entire text without any cleanup
+    # This prevents losing valid translation when LLM doesn't use wrapper tags
+    logger.debug("No wrapper tags found, returning full text")
     return text.strip()
 
 
@@ -1243,13 +1227,15 @@ def remove_tags_with_check(text: str, stage_name: str = "", role: LLMRole = None
     """
     Remove tags and check for empty result. Log ERROR if result is empty.
     
+    FALLBACK: If cleanup returns empty, return original text (prevents lost translations).
+    
     Args:
         text: Raw LLM response
         stage_name: Name of pipeline stage for logging
         role: LLM role for context
         
     Returns:
-        Cleaned text (may be empty if input was empty)
+        Cleaned text, or original text if cleanup failed
     """
     if not text:
         logger.error(f"ERROR - Ответ 0 [{stage_name}]: LLM returned None/empty before remove_tags")
@@ -1262,12 +1248,16 @@ def remove_tags_with_check(text: str, stage_name: str = "", role: LLMRole = None
     # Check if result became empty after cleanup
     if original_len > 0 and cleaned_len == 0:
         role_str = role.value if role else "unknown"
-        logger.error(f"ERROR - Ответ 0 [{stage_name}/{role_str}]: {original_len} chars → 0 chars after remove_tags")
-        # Log the original content that became empty (for debugging)
+        logger.warning(f"⚠️ FALLBACK [{stage_name}/{role_str}]: {original_len} chars → 0 chars after remove_tags, using original text")
+        # Log the original content for debugging
         preview = text[:500].replace('\n', ' ').replace('\r', ' ')
         logger.debug(f"DEBUG - Content that became empty [{stage_name}]: {preview}")
         if len(text) > 500:
             logger.debug(f"DEBUG - ... (truncated, total {original_len} chars)")
+        
+        # FALLBACK: Return original text instead of empty string
+        # This prevents losing valid translations when remove_tags fails to extract
+        return text.strip()
     
     return cleaned
 
