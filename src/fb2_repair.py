@@ -13,12 +13,13 @@ from lxml import etree
 from typing import List, Tuple
 
 
-def repair_fb2(xml_string: str) -> Tuple[str, List[str]]:
+def repair_fb2(xml_string: str, max_iterations: int = 3) -> Tuple[str, List[str]]:
     """
     Automatically repair common FB2 XML errors.
     
     Args:
         xml_string: FB2 XML string to repair
+        max_iterations: Maximum repair iterations to prevent infinite loops
         
     Returns:
         Tuple of (repaired_xml, list_of_repairs_made)
@@ -149,20 +150,44 @@ def _ensure_fb2_structure(xml_string: str) -> Tuple[str, str]:
 
 
 def _balance_section_tags(xml_string: str) -> Tuple[str, str]:
-    """Balance opening and closing section tags."""
-    # Count section tags
-    open_sections = len(re.findall(r'<section[^>]*>', xml_string))
-    close_sections = len(re.findall(r'</section>', xml_string))
+    """Balance opening and closing section tags with depth tracking."""
+    # Count section tags with depth tracking to handle nesting
+    section_opens = list(re.finditer(r'<section[^>]*>', xml_string))
+    section_closes = list(re.finditer(r'</section>', xml_string))
     
-    if open_sections > close_sections:
-        # Need to add closing tags
-        missing = open_sections - close_sections
-        # Add before </body> or at end
+    open_count = len(section_opens)
+    close_count = len(section_closes)
+    
+    if open_count > close_count:
+        # Need to add closing tags - but be smart about placement
+        missing = open_count - close_count
+        
+        # Track section depth to find proper insertion points
+        opens_pos = [m.end() for m in section_opens]
+        closes_pos = [m.start() for m in section_closes]
+        
+        # Simple depth calculation: count opens before each position
+        def get_depth(pos):
+            opens_before = sum(1 for p in opens_pos if p <= pos)
+            closes_before = sum(1 for p in closes_pos if p <= pos)
+            return opens_before - closes_before
+        
+        # Find positions where depth > 0 (inside unclosed sections)
+        # Insert closing tags before </body> or at strategic points
         if '</body>' in xml_string:
-            xml_string = xml_string.replace('</body>', '</section>\n' * missing + '</body>')
-        else:
+            body_close_pos = xml_string.find('</body>')
+            body_depth = get_depth(body_close_pos)
+            
+            # Only add as many as needed to balance at body level
+            to_add = min(missing, body_depth)
+            if to_add > 0:
+                xml_string = xml_string.replace('</body>', '</section>\n' * to_add + '</body>')
+                return xml_string, f"Added {to_add} missing </section> tag(s) before </body>"
+        
+        # Fallback: add at end if still unbalanced
+        if missing > 0:
             xml_string = xml_string.rstrip() + '\n' + '</section>\n' * missing
-        return xml_string, f"Added {missing} missing </section> tag(s)"
+            return xml_string, f"Added {missing} missing </section> tag(s) at end"
     
     return xml_string, ""
 
@@ -201,16 +226,30 @@ def validate_after_repair(xml_string: str) -> List[str]:
     return validate_fb2(xml_string)
 
 
-def repair_and_validate(xml_string: str) -> Tuple[str, List[str], List[str]]:
+def repair_and_validate(xml_string: str, max_iterations: int = 3) -> Tuple[str, List[str], List[str]]:
     """
-    Repair FB2 and validate result.
+    Repair FB2 and validate result with iteration limit.
     
     Args:
         xml_string: FB2 XML to repair
+        max_iterations: Maximum repair iterations to prevent infinite loops
         
     Returns:
         Tuple of (repaired_xml, repairs_made, remaining_errors)
     """
-    repaired, repairs = repair_fb2(xml_string)
-    errors = validate_after_repair(repaired)
-    return repaired, repairs, errors
+    all_repairs = []
+    current = xml_string
+    
+    for iteration in range(max_iterations):
+        repaired, repairs = repair_fb2(current, max_iterations=1)
+        all_repairs.extend(repairs)
+        
+        # Check if any actual fixes were made
+        actual_fixes = [r for r in repairs if not r.startswith("FB2 auto-repair")]
+        if not actual_fixes:
+            break
+        
+        current = repaired
+    
+    errors = validate_after_repair(current)
+    return current, all_repairs, errors
