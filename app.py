@@ -255,11 +255,12 @@ class TranslationEngine:
         - Removes artifacts via rem_tags()
         - Does NOT use LLM repair (would break chunk structure)
         """
-        # Only basic cleanup - no structural repair for chunks
-        cleaned = xc.rem_tags(translated_text)
+        # Basic cleanup only - no XML parsing of chunks
+        # rem_tags is for final FB2 validation, not chunk processing
+        cleaned = translated_text.strip()
         
-        # NOTE: Disabled LLM repair for chunks as it breaks document structure
-        # Full validation happens on final assembled document only
+        # Remove common artifacts
+        cleaned = re.sub(r'\n\s*\n+', '\n\n', cleaned)
         
         return cleaned
 
@@ -369,7 +370,9 @@ class TranslationEngine:
                 self.total_source_len += len(chunk)
                 self.total_target_len += len(final_content)
                 
-                section_content = xc.rem_tags(final_content)
+                # Basic cleanup only - no XML parsing of chunks
+                # rem_tags is for final FB2 validation, not chunk processing
+                section_content = final_content.strip()
                 all_content += section_content + "\n"
                 
                 with open(output_tfile, 'a', encoding='utf-8') as f:
