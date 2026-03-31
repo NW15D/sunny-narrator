@@ -106,6 +106,10 @@ class Config:
              
         # DEBUG defaulted to off
         self.debug = os.getenv('DEBUG', 'off').lower() in ['true', '1', 't', 'on']
+        
+        # LLM Logging configuration
+        self.llm_logging_enabled = os.getenv('LLM_LOGGING', 'false').lower() in ['true', '1', 't', 'on', 'yes']
+        self.llm_logging_dir = os.getenv('LLM_LOGGING_DIR', 'logs')
 
         # Output format: 'fb2' or 'epub' (default: fb2)
         self.output_format = os.getenv('OUTPUT_FORMAT', 'fb2').lower()
