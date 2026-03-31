@@ -687,7 +687,7 @@ class TranslationPipeline:
             role=LLMRole.SECONDARY,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
-            max_tokens=160,
+            max_tokens=MAX_TOKENS_PER_CHUNK,
             stage=TranslationStage.SYNOPSIS,
             allow_empty=True  # Synopsis can be empty - no retry needed
         )
@@ -903,7 +903,7 @@ class TranslationPipeline:
             state.add_result(final_edit_result)
             
             # Stage 5: Synopsis (Primary LLM) - from final translation
-            synopsis_result = self.generate_synopsis(context, final_edit_result.text)
+            synopsis_result = self.generate_synopsis(context, initial_result.text)
             state.add_result(synopsis_result)
             
             final_result = TranslationResult(
