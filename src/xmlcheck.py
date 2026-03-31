@@ -57,11 +57,9 @@ def rem_tags(xml_string: str) -> str:
         parser = etree.XMLParser(recover=True, encoding='utf-8')
         
         # Ensure we have a single root for parsing
+        # Always wrap in a container to handle multiple root elements
         xml_string = xml_string.strip()
-        if not xml_string.startswith('<section'):
-            wrapped_xml = f"<section>{xml_string}</section>"
-        else:
-            wrapped_xml = xml_string
+        wrapped_xml = f"<section>{xml_string}</section>"
 
         # Parse
         root = etree.fromstring(wrapped_xml.encode('utf-8'), parser)
@@ -155,6 +153,11 @@ def rem_tags(xml_string: str) -> str:
 
         # Serialize back to string
         cleaned_xml = etree.tostring(root, encoding='unicode', method='xml')
+        
+        # Remove the outer wrapper <section>...</section> we added
+        cleaned_xml = cleaned_xml.strip()
+        if cleaned_xml.startswith('<section>') and cleaned_xml.endswith('</section>'):
+            cleaned_xml = cleaned_xml[9:-10]  # Remove <section> and </section>
         
         return cleaned_xml.strip()
 
