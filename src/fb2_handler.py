@@ -96,7 +96,7 @@ def add_translator_info(header: str) -> str:
     return header
 
 
-def save_fb2(body: str, header: str, footer: str, output_path: str) -> None:
+def save_fb2(body: str, header: str, footer: str, output_path: str, auto_repair: bool = True) -> None:
     """
     Save FB2 file from components.
     
@@ -105,8 +105,26 @@ def save_fb2(body: str, header: str, footer: str, output_path: str) -> None:
         header: FB2 header
         footer: FB2 footer
         output_path: Output file path
+        auto_repair: Whether to auto-repair common XML errors (default: True)
     """
     content = header + body + footer
+    
+    # Auto-repair FB2 XML if enabled
+    if auto_repair:
+        from .fb2_repair import repair_and_validate
+        import logging
+        
+        logger = logging.getLogger(__name__)
+        repaired, repairs, errors = repair_and_validate(content)
+        
+        if repairs:
+            logger.info(" | ".join(repairs))
+            content = repaired
+        
+        if errors:
+            logger.warning(f"FB2 validation errors after repair: {len(errors)}")
+            for error in errors[:5]:  # Log first 5 errors
+                logger.warning(f"  - {error}")
     
     output_file = Path(output_path)
     output_file.parent.mkdir(parents=True, exist_ok=True)
