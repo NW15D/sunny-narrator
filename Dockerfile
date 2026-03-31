@@ -1,22 +1,23 @@
-# CPU-only Dockerfile for Sunny Narrator (DEFAULT)
-# Use this for systems without NVIDIA GPU
-# For GPU support, use Dockerfile.gpu instead
+# Sunny Narrator - CPU-only Dockerfile (DEFAULT)
+# Lightweight image for systems without NVIDIA GPU
+# For GPU support, see docs/GPU_DOCKER.md
 
-FROM python:3.10-slim
+FROM python:3.11-slim-bookworm
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONPATH=/app
+ENV GPU=false
+ENV NER=true
 
 # Set working directory
 WORKDIR /app
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3-pip \
-    python3-dev \
+    build-essential \
     libxml2-dev \
     libxslt1-dev \
     git \
@@ -25,15 +26,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean
 
 # Upgrade pip
-RUN python3 -m pip install --upgrade pip setuptools wheel
+RUN pip install --upgrade pip setuptools wheel
 
 # Copy requirements first for better layer caching
 COPY requirements.txt .
 
-# Install Python dependencies (CPU-only)
-# Note: requirements.txt uses CPU versions by default
-RUN python3 -m pip install --no-cache-dir -r requirements.txt && \
-    python3 -m pip install --no-cache-dir spacy
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Download spaCy models (multi-language support)
 RUN python3 -m spacy download en_core_web_lg && \
@@ -41,23 +40,20 @@ RUN python3 -m spacy download en_core_web_lg && \
 
 # Copy application code
 COPY app.py .
+COPY setup.py .
 COPY src/ ./src/
 
 # Create directories for volumes
-RUN mkdir -p /app/books /app/output
+RUN mkdir -p /app/books /app/output /app/logs
 
-# Set environment for CPU-only mode
-ENV GPU=false
-ENV NER=true
-
-# Health check (CPU mode)
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD python3 -c "import spacy; nlp = spacy.load('en_core_web_lg'); print('spaCy CPU: OK')" || exit 1
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD python3 -c "import src.utils; print('OK')" || exit 1
 
 # Default entrypoint
-CMD ["python3", "app.py"]
+ENTRYPOINT ["python3", "app.py"]
 
 # Labels for documentation
-LABEL version="1.11"
+LABEL version="1.14"
 LABEL description="Sunny Narrator - AI-powered book translation (CPU-only)"
 LABEL gpu="false"

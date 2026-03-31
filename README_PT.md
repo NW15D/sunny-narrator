@@ -1,6 +1,6 @@
 # Sunny Narrator
 
-**Versão:** 1.11  
+**Versão:** 1.14  
 Programa de tradução de livros para formatos FB2/EPUB.  
 Sistema de tradução AI com controle de qualidade em 5 estágios.
 

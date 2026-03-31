@@ -1,6 +1,6 @@
 # Sunny Narrator
 
-**Version:** 1.11  
+**Version:** 1.14  
 Book translation program for FB2/EPUB formats.  
 Dual-LLM translation system with 5-stage quality control.
 
