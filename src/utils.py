@@ -1208,7 +1208,8 @@ def remove_tags(text: str) -> str:
         'TRANSLATION',     # Fallback wrapper
         'TRANS',           # Short form
         'target',          # From older prompts
-        'IMPROVED_TRANSLATION'  # From reflection pipeline
+        'IMPROVED_TRANSLATION',  # From reflection pipeline
+        'source'           # From initial_translation prompt (contains lang attribute)
     ]
     
     for tag in wrapper_tags:
