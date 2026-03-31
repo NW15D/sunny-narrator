@@ -54,6 +54,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 ENTRYPOINT ["python3", "app.py"]
 
 # Labels for documentation
-LABEL version="1.12"
+LABEL version="1.14"
 LABEL description="Sunny Narrator - AI-powered book translation (CPU-only)"
 LABEL gpu="false"
