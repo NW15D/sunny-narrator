@@ -28,6 +28,8 @@ from enum import Enum
 from PIL import Image
 
 import openai
+
+from .llm_logger import log_llm_call, log_llm_error
 import tiktoken
 
 from src.config import Config
@@ -479,18 +481,33 @@ class LLMService:
         if config.debug:
             logger.debug(f"LLM Request [{role.value}]: {model}, {len(user_prompt)} chars, temp={temp:.2f}, sys_not_promt={use_sys_not_promt}, json_mode={json_mode}")
         
-        response = client.chat.completions.create(**comp_kwargs)
-        result = response.choices[0].message.content
+        # Track timing
+        start_time = time.time()
         
-        # Extract token usage from response
-        tokens_used = 0
-        if track_tokens and hasattr(response, 'usage') and response.usage:
-            tokens_used = response.usage.total_tokens or 0
-            if config.debug:
-                logger.debug(f"LLM Response [{role.value}]: {len(result) if result else 0} chars, {tokens_used} tokens")
-        else:
-            if config.debug:
-                logger.debug(f"LLM Response [{role.value}]: {len(result) if result else 0} chars")
+        try:
+            response = client.chat.completions.create(**comp_kwargs)
+            result = response.choices[0].message.content
+            
+            # Extract token usage from response
+            tokens_used = 0
+            if track_tokens and hasattr(response, 'usage') and response.usage:
+                tokens_used = response.usage.total_tokens or 0
+                if config.debug:
+                    logger.debug(f"LLM Response [{role.value}]: {len(result) if result else 0} chars, {tokens_used} tokens")
+            else:
+                if config.debug:
+                    logger.debug(f"LLM Response [{role.value}]: {len(result) if result else 0} chars")
+        except Exception as e:
+            # Log error
+            duration_ms = (time.time() - start_time) * 1000
+            log_llm_error(
+                stage=stage.value if stage else "UNKNOWN",
+                role=role.value,
+                model=model,
+                error=str(e),
+                user_prompt_preview=user_prompt
+            )
+            raise
         
         # Check for empty response and retry (unless allow_empty is True)
         # FALLBACK: If tokens > 0 but result is empty/None, use raw response
@@ -530,6 +547,24 @@ class LLMService:
                 return retry_result, retry_tokens
             else:
                 logger.error(f"Max retries exceeded for [{role.value}], returning empty result")
+        
+        # Calculate duration
+        duration_ms = (time.time() - start_time) * 1000
+        
+        # Log successful LLM call
+        log_llm_call(
+            stage=stage.value if stage else "UNKNOWN",
+            role=role.value,
+            model=model,
+            temperature=temp,
+            max_tokens=max_tokens,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            response_text=result or "",
+            tokens_used=tokens_used,
+            duration_ms=duration_ms,
+            json_mode=json_mode
+        )
         
         return result, tokens_used
 
