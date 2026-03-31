@@ -31,6 +31,7 @@ import openai
 import tiktoken
 
 from src.config import Config
+from src.llm_logger import init_llm_logger, get_llm_logger, log_llm_call
 
 # LLMService, TranslationPipeline, translate_chunk are defined in this module
 
@@ -391,6 +392,9 @@ class LLMService:
         Returns:
             Tuple of (generated_text, tokens_used)
         """
+        # Start timing for LLM call logging
+        call_start_time = time.time()
+        
         client, model, temp = self.get_client(role)
         
         # Use stage-specific temperature if provided
@@ -443,18 +447,44 @@ class LLMService:
         if config.debug:
             logger.debug(f"LLM Request [{role.value}]: {model}, {len(user_prompt)} chars, temp={temp:.2f}, sys_not_promt={use_sys_not_promt}, json_mode={json_mode}")
         
+        # Store prompts for logging (before potential merge)
+        log_system_prompt = system_prompt if not use_sys_not_promt else ""
+        log_user_prompt = user_prompt if not use_sys_not_promt else (f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt)
+        
         response = client.chat.completions.create(**comp_kwargs)
         result = response.choices[0].message.content
         
         # Extract token usage from response
         tokens_used = 0
+        tokens_input = 0
+        tokens_output = 0
         if track_tokens and hasattr(response, 'usage') and response.usage:
             tokens_used = response.usage.total_tokens or 0
+            tokens_input = response.usage.prompt_tokens or 0
+            tokens_output = response.usage.completion_tokens or 0
             if config.debug:
                 logger.debug(f"LLM Response [{role.value}]: {len(result) if result else 0} chars, {tokens_used} tokens")
         else:
             if config.debug:
                 logger.debug(f"LLM Response [{role.value}]: {len(result) if result else 0} chars")
+        
+        # Log LLM call if not a retry (avoid duplicate logs)
+        if retry_count == 0 and config.llm_logging_enabled:
+            duration_ms = int((time.time() - call_start_time) * 1000)
+            stage_name = stage.value if stage else "unknown"
+            log_llm_call(
+                stage=stage_name,
+                role=role.value,
+                model=model,
+                temperature=temp,
+                duration_ms=duration_ms,
+                tokens_input=tokens_input,
+                tokens_output=tokens_output,
+                tokens_total=tokens_used,
+                prompt_system=log_system_prompt,
+                prompt_user=log_user_prompt,
+                response=result or ""
+            )
         
         # Check for empty response and retry (unless allow_empty is True)
         if not result or len(result.strip()) == 0:
