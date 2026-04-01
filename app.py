@@ -612,47 +612,22 @@ def _save_vocabulary_formatted(translated_text: str, dict_file: str, original_te
 
 
 def write_to_file(data, output_file: str, auto_repair_fb2: bool = False):
-    """Write data to file with optional FB2 post-write repair check.
+    """Write data to file.
     
-    If auto_repair_fb2 is True:
-    1. Writes original content to file
-    2. Runs repair_and_validate on a copy
-    3. If repairs were made, writes _fixed version alongside original
-    4. Logs all repairs and remaining errors
+    Note: Auto-repair is disabled by default as it may corrupt valid content.
+    FB2 structure should be correct at generation time.
     """
     if isinstance(data, str):
         data = [data]
     
     content = '\n'.join(data)
     
-    # Step 1: Always write original content first
+    # Write content to file
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write(content)
     
-    # Step 2: Auto-repair check (after write, on a copy)
-    if auto_repair_fb2 and output_file.endswith('.fb2'):
-        from src.fb2_repair import repair_and_validate
-        
-        repaired, repairs, errors = repair_and_validate(content)
-        
-        if repairs:
-            logger.info("FB2 Auto-Repair detected issues: " + " | ".join(repairs))
-            
-            # Write fixed version alongside original
-            fixed_file = output_file.replace('.fb2', '_fixed.fb2')
-            with open(fixed_file, 'w', encoding='utf-8') as f:
-                f.write(repaired)
-            logger.info(f"FB2 fixed version written to: {fixed_file}")
-            
-            # Optionally overwrite original if explicitly requested
-            # (currently disabled to preserve original translation)
-        else:
-            logger.info("FB2 Auto-Repair: no issues found")
-        
-        if errors:
-            logger.warning(f"FB2 validation errors remaining: {len(errors)}")
-            for error in errors[:5]:
-                logger.warning(f"  {error}")
+    # Note: Auto-repair disabled - it was causing content loss
+    # FB2 structure should be validated at generation time, not repair time
 
 
 # =============================================================================

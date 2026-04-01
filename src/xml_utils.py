@@ -363,19 +363,20 @@ def prepare_chunks_with_sections(body: str, max_len_chunk: int) -> List[List[str
         chunks = []
 
         # Split the section into chunks with tag-aware boundaries
+        # Note: We don't balance tags here - chunks may have unbalanced tags
+        # (e.g., <title> opened in one chunk, closed in another)
+        # Full XML validation happens only on final assembled document
         chunk_start = 0
         while chunk_start < len(section_content):
             chunk_end = chunk_start + max_len_chunk
             
             if chunk_end >= len(section_content):
                 chunk_text = section_content[chunk_start:]
-                chunk_text = _ensure_balanced_tags(chunk_text)
                 chunks.append(chunk_text)
                 break
             else:
                 chunk_end = _find_chunk_boundary(section_content, chunk_start, chunk_end)
                 chunk_text = section_content[chunk_start:chunk_end]
-                chunk_text = _ensure_balanced_tags(chunk_text)
                 chunks.append(chunk_text)
                 chunk_start = chunk_end
 
