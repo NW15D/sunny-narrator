@@ -390,8 +390,13 @@ class TranslationEngine:
                 self.total_source_len += len(chunk)
                 self.total_target_len += len(final_content)
                 
+                # Clean final_content: remove outer <section> if present (will be wrapped later)
+                cleaned_content = final_content.strip()
+                if cleaned_content.startswith('<section>') and cleaned_content.endswith('</section>'):
+                    cleaned_content = cleaned_content[9:-10].strip()
+                
                 # Accumulate chunks for this section
-                current_section_chunks.append(final_content.strip())
+                current_section_chunks.append(cleaned_content)
             
             # Update last processed chunk
             self.last_processed_chunk = g_id
