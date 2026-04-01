@@ -663,7 +663,21 @@ class TranslationPipeline:
     
     @log_entry
     def generate_synopsis(self, context: TranslationContext, translation: str) -> TranslationResult:
-        """Stage 5: Generate synopsis from FINAL translation using Secondary LLM."""
+        """Stage 5: Generate synopsis from FINAL translation using Secondary LLM.
+        
+        If translation is too short (< 200 chars), skip LLM call and return empty synopsis.
+        """
+        # Skip synopsis generation for short translations
+        MIN_SYNOPSIS_LENGTH = 200
+        if len(translation) < MIN_SYNOPSIS_LENGTH:
+            logger.debug(f"[synopsis] Skipping: translation too short ({len(translation)} < {MIN_SYNOPSIS_LENGTH} chars)")
+            return TranslationResult(
+                stage=TranslationStage.SYNOPSIS,
+                llm_role=LLMRole.SECONDARY,
+                text="",
+                tokens_used=0
+            )
+        
         if config.model_translate == "Hunyuan":
             user_prompt = config.get_prompt(
                 "synopsis", "user_hunyuan",
