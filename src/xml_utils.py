@@ -135,7 +135,13 @@ def update_header_with_metadata(header: str, metadata: Dict[str, Any]) -> str:
                 p_tag.string = para
                 annotation_tag.append(p_tag)
     
-    return str(soup)
+    # Return serialized result, but strip </FictionBook> if BS4 added it 
+    # to close an open tag in the header fragment.
+    result = str(soup)
+    if '</FictionBook>' in result and '</FictionBook>' not in header:
+        result = result.replace('</FictionBook>', '')
+        
+    return result
 
 
 def get_cover_image(header: str, footer: str) -> Tuple[str, str]:
@@ -205,7 +211,11 @@ def replace_cover_image(header: str, footer: str, body: str, new_content: str) -
             image_tag['xlink:href'] = image_href
             cover_tag.append(image_tag)
             title_info.append(cover_tag)
-        header = str(soup)
+        # Return serialized result, but strip </FictionBook> if BS4 added it
+        result = str(soup)
+        if '</FictionBook>' in result and '</FictionBook>' not in header:
+            result = result.replace('</FictionBook>', '')
+        header = result
     
     # Extract image ID
     image_id = image_href.lstrip('#')
@@ -340,6 +350,7 @@ def prepare_chunks_with_sections(body: str, max_len_chunk: int) -> List[List[str
     body_str = body
     sections = []
     start_tags = {'<section>', '<SECTION>'}
+    end_tags = {'</section>', '</SECTION>'}
     
     start = 0
     while start < len(body_str):
