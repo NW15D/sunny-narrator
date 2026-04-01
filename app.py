@@ -318,16 +318,17 @@ class TranslationEngine:
                            vocab: dict, output_tfile: str, checkpoint_file: str = None) -> str:
         """
         Process all chunks sequentially.
+        Groups chunks by section and wraps each section in <section> tags.
         
         Args:
             all_chunks: List of chunk dicts with metadata
-            orig_sections: Original sections structure
+            orig_sections: Original sections structure (list of lists)
             vocab: Vocabulary dictionary
             output_tfile: Temp output file path
             checkpoint_file: Path to checkpoint JSON file (optional)
         
         Returns:
-            Combined translated content
+            Combined translated content with proper <section> wrapping
         """
         all_content = ""
         total = len(all_chunks)
@@ -337,11 +338,30 @@ class TranslationEngine:
         print(f"Starting translation: {total} chunks")
         print(f"{'='*60}\n")
         
+        # Track which sections have been written to avoid duplicates on resume
+        written_sections = set()
+        current_section_idx = -1
+        current_section_chunks = []
+        
         for item in all_chunks:
             chunk = item['chunk']
             s_idx = item['section_idx']
             c_idx = item['chunk_idx']
             g_id = item['global_id']
+            
+            # If we moved to a new section, write the previous one
+            if s_idx != current_section_idx and current_section_idx != -1:
+                if current_section_idx not in written_sections:
+                    # Write accumulated section content
+                    section_content = "\n".join(current_section_chunks)
+                    section_wrapped = f"<section>\n{section_content}\n</section>"
+                    all_content += section_wrapped + "\n"
+                    with open(output_tfile, 'a', encoding='utf-8') as f:
+                        f.write(section_wrapped + "\n")
+                    written_sections.add(current_section_idx)
+                current_section_chunks = []
+            
+            current_section_idx = s_idx
             
             # Get formatted vocabulary
             formatted_vocab = self.get_formatted_vocab_for_chunk(chunk, s_idx, c_idx)
@@ -370,13 +390,8 @@ class TranslationEngine:
                 self.total_source_len += len(chunk)
                 self.total_target_len += len(final_content)
                 
-                # Basic cleanup only - no XML parsing of chunks
-                # rem_tags is for final FB2 validation, not chunk processing
-                section_content = final_content.strip()
-                all_content += section_content + "\n"
-                
-                with open(output_tfile, 'a', encoding='utf-8') as f:
-                    f.write(section_content + "\n")
+                # Accumulate chunks for this section
+                current_section_chunks.append(final_content.strip())
             
             # Update last processed chunk
             self.last_processed_chunk = g_id
@@ -393,6 +408,15 @@ class TranslationEngine:
                 length_diff_pct = (length_diff / len(chunk) * 100) if chunk and len(chunk) > 0 else 0
                 status = "✓" if final_content else "✗ EMPTY"
                 print(f"  [{status}] {len(chunk)} → {len(final_content):,} chars ({length_diff_pct:+.1f}%) | Successful: {self.stats['successful']}/{self.stats['failed'] + self.stats['successful']}")
+        
+        # Write the last section after the loop
+        if current_section_chunks and current_section_idx not in written_sections:
+            section_content = "\n".join(current_section_chunks)
+            section_wrapped = f"<section>\n{section_content}\n</section>"
+            all_content += section_wrapped + "\n"
+            with open(output_tfile, 'a', encoding='utf-8') as f:
+                f.write(section_wrapped + "\n")
+            written_sections.add(current_section_idx)
         
         return all_content
 
@@ -583,29 +607,47 @@ def _save_vocabulary_formatted(translated_text: str, dict_file: str, original_te
 
 
 def write_to_file(data, output_file: str, auto_repair_fb2: bool = False):
-    """Write data to file with optional FB2 auto-repair."""
+    """Write data to file with optional FB2 post-write repair check.
+    
+    If auto_repair_fb2 is True:
+    1. Writes original content to file
+    2. Runs repair_and_validate on a copy
+    3. If repairs were made, writes _fixed version alongside original
+    4. Logs all repairs and remaining errors
+    """
     if isinstance(data, str):
         data = [data]
     
     content = '\n'.join(data)
     
-    # Auto-repair FB2 if it's an FB2 file
+    # Step 1: Always write original content first
+    with open(output_file, 'w', encoding='utf-8') as f:
+        f.write(content)
+    
+    # Step 2: Auto-repair check (after write, on a copy)
     if auto_repair_fb2 and output_file.endswith('.fb2'):
         from src.fb2_repair import repair_and_validate
         
         repaired, repairs, errors = repair_and_validate(content)
         
         if repairs:
-            logger.info("FB2 Auto-Repair: " + " | ".join(repairs))
-            content = repaired
+            logger.info("FB2 Auto-Repair detected issues: " + " | ".join(repairs))
+            
+            # Write fixed version alongside original
+            fixed_file = output_file.replace('.fb2', '_fixed.fb2')
+            with open(fixed_file, 'w', encoding='utf-8') as f:
+                f.write(repaired)
+            logger.info(f"FB2 fixed version written to: {fixed_file}")
+            
+            # Optionally overwrite original if explicitly requested
+            # (currently disabled to preserve original translation)
+        else:
+            logger.info("FB2 Auto-Repair: no issues found")
         
         if errors:
             logger.warning(f"FB2 validation errors remaining: {len(errors)}")
             for error in errors[:5]:
                 logger.warning(f"  {error}")
-    
-    with open(output_file, 'w', encoding='utf-8') as f:
-        f.write(content)
 
 
 # =============================================================================
@@ -682,10 +724,9 @@ def main():
     # 3. Prepare Chunks
     print("Preparing chunks...")
     
-    # fb2.prepare_chunks() returns flat list of chunks
-    # Wrap each chunk in its own section for compatibility
-    flat_chunks = fb2.prepare_chunks(body, config.max_len_chunk)
-    sections = [[chunk] for chunk in flat_chunks]  # Wrap each chunk
+    # Use prepare_chunks_with_sections to preserve original FB2 section structure
+    # Returns: [[section1_chunk1, section1_chunk2], [section2_chunk1], ...]
+    sections = fb2.prepare_chunks_with_sections(body, config.max_len_chunk)
     
     chunks = []
     gid = 0
@@ -793,11 +834,13 @@ def main():
             print(f"\n✓ EPUB created: {epub_path}")
         except Exception as e:
             logger.error(f"EPUB creation failed: {e}")
-            write_to_file(xml_str, f"{output_base}.fb2")
+            write_to_file(xml_str, f"{output_base}.fb2", auto_repair_fb2=config.fb2_auto_repair)
             print(f"\n✓ FB2 created (fallback): {output_base}.fb2")
     else:
-        write_to_file(xml_str, output_file)
+        write_to_file(xml_str, output_file, auto_repair_fb2=config.fb2_auto_repair)
         print(f"\n✓ FB2 created: {output_file}")
+        if config.fb2_auto_repair:
+            print(f"  (Auto-repair check enabled - fixed version may be created alongside)")
 
     # Get global translation stats
     global_stats = ta.get_translation_stats()
