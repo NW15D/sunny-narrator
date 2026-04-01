@@ -115,6 +115,9 @@ class Config:
         self.output_format = os.getenv('OUTPUT_FORMAT', 'fb2').lower()
         if self.output_format not in ['fb2', 'epub']:
             self.output_format = 'fb2'
+        
+        # FB2 auto-repair: write _fixed version alongside original (default: false)
+        self.fb2_auto_repair = os.getenv('FB2_AUTO_REPAIR', 'false').lower() in ['true', '1', 't', 'on', 'yes']
 
         # Load prompts
         self.prompts = self._load_prompts()

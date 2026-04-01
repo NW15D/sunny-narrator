@@ -322,3 +322,79 @@ def _find_chunk_boundary(text: str, start: int, end: int) -> int:
         return last_open
     
     return end
+
+
+def prepare_chunks_with_sections(body: str, max_len_chunk: int) -> List[List[str]]:
+    """
+    Splits the body content into sections and chunks based on max_len_chunk.
+    Preserves original FB2 section structure.
+    
+    Args:
+        body: FB2 body content
+        max_len_chunk: Maximum chunk size in characters
+        
+    Returns:
+        List of sections, where each section is a list of chunks:
+        [[section1_chunk1, section1_chunk2], [section2_chunk1], ...]
+    """
+    body_str = body
+    sections = []
+    start_tags = {'<section>', '<SECTION>'}
+    
+    start = 0
+    while start < len(body_str):
+        # Find the start of the next section
+        found_start_tag = None
+        for tag in start_tags:
+            pos = body_str.find(tag, start)
+            if pos != -1 and (found_start_tag is None or pos < found_start_tag[1]):
+                found_start_tag = (tag, pos)
+
+        if not found_start_tag:
+            break
+
+        section_start = found_start_tag[1] + len(found_start_tag[0])
+        section_end = body_str.find('</section>', section_start)
+
+        if section_end == -1:
+            break
+
+        section_content = body_str[section_start:section_end]
+        chunks = []
+
+        # Split the section into chunks with tag-aware boundaries
+        chunk_start = 0
+        while chunk_start < len(section_content):
+            chunk_end = chunk_start + max_len_chunk
+            
+            if chunk_end >= len(section_content):
+                chunk_text = section_content[chunk_start:]
+                chunk_text = _ensure_balanced_tags(chunk_text)
+                chunks.append(chunk_text)
+                break
+            else:
+                chunk_end = _find_chunk_boundary(section_content, chunk_start, chunk_end)
+                chunk_text = section_content[chunk_start:chunk_end]
+                chunk_text = _ensure_balanced_tags(chunk_text)
+                chunks.append(chunk_text)
+                chunk_start = chunk_end
+
+        sections.append(chunks)
+        start = section_end + len('</section>')
+
+    if not sections:
+        # Fallback: split entire body as one section
+        chunks = []
+        chunk_start = 0
+        while chunk_start < len(body_str):
+            chunk_end = chunk_start + max_len_chunk
+            if chunk_end >= len(body_str):
+                chunks.append(body_str[chunk_start:])
+                break
+            else:
+                chunk_end = _find_chunk_boundary(body_str, chunk_start, chunk_end)
+                chunks.append(body_str[chunk_start:chunk_end])
+                chunk_start = chunk_end
+        sections = [chunks]
+
+    return sections
