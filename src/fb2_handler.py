@@ -60,6 +60,10 @@ def parse_xml(file_path: str) -> tuple:
         body = content[end_start_body:end_body]
         footer = content[end_body_tag + len('</body>'):]
 
+        # Remove any </FictionBook> from header (should only be in footer)
+        # Some FB2 files have misplaced closing tags before <body>
+        header = header.replace('</FictionBook>', '').replace('</fictionbook>', '')
+
         # Remove namespaces
         body = re.sub(r'\sxmlns="[^"]+"', '', body, count=1)
         body = re.sub(r'<myheader>.*?</myheader>', '', body, flags=re.DOTALL)
