@@ -1,7 +1,7 @@
 # Sunny Narrator
 
 **Version:** 1.14  
-Book translation program for FB2/EPUB formats.  
+Book translation program for FB2/EPUB formats. You can use just only Qwen3.5-35B-A3B for both endpoints.
 Dual-LLM translation system with 5-stage quality control.
 
 ## 🚀 Quick Start
