@@ -168,7 +168,7 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
             try:
                 doc = nlp(chunk, disable=["ner", "parser", "lemmatizer", "attribute_ruler"])
                 word_counts.update(
-                    token.text for token in doc if token.is_alpha and token.text not in stop_words
+                    token.lemma_.lower() for token in doc if token.is_alpha and token.lemma_.lower() not in stop_words
                 )
                 del doc
                 gc.collect()
@@ -572,27 +572,38 @@ def create_series_vocab(
         book_names[book_path] = book_name
         
         print(f"Processing: {book_name}")
-        text = extract_text_from_book(book_path)
+        
+        # Error handling for book parsing
+        try:
+            text = extract_text_from_book(book_path)
+        except Exception as e:
+            print(f"  Error reading {book_name}: {e}")
+            continue
         
         # Split into chunks for processing
         chunk_size = 100000
         text_chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
         
         for chunk_idx, chunk in enumerate(text_chunks):
-            # Direct NER without make_vocab's merging
-            doc = nlp(chunk, disable=["parser", "lemmatizer", "attribute_ruler"])
-            
-            # Collect raw entities with their labels
-            for ent in doc.ents:
-                if ent.label_ in ner_category and ent.vector_norm != 0:
-                    all_raw_entities.append((ent.text.strip(), ent.label_, book_name))
-            
-            # Collect words (for TERM category)
-            for token in doc:
-                if token.is_alpha and token.text not in stop_words:
-                    all_words[token.text] += 1
-            
-            del doc
+            try:
+                # Direct NER without make_vocab's merging
+                doc = nlp(chunk, disable=["parser", "lemmatizer", "attribute_ruler"])
+                
+                # Collect raw entities with their labels
+                for ent in doc.ents:
+                    if ent.label_ in ner_category and ent.vector_norm != 0:
+                        all_raw_entities.append((ent.text.strip(), ent.label_, book_name))
+                
+                # Collect words (case-insensitive, lemma)
+                for token in doc:
+                    if token.is_alpha and token.lemma_.lower() not in stop_words:
+                        word_key = token.lemma_.lower()
+                        all_words[word_key] += 1
+                
+                del doc
+            except Exception as e:
+                print(f"  Error processing chunk {chunk_idx}: {e}")
+                continue
         
         # Force garbage collection after each book
         gc.collect()
@@ -602,12 +613,12 @@ def create_series_vocab(
     print(f"\nTotal raw entities: {len(all_raw_entities)}")
     print(f"Total unique words: {len(all_words)}")
     
-    # Build entity_book_map before deleting all_raw_entities
-    entity_book_map = {}
+    # Build entity_book_map (set of books per entity) before deleting
+    from collections import defaultdict
+    entity_book_map = defaultdict(set)
     for term, cat, book_name in all_raw_entities:
         key = (term.lower(), cat)
-        if key not in entity_book_map:
-            entity_book_map[key] = book_name
+        entity_book_map[key].add(book_name)
     
     # Aggregate entity counts across ALL books (sum occurrences)
     entity_counts = Counter((term, cat) for term, cat, _ in all_raw_entities)
@@ -727,9 +738,10 @@ def create_series_vocab(
             for source, target, notes in entries:
                 # Format: source = target, category, gender, notes
                 if category:  # NER entities have category
-                    f.write(f"{source} = {target}, {category}, , {notes}\n")
+                    notes_str = f", {notes}" if notes else ""
+                    f.write(f"{source} = {target}, {category}, ,{notes_str}\n")
                 else:  # Words - no category, no notes
-                    f.write(f"{source} = {target}, , , \n")
+                    f.write(f"{source} = {target}, , ,\n")
             f.write("\n")
     
     print(f"Dictionary saved to: {output_file}")
