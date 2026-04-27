@@ -497,6 +497,7 @@ def create_series_vocab(
         "like", "just", "know", "think", "see", "look", "come", "take", "give",
         "make", "find", "tell", "ask", "work", "seem", "feel", "try", "leave", "call"
     ])
+    stop_words = default_stop_words
     
     # Resolve output_file relative to books_folder if it's just a filename
     if not os.path.dirname(output_file):
@@ -631,7 +632,7 @@ def create_series_vocab(
     # Format: source = target, category, gender, notes
     
     entity_book_map = {}
-    for term, cat, book_name in all_entities:
+    for term, cat, book_name in all_raw_entities:
         key = (term.lower(), cat)
         if key not in entity_book_map:
             entity_book_map[key] = book_name
