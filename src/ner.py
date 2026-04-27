@@ -603,6 +603,13 @@ def _merge_overlapping_entities(entities):
     print(f"\nTotal raw entities: {len(all_raw_entities)}")
     print(f"Total unique words: {len(all_words)}")
     
+    # Build entity_book_map before deleting all_raw_entities
+    entity_book_map = {}
+    for term, cat, book_name in all_raw_entities:
+        key = (term.lower(), cat)
+        if key not in entity_book_map:
+            entity_book_map[key] = book_name
+    
     # Aggregate entity counts across ALL books (sum occurrences)
     entity_counts = Counter((term, cat) for term, cat, _ in all_raw_entities)
     
@@ -685,11 +692,7 @@ def _merge_overlapping_entities(entities):
     # Build final vocabulary list in CSV format
     # Format: source = target, category, gender, notes
     
-    entity_book_map = {}
-    for term, cat, book_name in all_raw_entities:
-        key = (term.lower(), cat)
-        if key not in entity_book_map:
-            entity_book_map[key] = book_name
+    # entity_book_map already built above before deleting all_raw_entities
     
     # Write dictionary in proper CSV format
     with open(output_file, 'w', encoding='utf-8') as f:
