@@ -458,39 +458,6 @@ def extract_text_from_book(book_path: str) -> str:
         raise ValueError(f"Unsupported file format: {ext}")
 
 
-def create_series_vocab(
-    books_folder: str,
-    output_file: str = "series.dic",
-    min_count_ner: int = 3,
-    min_count_word: int = 8,
-    min_word_length: int = 4
-) -> str:
-    """
-    Create unified dictionary from all books in folder.
-    
-    Workflow:
-    1. Find all .fb2/.epub/.txt files in folder
-    2. For each book: parse text → NER → collect terms
-    3. Merge all terms into unified array (aggregate counts)
-    4. Filter by min_count criteria
-    5. Translate via LLM
-    6. Save to JSON .dic file
-    
-    Args:
-        books_folder: Path to folder containing books
-        output_file: Output .dic file path
-        min_count_ner: Minimum occurrences for NER entities
-        min_count_word: Minimum occurrences for common words
-        min_word_length: Minimum word length for common words
-        merge_entities: Whether to merge overlapping entities (default: True)
-        
-    Returns:
-        Path to output file
-    """
-    import os
-    import gc
-
-
 def _merge_overlapping_entities(entities):
     """
     Merge overlapping entities - keep only longest form.
@@ -528,6 +495,38 @@ def _merge_overlapping_entities(entities):
     
     # Sort by count descending
     return sorted(merged, key=lambda x: -x[2])
+
+
+def create_series_vocab(
+    books_folder: str,
+    output_file: str = "series.dic",
+    min_count_ner: int = 3,
+    min_count_word: int = 8,
+    min_word_length: int = 4
+) -> str:
+    """
+    Create unified dictionary from all books in folder.
+    
+    Workflow:
+    1. Find all .fb2/.epub/.txt files in folder
+    2. For each book: parse text → NER → collect terms
+    3. Merge all terms into unified array (aggregate counts)
+    4. Filter by min_count criteria
+    5. Translate via LLM
+    6. Save to .dic file
+    
+    Args:
+        books_folder: Path to folder containing books
+        output_file: Output .dic file path
+        min_count_ner: Minimum occurrences for NER entities
+        min_count_word: Minimum occurrences for common words
+        min_word_length: Minimum word length for common words
+        
+    Returns:
+        Path to output file
+    """
+    import os
+    import gc
     from pathlib import Path
     from collections import Counter
     
