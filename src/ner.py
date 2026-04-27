@@ -490,6 +490,11 @@ def create_series_vocab(
     from pathlib import Path
     from collections import Counter
     
+    # Resolve output_file relative to books_folder if it's just a filename
+    if not os.path.dirname(output_file):
+        # No directory in output_file, save to books_folder
+        output_file = os.path.join(books_folder, output_file)
+    
     # Find all book files
     supported_exts = {'.fb2', '.epub', '.txt'}
     book_files = []
