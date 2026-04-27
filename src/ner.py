@@ -597,7 +597,7 @@ def create_series_vocab(
         # Force garbage collection after each book
         gc.collect()
         
-        print(f"  Raw entities collected: {len([e for e in all_raw_entities if e[2] == book_name])}")
+        print(f"  Raw entities collected: {len(all_raw_entities)} (cumulative)")
     
     print(f"\nTotal raw entities: {len(all_raw_entities)}")
     print(f"Total unique words: {len(all_words)}")
@@ -636,8 +636,8 @@ def create_series_vocab(
         if count >= min_count_word and len(word) >= min_word_length
     ]
     
-    # Sort by count descending
-    filtered_words = sorted(filtered_words, key=lambda x: -x[2])
+    # Sort by count descending (x[1] is count)
+    filtered_words = sorted(filtered_words, key=lambda x: -x[1])
     
     # Free memory
     del all_words
