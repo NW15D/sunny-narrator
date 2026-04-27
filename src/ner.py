@@ -702,10 +702,10 @@ def _merge_overlapping_entities(entities):
         for term, category, count in filtered_entities:
             term_lower = term.lower()
             target = translations.get(term_lower, "")
-            notes = f"count: {count}"
+            # NER entities - no notes
             if category not in by_category:
                 by_category[category] = []
-            by_category[category].append((term, target, notes))
+            by_category[category].append((term, target, ""))
         
         # Add words without category (empty) and without notes
         # Words: source = target, , , 
