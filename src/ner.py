@@ -707,22 +707,27 @@ def _merge_overlapping_entities(entities):
                 by_category[category] = []
             by_category[category].append((term, target, notes))
         
-        # Add words as TERM category
-        by_category["TERM"] = []
+        # Add words without category (empty) and without notes
+        # Words: source = target, , , 
+        by_category[""] = []
         for word, count in filtered_words[:100]:
             word_lower = word.lower()
             target = translations.get(word_lower, "")
-            notes = f"frequent word (count: {count})"
-            by_category["TERM"].append((word, target, notes))
+            by_category[""].append((word, target, ""))
         
         # Write entries grouped by category
         for category, entries in sorted(by_category.items()):
             if not entries:
                 continue
-            f.write(f"# {category} ({len(entries)} terms)\n")
+            # Skip empty category header, just write entries
+            cat_header = f"# {category} ({len(entries)} terms)" if category else f"# Words ({len(entries)} terms)"
+            f.write(f"{cat_header}\n")
             for source, target, notes in entries:
                 # Format: source = target, category, gender, notes
-                f.write(f"{source} = {target}, {category}, , {notes}\n")
+                if category:  # NER entities have category
+                    f.write(f"{source} = {target}, {category}, , {notes}\n")
+                else:  # Words - no category, no notes
+                    f.write(f"{source} = {target}, , , \n")
             f.write("\n")
     
     print(f"Dictionary saved to: {output_file}")
