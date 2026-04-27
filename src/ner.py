@@ -429,3 +429,30 @@ def find_matching_words_with_cosine_similarity_cpu(text, vocab, lng, threshold=0
     if config.debug:
         print(f"Found matching words: {matched_words_set}")
     return list(matched_words_set)
+
+
+def extract_text_from_book(book_path: str) -> str:
+    """
+    Extract text content from book file.
+    
+    Args:
+        book_path: Path to .fb2/.epub/.txt file
+        
+    Returns:
+        Extracted text content
+    """
+    from pathlib import Path
+    from src import fb2_handler, epub_handler, txt_handler
+    
+    ext = Path(book_path).suffix.lower()
+    if ext == '.fb2':
+        body, header, footer = fb2_handler.parse_xml(book_path)
+        return body
+    elif ext == '.epub':
+        body, header, footer = epub_handler.parse_epub(book_path)
+        return body
+    elif ext == '.txt':
+        body, header, footer = txt_handler.parse_txt(book_path)
+        return body
+    else:
+        raise ValueError(f"Unsupported file format: {ext}")
