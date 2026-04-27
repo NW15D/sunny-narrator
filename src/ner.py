@@ -732,16 +732,16 @@ def create_series_vocab(
         for category, entries in sorted(by_category.items()):
             if not entries:
                 continue
-            # Skip empty category header, just write entries
+            # Format: source = target, category, gender, notes
             cat_header = f"# {category} ({len(entries)} terms)" if category else f"# Words ({len(entries)} terms)"
             f.write(f"{cat_header}\n")
             for source, target, notes in entries:
-                # Format: source = target, category, gender, notes
                 if category:  # NER entities have category
                     notes_str = f", {notes}" if notes else ""
                     f.write(f"{source} = {target}, {category}, ,{notes_str}\n")
-                else:  # Words - no category, no notes
-                    f.write(f"{source} = {target}, , ,\n")
+                else:  # Words - no category
+                    f.write(f"{source} = {target}, , , \n")  # trailing space as per docs
+            f.write("\n")
             f.write("\n")
     
     print(f"Dictionary saved to: {output_file}")
