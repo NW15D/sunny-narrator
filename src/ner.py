@@ -456,3 +456,53 @@ def extract_text_from_book(book_path: str) -> str:
         return body
     else:
         raise ValueError(f"Unsupported file format: {ext}")
+
+
+def create_series_vocab(
+    books_folder: str,
+    output_file: str = "series.dic",
+    min_count_ner: int = 5,
+    min_count_word: int = 10,
+    min_word_length: int = 5
+) -> str:
+    """
+    Create unified dictionary from all books in folder.
+    
+    Workflow:
+    1. Find all .fb2/.epub/.txt files in folder
+    2. For each book: parse text → NER → collect terms
+    3. Merge all terms into unified array (aggregate counts)
+    4. Filter by min_count criteria
+    5. Translate via LLM
+    6. Save to JSON .dic file
+    
+    Args:
+        books_folder: Path to folder containing books
+        output_file: Output .dic file path
+        min_count_ner: Minimum occurrences for NER entities
+        min_count_word: Minimum occurrences for common words
+        min_word_length: Minimum word length for common words
+        
+    Returns:
+        Path to output file
+    """
+    import json
+    import os
+    from pathlib import Path
+    from collections import Counter
+    
+    # Find all book files
+    supported_exts = {'.fb2', '.epub', '.txt'}
+    book_files = []
+    for f in os.listdir(books_folder):
+        if Path(f).suffix.lower() in supported_exts:
+            book_files.append(os.path.join(books_folder, f))
+    
+    if not book_files:
+        raise ValueError(f"No book files found in {books_folder}")
+    
+    print(f"Found {len(book_files)} books")
+    
+    # TODO: Implement NER aggregation, translation, and JSON export
+    print("Function skeleton complete. Full implementation pending.")
+    return output_file
