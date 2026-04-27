@@ -168,7 +168,7 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
             try:
                 doc = nlp(chunk, disable=["ner", "parser", "lemmatizer", "attribute_ruler"])
                 word_counts.update(
-                    token.lemma_.lower() for token in doc if token.is_alpha and token.lemma_.lower() not in stop_words
+                    token.lemma_.lower() for token in doc if token.is_alpha and token.lemma_.lower() and token.lemma_.lower() not in stop_words
                 )
                 del doc
                 gc.collect()
@@ -500,9 +500,9 @@ def _merge_overlapping_entities(entities):
 def create_series_vocab(
     books_folder: str,
     output_file: str = "series.dic",
-    min_count_ner: int = 3,
-    min_count_word: int = 8,
-    min_word_length: int = 4
+    min_count_ner: int = 2,
+    min_count_word: int = 5,
+    min_word_length: int = 3
 ) -> str:
     """
     Create unified dictionary from all books in folder.
@@ -596,9 +596,9 @@ def create_series_vocab(
                 
                 # Collect words (case-insensitive, lemma)
                 for token in doc:
-                    if token.is_alpha and token.lemma_.lower() not in stop_words:
-                        word_key = token.lemma_.lower()
-                        all_words[word_key] += 1
+                    lemma = token.lemma_.lower()
+                    if token.is_alpha and lemma and lemma not in stop_words:
+                        all_words[lemma] += 1
                 
                 del doc
             except Exception as e:
