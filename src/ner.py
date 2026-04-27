@@ -168,7 +168,7 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
             try:
                 doc = nlp(chunk, disable=["ner", "parser", "lemmatizer", "attribute_ruler"])
                 word_counts.update(
-                    token.lemma_.lower() for token in doc if token.is_alpha and token.lemma_.lower() and token.lemma_.lower() not in stop_words
+                    token.text.lower() for token in doc if token.is_alpha and token.text.lower() not in stop_words
                 )
                 del doc
                 gc.collect()
@@ -594,11 +594,11 @@ def create_series_vocab(
                     if ent.label_ in ner_category and ent.vector_norm != 0:
                         all_raw_entities.append((ent.text.strip(), ent.label_, book_name))
                 
-                # Collect words (case-insensitive, lemma)
+                # Collect words (case-insensitive)
                 for token in doc:
-                    lemma = token.lemma_.lower()
-                    if token.is_alpha and lemma and lemma not in stop_words:
-                        all_words[lemma] += 1
+                    if token.is_alpha and token.text.lower() not in stop_words:
+                        word_key = token.text.lower()
+                        all_words[word_key] += 1
                 
                 del doc
             except Exception as e:
