@@ -98,7 +98,7 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
         if config.debug:
             print(f"Split text into {len(text_chunks)} chunks of {chunk_size} chars each")
         
-        ner_category = ["ORG", "LOC", "GPE", "PERSON"]
+        ner_category = ["ORG", "LOC", "GPE", "PERSON", "EVENT", "FAC", "PRODUCT"]
         ents = []
         
         for i, chunk in enumerate(text_chunks):
@@ -461,9 +461,9 @@ def extract_text_from_book(book_path: str) -> str:
 def create_series_vocab(
     books_folder: str,
     output_file: str = "series.dic",
-    min_count_ner: int = 5,
-    min_count_word: int = 10,
-    min_word_length: int = 5
+    min_count_ner: int = 3,
+    min_count_word: int = 8,
+    min_word_length: int = 4
 ) -> str:
     """
     Create unified dictionary from all books in folder.
@@ -566,7 +566,7 @@ def _merge_overlapping_entities(entities):
     nlp = load_spacy_model(config.nermodel)
     nlp.max_length = 200000
     
-    ner_category = ["ORG", "LOC", "GPE", "PERSON"]
+    ner_category = ["ORG", "LOC", "GPE", "PERSON", "EVENT", "FAC", "PRODUCT"]
     
     for book_path in book_files:
         book_name = Path(book_path).stem
