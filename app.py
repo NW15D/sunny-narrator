@@ -851,4 +851,44 @@ def main():
 
 
 if __name__ == '__main__':
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Sunny Narrator - AI book translator')
+    parser.add_argument('--build-series-dict', type=str, 
+                       help='Build unified dictionary from books folder')
+    parser.add_argument('--series-dict-output', type=str, default='series.dic',
+                       help='Output file for series dictionary')
+    parser.add_argument('--min-count-ner', type=int, default=5,
+                       help='Minimum occurrences for NER entities')
+    parser.add_argument('--min-count-word', type=int, default=10,
+                       help='Minimum occurrences for common words')
+    
+    args, unknown = parser.parse_known_args()
+    
+    # Handle series dictionary build
+    if args.build_series_dict:
+        from src.ner import create_series_vocab
+        
+        books_folder = args.build_series_dict
+        output_file = args.series_dict_output
+        
+        print(f"Building series dictionary from: {books_folder}")
+        print(f"Output: {output_file}")
+        print(f"min_count_ner: {args.min_count_ner}, min_count_word: {args.min_count_word}")
+        
+        try:
+            result = create_series_vocab(
+                books_folder, 
+                output_file,
+                min_count_ner=args.min_count_ner,
+                min_count_word=args.min_count_word
+            )
+            print(f"Done: {result}")
+        except Exception as e:
+            print(f"Error: {e}")
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
+        sys.exit(0)
+    
     main()
