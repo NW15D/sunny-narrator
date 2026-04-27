@@ -503,6 +503,139 @@ def create_series_vocab(
     
     print(f"Found {len(book_files)} books")
     
-    # TODO: Implement NER aggregation, translation, and JSON export
-    print("Function skeleton complete. Full implementation pending.")
+    # Aggregate terms from all books
+    all_entities = []  # [(text, label, book_name), ...]
+    all_words = Counter()  # word -> count
+    book_names = {}  # book_path -> book_name
+    
+    for book_path in book_files:
+        book_name = Path(book_path).stem
+        book_names[book_path] = book_name
+        
+        print(f"Processing: {book_name}")
+        text = extract_text_from_book(book_path)
+        
+        # Run NER to extract entities
+        extracted = make_vocab(
+            text,
+            min_count_ner=1,  # Lower threshold for aggregation
+            min_count_word=1,
+            min_word_length=min_word_length
+        )
+        
+        if extracted:
+            for line in extracted.strip().split('\n'):
+                line = line.strip()
+                if not line:
+                    continue
+                
+                # Parse: "Term (CATEGORY)" or just "term"
+                match = re.match(r'^(.+?)\s*\(([^)]+)\)$', line)
+                if match:
+                    term = match.group(1).strip()
+                    category = match.group(2).strip()
+                    all_entities.append((term, category, book_name))
+                else:
+                    all_words[line] += 1
+    
+    # Aggregate entity counts across books
+    entity_counts = Counter((term, cat) for term, cat, _ in all_entities)
+    
+    # Filter by min_count_ner (after aggregation across all books)
+    filtered_entities = [
+        (term, cat, count) 
+        for (term, cat), count in entity_counts.items() 
+        if count >= min_count_ner
+    ]
+    
+    # Filter words by min_count_word
+    filtered_words = [
+        (word, count) 
+        for word, count in all_words.items() 
+        if count >= min_count_word and len(word) >= min_word_length
+    ]
+    
+    print(f"Filtered entities: {len(filtered_entities)}")
+    print(f"Filtered words: {len(filtered_words)}")
+    
+    # If no terms, return early
+    if not filtered_entities and not filtered_words:
+        print("No terms found")
+        return output_file
+    
+    # Prepare terms for translation
+    terms_for_translation = []
+    
+    for term, category, count in filtered_entities:
+        terms_for_translation.append(term)
+    
+    for word, count in filtered_words[:100]:  # Limit to top 100 words
+        terms_for_translation.append(word)
+    
+    if not terms_for_translation:
+        print("No terms to translate")
+        return output_file
+    
+    print(f"Terms for translation: {len(terms_for_translation)}")
+    terms_text = '\n'.join(terms_for_translation)
+    
+    # Translate via LLM
+    from src import utils as ta
+    vocab_translated = ta.vocabulary(
+        config.source_lang,
+        config.target_lang,
+        terms_text,
+        config.country,
+        "Proofread"
+    )
+    
+    # Parse translations
+    translations = {}
+    for line in vocab_translated.strip().split('\n'):
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        if '=' in line:
+            parts = line.split('=', 1)
+            source = parts[0].strip()
+            target = parts[1].strip()
+            translations[source.lower()] = target
+    
+    # Build final vocabulary list
+    vocab_list = []
+    
+    # Track which book each entity came from
+    entity_book_map = {}
+    for term, cat, book_name in all_entities:
+        key = (term.lower(), cat)
+        if key not in entity_book_map:
+            entity_book_map[key] = book_name
+    
+    for term, category, count in filtered_entities:
+        term_lower = term.lower()
+        vocab_list.append({
+            "source": term,
+            "target": translations.get(term_lower, ""),
+            "category": category,
+            "gender": "",
+            "notes": f"count: {count}",
+            "book_origin": entity_book_map.get((term_lower, category), "")
+        })
+    
+    for word, count in filtered_words[:100]:
+        word_lower = word.lower()
+        vocab_list.append({
+            "source": word,
+            "target": translations.get(word_lower, ""),
+            "category": "TERM",
+            "gender": "",
+            "notes": f"frequent word (count: {count})",
+            "book_origin": ""
+        })
+    
+    # Save to JSON
+    with open(output_file, 'w', encoding='utf-8') as f:
+        json.dump(vocab_list, f, ensure_ascii=False, indent=2)
+    
+    print(f"Dictionary saved to: {output_file}")
     return output_file
