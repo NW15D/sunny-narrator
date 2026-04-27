@@ -490,6 +490,14 @@ def create_series_vocab(
     from pathlib import Path
     from collections import Counter
     
+    # Default stop words
+    default_stop_words = set([
+        "the", "and", "p", "emphasis", "section", "first", "second", "one", "two",
+        "chapter", "part", "book", "volume", "title", "author", "name", "said",
+        "like", "just", "know", "think", "see", "look", "come", "take", "give",
+        "make", "find", "tell", "ask", "work", "seem", "feel", "try", "leave", "call"
+    ])
+    
     # Resolve output_file relative to books_folder if it's just a filename
     if not os.path.dirname(output_file):
         # No directory in output_file, save to books_folder
@@ -507,10 +515,16 @@ def create_series_vocab(
     
     print(f"Found {len(book_files)} books")
     
-    # Aggregate terms from all books
-    all_entities = []  # [(text, label, book_name), ...]
+    # Aggregate terms from all books - use RAW spaCy without make_vocab merging
+    all_raw_entities = []  # [(text, label, book_name), ...] - raw counts
     all_words = Counter()  # word -> count
     book_names = {}  # book_path -> book_name
+    
+    # Load spaCy model once for all books
+    nlp = load_spacy_model(config.nermodel)
+    nlp.max_length = 200000
+    
+    ner_category = ["ORG", "LOC", "GPE", "PERSON"]
     
     for book_path in book_files:
         book_name = Path(book_path).stem
@@ -519,38 +533,43 @@ def create_series_vocab(
         print(f"Processing: {book_name}")
         text = extract_text_from_book(book_path)
         
-        # Run NER to extract entities
-        extracted = make_vocab(
-            text,
-            min_count_ner=1,  # Lower threshold for aggregation
-            min_count_word=1,
-            min_word_length=min_word_length
-        )
+        # Split into chunks for processing
+        chunk_size = 100000
+        text_chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
         
-        if extracted:
-            for line in extracted.strip().split('\n'):
-                line = line.strip()
-                if not line:
-                    continue
-                
-                # Parse: "Term (CATEGORY)" or just "term"
-                match = re.match(r'^(.+?)\s*\(([^)]+)\)$', line)
-                if match:
-                    term = match.group(1).strip()
-                    category = match.group(2).strip()
-                    all_entities.append((term, category, book_name))
-                else:
-                    all_words[line] += 1
+        for chunk_idx, chunk in enumerate(text_chunks):
+            # Direct NER without make_vocab's merging
+            doc = nlp(chunk, disable=["parser", "lemmatizer", "attribute_ruler"])
+            
+            # Collect raw entities with their labels
+            for ent in doc.ents:
+                if ent.label_ in ner_category and ent.vector_norm != 0:
+                    all_raw_entities.append((ent.text.strip(), ent.label_, book_name))
+            
+            # Collect words (for TERM category)
+            for token in doc:
+                if token.is_alpha and token.text not in stop_words:
+                    all_words[token.text] += 1
+            
+            del doc
+        
+        print(f"  Raw entities collected: {len([e for e in all_raw_entities if e[2] == book_name])}")
     
-    # Aggregate entity counts across books
-    entity_counts = Counter((term, cat) for term, cat, _ in all_entities)
+    print(f"\nTotal raw entities: {len(all_raw_entities)}")
+    print(f"Total unique words: {len(all_words)}")
     
-    # Filter by min_count_ner (after aggregation across all books)
+    # Aggregate entity counts across ALL books (sum occurrences)
+    entity_counts = Counter((term, cat) for term, cat, _ in all_raw_entities)
+    
+    # Filter by min_count_ner AFTER aggregation
     filtered_entities = [
         (term, cat, count) 
         for (term, cat), count in entity_counts.items() 
         if count >= min_count_ner
     ]
+    
+    # Sort by count descending
+    filtered_entities = sorted(filtered_entities, key=lambda x: -x[2])
     
     # Filter words by min_count_word
     filtered_words = [
@@ -558,6 +577,9 @@ def create_series_vocab(
         for word, count in all_words.items() 
         if count >= min_count_word and len(word) >= min_word_length
     ]
+    
+    # Sort by count descending
+    filtered_words = sorted(filtered_words, key=lambda x: -x[2])
     
     print(f"Filtered entities: {len(filtered_entities)}")
     print(f"Filtered words: {len(filtered_words)}")
