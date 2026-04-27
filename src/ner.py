@@ -482,11 +482,52 @@ def create_series_vocab(
         min_count_ner: Minimum occurrences for NER entities
         min_count_word: Minimum occurrences for common words
         min_word_length: Minimum word length for common words
+        merge_entities: Whether to merge overlapping entities (default: True)
         
     Returns:
         Path to output file
     """
     import os
+    import gc
+
+
+def _merge_overlapping_entities(entities):
+    """
+    Merge overlapping entities - keep only longest form.
+    
+    For example: ["John", "John Smith", "Smith"] -> ["John Smith"]
+    
+    Args:
+        entities: List of (term, category, count) tuples
+        
+    Returns:
+        Merged list with substring entities removed
+    """
+    if not entities:
+        return entities
+    
+    # Sort by length descending (longest first)
+    sorted_entities = sorted(entities, key=lambda x: len(x[0]), reverse=True)
+    
+    merged = []
+    seen = set()  # Track normalized terms already kept
+    
+    for term, cat, count in sorted_entities:
+        term_lower = term.lower()
+        
+        # Skip if this term is a substring of an already-kept longer term
+        is_substring = False
+        for kept_term, kept_cat, _ in merged:
+            if kept_cat == cat and term_lower in kept_term.lower():
+                is_substring = True
+                break
+        
+        if not is_substring and term_lower not in seen:
+            merged.append((term, cat, count))
+            seen.add(term_lower)
+    
+    # Sort by count descending
+    return sorted(merged, key=lambda x: -x[2])
     from pathlib import Path
     from collections import Counter
     
@@ -554,6 +595,9 @@ def create_series_vocab(
             
             del doc
         
+        # Force garbage collection after each book
+        gc.collect()
+        
         print(f"  Raw entities collected: {len([e for e in all_raw_entities if e[2] == book_name])}")
     
     print(f"\nTotal raw entities: {len(all_raw_entities)}")
@@ -561,6 +605,9 @@ def create_series_vocab(
     
     # Aggregate entity counts across ALL books (sum occurrences)
     entity_counts = Counter((term, cat) for term, cat, _ in all_raw_entities)
+    
+    # Free memory - clear raw entities list
+    del all_raw_entities
     
     # Filter by min_count_ner AFTER aggregation
     filtered_entities = [
@@ -572,6 +619,10 @@ def create_series_vocab(
     # Sort by count descending
     filtered_entities = sorted(filtered_entities, key=lambda x: -x[2])
     
+    # Entity merging - remove substring entities (like make_vocab)
+    # Keep only longest form of each entity
+    filtered_entities = _merge_overlapping_entities(filtered_entities)
+    
     # Filter words by min_count_word
     filtered_words = [
         (word, count) 
@@ -582,7 +633,10 @@ def create_series_vocab(
     # Sort by count descending
     filtered_words = sorted(filtered_words, key=lambda x: -x[2])
     
-    print(f"Filtered entities: {len(filtered_entities)}")
+    # Free memory
+    del all_words
+    
+    print(f"Filtered entities (after merge): {len(filtered_entities)}")
     print(f"Filtered words: {len(filtered_words)}")
     
     # If no terms, return early
