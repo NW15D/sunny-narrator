@@ -75,6 +75,39 @@ Alice = Алиса, PERSON, she, Main character
 
 ---
 
+## 📖 Glossary-Driven Translation (Series of Books)
+
+Create a unified dictionary for a series of books to ensure consistent terminology across all volumes.
+
+### Build Series Dictionary
+
+```bash
+# Basic usage
+python app.py --build-series-dict books/ --series-dict-output series.dic
+
+# With custom thresholds
+python app.py --build-series-dict books/ --series-dict-output series.dic --min-count-ner 3 --min-count-word 5
+```
+
+**Parameters:**
+- `--build-series-dict` — Path to folder containing FB2/EPUB/TXT books
+- `--series-dict-output` — Output dictionary file (default: `series.dic`)
+- `--min-count-ner` — Minimum occurrences for NER entities (default: 5)
+- `--min-count-word` — Minimum occurrences for common words (default: 10)
+
+**Workflow:**
+1. Find all book files in folder
+2. Extract text from each book
+3. Run NER to find named entities (PERSON, ORG, LOC, GPE)
+4. Aggregate counts across all books
+5. Filter by threshold criteria
+6. Translate terms via LLM
+7. Save unified `.dic` file
+
+**Output:** JSON-format dictionary with `book_origin` field showing which book each term came from.
+
+---
+
 ## 💾 Resume after Crash
 
 Automatic progress saving after each chunk:
