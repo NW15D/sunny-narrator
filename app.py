@@ -858,9 +858,9 @@ if __name__ == '__main__':
                        help='Build unified dictionary from books folder')
     parser.add_argument('--series-dict-output', type=str, default='series.dic',
                        help='Output file for series dictionary')
-    parser.add_argument('--min-count-ner', type=int, default=5,
+    parser.add_argument('--min-count-ner', type=int, default=3,
                        help='Minimum occurrences for NER entities')
-    parser.add_argument('--min-count-word', type=int, default=10,
+    parser.add_argument('--min-count-word', type=int, default=8,
                        help='Minimum occurrences for common words')
     
     args, unknown = parser.parse_known_args()
