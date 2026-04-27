@@ -16,6 +16,8 @@ def load_spacy_model(model_name):
     Attempts to load a spaCy model. If not found, downloads it and tries again.
     """
     try:
+        # Try to use GPU
+        spacy.prefer_gpu()
         if config.debug:
             print(f"Loading spaCy model: {model_name}")
         return spacy.load(model_name)
