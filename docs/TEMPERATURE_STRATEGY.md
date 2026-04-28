@@ -4,6 +4,8 @@
 
 Sunny Narrator implements **stage-specific temperature control** for optimal translation quality across the 5-stage pipeline.
 
+> ⚠️ **Compatibility:** JSON mode (`JSON_MODE=true`) works with all temperature settings.
+
 ## 🌡️ Temperature by Stage
 
 | Stage | LLM | Default Temp | Purpose |

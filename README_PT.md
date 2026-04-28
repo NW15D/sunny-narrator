@@ -29,6 +29,7 @@ python app.py
 # Configurações de API
 API_KEY_TRANSLATE=your-key
 API_BASE_TRANSLATE=http://localhost:11434/v1
+JSON_MODE=true    # 🚀 Recomendado: JSON estruturado
 
 API_KEY_PROOFREAD=your-key
 API_BASE_PROOFREAD=http://localhost:11434/v1
@@ -114,6 +115,7 @@ docker-compose -f docker-compose.gpu.yml up -d
 | **Formato de Dicionário** | [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md) |
 | **Retomar após Falha** | [docs/RESUME.md](docs/RESUME.md) |
 | **Docker** | [docs/DOCKER_CPU_GUIDE.md](docs/DOCKER_CPU_GUIDE.md) |
+| **JSON Mode** | [docs/JSON_MODE_ANALYSIS.md](docs/JSON_MODE_ANALYSIS.md) —Modo JSON estruturado |
 
 ---
 

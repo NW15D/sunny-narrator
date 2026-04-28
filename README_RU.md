@@ -31,6 +31,7 @@ python app.py
 API_KEY_TRANSLATE=ваш-ключ
 API_BASE_TRANSLATE=http://localhost:11434/v1
 MODEL_TRANSLATE=google/gemma-2-27b-it
+JSON_MODE=true    # 🚀 Рекомендуется: структурированный JSON
 
 API_KEY_PROOFREAD=ваш-ключ
 API_BASE_PROOFREAD=http://localhost:11434/v1
@@ -121,7 +122,7 @@ docker-compose -f docker-compose.gpu.yml up -d
 | **Формат словаря** | [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md) |
 | **Resume после сбоя** | [docs/RESUME.md](docs/RESUME.md) |
 | **Docker (CPU/GPU)** | [docs/DOCKER_CPU_GUIDE.md](docs/DOCKER_CPU_GUIDE.md) |
-| **JSON Mode** | [docs/JSON_MODE_ANALYSIS.md](docs/JSON_MODE_ANALYSIS.md) |
+| **JSON Mode** | [docs/JSON_MODE_ANALYSIS.md](docs/JSON_MODE_ANALYSIS.md) — JSON mode для всех стадий перевода
 | **NER CPU Fallback** | [docs/NER_CPU_FALLBACK_ANALYSIS.md](docs/NER_CPU_FALLBACK_ANALYSIS.md) |
 | **Промпты** | [docs/PROMPTS_GUIDE.md](docs/PROMPTS_GUIDE.md) |
 
