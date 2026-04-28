@@ -493,6 +493,20 @@ class LLMService:
         log_user_prompt = user_prompt if not use_sys_not_promt else (f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt)
         
         response = client.chat.completions.create(**comp_kwargs)
+        
+        # Debug: log full response structure
+        if config.debug:
+            try:
+                logger.debug(f"LLM Raw Response [{role.value}]: choices={len(response.choices)}, model={response.model}")
+                if response.choices:
+                    msg = response.choices[0].message
+                    logger.debug(f"  message={msg}")
+                    logger.debug(f"  message.content={repr(msg.content) if msg else 'no message'}")
+                    if hasattr(msg, 'tool_calls') and msg.tool_calls:
+                        logger.debug(f"  tool_calls={msg.tool_calls}")
+            except Exception as e:
+                logger.debug(f"Error logging response: {e}")
+        
         result = response.choices[0].message.content
         
         # Extract token usage from response
