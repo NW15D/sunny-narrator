@@ -227,3 +227,56 @@ result = llm_service.complete(
 - **2026-03-29**: Добавлен режим sys_not_promt для Gemma 2/3
 - **2026-03-29**: Разделение промптов на Primary/Secondary LLM
 - **2026-03-29**: Добавлен Stage 5 (FINAL_EDIT) с промптом editor
+
+---
+
+## 📦 JSON Mode
+
+Set `JSON_MODE=true` in `.env` to use structured JSON for LLM input/output.
+
+### Benefits
+- More reliable parsing (no XML tag conflicts)
+- Structured input with vocabulary, synopsis, context
+- Consistent output format across all stages
+
+### Configuration
+```bash
+# .env
+JSON_MODE=true
+```
+
+### Input Format (all stages)
+```json
+{
+  "source": "текст для перевода",
+  "source_lang": "english",
+  "target_lang": "russian",
+  "country": "Russia",
+  "vocabulary": {"термин": "перевод"},
+  "synopsis": "краткое содержание"
+}
+```
+
+### Output Format (by stage)
+
+**INITIAL, IMPROVE, FINAL_EDIT:**
+```json
+{"translation": "переведенный текст"}
+```
+
+**REFLECTION:**
+```json
+{"suggestions": ["suggestion 1", "suggestion 2"]}
+```
+
+### Prompts
+JSON prompts are defined in `prompts.json` with `_json` suffix:
+- `initial_translation_json`
+- `reflection_json`
+- `improve_json`
+- `editor_json`
+
+### Fallback
+If JSON parsing fails, the system falls back to XML tag extraction.
+
+- **2026-04-28**: Added JSON Mode for structured LLM input/output
