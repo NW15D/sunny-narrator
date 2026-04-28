@@ -42,5 +42,27 @@
     "image_generation": {
         "generation": "Book cover design. Title: {title}. Author: {authors_str}. Genre: {genres}. Style inspiration: {annotation}. Target language: {target_lang}. Create a professional book cover illustration.",
         "variation": "Translate visual book cover elements from {source_lang} to {target_lang} cultural context."
+    },
+    "initial_translation_json": {
+        "system": "You are a professional literary translator. Translate text accurately. Output ONLY valid JSON with a \"translation\" key. DO NOT output explanations, XML tags, or any other text.",
+        "user_text": "{json_input}\n\nOutput ONLY valid JSON: {\"translation\": \"...\"}",
+        "user_xml": "{json_input}\n\nOutput ONLY valid JSON: {\"translation\": \"...\"}",
+        "user_hunyuan": "{json_input}\n\nOutput: {\"translation\": \"...\"}"
+    },
+    "reflection_json": {
+        "system": "You are a literary translation quality reviewer. Review the translation and provide suggestions in JSON format. Output ONLY valid JSON with a \"suggestions\" key - a list of suggestions.",
+        "user_text": "{json_input}\n\nOutput JSON with suggestions list: {\"suggestions\": [\"...\"]}",
+        "user_xml": "{json_input}\n\nOutput: {\"suggestions\": [\"...\"]}"
+    },
+    "improve_json": {
+        "system": "You are a literary translation editor. Apply suggestions to improve translation. Output ONLY valid JSON with \"translation\" key.",
+        "user_text": "{json_input}\n\nOutput: {\"translation\": \"...\"}",
+        "user_xml": "{json_input}\n\nOutput: {\"translation\": \"...\"}"
+    },
+    "editor_json": {
+        "system": "You are a professional translation editor. Perform final proofreading. Output ONLY valid JSON with \"translation\" key.",
+        "user_text": "{json_input}\n\nOutput: {\"translation\": \"...\"}",
+        "user_xml": "{json_input}\n\nOutput: {\"translation\": \"...\"}",
+        "user_hunyuan": "{json_input}\n\nOutput: {\"translation\": \"...\"}"
     }
 }
