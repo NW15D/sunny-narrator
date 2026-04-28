@@ -539,7 +539,7 @@ def _save_vocabulary_formatted(translated_text: str, dict_file: str, original_te
     Format: source = target, category, gender, notes
     
     Args:
-        translated_text: Translated terms from LLM (format: "source = target")
+        translated_text: Translated terms from LLM (JSON or CSV format)
         dict_file: Output file path
         original_terms: Original NER output with categories
     """
@@ -551,43 +551,66 @@ def _save_vocabulary_formatted(translated_text: str, dict_file: str, original_te
             continue
         
         # Extract term and category from NER output
-        # Format: "Term (CATEGORY)" or "Term"
-        match = re.match(r'^(.+?)\s*\(([^)]+)\)$', line)
+        # Format: "Term [CATEGORY]" or "Term"
+        match = re.match(r'^(.+?)\s*\[([^\]]+)\]$', line)
         if match:
             term = match.group(1).strip().lower()
             category = match.group(2).strip()
             original_categories[term] = category
         else:
-            # Common word without category - mark as TERM
-            original_categories[line.lower()] = 'TERM'
+            # Common word without category - mark as empty
+            original_categories[line.lower()] = ''
     
-    # Parse translated terms
+    # Try JSON parsing first (new format), fallback to CSV (old format)
     translations = {}
-    for line in translated_text.strip().split('\n'):
-        line = line.strip()
-        if not line or line.startswith('#'):
-            continue
-        
-        if '=' in line:
-            parts = line.split('=', 1)
-            source = parts[0].strip()
-            target = parts[1].strip()
-            translations[source.lower()] = (source, target)
+    categories_from_llm = {}
     
-    # Group by category
+    try:
+        import json
+        vocab_json = json.loads(translated_text)
+        terms = vocab_json.get('terms', [])
+        for term in terms:
+            source = term.get('source', '').strip()
+            target = term.get('target', '').strip()
+            category = term.get('category', '').strip()
+            if source and target:
+                translations[source.lower()] = (source, target)
+                if category:
+                    categories_from_llm[source.lower()] = category
+        print(f"Parsed {len(translations)} terms from JSON")
+    except (json.JSONDecodeError, AttributeError):
+        # Fallback to old CSV parsing
+        for line in translated_text.strip().split('\n'):
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            
+            if '=' in line:
+                parts = line.split('=', 1)
+                source = parts[0].strip()
+                target = parts[1].strip()
+                translations[source.lower()] = (source, target)
+    
+    # Group by category (prefer LLM category, fallback to NER)
     categories = {'PERSON': [], 'LOC': [], 'ORG': [], 'TERM': [], 'OTHER': []}
     
     for term_key, (source, target) in translations.items():
-        cat = original_categories.get(term_key, 'OTHER')
-        # Map NER categories to our format
-        if cat in ['PERSON', 'LOC', 'ORG']:
-            pass  # Keep as is
-        elif cat in ['GPE', 'GPE/LOC']:
-            cat = 'LOC'  # Map GPE to LOC
-        elif cat == 'TERM':
-            pass  # Keep as TERM
-        else:
-            cat = 'OTHER'
+        # First try LLM-provided category
+        cat = categories_from_llm.get(term_key, '')
+        
+        # Fallback to NER category if LLM didn't provide
+        if not cat:
+            cat = original_categories.get(term_key, '')
+            # Map NER categories to our format
+            if cat in ['PERSON', 'LOC', 'ORG']:
+                pass  # Keep as is
+            elif cat in ['GPE', 'GPE/LOC']:
+                cat = 'LOC'  # Map GPE to LOC
+            elif cat == 'TERM':
+                pass  # Keep as TERM
+            else:
+                cat = 'OTHER' if cat else 'TERM'  # Default to TERM if empty
+        
         categories[cat].append((source, target, cat))
     
     # Write dictionary in proper format with commas
