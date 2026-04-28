@@ -905,25 +905,39 @@ def create_series_vocab(
         "Proofread"
     )
     
-    # Parse translations (now includes category from LLM)
-    # Format: source = target, CATEGORY, ,  (or source = target, , ,  if no category)
+    # Parse translations from JSON response
+    # Format: {"terms": [{"source": "...", "target": "...", "category": "..."}, ...]}
     translations = {}
     categories = {}
-    for line in vocab_translated.strip().split('\n'):
-        line = line.strip()
-        if not line or line.startswith('#'):
-            continue
-        if '=' in line:
-            parts = line.split('=', 1)
-            source = parts[0].strip()
-            rest = parts[1].strip()
-            # Parse CSV: target, CATEGORY, , 
-            csv_parts = rest.split(',')
-            target = csv_parts[0].strip() if csv_parts else rest.strip()
-            # Category is 2nd field - use empty if not provided
-            category = csv_parts[1].strip() if len(csv_parts) > 1 and csv_parts[1].strip() else ''
-            translations[source.lower()] = target
-            categories[source.lower()] = category
+    
+    try:
+        import json
+        vocab_json = json.loads(vocab_translated)
+        terms = vocab_json.get('terms', [])
+        for term in terms:
+            source = term.get('source', '').strip()
+            target = term.get('target', '').strip()
+            category = term.get('category', '').strip()
+            if source and target:
+                translations[source.lower()] = target
+                categories[source.lower()] = category
+        print(f"Parsed {len(translations)} terms from JSON")
+    except (json.JSONDecodeError, AttributeError) as e:
+        # Fallback to old CSV parsing if JSON fails
+        print(f"JSON parse failed ({e}), falling back to CSV parsing")
+        for line in vocab_translated.strip().split('\n'):
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            if '=' in line:
+                parts = line.split('=', 1)
+                source = parts[0].strip()
+                rest = parts[1].strip()
+                csv_parts = rest.split(',')
+                target = csv_parts[0].strip() if csv_parts else rest.strip()
+                category = csv_parts[1].strip() if len(csv_parts) > 1 and csv_parts[1].strip() else ''
+                translations[source.lower()] = target
+                categories[source.lower()] = category
     
     # Build final vocabulary list in CSV format
     # Format: source = target, category, gender, notes
