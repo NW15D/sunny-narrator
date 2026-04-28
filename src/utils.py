@@ -1600,7 +1600,7 @@ def vocabulary(source_lang: str, target_lang: str, source_text: str,
         part1 = '\n'.join(lines[:mid])
         part2 = '\n'.join(lines[mid:])
         
-        # Translate first part
+        # Translate first part (with JSON mode)
         result1 = llm_service_compat.get_completion(
             role=role,
             prompt_category="vocabulary",
@@ -1609,10 +1609,11 @@ def vocabulary(source_lang: str, target_lang: str, source_text: str,
             target_lang=target_lang,
             country=country,
             source_text=part1,
-            max_tokens=max_tokens
+            max_tokens=max_tokens,
+            json_mode=True
         )
         
-        # Translate second part
+        # Translate second part (with JSON mode)
         result2 = llm_service_compat.get_completion(
             role=role,
             prompt_category="vocabulary",
@@ -1621,7 +1622,8 @@ def vocabulary(source_lang: str, target_lang: str, source_text: str,
             target_lang=target_lang,
             country=country,
             source_text=part2,
-            max_tokens=max_tokens
+            max_tokens=max_tokens,
+            json_mode=True
         )
         
         # Merge results with newline
@@ -1635,7 +1637,8 @@ def vocabulary(source_lang: str, target_lang: str, source_text: str,
             target_lang=target_lang,
             country=country,
             source_text=source_text,
-            max_tokens=max_tokens
+            max_tokens=max_tokens,
+            json_mode=True
         )
     
     if config.debug:
