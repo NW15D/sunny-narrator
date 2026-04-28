@@ -1,39 +1,39 @@
-# План рефакторинга фичи NER словаря
+# NER Dictionary Feature Refactoring Plan
 
-## Текущее состояние (проблемы)
+## Current State (Problems)
 
-### 1. Разрозненная логика
-- Создание словаря в `app.py` (main())
-- NER в `src/ner.py`
-- Перевод терминов в `src/utils.py::vocabulary()`
-- Использование в `TranslationEngine.load_vocab_for_chunk()`
-- Нет единого менеджера
+### 1. Disjointed Logic
+- Dictionary creation in `app.py` (main())
+- NER in `src/ner.py`
+- Term translation in `src/utils.py::vocabulary()`
+- Usage in `TranslationEngine.load_vocab_for_chunk()`
+- No unified manager
 
-### 2. Нет модель-специфичного форматирования
-- Все модели получают словарь в одном формате
-- Hunyuan поддерживает terminology intervention — не используется
-- Нет оптимизации под конкретные модели
+### 2. No Model-Specific Formatting
+- All models receive the dictionary in the same format
+- Hunyuan supports terminology intervention — not being used
+- No optimization for specific models
 
-### 3. Ограниченная структура данных
-- Только `source = target`
-- Нет поля для gender персонажей
-- Нет категорий (PERSON, ORG, LOC)
-- Нет notes для пользователя
-- Нет отслеживания книги в серии
+### 3. Limited Data Structure
+- Only `source = target`
+- No field for character gender
+- No categories (PERSON, ORG, LOC)
+- No user notes
+- No tracking of books in a series
 
-### 4. Проблемы с matching
-- Cosine similarity matching работает, но:
-  - Нет кеширования результатов
-  - Нет отслеживания где (в каких чанках) встречается термин
-  - Нет приоритизации часто используемых терминов
+### 4. Matching Issues
+- Cosine similarity matching works, but:
+  - No caching of results
+  - No tracking of where (in which chunks) a term appears
+  - No prioritization of frequently used terms
 
-### 5. Нет интеграции с синопсисом
-- Gender персонажей не передаётся в синопсис
-- Нет единого Character tracking между словарём и синопсисом
+### 5. No Synopsis Integration
+- Character gender is not passed to the synopsis
+- No unified character tracking between the dictionary and the synopsis
 
 ---
 
-## Целевая архитектура
+## Target Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -71,7 +71,7 @@
 
 ---
 
-## Новый формат .dic файла
+## New .dic File Format
 
 ```
 # Vocabulary for BookName
@@ -96,16 +96,16 @@ Eat Me = Съешь меня | ITEM | | Cake label
 
 ---
 
-## План реализации
+## Implementation Plan
 
-### Этап 1: Создать VocabularyManager ✅
+### Stage 1: Create VocabularyManager ✅
 
-**Файл:** `src/vocabulary_manager.py`
+**File:** `src/vocabulary_manager.py`
 
-**Классы:**
-- `VocabEntry` — запись словаря с полями: source, target, category, gender, notes, book_origin
-- `Character` — персонаж: name, gender, aliases, mentions
-- `VocabularyManager` — основной менеджер
+**Classes:**
+- `VocabEntry` — dictionary entry with fields: source, target, category, gender, notes, book_origin
+- `Character` — character: name, gender, aliases, mentions
+- `VocabularyManager` — main manager
 
 **API:**
 ```python
@@ -129,7 +129,7 @@ manager.update_character_mentions("Alice", chunk_idx=5)
 series_vocab = manager.get_series_vocab(["book1.dic", "book2.dic"])
 ```
 
-### Этап 2: Модель-специфичное форматирование
+### Stage 2: Model-Specific Formatting
 
 **Hunyuan MT:**
 ```python
@@ -155,9 +155,9 @@ def _format_standard(self, entries):
                      for e in entries)
 ```
 
-### Этап 3: Интеграция в TranslationEngine
+### Stage 3: Integration into TranslationEngine
 
-**В `app.py`:**
+**In `app.py`:**
 
 ```python
 class TranslationEngine:
@@ -197,9 +197,9 @@ class TranslationEngine:
             self._update_character_tracking(final_content, s_idx, c_idx)
 ```
 
-### Этап 4: Интеграция с SynopsisManager
+### Stage 4: Integration with SynopsisManager
 
-**Character tracking в синопсис:**
+**Character tracking in synopsis:**
 
 ```python
 class SynopsisManager:
@@ -220,9 +220,9 @@ class SynopsisManager:
         return synopsis
 ```
 
-### Этап 5: Series Support
+### Stage 5: Series Support
 
-**Загрузка словарей предыдущих книг:**
+**Loading dictionaries of previous books:**
 
 ```python
 # In main():
@@ -239,7 +239,7 @@ if config.series_mode:
 
 ---
 
-## Улучшения (предложения)
+## Improvements (Proposals)
 
 ### 1. Smart Term Matching
 
@@ -352,24 +352,24 @@ def validate_dictionary(self):
 
 ## Timeline
 
-| Этап | Время | Статус |
-|------|-------|--------|
-| 1. VocabularyManager | 3ч | ✅ Готово |
-| 2. Model-specific formatting | 1ч | ✅ Готово |
-| 3. Integration в app.py | 2ч | 🔄 Следующий |
-| 4. SynopsisManager integration | 1ч | ⏳ |
-| 5. Series support | 2ч | ⏳ |
-| 6. Тестирование | 2ч | ⏳ |
+| Stage | Time | Status |
+|-------|------|--------|
+| 1. VocabularyManager | 3h | ✅ Done |
+| 2. Model-specific formatting | 1h | ✅ Done |
+| 3. Integration in app.py | 2h | 🔄 Next |
+| 4. SynopsisManager integration | 1h | ⏳ |
+| 5. Series support | 1h | ⏳ |
+| 6. Testing | 2h | ⏳ |
 
-**Итого:** ~11 часов
+**Total:** ~11 hours
 
 ---
 
-## Миграция
+## Migration
 
-### Обратная совместимость
+### Backward Compatibility
 
-Старые .dic файлы в формате `source = target` продолжат работать:
+Old `.dic` files in `source = target` format will continue to work:
 
 ```python
 def _parse_line(self, line):
@@ -381,9 +381,9 @@ def _parse_line(self, line):
         return self._parse_legacy(line)
 ```
 
-### Флаг для включения
+### Enablement Flag
 
 ```python
-config.use_vocabulary_manager = True  # новое поведение
+config.use_vocabulary_manager = True  # new behavior
 config.use_vocabulary_manager = False  # legacy
 ```
