@@ -402,7 +402,8 @@ class LLMService:
         retry_count: int = 0,  # NEW: retry counter for empty responses
         track_tokens: bool = True,  # NEW: extract token usage from response
         allow_empty: bool = False,  # NEW: if True, don't retry on empty response (for synopsis)
-        temperature: float = None  # NEW: override temperature for smart retry
+        temperature: float = None,  # NEW: override temperature for smart retry
+        force_json_mode: bool = False  # NEW: force JSON mode ignoring config disable
     ) -> tuple:
         """
         Execute LLM completion with role-appropriate client.
@@ -460,9 +461,7 @@ class LLMService:
         else:
             disable_json = config.disable_json_mode_proofread
         
-        # Force JSON mode ignores disable flags (used for vocabulary)
-        force_json_mode = kwargs.pop('force_json_mode', False)
-        
+        # force_json_mode passed as parameter (not from kwargs)
         if disable_json and json_mode and not force_json_mode:
             json_mode = False
             if config.debug:
@@ -1281,6 +1280,7 @@ class LLMServiceCompat:
         llm_role = LLMRole.PRIMARY if role == "Translate" else LLMRole.SECONDARY
         
         # Get completion (discard tokens for compatibility)
+        # Pass force_json_mode to override config disable_json flags
         text, _ = self._new_service.complete(
             role=llm_role,
             system_prompt="",  # Prompts are self-contained
@@ -1288,7 +1288,8 @@ class LLMServiceCompat:
             max_tokens=max_tokens or MAX_TOKENS_PER_CHUNK,
             json_mode=json_mode,
             stage=stage,  # Pass stage for temperature selection
-            track_tokens=False
+            track_tokens=False,
+            force_json_mode=kwargs.get('force_json_mode', False)
         )
         return text
 
