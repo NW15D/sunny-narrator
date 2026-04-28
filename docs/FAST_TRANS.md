@@ -1,29 +1,29 @@
-# FAST_TRANS Mode — Быстрый перевод
+# FAST_TRANS Mode — Fast Translation
 
-**Версия:** 1.11  
-**Дата:** 2026-03-30
-
----
-
-> ⚠️ **Совместимость:** JSON mode (`JSON_MODE=true`) работает с FAST_TRANS режимом.
+**Version:** 1.11  
+**Date:** 2026-03-30
 
 ---
 
-## 📋 Обзор
+> ⚠️ **Compatibility:** JSON mode (`JSON_MODE=true`) works with FAST_TRANS mode.
 
-`FAST_TRANS=true` пропускает стадии контроля качества для ускорения перевода.
+---
 
-**Конфигурация:**
+## 📋 Overview
+
+`FAST_TRANS=true` skips quality control stages to accelerate translation.
+
+**Configuration:**
 ```bash
-FAST_TRANS=true    # Быстрый режим (2 стадии)
-FAST_TRANS=false   # Стандартный режим (5 стадий)
+FAST_TRANS=true    # Fast mode (2 stages)
+FAST_TRANS=false   # Standard mode (5 stages)
 ```
 
 ---
 
-## ⚡ Сравнение режимов
+## ⚡ Mode Comparison
 
-### Standard (5 стадий)
+### Standard (5 stages)
 
 ```
 Stage 1: INITIAL (Primary LLM)       → Translation
@@ -33,14 +33,14 @@ Stage 4: FINAL_EDIT (Secondary LLM)  → Proofreading
 Stage 5: SYNOPSIS (Secondary LLM)    → Summary
 ```
 
-**Характеристики:**
-- **LLM вызовов:** 5 (1 Primary + 4 Secondary)
-- **Скорость:** 1.0x (базовая)
-- **Качество:** Высокое
+**Characteristics:**
+- **LLM calls:** 5 (1 Primary + 4 Secondary)
+- **Speed:** 1.0x (baseline)
+- **Quality:** High
 
 ---
 
-### FAST_TRANS (2 стадии)
+### FAST_TRANS (2 stages)
 
 ```
 Stage 1: INITIAL (Primary LLM)       → Translation
@@ -48,133 +48,133 @@ Stage 5: SYNOPSIS (Secondary LLM)    → Summary
 (Stages 2-4 skipped)
 ```
 
-**Характеристики:**
-- **LLM вызовов:** 2 (1 Primary + 1 Secondary)
-- **Скорость:** ~2.5x быстрее
-- **Качество:** Среднее
+**Characteristics:**
+- **LLM calls:** 2 (1 Primary + 1 Secondary)
+- **Speed:** ~2.5x faster
+- **Quality:** Medium
 
 ---
 
 ## 📊 Use Cases
 
-### ✅ Использовать FAST_TRANS=true
+### ✅ USE FAST_TRANS=true
 
-| Сценарий | Причина |
+| Scenario | Reason |
 |----------|---------|
-| **Черновой перевод** | Достаточно для review |
-| **Технические документы** | Меньше требований к стилю |
-| **Внутренние материалы** | Не для публикации |
-| **Быстрая проверка** | Оценить качество перевода |
-| **Большие объёмы** | Когда скорость важнее качества |
+| **Draft translation** | Sufficient for review |
+| **Technical documents** | Fewer stylistic requirements |
+| **Internal materials** | Not for publication |
+| **Quick check** | To assess translation quality |
+| **Large volumes** | When speed is more important than quality |
 
-### ❌ НЕ использовать FAST_TRANS=true
+### ❌ DO NOT USE FAST_TRANS=true
 
-| Сценарий | Причина |
+| Scenario | Reason |
 |----------|---------|
-| **Финальная публикация** | Нужно высокое качество |
-| **Художественная литература** | Важны нюансы стиля |
-| **Детские книги** | Требуется точность |
-| **Поэзия** | Критичен ритм и рифма |
-| **Юридические документы** | Важна точность формулировок |
+| **Final publication** | Requires high quality |
+| **Literary works** | Nuances of style are important |
+| **Children's books** | Precision is required |
+| **Poetry** | Rhythm and rhyme are critical |
+| **Legal documents** | Accuracy of phrasing is essential |
 
 ---
 
-## 📈 Производительность
+## 📈 Performance
 
-### Время перевода (1000 чанков):
+### Translation time (1000 chunks):
 
-| Режим | Время | LLM вызовов |
+| Mode | Time | LLM calls |
 |-------|-------|-------------|
-| **Standard** | ~100 мин | 5000 |
-| **FAST_TRANS** | ~40 мин | 2000 |
+| **Standard** | ~100 min | 5000 |
+| **FAST_TRANS** | ~40 min | 2000 |
 
-**Экономия:** ~60% времени
+**Savings:** ~60% time
 
 ---
 
-### Качество перевода:
+### Translation Quality:
 
-| Метрика | Standard | FAST_TRANS |
+| Metric | Standard | FAST_TRANS |
 |---------|----------|------------|
-| **Грамматика** | ✅ Отлично | ✅ Хорошо |
-| **Стиль** | ✅ Отлично | ⚠️ Средне |
-| **Терминология** | ✅ Консистентно | ⚠️ Возможны вариации |
-| **Нюансы** | ✅ Сохранены | ⚠️ Частично |
+| **Grammar** | ✅ Excellent | ✅ Good |
+| **Style** | ✅ Excellent | ⚠️ Medium |
+| **Terminology** | ✅ Consistent | ⚠️ Variations possible |
+| **Nuances** | ✅ Preserved | ⚠️ Partially |
 
 ---
 
-## 🔧 Конфигурация
+## 🔧 Configuration
 
-### Базовая настройка
+### Basic setting
 
 ```bash
 FAST_TRANS=true
 ```
 
-### Комбинирование с другими параметрами
+### Combining with other parameters
 
 ```bash
-# Быстрый перевод + CPU
+# Fast translation + CPU
 FAST_TRANS=true
 GPU=false
 
-# Быстрый перевод + отладка
+# Fast translation + debug
 FAST_TRANS=true
 DEBUG=on
 ```
 
 ---
 
-## 📝 Примеры
+## 📝 Examples
 
-### Пример 1: Черновик книги
+### Example 1: Book draft
 
 ```bash
-# .env для чернового перевода
+# .env for draft translation
 FAST_TRANS=true
 DEBUG=off
 
 python app.py
-# ~40 мин вместо ~100 мин
+# ~40 min instead of ~100 min
 ```
 
-### Пример 2: Финальная версия
+### Example 2: Final version
 
 ```bash
-# .env для финальной версии
+# .env for final version
 FAST_TRANS=false
 DEBUG=off
 
 python app.py
-# ~100 мин, высокое качество
+# ~100 min, high quality
 ```
 
 ---
 
-## ⚠️ Ограничения
+## ⚠️ Limitations
 
-### Что теряется в FAST_TRANS режиме:
+### What is lost in FAST_TRANS mode:
 
-1. **REFLECTION (Stage 2)** — Нет анализа качества
-2. **IMPROVE (Stage 3)** — Нет применения suggestions
-3. **FINAL_EDIT (Stage 4)** — Нет финальной вычитки
+1. **REFLECTION (Stage 2)** — No quality analysis
+2. **IMPROVE (Stage 3)** — No application of suggestions
+3. **FINAL_EDIT (Stage 4)** — No final proofreading
 
-### Что сохраняется:
+### What is preserved:
 
-1. **INITIAL (Stage 1)** — Базовый перевод
-2. **SYNOPSIS (Stage 5)** — Контекст для следующих чанков
-3. **Vocabulary** — Словарь терминов
-4. **XML structure** — Сохранение тэгов
-
----
-
-## 📚 Связанная документация
-
-- [TRANSLATION_STAGES.md](TRANSLATION_STAGES.md) — 5-стадийный пайплайн
-- [TEMPERATURE_STRATEGY.md](TEMPERATURE_STRATEGY.md) — Температуры
-- [CONFIGURATION.md](CONFIGURATION.md) — Все параметры
+1. **INITIAL (Stage 1)** — Base translation
+2. **SYNOPSIS (Stage 5)** — Context for subsequent chunks
+3. **Vocabulary** — Terminology dictionary
+4. **XML structure** — Preservation of tags
 
 ---
 
-**Версия:** 1.11  
-**Обновлено:** 2026-03-30
+## 📚 Related documentation
+
+- [TRANSLATION_STAGES.md](TRANSLATION_STAGES.md) — 5-stage pipeline
+- [TEMPERATURE_STRATEGY.md](TEMPERATURE_STRATEGY.md) — Temperatures
+- [CONFIGURATION.md](CONFIGURATION.md) — All parameters
+
+---
+
+**Version:** 1.11  
+**Updated:** 2026-03-30
