@@ -273,7 +273,7 @@ docker-compose -f docker-compose.cpu.yml up -d
 ## 📝 Changelog
 
 - **2026-03-30:** Initial CPU-only Dockerfile
-- **v1.11:** Добавлен Dockerfile.cpu, docker-compose.cpu.yml
+- **v1.16:** Добавлен Dockerfile.cpu, docker-compose.cpu.yml
 - **v1.0:** Initial GPU Dockerfile
 
 ---
@@ -288,5 +288,5 @@ docker-compose -f docker-compose.cpu.yml up -d
 ---
 
 **Author:** Sunny Narrator Team  
-**Version:** 1.11  
+**Version:** 1.16  
 **Лицензия:** Open Source

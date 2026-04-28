@@ -1,6 +1,6 @@
 # Configuration Guide — Complete Parameter Reference
 
-**Version:** 1.11  
+**Version:** 1.16  
 **Date:** 2026-03-30
 
 ---
@@ -229,5 +229,5 @@ python3 -c "from src.config import Config; c = Config(); print(f'NER: {c.ner_opt
 
 ---
 
-**Version:** 1.11  
+**Version:** 1.16  
 **Updated:** 2026-03-30
