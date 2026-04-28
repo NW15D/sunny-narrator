@@ -1,238 +1,209 @@
-# JSON Mode Analysis — Валидация использования
+# JSON Mode — Реализация и конфигурация
 
-**Дата:** 2026-03-30  
-**Статус:** ✅ Валидация завершена  
-**Вывод:** JSON mode используется **ТОЛЬКО** для `translate_metadata()`, не для основного перевода
-
----
-
-## 📊 Результаты валидации
-
-### Где используется JSON mode:
-
-| Функция | JSON mode | Зачем | Критичность |
-|---------|-----------|-------|-------------|
-| **`translate_metadata()`** | ✅ `True` | Получить JSON ответ для метаданных книги | ⚠️ **Используется** |
-| `initial_translation()` | ❌ `False` (default) | Перевод текста | ✅ Не нужен |
-| `reflection()` | ❌ `False` (default) | Анализ качества | ✅ Не нужен |
-| `improve_translation()` | ❌ `False` (default) | Редактирование | ✅ Не нужен |
-| `final_edit()` | ❌ `False` (default) | Вычитка | ✅ Не нужен |
-| `generate_synopsis()` | ❌ `False` (default) | Синопсис | ✅ Не нужен |
-| `vocabulary()` | ❌ `False` (default) | Перевод терминов | ✅ Не нужен |
+**Дата:** 2026-04-28  
+**Статус:** ✅ Реализовано  
+**Версия:** ccd5ee0
 
 ---
 
-## 🔍 Детальный анализ
-
-### 1. `translate_metadata()` — ЕДИНСТВЕННОЕ использование
-
-**Файл:** `src/utils.py`, строка 1406
-
-```python
-def translate_metadata(metadata: dict, source_lang: str, target_lang: str,
-                       country: str) -> dict:
-    """Translate metadata dictionary using LLM in JSON mode."""
-    
-    response = llm_service_compat.get_completion(
-        role="Proofread",
-        prompt_category="metadata_translation",
-        prompt_key=prompt_key,
-        json_mode=True,  # ← ЕДИНСТВЕННОЕ использование
-        source_lang=source_lang,
-        target_lang=target_lang,
-        country=country,
-        metadata_json=json.dumps(metadata, ensure_ascii=False)
-    )
-    
-    # Extract JSON from response
-    match = re.search(r'(\{.*\})', response, re.DOTALL)
-    clean_json = match.group(1) if match else response.strip()
-    
-    return json.loads(clean_json)
-```
-
-**Зачем нужен JSON mode:**
-- LLM должен вернуть **валидный JSON** с переведёнными метаданными
-- Пример входа: `{"book-title": "Alice", "author": "Lewis Carroll"}`
-- Пример выхода: `{"book-title": "Алиса", "author": "Льюис Кэрролл"}`
-
-**Промпт:**
-```
-<metadata>
-{"book-title": "Alice", "author": "Lewis Carroll"}
-</metadata>
-
-Translate all values to russian. Localize author names appropriately. 
-Preserve JSON structure. Output only valid JSON.
-```
-
-**Критичность:**
-- ⚠️ **Средняя** — используется только для перевода метаданных (1 раз за книгу)
-- ❌ **Не критично** для основного перевода
-- ✅ Можно заменить на парсинг plain text если JSON mode не работает
-
----
-
-### 2. Основной перевод — JSON mode НЕ используется
-
-**Файл:** `src/utils.py`, строки 588-640
-
-```python
-text, tokens_used = llm_service.complete(
-    role=LLMRole.PRIMARY,
-    system_prompt=system_prompt,
-    user_prompt=user_prompt,
-    max_tokens=MAX_TOKENS_PER_CHUNK,
-    # json_mode НЕ передаётся → по умолчанию False
-)
-```
-
-**Формат ответа:**
-- ❌ **НЕ JSON**
-- ✅ **Plain text** в wrapper-тэгах: `<ttext>...</ttext>`
-
-**Промпт:**
-```
-Translate the text inside <source> to russian.
-
-CRITICAL REQUIREMENTS:
-1. PRESERVE ALL XML TAGS EXACTLY
-2. Apply vocabulary terms where applicable
-
-Output ONLY the translated text wrapped in <ttext>...</ttext>
-```
-
-**Извлечение:**
-```python
-# remove_tags() извлекает из wrapper-тэгов
-def remove_tags(text: str) -> str:
-    # Try to extract from <ttext> wrapper
-    ttext_match = re.search(r'<ttext[^>]*>([\s\S]*?)</ttext>', text)
-    if ttext_match:
-        return ttext_match.group(1).strip()
-    
-    # Fallback: return full text
-    return text.strip()
-```
-
----
-
-## 🎯 Конфигурация JSON mode
+## 📋 Конфигурация
 
 ### Переменные окружения:
 
 ```bash
 # .env
-DISABLE_JSON_MODE_TRANSLATE=true   # По умолчанию: отключен
-DISABLE_JSON_MODE_PROOFREAD=true   # По умолчанию: отключен
+
+# Включить JSON mode для всех этапов перевода (рекомендуется для Qwen, GPT, Hunyuan)
+JSON_MODE=true
+
+# Legacy ( игнорируется когда JSON_MODE=true )
+DISABLE_JSON_MODE_TRANSLATE=false   # игнорируется при JSON_MODE=true
+DISABLE_JSON_MODE_PROOFREAD=false   # игнорируется при JSON_MODE=true
 ```
 
-### Логика в коде:
+### Логика:
 
-**Файл:** `src/utils.py`, строки 449-454
+| JSON_MODE | Результат |
+|-----------|-----------|
+| `true` | JSON включён для всех этапов (INITIAL, REFLECTION, IMPROVE, FINAL_EDIT) |
+| `false` или не задан | Используется традиционный формат с `<ttext>` тэгами |
+
+---
+
+## 🔄 Этапы перевода в JSON mode
+
+### 1. INITIAL (первичный перевод)
+
+**Input (JSON):**
+```json
+{
+  "source": "Original text",
+  "source_lang": "en",
+  "target_lang": "ru",
+  "country": "RU",
+  "vocabulary": {"key": "value"},
+  "synopsis": "Book synopsis..."
+}
+```
+
+**Output (JSON):**
+```json
+{
+  "translation": "Переведённый текст"
+}
+```
+
+---
+
+### 2. REFLECTION (анализ качества)
+
+**Input (JSON):**
+```json
+{
+  "source": "Original text",
+  "translation": "Переведённый текст",
+  "source_lang": "en",
+  "target_lang": "ru",
+  "country": "RU",
+  "vocabulary": {}
+}
+```
+
+**Output (JSON):**
+```json
+{
+  "suggestions": [
+    "Replace 'X' with 'Y' (reason)",
+    "Fix grammar: ..."
+  ]
+}
+```
+
+---
+
+### 3. IMPROVE (применение правок)
+
+**Input (JSON):**
+```json
+{
+  "translation": "Переведённый текст",
+  "suggestions": ["suggestion 1", "suggestion 2"],
+  "target_lang": "ru",
+  "country": "RU",
+  "vocabulary": {}
+}
+```
+
+**Output (JSON):**
+```json
+{
+  "translation": "Улучшенный перевод"
+}
+```
+
+---
+
+### 4. FINAL_EDIT (вычитка)
+
+**Input (JSON):**
+```json
+{
+  "translation": "Переведённый текст",
+  "target_lang": "ru",
+  "country": "RU"
+}
+```
+
+**Output (JSON):**
+```json
+{
+  "translation": "Финальный перевод"
+}
+```
+
+---
+
+## 📁 Файлы реализации
+
+### Промпты (src/prompts.json):
+
+```json
+{
+  "initial_translation_json": {
+    "system": "You are a professional literary translator...",
+    "user_text": "{json_input}\n\nOutput ONLY valid JSON: {{\"translation\": \"...\"}}"
+  },
+  "reflection_json": {...},
+  "improve_json": {...},
+  "editor_json": {...}
+}
+```
+
+### Конфиг (src/config.py):
 
 ```python
-if role == LLMRole.PRIMARY:
-    disable_json = config.disable_json_mode_translate
+# JSON mode control
+self.json_mode = os.getenv('JSON_MODE', 'false').lower() in ['true', '1', 't', 'on', 'yes']
+
+# При JSON_MODE=true игнорируем legacy флаги
+if self.json_mode:
+    self.disable_json_mode_translate = False
+    self.disable_json_mode_proofread = False
 else:
-    disable_json = config.disable_json_mode_proofread
-
-if disable_json and json_mode:
-    json_mode = False  # Принудительное отключение
+    self.disable_json_mode_translate = os.getenv('DISABLE_JSON_MODE_TRANSLATE', 'true')...
+    self.disable_json_mode_proofread = os.getenv('DISABLE_JSON_MODE_PROOFREAD', 'true')...
 ```
 
-**Что происходит:**
-1. Если `DISABLE_JSON_MODE_TRANSLATE=true` → JSON mode **отключен** для Primary LLM
-2. Если `DISABLE_JSON_MODE_PROOFREAD=true` → JSON mode **отключен** для Secondary LLM
-3. Даже если `json_mode=True` передан в функцию, он будет **переопределён** на `False`
-
----
-
-## 📈 Статистика использования
-
-| Компонент | Вызовов за книгу | JSON mode | Влияние |
-|-----------|------------------|-----------|---------|
-| **metadata_translation** | 1 | ✅ `True` | ⚠️ Только метаданные |
-| **initial_translation** | 100-1000 | ❌ `False` | ✅ Основной перевод |
-| **reflection** | 100-1000 | ❌ `False` | ✅ Анализ качества |
-| **improve_translation** | 100-1000 | ❌ `False` | ✅ Редактирование |
-| **final_edit** | 100-1000 | ❌ `False` | ✅ Вычитка |
-| **synopsis** | 100-1000 | ❌ `False` | ✅ Контекст |
-| **vocabulary** | 0-1 | ❌ `False` | ✅ Словарь |
-
-**Итого:**
-- JSON mode используется **1 раз** за книгу (метаданные)
-- **99.9%** переводов работают **БЕЗ JSON mode**
-
----
-
-## ⚠️ Проблемы с JSON mode
-
-### Известные проблемы локальных LLM:
-
-| Модель | JSON mode | Проблема |
-|--------|-----------|----------|
-| **Gemma 2/3** | ❌ Не работает | Возвращает пустой ответ |
-| **Mistral** | ❌ Не работает | Может возвращать пустой ответ |
-| **Llama 3.x** | ❌ Не работает | Локальные версии часто fail |
-| **Hunyuan** | ✅ Работает | Поддерживает корректно |
-| **Qwen** | ✅ Работает | Поддерживает корректно |
-| **OpenAI/GPT** | ✅ Работает | Поддерживает корректно |
-
-### Рекомендации из кода:
-
-**Файл:** `src/config.py`, строки 28-29
+### Парсинг (src/utils.py):
 
 ```python
-self.disable_json_mode_translate = os.getenv('DISABLE_JSON_MODE_TRANSLATE', 'true').lower() in ['true', '1', 't', 'on', 'yes']
-self.disable_json_mode_proofread = os.getenv('DISABLE_JSON_MODE_PROOFREAD', 'true').lower() in ['true', '1', 't', 'on', 'yes']
-```
+# JSON input preparation
+json_input = json.dumps({
+    "source": context.source_text,
+    "source_lang": context.source_lang,
+    "target_lang": context.target_lang,
+    "country": context.country,
+    "vocabulary": context.vocab_dict or {},
+    "synopsis": context.outline_text or ""
+}, ensure_ascii=False)
 
-**По умолчанию:** `true` (отключен) — **безопаснее для локальных LLM**
+# Use JSON prompts
+prompt_category = "initial_translation_json" if json_mode else "initial_translation"
+system_prompt = config.get_prompt(prompt_category, "system")
+user_prompt = config.get_prompt(prompt_category, "user_text", json_input=json_input)
+```
 
 ---
 
-## 🔧 Выводы и рекомендации
+## ⚠️ Поддержка LLM
 
-### ✅ Текущая конфигурация корректна:
+| Модель | JSON mode | Notes |
+|--------|-----------|-------|
+| **Qwen** | ✅ Работает | Рекомендуется |
+| **GPT-4** | ✅ Работает | |
+| **Hunyuan** | ✅ Работает | |
+| **Gemma 2/3** | ⚠️ Ограничено | Может возвращать пустой ответ |
+| **Llama 3.x** | ⚠️ Ограничено | Зависит от версии |
+
+---
+
+## 🧪 Тестирование
 
 ```bash
-# .env (по умолчанию)
-DISABLE_JSON_MODE_TRANSLATE=true   # ✅ Отключен для локальных LLM
-DISABLE_JSON_MODE_PROOFREAD=true   # ✅ Отключен для локальных LLM
+# Запуск тестов
+cd /home/neo/prj/sunny-narrator
+pytest tests/test_json_mode.py -v
 ```
-
-### ⚠️ JSON mode нужен ТОЛЬКО для:
-
-```python
-translate_metadata()  # 1 раз за книгу
-```
-
-### 📋 Рекомендации:
-
-1. **Оставить по умолчанию `DISABLE_JSON_MODE_* = true`**
-   - Безопаснее для локальных LLM
-   - Не влияет на основной перевод
-   - Влияет только на метаданные (1 раз)
-
-2. **Если JSON mode нужен для metadata:**
-   - Использовать API модели (Hunyuan, Qwen, GPT)
-   - Или установить `DISABLE_JSON_MODE_PROOFREAD=false`
-
-3. **Если JSON mode не работает:**
-   - `translate_metadata()` вернёт оригинальные метаданные (fallback)
-   - Основной перевод **не пострадает**
 
 ---
 
 ## 📝 Changelog
 
-- **2026-03-30:** Initial analysis — JSON mode используется только для metadata
-- **v1.0:** Валидация завершена
+- **2026-04-28:** Добавлен JSON mode для основного перевода (INITIAL, REFLECTION, IMPROVE, FINAL_EDIT)
+- **2026-03-30:** Начальная валидация — JSON mode использовался только для metadata
 
 ---
 
 **См. также:**
-- [README.md#json-mode-control](../README.md#-json-mode-control)
-- [src/utils.py#translate_metadata](../src/utils.py#L1398)
-- [src/config.py#disable_json_mode](../src/config.py#L28)
+- [specs/2026-04-28-json-llm-response-design.md](../docs/superpowers/specs/2026-04-28-json-llm-response-design.md)
+- [plans/2026-04-28-json-mode-plan.md](../docs/superpowers/plans/2026-04-28-json-mode-plan.md)
