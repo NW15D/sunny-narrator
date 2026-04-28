@@ -701,14 +701,56 @@ def create_series_vocab(
     from pathlib import Path
     from collections import Counter
     
-    # Default stop words
-    default_stop_words = set([
-        "the", "and", "p", "emphasis", "section", "first", "second", "one", "two",
-        "chapter", "part", "book", "volume", "title", "author", "name", "said",
-        "like", "just", "know", "think", "see", "look", "come", "take", "give",
-        "make", "find", "tell", "ask", "work", "seem", "feel", "try", "leave", "call"
-    ])
+    # Try to load NLTK stopwords (same as make_vocab)
+    default_stop_words = set()
+    
+    try:
+        import nltk
+        try:
+            from nltk.corpus import stopwords
+            nltk.data.find('corpora/stopwords')
+        except LookupError:
+            nltk.download('stopwords', quiet=True)
+        default_stop_words = set(stopwords.words('english'))
+        print(f"Loaded {len(default_stop_words)} NLTK stopwords")
+    except ImportError:
+        default_stop_words = set([
+            "i", "me", "my", "myself", "we", "our", "ours", "ourselves", "you", "your",
+            "yours", "yourself", "yourselves", "he", "him", "his", "himself", "she", "her",
+            "hers", "herself", "it", "its", "itself", "they", "them", "their", "theirs",
+            "themselves", "what", "which", "who", "whom", "this", "that", "these", "those",
+            "am", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
+            "having", "do", "does", "did", "doing", "a", "an", "the", "and", "but", "if",
+            "or", "because", "as", "until", "while", "of", "at", "by", "for", "with",
+            "about", "against", "between", "into", "through", "during", "before", "after",
+            "above", "below", "to", "from", "up", "down", "in", "out", "on", "off", "over",
+            "under", "again", "further", "then", "once", "here", "there", "when", "where",
+            "why", "how", "all", "any", "both", "each", "few", "more", "most", "other",
+            "some", "such", "no", "nor", "not", "only", "own", "same", "so", "than", "too",
+            "very", "s", "t", "can", "will", "just", "don", "should", "now",
+            "d", "ll", "m", "re", "ve", "said", "would", "could", "upon", "must", "might",
+            "yet", "thing", "things", "way", "ways", "like", "even", "also", "back", "still",
+            "much", "get", "got", "go", "went", "come", "came", "see", "saw", "know", "knew",
+            "think", "thought", "want", "wanted", "take", "took", "give", "gave", "make", "made",
+            "first", "second", "one", "two", "time", "times", "new", "old", "great", "little",
+            "chapter", "part", "book", "volume", "section", "page", "p", "title", "author",
+            "said", "ask", "asked", "say", "tell", "told", "look", "looked", "seem", "seemed",
+            "feel", "felt", "leave", "left", "call", "called", "turn", "turned", "get", "got",
+            "inside", "emphasis",
+        ])
+    
+    # Add custom stopwords
+    custom_stop_words = {
+        "p", "section", "chapter", "part", "book", "volume", "title", "author", "name",
+        "emphasis", "inside", "asked", "would", "could", "shall", "may", "might", "must",
+        "every", "any", "another", "such", "however", "though", "although", "because",
+        "therefore", "since", "without", "within", "around", "toward", "towards", "upon",
+        "ever", "never", "always", "often", "sometimes", "usually", "again", "already",
+        "yet", "still", "perhaps", "maybe", "certainly", "exactly", "especially",
+    }
+    default_stop_words.update(custom_stop_words)
     stop_words = default_stop_words
+    print(f"Using {len(stop_words)} total stopwords")
     
     # Resolve output_file relative to books_folder if it's just a filename
     if not os.path.dirname(output_file):
