@@ -1,12 +1,12 @@
 # Docker CPU Guide — Установка и использование
 
-**Версия:** 1.0  
-**Дата:** 2026-03-30  
-**Статус:** ✅ CPU-only версия готова к использованию
+**Version:** 1.0  
+**Date:** 2026-03-30  
+**Status:** ✅ CPU-only версия готова к использованию
 
 ---
 
-## 📋 Обзор
+## 📋 Overview
 
 Sunny Narrator поддерживает **два режима работы**:
 
@@ -17,7 +17,7 @@ Sunny Narrator поддерживает **два режима работы**:
 
 ---
 
-## 🚀 Быстрый старт (CPU)
+## 🚀 Quick Start (CPU)
 
 ### 1. Сборка образа
 
@@ -287,6 +287,6 @@ docker-compose -f docker-compose.cpu.yml up -d
 
 ---
 
-**Автор:** Sunny Narrator Team  
-**Версия:** 1.11  
+**Author:** Sunny Narrator Team  
+**Version:** 1.11  
 **Лицензия:** Open Source

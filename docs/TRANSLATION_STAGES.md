@@ -1,36 +1,36 @@
-# Translation Stages — Промпты и Выходные Данные
+# Translation Stages — Prompts and Outputs
 
-## 📋 Обзор 5-стадийного пайплайна
+## 📋 5-Stage Pipeline Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │ Stage 1: INITIAL (Primary LLM)                                  │
 │ Input: source_text, outline_text, vocab_dict                    │
-│ Output: initial_translation (черновик)                          │
+│ Output: initial_translation (draft)                             │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │ Stage 2: REFLECTION (Secondary LLM)                             │
 │ Input: source_text, initial_translation                         │
-│ Output: suggestions (замечания, список)                         │
+│ Output: suggestions (feedback list)                             │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │ Stage 3: IMPROVE (Secondary LLM)                                │
 │ Input: initial_translation, suggestions, vocab_dict             │
-│ Output: improved_translation (исправленный перевод)             │
+│ Output: improved_translation (corrected translation)            │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │ Stage 4: FINAL_EDIT (Secondary LLM)                             │
 │ Input: improved_translation, source_text, vocab_dict            │
-│ Output: final_translation (финальный перевод)                   │
+│ Output: final_translation                                       │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │ Stage 5: SYNOPSIS (Primary LLM)                                 │
 │ Input: final_translation                                        │
-│ Output: synopsis (синопсис для следующего чанка)                │
+│ Output: synopsis (context for next chunk)                       │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -40,10 +40,10 @@ When `JSON_MODE=true` is set, all 4 translation stages use structured JSON outpu
 
 | Stage | JSON Output Format |
 |-------|-------------------|
-| **INITIAL** | `{"translation": "переведенный текст с тегами <p>..."}` |
-| **REFLECTION** | `{"suggestions": ["замечание 1", "замечание 2"]}` |
-| **IMPROVE** | `{"translation": "исправленный перевод"}` |
-| **FINAL_EDIT** | `{"translation": "финальный перевод"}` |
+| **INITIAL** | `{"translation": "translated text with <p> tags..."}` |
+| **REFLECTION** | `{"suggestions": ["feedback 1", "feedback 2"]}` |
+| **IMPROVE** | `{"translation": "corrected translation"}` |
+| **FINAL_EDIT** | `{"translation": "final translation"}` |
 
 > ⚠️ Stage 5 (SYNOPSIS) always uses plain text — no JSON mode for synopsis.
 
@@ -51,13 +51,13 @@ See [JSON Mode Analysis](../JSON_MODE_ANALYSIS.md) for complete input/output spe
 
 ---
 
-## 🎯 Stage 1: INITIAL (Первичный перевод)
+## 🎯 Stage 1: INITIAL (Initial Translation)
 
 **LLM:** Primary (Hunyuan/Gemma/etc.)  
-**Температура:** 0.01 (консистентность)  
-**Выход:** Перевод черновика
+**Temperature:** 0.01 (consistency)  
+**Output:** Draft translation
 
-### Промпт (prompts.json: initial_translation)
+### Prompt (prompts.json: initial_translation)
 
 **System:**
 ```
@@ -88,23 +88,23 @@ Requirements:
 4. Output ONLY the translated text wrapped in <ttext>...</ttext>
 ```
 
-### Выходные данные
+### Output
 ```xml
 <ttext>
-<p>В 14-м окружном суде штата Техас, судья Джон К. Райт председательствует.</p>
-<p>РОЛАНДО ОРЕЛЛЬЯНА, клерк суда: Назовите ваше имя и профессию для протокола, пожалуйста.</p>
+<p>In the 14th District Court of Texas, Judge John C. Wright is presiding.</p>
+<p>ROLANDO ORTELLA, court clerk: Please state your name and occupation for the record.</p>
 </ttext>
 ```
 
 ---
 
-## 🔍 Stage 2: REFLECTION (Анализ качества)
+## 🔍 Stage 2: REFLECTION (Quality Review)
 
 **LLM:** Secondary (Mistral/Qwen/etc.)  
-**Температура:** 0.4 (креативность)  
-**Выход:** ТОЛЬКО замечания (список)
+**Temperature:** 0.4 (creativity)  
+**Output:** Feedback ONLY (list)
 
-### Промпт (prompts.json: reflection)
+### Prompt (prompts.json: reflection)
 
 **System:**
 ```
@@ -155,36 +155,36 @@ Output ONLY numbered suggestions. DO NOT output the translation.
 Focus on natural {target_lang} expression appropriate for {country}.
 ```
 
-### Выходные данные (ТОЛЬКО замечания)
+### Output (FEEDBACK ONLY)
 ```
-1. "State your name" переведено как "Назовите ваше имя" — лучше "Представьтесь, пожалуйста" для формального контекста суда.
-2. "clerk of the court" — "клерк суда" не совсем точно, лучше "секретарь суда".
-3. "presiding" пропущено в переводе — добавить "председательствует" или "ведёт заседание".
-4. Имя "John C. Wright" должно быть согласовано с словарём: "Джон К. Райт".
-5. Тон обращения "please" не передан достаточно вежливо — добавить "пожалуйста" в конец.
+1. "State your name" translated as "Name yourself" — better to use "Please introduce yourself" for formal court context.
+2. "clerk of the court" — "court clerk" is not quite accurate, better: "court secretary".
+3. "presiding" was omitted in translation — add "is presiding" or "is conducting the hearing".
+4. Name "John C. Wright" should be consistent with dictionary: "John C. Wright".
+5. The polite tone of "please" is not conveyed well enough — add "please" at the end.
 ```
 
-### ⚠️ Важно!
+### ⚠️ Important!
 
-**REFLECTION должен возвращать ТОЛЬКО замечания**, а не:
-- ❌ Перевод заново
-- ❌ Объяснения процесса
-- ❌ Мета-комментарии
+**REFLECTION must return FEEDBACK ONLY**, not:
+- ❌ Translation again
+- ❌ Process explanations
+- ❌ Meta-commentary
 
-Если возвращается не список замечаний — проверить:
-1. Промпт явно указывает "Output ONLY numbered suggestions"
-2. max_tokens достаточно (MAX_TOKENS_PER_CHUNK)
-3. LLM не игнорирует инструкцию
+If output is not a feedback list, check:
+1. Prompt explicitly says "Output ONLY numbered suggestions"
+2. max_tokens is sufficient (MAX_TOKENS_PER_CHUNK)
+3. LLM is not ignoring the instruction
 
 ---
 
-## ✏️ Stage 3: IMPROVE (Исправление по замечаниям)
+## ✏️ Stage 3: IMPROVE (Apply Feedback)
 
 **LLM:** Secondary (Mistral/Qwen/etc.)  
-**Температура:** 0.4 (гибкость)  
-**Выход:** Исправленный перевод
+**Temperature:** 0.4 (flexibility)  
+**Output:** Corrected translation
 
-### Промпт (prompts.json: improve)
+### Prompt (prompts.json: improve)
 
 **System:**
 ```
@@ -237,30 +237,30 @@ Apply ALL numbered suggestions to improve the translation for {target_lang} read
 Output the final translation ONLY, wrapped in <ttext>...</ttext>.
 ```
 
-### Выходные данные
+### Output
 ```xml
 <ttext>
-<p>В 14-м окружном суде штата Техас судья Джон К. Райт ведёт заседание.</p>
-<p>РОЛАНДО ОРЕЛЛЬЯНА, секретарь суда: Представьтесь, пожалуйста, для протокола.</p>
+<p>In the 14th District Court of Texas, Judge John C. Wright is presiding.</p>
+<p>ROLANDO ORTELLA, court secretary: Please introduce yourself for the record.</p>
 </ttext>
 ```
 
 ---
 
-## 📝 Stage 4: FINAL_EDIT (Финальная вычитка)
+## 📝 Stage 4: FINAL_EDIT (Final Proofreading)
 
 **LLM:** Secondary (Mistral/Qwen/etc.)  
-**Температура:** 0.15 (точность)  
-**Выход:** Финальный перевод
+**Temperature:** 0.15 (precision)  
+**Output:** Final translation
 
-### Промпт (prompts.json: editor)
+### Prompt (prompts.json: editor)
 
 **System:**
 ```
-Ты профессиональный редактор-переводчик для {target_lang} ({country}). 
-Твоя задача — провести финальную вычитку перевода.
+You are a professional translator-editor for {target_lang} ({country}). 
+Your task is to perform final proofreading of the translation.
 
-Выведи ТОЛЬКО исправленный перевод, без объяснений.
+Output ONLY the corrected translation, without explanations.
 ```
 
 **User (xml):**
@@ -283,36 +283,36 @@ Task: Final proofreading - output corrected translation ONLY
 {vocab_dict}
 </vocabulary>
 
-ЗАДАЧА: Проведи финальную редактуру перевода для {target_lang} читателей в {country}.
+TASK: Perform final editing of the translation for {target_lang} readers in {country}.
 
-1. Исправь грамматику и стиль перевода
-2. Восстанови тэги FB2 (<p>, <strong>, <em> и др.) в тех же позициях, что в оригинале
-3. Проверь соответствие терминов словарю (используй vocabulary строго)
-4. Убедись в культурной уместности для {country}
-5. Сохрани повествовательный тон и стиль оригинала
+1. Fix grammar and style of the translation
+2. Restore FB2 tags (<p>, <strong>, <em>, etc.) at the same positions as in the original
+3. Verify term consistency with dictionary (use vocabulary strictly)
+4. Ensure cultural appropriateness for {country}
+5. Maintain narrative tone and style of the original
 
-Важно: Сравнивай оригинал и перевод посекционно, восстанавливая потерянные тэги.
-Верни ТОЛЬКО исправленный перевод.
+Important: Compare original and translation section by section, restoring lost tags.
+Return ONLY the corrected translation.
 ```
 
-### Выходные данные
+### Output
 ```xml
 <ttext>
-<p>В 14-м окружном суде штата Техас судья Джон К. Райт ведёт заседание.</p>
-<p>РОЛАНДО ОРЕЛЛЬЯНА, секретарь суда: Представьтесь, пожалуйста, для протокола.</p>
-<p>ГЕНРИ ШРАМ: Шрам, Хэнк... Генри. Я механик в Allied.</p>
+<p>In the 14th District Court of Texas, Judge John C. Wright is presiding.</p>
+<p>ROLANDO ORTELLA, court secretary: Please introduce yourself for the record.</p>
+<p>HENRY SCAR: Scar, Hank... Henry. I'm a mechanic at Allied.</p>
 </ttext>
 ```
 
 ---
 
-## 📖 Stage 5: SYNOPSIS (Синопсис)
+## 📖 Stage 5: SYNOPSIS (Synopsis)
 
 **LLM:** Secondary (Mistral/Qwen/etc.)  
-**Температура:** 0.15 (точность)  
-**Выход:** Краткий синопсис (80 слов)
+**Temperature:** 0.15 (precision)  
+**Output:** Short synopsis (~80 words)
 
-### Промпт (prompts.json: synopsis)
+### Prompt (prompts.json: synopsis)
 
 **System:**
 ```
@@ -332,55 +332,55 @@ Create a synopsis in {target_lang} (max 80 words). Requirements:
 - Output only the synopsis content
 ```
 
-### Выходные данные
+### Output
 ```
-Судебное заседание в Техасе. Секретарь суда Роландо Орельяна допрашивает свидетеля Генри Шрама, механика Allied Fruit Growers. Присутствуют прокурор Джейн Беррендт и адвокат защиты Бенджамин Бэббидж.
+Court hearing in Texas. Court secretary Rolando Ortellia questions witness Henry Scar, a mechanic at Allied Fruit Growers. Prosecutor Jane Berrendt and defense attorney Benjamin Babidge are present.
 ```
 
 ---
 
 ## 🐛 Troubleshooting
 
-### Проблема: REFLECTION не возвращает замечания
+### Problem: REFLECTION does not return feedback
 
-**Симптомы:**
-- Пустой результат
-- Возвращает перевод вместо замечаний
-- Возвращает мета-комментарии
+**Symptoms:**
+- Empty result
+- Returns translation instead of feedback
+- Returns meta-commentary
 
-**Решение:**
-1. Проверить промпт — должен явно указывать "Output ONLY numbered suggestions"
-2. Проверить max_tokens — должен быть MAX_TOKENS_PER_CHUNK
-3. Проверить температуру — 0.4 для креативности
+**Solution:**
+1. Check prompt — must explicitly say "Output ONLY numbered suggestions"
+2. Check max_tokens — must be MAX_TOKENS_PER_CHUNK
+3. Check temperature — 0.4 for creativity
 
-### Проблема: IMPROVE игнорирует замечания
+### Problem: IMPROVE ignores feedback
 
-**Симптомы:**
-- Перевод не меняется после стадии
-- Замечания не применяются
+**Symptoms:**
+- Translation does not change after the stage
+- Feedback is not applied
 
-**Решение:**
-1. Проверить что {reflection} передаётся в промпт
-2. Проверить промпт — "Apply ALL numbered suggestions"
-3. Увеличить max_tokens если нужно
+**Solution:**
+1. Check that {reflection} is passed into the prompt
+2. Check prompt — "Apply ALL numbered suggestions"
+3. Increase max_tokens if needed
 
-### Проблема: FINAL_EDIT возвращает объяснения
+### Problem: FINAL_EDIT returns explanations
 
-**Симптомы:**
-- LLM добавляет комментарии типа "Я исправил..."
-- Вывод не чистый перевод
+**Symptoms:**
+- LLM adds comments like "I fixed..."
+- Output is not a clean translation
 
-**Решение:**
-1. Проверить system промпт — "Выведи ТОЛЬКО исправленный перевод"
-2. Проверить user промпт — "Верни ТОЛЬКО исправленный перевод"
-3. Добавить фильтрацию в remove_tags()
+**Solution:**
+1. Check system prompt — "Output ONLY the corrected translation"
+2. Check user prompt — "Return ONLY the corrected translation"
+3. Add filtering in remove_tags()
 
 ---
 
-## 📊 Сводная таблица
+## 📊 Summary Table
 
-| Стадия | LLM | Температура | Вход | Выход | Промпт |
-|--------|-----|-------------|------|-------|--------|
+| Stage | LLM | Temperature | Input | Output | Prompt |
+|-------|-----|-------------|-------|--------|--------|
 | **1. INITIAL** | Primary | 0.01 | source_text, vocab | initial_translation | initial_translation |
 | **2. REFLECTION** | Secondary | 0.4 | source, translation | suggestions (list) | reflection |
 | **3. IMPROVE** | Secondary | 0.4 | translation, suggestions | improved_translation | improve |
@@ -400,47 +400,47 @@ Create a synopsis in {target_lang} (max 80 words). Requirements:
 
 ## 🧩 JSON Mode
 
-При `JSON_MODE=true` все стадии используют структурированный JSON ввод/вывод.
+When `JSON_MODE=true`, all stages use structured JSON input/output.
 
-### Активация
+### Activation
 
 ```bash
 # .env
 JSON_MODE=true
 ```
 
-### Стадия 1: INITIAL (JSON Mode)
+### Stage 1: INITIAL (JSON Mode)
 
 **Prompt Category:** `initial_translation_json`
 
 **JSON Input:**
 ```json
 {
-  "source": "текст для перевода",
+  "source": "text to translate",
   "source_lang": "en",
   "target_lang": "ru",
   "country": "RU",
-  "vocabulary": {"term": "перевод"},
-  "synopsis": "контекст из предыдущих чанков"
+  "vocabulary": {"term": "translation"},
+  "synopsis": "context from previous chunks"
 }
 ```
 
 **JSON Output:**
 ```json
-{"translation": "переведённый текст"}
+{"translation": "translated text"}
 ```
 
 ---
 
-### Стадия 2: REFLECTION (JSON Mode)
+### Stage 2: REFLECTION (JSON Mode)
 
 **Prompt Category:** `reflection_json`
 
 **JSON Input:**
 ```json
 {
-  "source": "оригинальный текст",
-  "translation": "перевод",
+  "source": "original text",
+  "translation": "translation",
   "source_lang": "en",
   "target_lang": "ru",
   "country": "RU",
@@ -455,14 +455,14 @@ JSON_MODE=true
 
 ---
 
-### Стадия 3: IMPROVE (JSON Mode)
+### Stage 3: IMPROVE (JSON Mode)
 
 **Prompt Category:** `improve_json`
 
 **JSON Input:**
 ```json
 {
-  "translation": "текущий перевод",
+  "translation": "current translation",
   "suggestions": ["suggestion 1", "suggestion 2"],
   "target_lang": "ru",
   "country": "RU",
@@ -472,19 +472,19 @@ JSON_MODE=true
 
 **JSON Output:**
 ```json
-{"translation": "улучшенный перевод"}
+{"translation": "improved translation"}
 ```
 
 ---
 
-### Стадия 4: FINAL_EDIT (JSON Mode)
+### Stage 4: FINAL_EDIT (JSON Mode)
 
 **Prompt Category:** `editor_json`
 
 **JSON Input:**
 ```json
 {
-  "translation": "перевод после IMPROVE",
+  "translation": "translation after IMPROVE",
   "target_lang": "ru",
   "country": "RU"
 }
@@ -492,12 +492,12 @@ JSON_MODE=true
 
 **JSON Output:**
 ```json
-{"translation": "финальный перевод"}
+{"translation": "final translation"}
 ```
 
 ---
 
-### Ссылки
+### References
 
-- [docs/JSON_MODE_ANALYSIS.md](../JSON_MODE_ANALYSIS.md) — полная документация
-- [docs/superpowers/specs/2026-04-28-json-llm-response-design.md](../superpowers/specs/2026-04-28-json-llm-response-design.md) — спецификация дизайна
+- [docs/JSON_MODE_ANALYSIS.md](../JSON_MODE_ANALYSIS.md) — full documentation
+- [docs/superpowers/specs/2026-04-28-json-llm-response-design.md](../superpowers/specs/2026-04-28-json-llm-response-design.md) — design specification

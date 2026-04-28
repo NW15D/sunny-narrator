@@ -1,36 +1,35 @@
-# Resume после сбоя — Checkpoint Files
+# Resume after Failure – Checkpoint Files
 
-**Версия:** 1.0  
-**Дата:** 2026-03-30  
+**Version:** 1.0
+**Date:** 2026-03-30
 **Issue:** [#52](https://gt.farhome.ru/sn/sunny-narrator/-/issues/52)
 
----
 
-## 📋 Обзор
+## ​​​​Overview
 
-Система автоматически сохраняет прогресс перевода после каждого чанка в JSON-файл checkpoint. Это позволяет возобновить перевод после сбоя (crash, обрыв связи, перезапуск) без потери прогресса.
+The system automatically saves translation progress after each chunk in a JSON checkpoint file. This allows resuming translation after failures (crash, connection loss, restart) without losing progress.
 
----
 
-## 🎯 Как работает
 
-### 1. Сохранение (Save)
+## ​​​​How it Works
 
-После перевода **каждого чанка**:
+### 1. Saving (Save)
+
+After translating **each chunk**:
 
 ```python
 # app.py: TranslationEngine.process_all_chunks()
 self.save_checkpoint(checkpoint_file)
 ```
 
-**Сохраняется:**
-- ✅ Статистика (successful/failed)
-- ✅ Длины (total_source_len, total_target_len)
-- ✅ Synopsis history (контекст для следующих чанков)
-- ✅ Номер последнего чанка
-- ✅ Временные метки
+**Saved:**
+- ✅ Statistics (successful/failed)
+- ✅ Lengths (total_source_len, total_target_len)
+- ✅ Synopsis history (context for next chunks)
+- ✅ Last chunk number
+- ✅ Timestamps
 
-**Атомарная запись:**
+**Atomic Writing:**
 ```python
 temp_file = checkpoint_file + ".tmp"
 with open(temp_file, "w") as f:
@@ -38,34 +37,34 @@ with open(temp_file, "w") as f:
 os.replace(temp_file, checkpoint_file)  # Atomic on POSIX
 ```
 
----
 
-### 2. Восстановление (Resume)
 
-При **старте программы**:
+### 2. Resuming (Resume)
+
+When **starting the program**:
 
 ```python
 # app.py: main()
 if os.path.exists(checkpoint_file):
     checkpoint = json.load(open(checkpoint_file))
     engine.restore_from_checkpoint(checkpoint)
-    
-    # Пропустить уже обработанные чанки
+     
+    # Skip already processed chunks
     start_from = checkpoint["last_chunk"] + 1
     chunks = chunks[start_from:]
 ```
 
-**Восстанавливается:**
-- ✅ Статистика переводов
-- ✅ Накопленные длины
-- ✅ Synopsis cache (контекст)
-- ✅ Позиция последнего чанка
+**Restored:**
+- ✅ Translation statistics
+- ✅ Accumulated lengths
+- ✅ Synopsis cache (context)
+- ✅ Last chunk position
 
----
 
-### 3. Очистка (Cleanup)
 
-После **успешного завершения**:
+### 3. Cleanup (Cleanup)
+
+After **successful completion**:
 
 ```python
 # app.py: main()
@@ -74,9 +73,9 @@ if os.path.exists(checkpoint_file):
     logger.info(f"Checkpoint removed: {checkpoint_file}")
 ```
 
----
 
-## 📁 Структура checkpoint
+
+## ​​​​📸 File Structure
 
 ```json
 {
@@ -99,8 +98,8 @@ if os.path.exists(checkpoint_file):
     "total_target_len": 380000
   },
   "synopsis_history": {
-    "section_0": ["synopsis 0.0", "synopsis 0.1", ...],
-    "section_1": ["synopsis 1.0", "synopsis 1.1", ...],
+    "section_0": ["synopsis 0.0", "synopsis 0.1", ... ],
+    "section_1": ["synopsis 1.0", "synopsis 1.1", ... ],
     ...
   },
   "created_at": "2026-03-30T23:00:00Z",
@@ -108,188 +107,192 @@ if os.path.exists(checkpoint_file):
 }
 ```
 
----
 
-## 🚀 Использование
 
-### Сценарий 1: Нормальное завершение
+## ​​​​⚩️ Usage
+
+### Scenario 1: Normal Completion
 
 ```bash
 python app.py
-# ... перевод 100 чанков ...
-# ✓ FB2 created: books/ExampleBook_ru_1929-3003.fb2
-# ✓ Checkpoint removed: books/ExampleBook_ru_1929-3003.checkpoint.json
+# ... translate 100 chunks ...
+# ✅ FB2 created: books/ExampleBook_ru_1929-3003.fb2
+# ✅ Checkpoint removed: books/ExampleBook_ru_1929-3003.checkpoint.json
 ```
 
-**Результат:**
-- ✅ Файл переведён
-- ✅ Checkpoint удалён
-- ✅ Статистика показана
+**Result:**
+- ✅ File translated
+- ✅ Checkpoint removed
+- ✅ Statistics shown
 
----
 
-### Сценарий 2: Resume после сбоя
+
+### Scenario 2: Resume after Failure
 
 ```bash
-# Запуск
+# Start
 python app.py
 # [Chunk 50/100] ...
-# Ctrl+C (прерывание)
+# Ctrl+C (interruption)
 
-# Перезапуск
+# Restart
 python app.py
-# ============================================================
+# ================================================================
 # Checkpoint found: books/ExampleBook_ru_1929-3003.checkpoint.json
 # Resuming from previous session...
-# ============================================================
-# 
+# ================================================================
+#  
 # Restored from checkpoint: chunk 50, successful: 50, failed: 0
 # Resuming from chunk 51/100
-# 
+#  
 # [Chunk 51/100] Section 4.1 | 8500 chars | Vocab: 5
 # ...
 ```
 
-**Результат:**
-- ✅ Продолжено с чанка 51
-- ✅ Статистика сохранена (50 успешных)
-- ✅ Synopsis context восстановлен
+**Result:**
+- ✅ Resumed from chunk 51
+- ✅ Statistics preserved (50 successful)
+- ✅ Synopsis context restored
 
----
 
-### Сценарий 3: Повреждённый checkpoint
+
+### Scenario 3: Corrupted Checkpoint
 
 ```bash
-# Повреждение файла (ручное или сбой диска)
+# Corrupt file (manual or disk failure)
 echo "invalid json" > books/ExampleBook_ru_1929-3003.checkpoint.json
 
-# Запуск
+# Start
 python app.py
 # ERROR - Failed to load checkpoint: Expecting value: line 1 column 1
 # Starting fresh (checkpoint ignored)
 ```
 
-**Результат:**
-- ⚠️ Checkpoint проигнорирован
-- ✅ Перевод начнётся заново
-- ✅ Данные не потеряны (книга цела)
+**Result:**
+- ⚠️ Checkpoint ignored
+- ✅ Translation starts fresh
+- ✅ Data intact
 
----
 
-## 🔧 Технические детали
 
-### SynopsisManager сериализация
+## ​​​​⚙ Technical Details
+
+### SynopsisManager Serialization
 
 ```python
 # src/synopsis_manager.py
 
-@property
-def synopsis_cache(self) -> dict:
-    """Сериализовать synopsis history"""
+@§property
+
+def synopsis_cache(self) → dict:
+    """Serialize synopsis history"""
     cache = {}
     for section_idx, section in self.section_contexts.items():
         cache[f"section_{section_idx}"] = section.chunk_synopses
     return cache
 
 @synopsis_cache.setter
+
 def synopsis_cache(self, cache: dict):
-    """Восстановить synopsis history"""
+    """Restore synopsis history"""
     self.section_contexts = {}
     for key, chunk_synopses in cache.items():
-        if key.startswith("section_"):
+        if key.startswith("section_")):
             section_idx = int(key.split("_")[1])
             section = self._get_or_create_section(section_idx)
             section.chunk_synopses = chunk_synopses
             section._update_accumulated_synopsis()
 ```
 
-### Атомарная запись
+### Atomic Writing
 
 ```python
-# Гарантирует целостность при crash во время записи
+# Guarantees integrity during crash
+
 temp_file = checkpoint_file + ".tmp"
 try:
     with open(temp_file, "w", encoding="utf-8") as f:
         json.dump(checkpoint, f, indent=2, ensure_ascii=False)
-    os.replace(temp_file, checkpoint_file)  # Atomic on POSIX
+os.replace(temp_file, checkpoint_file)  # Atomic on POSIX
 except Exception as e:
     logger.error(f"Failed to save checkpoint: {e}")
     if os.path.exists(temp_file):
         os.remove(temp_file)
 ```
 
----
 
-## 📊 Производительность
 
-### Размер checkpoint
+## ​​​​⏰ Performance
 
-| Книга | Чанков | Размер checkpoint |
-|-------|--------|-------------------|
-| Короткая (50KB) | 20 | ~5 KB |
-| Средняя (500KB) | 100 | ~25 KB |
-| Большая (5MB) | 1000 | ~250 KB |
+### Checkpoint Size
 
-### Время записи
+| Book Size | Chunks | Checkpoint Size |
+|-----------|--------|-----------------|
+| Short (50KB) | 20 | ~5 KB          |
+| Medium (500KB) | 100 | ~25 KB         |
+| Large (5MB) | 1000 | ~250 KB        |
 
-- **Запись:** < 10ms на чанк (JSON ~25KB)
-- **Чтение:** < 50ms при старте
-- **Накладные расходы:** < 1% от общего времени перевода
 
----
 
-## ⚠️ Ограничения
+### Write Time
 
-1. **Один процесс:** Нельзя запускать несколько копий `app.py` с одной книгой одновременно
-2. **Локальное хранилище:** Checkpoint хранится в той же директории что и книга
-3. **Нет версионирования:** Только последний checkpoint (перезаписывается)
+- **Writing:** < 10ms per chunk (JSON ~25KB)
+- **Reading:** < 50ms at startup
+- **Overhead:** < 1% of total translation time
 
----
 
-## 🔍 Отладка
 
-### Проверка checkpoint
+## ⚠︀ Limitations
+
+1. **Single Process:** Cannot run multiple `app.py` copies simultaneously on one book
+2. **Local Storage:** Checkpoint stored in the same directory as the book
+3. **No Versioning:** Only the latest checkpoint (overwritten)
+
+
+
+## ⚙ Debugging
+
+### Checkpoint Verification
 
 ```bash
-# Посмотреть содержимое
+# View contents
 cat books/ExampleBook_ru_1929-3003.checkpoint.json | python3 -m json.tool
 
-# Проверить целостность
-python3 -c "import json; json.load(open('books/ExampleBook_ru_1929-3003.checkpoint.json'))" && echo "✓ Valid JSON"
+# Check validity
+python3 -c "import json; json.load(open('books/ExampleBook_ru_1929-3003.checkpoint.json'))" && echo "✅ Valid JSON"
 ```
 
-### Debug режим
+### Debug Mode
 
 ```bash
 # .env
 DEBUG=on
 
-# Логи показывают сохранение checkpoint
+# Logs show checkpoint saving
 DEBUG - Checkpoint saved: books/ExampleBook_ru_1929-3003.checkpoint.json
 ```
 
----
 
-## 📝 Changelog
+
+## ​​​​⏰ Changelog
 
 ### v1.0 (2026-03-30)
-
 - ✅ Initial implementation
-- ✅ Атомарная запись checkpoint
-- ✅ SynopsisManager сериализация
-- ✅ Автоматическая очистка после завершения
-- ✅ Resume из любой точки перевода
+- ✅ Atomic checkpoint saving
+- ✅ SynopsisManager serialization
+- ✅ Automatic cleanup after completion
+- ✅ Resume from any translation point
 
----
 
-## 📚 Связанная документация
 
-- [INSTALLATION.md](INSTALLATION.md) — Установка и настройка
-- [TRANSLATION_STAGES.md](TRANSLATION_STAGES.md) — 5-стадийный пайплайн
-- [RECHUNKING_GUIDE.md](RECHUNKING_GUIDE.md) — Разбиение на чанки
+## ​​​​✅ Related Documentation
 
----
+- [INSTALLATION.md](INSTALLATION.md) — Installation and setup
+- [TRANSLATION_STAGES.md](TRANSLATION_STAGES.md) — 5-stage pipeline
+- [RECHUNKING_GUIDE.md](RECHUNKING_GUIDE.md) — Chunking guide
 
-**Issue:** [#52](https://gt.farhome.ru/sn/sunny-narrator/-/issues/52)  
-**Author:** Dev (agent:dev:main)  
+
+
+**Issue:** [#52](https://gt.farhome.ru/sn/sunny-narrator/-/issues/52)
+**Author:** Dev (agent:dev:main)
 **Review:** Pending
