@@ -747,27 +747,48 @@ class TranslationPipeline:
         
         Note: Uses vocab_dict to verify terminology consistency.
         """
-        user_prompt = config.get_prompt(
-            "reflection", f"user_{context.style}",
-            source_lang=context.source_lang,
-            target_lang=context.target_lang,
-            source_text=context.source_text,
-            translation=translation,  # Must match {translation} in prompts.json
-            country=context.country,
-            vocab_dict=context.vocab_dict  # Added for vocabulary checking
-        )
-        
-        system_prompt = config.get_prompt("reflection", "system",
-            target_lang=context.target_lang,
-            country=context.country
-        )
+        # JSON mode: prepare structured JSON input
+        json_mode = config.json_mode
+        if json_mode:
+            json_input = json.dumps({
+                "source": context.source_text,
+                "translation": translation,
+                "source_lang": context.source_lang,
+                "target_lang": context.target_lang,
+                "country": context.country,
+                "vocabulary": context.vocab_dict or {}
+            }, ensure_ascii=False)
+            
+            user_prompt = config.get_prompt(
+                "reflection", "user_text_json",
+                json_input=json_input
+            )
+            system_prompt = config.get_prompt("reflection", "system_json",
+                target_lang=context.target_lang,
+                country=context.country
+            )
+        else:
+            user_prompt = config.get_prompt(
+                "reflection", f"user_{context.style}",
+                source_lang=context.source_lang,
+                target_lang=context.target_lang,
+                source_text=context.source_text,
+                translation=translation,
+                country=context.country,
+                vocab_dict=context.vocab_dict
+            )
+            system_prompt = config.get_prompt("reflection", "system",
+                target_lang=context.target_lang,
+                country=context.country
+            )
         
         text, tokens_used = llm_service.complete(
             role=LLMRole.SECONDARY,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
-            max_tokens=MAX_TOKENS_PER_CHUNK,  # Enough for detailed suggestions
-            stage=TranslationStage.REFLECTION  # Stage-specific temperature
+            max_tokens=MAX_TOKENS_PER_CHUNK,
+            stage=TranslationStage.REFLECTION,
+            json_mode=json_mode
         )
         
         return TranslationResult(
@@ -781,25 +802,47 @@ class TranslationPipeline:
     @log_entry
     def improve_translation(self, context: TranslationContext, translation: str, reflection: str) -> TranslationResult:
         """Stage 3: Apply reflection suggestions to improve translation."""
-        user_prompt = config.get_prompt(
-            "improve", f"user_{context.style}",
-            target_lang=context.target_lang,
-            country=context.country,
-            translation=translation,
-            reflection=reflection
-        )
-        
-        system_prompt = config.get_prompt("improve", "system",
-            target_lang=context.target_lang,
-            country=context.country
-        )
+        # JSON mode: prepare structured JSON input
+        json_mode = config.json_mode
+        if json_mode:
+            # Convert reflection to list if it's a string
+            suggestions = reflection.split('\n') if isinstance(reflection, str) else reflection
+            json_input = json.dumps({
+                "translation": translation,
+                "suggestions": suggestions,
+                "target_lang": context.target_lang,
+                "country": context.country,
+                "vocabulary": context.vocab_dict or {}
+            }, ensure_ascii=False)
+            
+            user_prompt = config.get_prompt(
+                "improve", "user_text_json",
+                json_input=json_input
+            )
+            system_prompt = config.get_prompt("improve", "system_json",
+                target_lang=context.target_lang,
+                country=context.country
+            )
+        else:
+            user_prompt = config.get_prompt(
+                "improve", f"user_{context.style}",
+                target_lang=context.target_lang,
+                country=context.country,
+                translation=translation,
+                reflection=reflection
+            )
+            system_prompt = config.get_prompt("improve", "system",
+                target_lang=context.target_lang,
+                country=context.country
+            )
         
         text, tokens_used = llm_service.complete(
             role=LLMRole.SECONDARY,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             max_tokens=MAX_TOKENS_PER_CHUNK,
-            stage=TranslationStage.IMPROVE  # Stage-specific temperature
+            stage=TranslationStage.IMPROVE,
+            json_mode=json_mode
         )
         
         text = remove_tags_with_check(text, "improve_translation", LLMRole.SECONDARY)
@@ -832,24 +875,42 @@ class TranslationPipeline:
         Stage 4: Final editing/proofreading - fix grammar, style, XML tags.
         Receives ONLY the improved translation (no original/vocabulary).
         """
-        user_prompt = config.get_prompt(
-            "editor", f"user_{context.style}",
-            target_lang=context.target_lang,
-            country=context.country,
-            translation=translation
-        )
-        
-        system_prompt = config.get_prompt("editor", "system",
-            target_lang=context.target_lang,
-            country=context.country
-        )
+        # JSON mode: prepare structured JSON input
+        json_mode = config.json_mode
+        if json_mode:
+            json_input = json.dumps({
+                "translation": translation,
+                "target_lang": context.target_lang,
+                "country": context.country
+            }, ensure_ascii=False)
+            
+            user_prompt = config.get_prompt(
+                "editor", "user_text_json",
+                json_input=json_input
+            )
+            system_prompt = config.get_prompt("editor", "system_json",
+                target_lang=context.target_lang,
+                country=context.country
+            )
+        else:
+            user_prompt = config.get_prompt(
+                "editor", f"user_{context.style}",
+                target_lang=context.target_lang,
+                country=context.country,
+                translation=translation
+            )
+            system_prompt = config.get_prompt("editor", "system",
+                target_lang=context.target_lang,
+                country=context.country
+            )
         
         text, tokens_used = llm_service.complete(
             role=LLMRole.SECONDARY,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             max_tokens=MAX_TOKENS_PER_CHUNK,
-            stage=TranslationStage.FINAL  # Stage-specific temperature
+            stage=TranslationStage.FINAL,
+            json_mode=json_mode
         )
         
         text = remove_tags_with_check(text, "final_edit", LLMRole.SECONDARY)
