@@ -278,8 +278,10 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
             if word in seen_words and word not in stop_words:
                 seen_words.remove(word)
 
-    # Filter words with count > min_count_word and length >= min_word_length
-    filtered_words_with_counts = [(word, count) for word, count in word_counts.items() if count > min_count_word and len(word) >= min_word_length]
+    # Filter words with count > min_count_word, length >= min_word_length, and not in stop_words
+    filtered_words_with_counts = [(word, count) for word, count in word_counts.items() 
+                                   if count > min_count_word and len(word) >= min_word_length 
+                                   and word.lower() not in stop_words]
 
     sorted_common_words_with_counts = sorted(filtered_words_with_counts, key=lambda x: x[1], reverse=True)
     top_common_words = [word for word, count in sorted_common_words_with_counts]
