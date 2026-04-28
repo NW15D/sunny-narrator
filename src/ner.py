@@ -64,10 +64,16 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
 
     # Define default stop words or use user provided
     default_stop_words = set([
-        "the", "and", "p", "emphasis", "section", "first", "second", "one", "two",
-        "chapter", "part", "book", "volume", "title", "author", "name", "said",
-        "like", "just", "know", "think", "see", "look", "come", "take", "give",
-        "make", "find", "tell", "ask", "work", "seem", "feel", "try", "leave", "call"
+        # Common articles, prepositions, pronouns
+        "the", "and", "a", "an", "of", "to", "in", "that", "is", "it", "for", "on",
+        "with", "as", "was", "at", "be", "this", "have", "from", "or", "by", "not", "but",
+        "what", "all", "were", "we", "when", "your", "can", "said", "there", "use", "each",
+        # Generic book terms
+        "p", "section", "chapter", "part", "book", "volume", "title", "author", "name",
+        # Common verbs (often not meaningful for vocabulary)
+        "said", "like", "just", "know", "think", "see", "look", "come", "take", "give",
+        "make", "find", "tell", "ask", "work", "seem", "feel", "try", "leave", "call",
+        "would", "could", "asked", "inside", "emphasis", "first", "second", "one", "two",
     ])
 
     if stop_words is None:
