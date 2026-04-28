@@ -24,12 +24,18 @@ class Config:
         self.temp_initial = float(os.getenv('TEMP_INITIAL', self.temp_translate))
         
         # JSON mode control - use structured JSON for LLM input/output
-        # Default: false (disabled) - use traditional XML tags
+        # When JSON_MODE=true, JSON is enabled for all stages
         self.json_mode = os.getenv('JSON_MODE', 'false').lower() in ['true', '1', 't', 'on', 'yes']
         
-        # Legacy JSON mode controls (deprecated, use JSON_MODE instead)
-        self.disable_json_mode_translate = os.getenv('DISABLE_JSON_MODE_TRANSLATE', 'true').lower() in ['true', '1', 't', 'on', 'yes']
-        self.disable_json_mode_proofread = os.getenv('DISABLE_JSON_MODE_PROOFREAD', 'true').lower() in ['true', '1', 't', 'on', 'yes']
+        # Legacy JSON mode controls (deprecated, ignored when JSON_MODE=true)
+        # Only used for backward compatibility when JSON_MODE is not set
+        if self.json_mode:
+            # JSON_MODE=true enables JSON for all stages, ignore DISABLE flags
+            self.disable_json_mode_translate = False
+            self.disable_json_mode_proofread = False
+        else:
+            self.disable_json_mode_translate = os.getenv('DISABLE_JSON_MODE_TRANSLATE', 'true').lower() in ['true', '1', 't', 'on', 'yes']
+            self.disable_json_mode_proofread = os.getenv('DISABLE_JSON_MODE_PROOFREAD', 'true').lower() in ['true', '1', 't', 'on', 'yes']
         # Stage 2: REFLECTION (quality review)
         self.temp_reflection = float(os.getenv('TEMP_REFLECTION', 0.4))
         # Stage 3: IMPROVE (apply suggestions)

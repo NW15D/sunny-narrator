@@ -601,10 +601,10 @@ class TranslationPipeline:
         
         if prompt_style == "json":
             user_prompt = config.get_prompt(
-                "initial_translation", "user_text_json",
+                "initial_translation_json", "user_text",
                 json_input=json_input
             )
-            system_prompt = config.get_prompt("initial_translation", "system_json")
+            system_prompt = config.get_prompt("initial_translation_json", "system")
         elif context.style == "xml":
             user_prompt = config.get_prompt(
                 "initial_translation", "user_xml",
@@ -633,7 +633,9 @@ class TranslationPipeline:
                 source_text=context.source_text
             )
         
-        system_prompt = config.get_prompt("initial_translation", "system" if not json_mode else "system_json")
+        # Use initial_translation_json category when json_mode is enabled
+        prompt_category = "initial_translation_json" if json_mode else "initial_translation"
+        system_prompt = config.get_prompt(prompt_category, "system")
         
         text, tokens_used = llm_service.complete(
             role=LLMRole.PRIMARY,
@@ -760,10 +762,10 @@ class TranslationPipeline:
             }, ensure_ascii=False)
             
             user_prompt = config.get_prompt(
-                "reflection", "user_text_json",
+                "reflection_json", "user_text",
                 json_input=json_input
             )
-            system_prompt = config.get_prompt("reflection", "system_json",
+            system_prompt = config.get_prompt("reflection_json", "system",
                 target_lang=context.target_lang,
                 country=context.country
             )
@@ -816,10 +818,10 @@ class TranslationPipeline:
             }, ensure_ascii=False)
             
             user_prompt = config.get_prompt(
-                "improve", "user_text_json",
+                "improve_json", "user_text",
                 json_input=json_input
             )
-            system_prompt = config.get_prompt("improve", "system_json",
+            system_prompt = config.get_prompt("improve_json", "system",
                 target_lang=context.target_lang,
                 country=context.country
             )
@@ -885,10 +887,10 @@ class TranslationPipeline:
             }, ensure_ascii=False)
             
             user_prompt = config.get_prompt(
-                "editor", "user_text_json",
+                "editor_json", "user_text",
                 json_input=json_input
             )
-            system_prompt = config.get_prompt("editor", "system_json",
+            system_prompt = config.get_prompt("editor_json", "system",
                 target_lang=context.target_lang,
                 country=context.country
             )
