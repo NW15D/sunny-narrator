@@ -582,7 +582,30 @@ class TranslationPipeline:
                 metadata={"prompt_style": context.style, "skipped": "empty_input"}
             )
         
-        if context.style == "xml":
+        # JSON mode: prepare structured JSON input
+        json_mode = config.json_mode
+        if json_mode:
+            json_input = json.dumps({
+                "source": context.source_text,
+                "source_lang": context.source_lang,
+                "target_lang": context.target_lang,
+                "country": context.country,
+                "vocabulary": context.vocab_dict or {},
+                "synopsis": context.outline_text or ""
+            }, ensure_ascii=False)
+            
+            prompt_style = "json"
+        else:
+            json_input = None
+            prompt_style = context.style
+        
+        if prompt_style == "json":
+            user_prompt = config.get_prompt(
+                "initial_translation", "user_text_json",
+                json_input=json_input
+            )
+            system_prompt = config.get_prompt("initial_translation", "system_json")
+        elif context.style == "xml":
             user_prompt = config.get_prompt(
                 "initial_translation", "user_xml",
                 source_lang=context.source_lang,
@@ -610,14 +633,15 @@ class TranslationPipeline:
                 source_text=context.source_text
             )
         
-        system_prompt = config.get_prompt("initial_translation", "system")
+        system_prompt = config.get_prompt("initial_translation", "system" if not json_mode else "system_json")
         
         text, tokens_used = llm_service.complete(
             role=LLMRole.PRIMARY,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             max_tokens=MAX_TOKENS_PER_CHUNK,
-            stage=TranslationStage.INITIAL  # Stage-specific temperature
+            stage=TranslationStage.INITIAL,  # Stage-specific temperature
+            json_mode=json_mode
         )
         
         text = remove_tags_with_check(text, "initial_translation", LLMRole.PRIMARY)
