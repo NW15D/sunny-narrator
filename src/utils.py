@@ -1177,6 +1177,52 @@ llm_service_compat = LLMServiceCompat()
 
 
 # =============================================================================
+# JSON Parsing Functions
+# =============================================================================
+
+def parse_json_response(text: str) -> tuple:
+    """
+    Parse JSON response from LLM.
+    Returns: (result: str or list, success: bool)
+    
+    Priority:
+    1. Find first valid JSON block (handles conversational wrappers)
+    2. Extract translation or suggestions
+    3. Fallback to non-JSON if invalid
+    """
+    if not text:
+        return "", False
+    
+    # Try to find JSON block (handles conversational wrappers like "Here is JSON: {...}")
+    json_match = re.search(r'(\{[\s\S]*?\})', text)
+    if not json_match:
+        return text.strip(), False  # No JSON found, return as-is
+    
+    try:
+        data = json.loads(json_match.group(1))
+        
+        # Check for translation (INITIAL, IMPROVE, EDITOR stages)
+        if 'translation' in data and data['translation']:
+            return data['translation'].strip(), True
+        
+        # Check for suggestions (REFLECTION stage)
+        if 'suggestions' in data:
+            suggestions = data['suggestions']
+            if isinstance(suggestions, list):
+                return suggestions, True
+            elif isinstance(suggestions, str) and suggestions.strip():
+                return suggestions.strip(), True
+        
+        # JSON found but no valid content
+        logger.debug(f"JSON parsed but no valid 'translation' or 'suggestions' key")
+        return text.strip(), False
+        
+    except (json.JSONDecodeError, KeyError, TypeError) as e:
+        logger.debug(f"Failed to parse JSON: {e}")
+        return text.strip(), False
+
+
+# =============================================================================
 # Core Functions (used by app.py)
 # =============================================================================
 
@@ -1238,7 +1284,10 @@ def remove_tags_with_check(text: str, stage_name: str = "", role: LLMRole = None
     """
     Remove tags and check for empty result. Log ERROR if result is empty.
     
-    FALLBACK: If cleanup returns empty, return original text (prevents lost translations).
+    Priority:
+    1. JSON parsing (new - for JSON_MODE)
+    2. XML tag extraction (existing)
+    3. Fallback to original text
     
     Args:
         text: Raw LLM response
@@ -1253,6 +1302,19 @@ def remove_tags_with_check(text: str, stage_name: str = "", role: LLMRole = None
         return ""
     
     original_len = len(text)
+    
+    # PRIORITY 1: Try JSON parsing first (JSON_MODE)
+    parsed, is_json = parse_json_response(text)
+    if is_json and parsed:
+        # Handle list (suggestions from reflection) vs string (translation)
+        if isinstance(parsed, list):
+            logger.debug(f"Extracted {len(parsed)} suggestions from JSON [{stage_name}]")
+            return '\n'.join(str(s) for s in parsed) if parsed else ""
+        else:
+            logger.debug(f"Extracted translation from JSON [{stage_name}]")
+            return parsed
+    
+    # PRIORITY 2: Fall back to XML tag extraction
     cleaned = remove_tags(text)
     cleaned_len = len(cleaned)
     
