@@ -23,8 +23,11 @@ class Config:
         # Stage 1: INITIAL translation
         self.temp_initial = float(os.getenv('TEMP_INITIAL', self.temp_translate))
         
-        # JSON mode control for local LLMs that may not support it correctly
-        # Default: true (disabled) - local LLMs often struggle with JSON mode
+        # JSON mode control - use structured JSON for LLM input/output
+        # Default: false (disabled) - use traditional XML tags
+        self.json_mode = os.getenv('JSON_MODE', 'false').lower() in ['true', '1', 't', 'on', 'yes']
+        
+        # Legacy JSON mode controls (deprecated, use JSON_MODE instead)
         self.disable_json_mode_translate = os.getenv('DISABLE_JSON_MODE_TRANSLATE', 'true').lower() in ['true', '1', 't', 'on', 'yes']
         self.disable_json_mode_proofread = os.getenv('DISABLE_JSON_MODE_PROOFREAD', 'true').lower() in ['true', '1', 't', 'on', 'yes']
         # Stage 2: REFLECTION (quality review)
