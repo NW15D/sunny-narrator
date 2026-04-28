@@ -1,0 +1,17 @@
+{
+  "planPath": "docs/superpowers/plans/2026-04-28-json-llm-response.md",
+  "tasks": [
+    {"id": 1, "subject": "Task 1: TDD тесты JSON парсинга (RED)", "status": "completed"},
+    {"id": 2, "subject": "Task 2: Config - добавить JSON_MODE", "status": "completed"},
+    {"id": 3, "subject": "Task 3: Prompts - добавить JSON промты", "status": "completed"},
+    {"id": 4, "subject": "Task 4: Utils - парсинг JSON (GREEN)", "status": "completed"},
+    {"id": 5.1, "subject": "Task 5.1: initial_translation JSON mode", "status": "completed"},
+    {"id": 5.2, "subject": "Task 5.2: reflection JSON mode", "status": "completed"},
+    {"id": 5.3, "subject": "Task 5.3: improve_translation JSON mode", "status": "completed"},
+    {"id": 5.4, "subject": "Task 5.4: final_edit JSON mode", "status": "completed"},
+    {"id": 6.1, "subject": "Task 6.1: .env.example", "status": "completed"},
+    {"id": 6.2, "subject": "Task 6.2: Интеграционные тесты", "status": "completed"},
+    {"id": 7, "subject": "Task 7: Документация", "status": "completed"}
+  ],
+  "lastUpdated": "2026-04-28T12:50:00Z"
+}
