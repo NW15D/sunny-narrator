@@ -216,6 +216,51 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
             if word in seen_words and word not in stop_words:
                 seen_words.remove(word)
 
+    # --- Keyword extraction (TASK 2: integrate into make_vocab) ---
+    try:
+        keywords = extract_keywords_from_text(text, nlp, stop_words)
+        if keywords:
+            word_counts.update(kw.lower() for kw in keywords)
+            if config.debug:
+                print(f"Extracted {len(keywords)} keywords from text")
+    except Exception as e:
+        if config.debug:
+            print(f"Keyword extraction failed: {e}")
+
+    # Filter words with count > min_count_word and length >= min_word_length
+    filtered_words_with_counts = [(word, count) for word, count in word_counts.items() if count > min_count_word and len(word) >= min_word_length]
+
+    sorted_common_words_with_counts = sorted(filtered_words_with_counts, key=lambda x: x[1], reverse=True)
+    top_common_words = [word for word, count in sorted_common_words_with_counts]
+
+    if config.debug:
+        print(f"Top common words with counts (min={min_count_word}, len>={min_word_length}): {sorted_common_words_with_counts[:20]}")
+
+    # Normalize final_merged_ents
+    seen_entities = set()
+    normalized_final_merged_ents = []
+    for ent in final_merged_ents:
+        normalized_text = ent[0].strip().lower()
+        if normalized_text not in seen_entities and normalized_text not in stop_words:
+            seen_entities.add(normalized_text)
+            normalized_final_merged_ents.append((ent[0], ent[1]))
+
+    # Normalize top_common_words
+    seen_words = set()
+    normalized_top_common_words = []
+    for word in top_common_words:
+        normalized_word = word.strip().lower()
+        if normalized_word not in seen_entities and normalized_word not in stop_words:
+            seen_words.add(normalized_word)
+            normalized_top_common_words.append(word)
+
+    # Remove words from top_common_words that are substrings of entities
+    for ent in final_merged_ents:
+        words_in_ent = ent[0].strip().lower().split()
+        for word in words_in_ent:
+            if word in seen_words and word not in stop_words:
+                seen_words.remove(word)
+
     unique_top_common_words = [word for word in normalized_top_common_words if word.lower() in seen_words]
 
     result_list = [f"{text} ({label})" for text, label in normalized_final_merged_ents] + unique_top_common_words
@@ -223,6 +268,79 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
     if config.debug:
         print("Finished processing.")
     return '\n'.join(result_list) + '\n'
+
+
+def extract_keywords_from_text(text: str, nlp=None, stop_words: set = None) -> list[str]:
+    """
+    Extract keywords from text using spaCy.
+
+    Two extraction strategies:
+    1. Frequency-based: tokens that are not stop words and are alphabetic
+    2. Semantic: tokens that are not stop words and have non-zero vector norm
+
+    Returns a combined unique list of keyword strings (preserving original case).
+
+    Args:
+        text: Source text to extract keywords from
+        nlp: Pre-loaded spaCy pipeline (will load if None)
+        stop_words: Set of stop words to exclude (default: common English words)
+
+    Returns:
+        List of unique keyword strings
+    """
+    default_stop = {
+        "the", "and", "p", "emphasis", "section", "first", "second", "one", "two",
+        "chapter", "part", "book", "volume", "title", "author", "name", "said",
+        "like", "just", "know", "think", "see", "look", "come", "take", "give",
+        "make", "find", "tell", "ask", "work", "seem", "feel", "try", "leave", "call"
+    }
+
+    if stop_words is None:
+        stop_words = default_stop
+
+    try:
+        if nlp is None:
+            nlp = load_spacy_model(config.nermodel)
+
+        # Split into chunks for large texts
+        chunk_size = 100000
+        text_chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
+
+        all_freq_keywords = []
+        all_semantic_keywords = []
+
+        for chunk in text_chunks:
+            try:
+                doc = nlp(chunk, disable=["ner", "parser", "lemmatizer", "attribute_ruler"])
+
+                # Frequency-based keywords: alpha tokens that are not stop words
+                freq_kw = [token.text for token in doc if not token.is_stop and token.is_alpha]
+                all_freq_keywords.extend(freq_kw)
+
+                # Semantic keywords: non-stop tokens with meaningful vector representation
+                semantic_kw = [token.text for token in doc if not token.is_stop and token.vector_norm > 0]
+                all_semantic_keywords.extend(semantic_kw)
+
+                del doc
+            except Exception as e:
+                if config.debug:
+                    print(f"Keyword extraction chunk error: {e}")
+                continue
+
+        # Combine both lists, preserving order, deduplicating while keeping first occurrence
+        seen = set()
+        combined = []
+        for kw in all_freq_keywords + all_semantic_keywords:
+            if kw not in seen:
+                seen.add(kw)
+                combined.append(kw)
+
+        return combined
+
+    except Exception as e:
+        if config.debug:
+            print(f"Keyword extraction failed: {e}")
+        return []
 
 
 def create_dictionary_from_text(text, stop_words=None, min_count_ner=5, min_count_word=10, min_word_length=5):
