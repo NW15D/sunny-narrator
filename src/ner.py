@@ -733,6 +733,17 @@ def create_series_vocab(
     print(f"\nTotal raw entities: {len(all_raw_entities)}")
     print(f"Total unique words: {len(all_words)}")
     
+    # --- Extract keywords using spaCy (same as make_vocab) ---
+    print("Extracting keywords...")
+    try:
+        keywords = extract_keywords_from_text(text, nlp, stop_words)
+        if keywords:
+            for kw in keywords:
+                all_words[kw.lower()] += 1
+            print(f"  Extracted {len(keywords)} keywords from all books")
+    except Exception as e:
+        print(f"  Keyword extraction failed: {e}")
+    
     # Aggregate entity counts across ALL books (sum occurrences)
     entity_counts = Counter((term, cat) for term, cat, _ in all_raw_entities)
     
