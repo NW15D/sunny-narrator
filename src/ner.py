@@ -720,13 +720,15 @@ def create_series_vocab(
                         word_key = token.text.lower()
                         all_words[word_key] += 1
                 
-                # --- Extract keywords from each chunk ---
-                try:
-                    chunk_keywords = extract_keywords_from_text(chunk, nlp, stop_words)
-                    for kw in chunk_keywords:
-                        all_words[kw.lower()] += 1
-                except Exception as e:
-                    pass  # Non-critical, continue processing
+                # Keywords by frequency: not stop words, alphabetic
+                keywords_freq = [token.text.lower() for token in doc if not token.is_stop and token.is_alpha]
+                for kw in keywords_freq:
+                    all_words[kw] += 1
+                
+                # Keywords by semantic weight: not stop words, has vector representation
+                keywords_semantic = [token.text.lower() for token in doc if not token.is_stop and token.vector_norm > 0]
+                for kw in keywords_semantic:
+                    all_words[kw] += 1
                 
                 del doc
             except Exception as e:
