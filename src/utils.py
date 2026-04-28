@@ -1573,15 +1573,56 @@ def vocabulary(source_lang: str, target_lang: str, source_text: str,
     # Vocabulary translation uses Secondary LLM with standard prompt
     prompt_key = "user"
     
-    result = llm_service_compat.get_completion(
-        role=role,
-        prompt_category="vocabulary",
-        prompt_key=prompt_key,
-        source_lang=source_lang,
-        target_lang=target_lang,
-        country=country,
-        source_text=source_text
-    )
+    # Split text if too long (>8192 chars), translate in two parts, then merge
+    TEXT_SPLIT_THRESHOLD = 8192
+    max_tokens = 32512  # Always use 32K tokens for vocabulary
+    
+    if len(source_text) > TEXT_SPLIT_THRESHOLD:
+        logger.info(f"Vocabulary text too long ({len(source_text)} chars), splitting into two parts")
+        
+        # Split by lines to keep entries whole
+        lines = source_text.split('\n')
+        mid = len(lines) // 2
+        part1 = '\n'.join(lines[:mid])
+        part2 = '\n'.join(lines[mid:])
+        
+        # Translate first part
+        result1 = llm_service_compat.get_completion(
+            role=role,
+            prompt_category="vocabulary",
+            prompt_key=prompt_key,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            country=country,
+            source_text=part1,
+            max_tokens=max_tokens
+        )
+        
+        # Translate second part
+        result2 = llm_service_compat.get_completion(
+            role=role,
+            prompt_category="vocabulary",
+            prompt_key=prompt_key,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            country=country,
+            source_text=part2,
+            max_tokens=max_tokens
+        )
+        
+        # Merge results with newline
+        result = (result1.strip() + '\n' + result2.strip()).strip()
+    else:
+        result = llm_service_compat.get_completion(
+            role=role,
+            prompt_category="vocabulary",
+            prompt_key=prompt_key,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            country=country,
+            source_text=source_text,
+            max_tokens=max_tokens
+        )
     
     if config.debug:
         logger.debug(f"Vocabulary generated: {len(result)} chars")
