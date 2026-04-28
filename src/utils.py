@@ -453,13 +453,17 @@ class LLMService:
             use_sys_not_promt = config.sys_not_promt_proofread
         
         # Check if JSON mode should be disabled for this role (for local LLMs)
+        # But allow force_json_mode to override (for vocabulary translation)
         disable_json = False
         if role == LLMRole.PRIMARY:
             disable_json = config.disable_json_mode_translate
         else:
             disable_json = config.disable_json_mode_proofread
         
-        if disable_json and json_mode:
+        # Force JSON mode ignores disable flags (used for vocabulary)
+        force_json_mode = kwargs.pop('force_json_mode', False)
+        
+        if disable_json and json_mode and not force_json_mode:
             json_mode = False
             if config.debug:
                 logger.debug(f"JSON mode disabled for {role.value} LLM via config")
@@ -1600,7 +1604,7 @@ def vocabulary(source_lang: str, target_lang: str, source_text: str,
         part1 = '\n'.join(lines[:mid])
         part2 = '\n'.join(lines[mid:])
         
-        # Translate first part (with JSON mode)
+        # Translate first part (with JSON mode, force to override config)
         result1 = llm_service_compat.get_completion(
             role=role,
             prompt_category="vocabulary",
@@ -1610,10 +1614,11 @@ def vocabulary(source_lang: str, target_lang: str, source_text: str,
             country=country,
             source_text=part1,
             max_tokens=max_tokens,
-            json_mode=True
+            json_mode=True,
+            force_json_mode=True
         )
         
-        # Translate second part (with JSON mode)
+        # Translate second part (with JSON mode, force to override config)
         result2 = llm_service_compat.get_completion(
             role=role,
             prompt_category="vocabulary",
@@ -1623,7 +1628,8 @@ def vocabulary(source_lang: str, target_lang: str, source_text: str,
             country=country,
             source_text=part2,
             max_tokens=max_tokens,
-            json_mode=True
+            json_mode=True,
+            force_json_mode=True
         )
         
         # Merge results with newline
@@ -1638,7 +1644,8 @@ def vocabulary(source_lang: str, target_lang: str, source_text: str,
             country=country,
             source_text=source_text,
             max_tokens=max_tokens,
-            json_mode=True
+            json_mode=True,
+            force_json_mode=True
         )
     
     if config.debug:
