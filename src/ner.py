@@ -790,7 +790,7 @@ def create_series_vocab(
     for term, category, count in filtered_entities:
         terms_for_translation.append(term)
     
-    for word, count in filtered_words[:100]:  # Limit to top 100 words
+    for word, count in filtered_words:
         terms_for_translation.append(word)
     
     if not terms_for_translation:
@@ -844,7 +844,7 @@ def create_series_vocab(
         # Add words without category (empty) and without notes
         # Words: source = target, , , 
         by_category[""] = []
-        for word, count in filtered_words[:100]:
+        for word, count in filtered_words:
             word_lower = word.lower()
             target = translations.get(word_lower, "")
             by_category[""].append((word, target, ""))
