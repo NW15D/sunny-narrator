@@ -784,16 +784,16 @@ def create_series_vocab(
         print("No terms found")
         return output_file
     
-    # Prepare terms for translation with category
+    # Prepare terms for translation with category (if available)
     terms_for_translation = []
     
     for term, category, count in filtered_entities:
-        # Format: term [CATEGORY]
+        # Format: term [CATEGORY] (NER entities always have category)
         terms_for_translation.append(f"{term} [{category}]")
     
     for word, count in filtered_words:
-        # Words without category - use TERM
-        terms_for_translation.append(f"{word} [TERM]")
+        # Words without category - no brackets
+        terms_for_translation.append(word)
     
     if not terms_for_translation:
         print("No terms to translate")
@@ -813,7 +813,7 @@ def create_series_vocab(
     )
     
     # Parse translations (now includes category from LLM)
-    # Format: source = target, CATEGORY, , 
+    # Format: source = target, CATEGORY, ,  (or source = target, , ,  if no category)
     translations = {}
     categories = {}
     for line in vocab_translated.strip().split('\n'):
@@ -827,7 +827,8 @@ def create_series_vocab(
             # Parse CSV: target, CATEGORY, , 
             csv_parts = rest.split(',')
             target = csv_parts[0].strip() if csv_parts else rest.strip()
-            category = csv_parts[1].strip() if len(csv_parts) > 1 else 'TERM'
+            # Category is 2nd field - use empty if not provided
+            category = csv_parts[1].strip() if len(csv_parts) > 1 and csv_parts[1].strip() else ''
             translations[source.lower()] = target
             categories[source.lower()] = category
     
