@@ -401,7 +401,8 @@ class LLMService:
         stage: TranslationStage = None,  # NEW: for stage-specific temperature
         retry_count: int = 0,  # NEW: retry counter for empty responses
         track_tokens: bool = True,  # NEW: extract token usage from response
-        allow_empty: bool = False  # NEW: if True, don't retry on empty response (for synopsis)
+        allow_empty: bool = False,  # NEW: if True, don't retry on empty response (for synopsis)
+        temperature: float = None  # NEW: override temperature for smart retry
     ) -> tuple:
         """
         Execute LLM completion with role-appropriate client.
@@ -436,6 +437,10 @@ class LLMService:
         # Use stage-specific temperature if provided
         if stage is not None:
             temp = self.get_temperature_for_stage(stage, role)
+        
+        # Override temperature if provided (for smart retry)
+        if temperature is not None:
+            temp = temperature
         
         # Determine if we need to merge system prompt into user prompt
         # Models that DON'T support system prompts: Gemma 2, Gemma 3
@@ -535,20 +540,31 @@ class LLMService:
             
             logger.error(f"ERROR - Ответ 0 [{role.value}]: LLM returned empty response (retry {retry_count + 1}/2)")
             if retry_count < 2:  # Max 2 retries
-                logger.error(f"Retrying current step [{role.value}]...")
+                # Smart retry: modify parameters
+                enhanced_temp = temp * (0.5 ** (retry_count + 1))  # Lower temp
+                enhanced_system = system_prompt + "\nIMPORTANT: If you cannot translate, return the original text unchanged."
+                
+                # For JSON mode, add specific fallback instruction
+                if json_mode:
+                    enhanced_system += '\nIf no translation, return: {"translation": "ORIGINAL_TEXT"}'
+                
+                logger.debug(f"Smart retry {retry_count + 1}: temp={enhanced_temp:.4f}, enhanced_prompt=True")
+                
                 # Small delay before retry
                 time.sleep(0.5)
                 retry_result, retry_tokens = self.complete(
                     role=role,
-                    system_prompt=system_prompt,
+                    system_prompt=enhanced_system,  # Use enhanced system prompt
                     user_prompt=user_prompt,
                     max_tokens=max_tokens,
                     json_mode=json_mode,
                     stage=stage,
                     retry_count=retry_count + 1,
                     track_tokens=track_tokens,
-                    allow_empty=allow_empty
+                    allow_empty=allow_empty,
+                    temperature=enhanced_temp  # Pass modified temperature
                 )
+                
                 # Add retry tokens to metrics
                 if retry_tokens > 0:
                     metrics.log_retry(retry_tokens, f"Empty response retry [{role.value}]")
