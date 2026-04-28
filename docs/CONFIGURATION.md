@@ -33,7 +33,8 @@ TARGET_LANG=russian
 | `S_PROMT_TRANSLATE` | `false` | `true` для Gemma 2/3 (не поддерживают system prompts) |
 | `TEMP_TRANSLATE` | `0.01` | Базовая температура (fallback) |
 | `TIMEOUT_TRANSLATE` | `6000` | Таймаут запросов (сек) |
-| `DISABLE_JSON_MODE_TRANSLATE` | `true` | Отключить JSON mode (безопаснее для локальных LLM) |
+| `DISABLE_JSON_MODE_TRANSLATE` | `true` | ~~Отключить JSON mode~~ **DEPRECATED** — используйте `JSON_MODE`
+| `JSON_MODE` | `false` | Включить структурированный JSON для всех стадий (**рекомендуется**) |
 
 ### Secondary LLM (Корректура)
 
@@ -45,7 +46,11 @@ TARGET_LANG=russian
 | `S_PROMT_PROOFREAD` | `false` | `true` для Gemma 2/3 |
 | `TEMP_PROOFREAD` | `0.7` | Базовая температура (fallback) |
 | `TIMEOUT_PROOFREAD` | `6000` | Таймаут запросов (сек) |
-| `DISABLE_JSON_MODE_PROOFREAD` | `true` | Отключить JSON mode |
+| `DISABLE_JSON_MODE_PROOFREAD` | `true` | ~~Отключить JSON mode~~ **DEPRECATED** — используйте `JSON_MODE`
+
+> ⚠️ **Legacy flags:** `DISABLE_JSON_MODE_TRANSLATE` и `DISABLE_JSON_MODE_PROOFREAD` устарели.
+> При `JSON_MODE=true` JSON включён для всех стадий автоматически.
+> Legacy флаги сохраняют обратную совместимость, но могут быть удалены в будущих версиях.
 
 ### Stage-Specific Temperatures
 
@@ -125,13 +130,12 @@ API_KEY_TRANSLATE=ollama
 API_BASE_TRANSLATE=http://localhost:11434/v1
 MODEL_TRANSLATE=gemma2:27b
 S_PROMT_TRANSLATE=true
-DISABLE_JSON_MODE_TRANSLATE=true
+JSON_MODE=true
 
 API_KEY_PROOFREAD=ollama
 API_BASE_PROOFREAD=http://localhost:11434/v1
 MODEL_PROOFREAD=mistral:7b
 S_PROMT_PROOFREAD=false
-DISABLE_JSON_MODE_PROOFREAD=true
 
 GPU=false
 NER=true
@@ -143,6 +147,7 @@ NER=true
 API_KEY_TRANSLATE=sk-xxx
 API_BASE_TRANSLATE=https://api.openai.com/v1
 MODEL_TRANSLATE=gpt-4
+JSON_MODE=true
 
 API_KEY_PROOFREAD=sk-xxx
 API_BASE_PROOFREAD=https://api.openai.com/v1
@@ -161,6 +166,33 @@ NER=true
 
 # Остальные параметры по умолчанию
 ```
+
+---
+
+## 🧩 JSON Mode
+
+**JSON mode** включает структурированный формат ввода/вывода для всех 4 стадий перевода (INITIAL, REFLECTION, IMPROVE, FINAL_EDIT).
+
+### Включение
+```bash
+JSON_MODE=true
+```
+
+### Преимущества
+- Более надёжный парсинг (без конфликтов XML-тегов)
+- Структурированный ввод: vocabulary, synopsis, context в JSON
+- Консистентный формат вывода на всех стадиях
+
+### Поведение
+При `JSON_MODE=true`:
+- Все стадии используют JSON-промпты из `prompts.json` (категории с `_json` суффиксом)
+- Вывод LLM парсится как JSON
+- При ошибке парсинга — автоматический fallback на XML-режим
+
+### Детали
+- [JSON Mode Analysis](JSON_MODE_ANALYSIS.md) — полная документация по форматам ввода/вывода
+- Промпт-категории: `initial_translation_json`, `reflection_json`, `improve_json`, `editor_json`
+- В JSON-промптах фигурные скобки экранированы: `{{ "translation": "..." }}`
 
 ---
 
