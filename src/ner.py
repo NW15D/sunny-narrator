@@ -169,9 +169,20 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
         for chunk in text_chunks[:5]:  # Sample first 5 chunks for word counting
             try:
                 doc = nlp(chunk, disable=["ner", "parser", "lemmatizer", "attribute_ruler"])
+                
+                # Regular words
                 word_counts.update(
                     token.text.lower() for token in doc if token.is_alpha and token.text.lower() not in stop_words
                 )
+                
+                # Keywords by frequency: not stop words, alphabetic
+                keywords_freq = [token.text.lower() for token in doc if not token.is_stop and token.is_alpha]
+                word_counts.update(keywords_freq)
+                
+                # Keywords by semantic weight: not stop words, has vector representation
+                keywords_semantic = [token.text.lower() for token in doc if not token.is_stop and token.vector_norm > 0]
+                word_counts.update(keywords_semantic)
+                
                 del doc
                 gc.collect()
             except:
@@ -215,17 +226,6 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
         for word in words_in_ent:
             if word in seen_words and word not in stop_words:
                 seen_words.remove(word)
-
-    # --- Keyword extraction (TASK 2: integrate into make_vocab) ---
-    try:
-        keywords = extract_keywords_from_text(text, nlp, stop_words)
-        if keywords:
-            word_counts.update(kw.lower() for kw in keywords)
-            if config.debug:
-                print(f"Extracted {len(keywords)} keywords from text")
-    except Exception as e:
-        if config.debug:
-            print(f"Keyword extraction failed: {e}")
 
     # Filter words with count > min_count_word and length >= min_word_length
     filtered_words_with_counts = [(word, count) for word, count in word_counts.items() if count > min_count_word and len(word) >= min_word_length]
