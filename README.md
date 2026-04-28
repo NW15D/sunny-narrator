@@ -14,7 +14,7 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env with your API keys
 
-# Run translation
+# Run translation (JSON mode recommended)
 python app.py
 ```
 
@@ -31,6 +31,7 @@ python app.py
 API_KEY_TRANSLATE=your-key
 API_BASE_TRANSLATE=http://localhost:11434/v1
 MODEL_TRANSLATE=google/gemma-2-27b-it
+JSON_MODE=true    # 🚀 Recommended: structured JSON for all stages
 
 API_KEY_PROOFREAD=your-key
 API_BASE_PROOFREAD=http://localhost:11434/v1
@@ -154,7 +155,7 @@ docker-compose -f docker-compose.gpu.yml up -d
 | **Dictionary Format** | [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md) |
 | **Resume after Crash** | [docs/RESUME.md](docs/RESUME.md) |
 | **Docker (CPU/GPU)** | [docs/DOCKER_CPU_GUIDE.md](docs/DOCKER_CPU_GUIDE.md) |
-| **JSON Mode Analysis** | [docs/JSON_MODE_ANALYSIS.md](docs/JSON_MODE_ANALYSIS.md) |
+| **JSON Mode Analysis** | [docs/JSON_MODE_ANALYSIS.md](docs/JSON_MODE_ANALYSIS.md) — JSON mode implementation details, input/output formats
 | **NER CPU Fallback** | [docs/NER_CPU_FALLBACK_ANALYSIS.md](docs/NER_CPU_FALLBACK_ANALYSIS.md) |
 | **Prompts Guide** | [docs/PROMPTS_GUIDE.md](docs/PROMPTS_GUIDE.md) |
 

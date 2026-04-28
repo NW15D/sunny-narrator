@@ -34,6 +34,21 @@
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+### 🧩 JSON Mode Output Formats
+
+When `JSON_MODE=true` is set, all 4 translation stages use structured JSON output instead of XML tags.
+
+| Stage | JSON Output Format |
+|-------|-------------------|
+| **INITIAL** | `{"translation": "переведенный текст с тегами <p>..."}` |
+| **REFLECTION** | `{"suggestions": ["замечание 1", "замечание 2"]}` |
+| **IMPROVE** | `{"translation": "исправленный перевод"}` |
+| **FINAL_EDIT** | `{"translation": "финальный перевод"}` |
+
+> ⚠️ Stage 5 (SYNOPSIS) always uses plain text — no JSON mode for synopsis.
+
+See [JSON Mode Analysis](../JSON_MODE_ANALYSIS.md) for complete input/output specifications.
+
 ---
 
 ## 🎯 Stage 1: INITIAL (Первичный перевод)
@@ -379,3 +394,110 @@ Create a synopsis in {target_lang} (max 80 words). Requirements:
 - **2026-03-29:** Initial documentation of 5-stage pipeline
 - **2026-03-29:** Enhanced reflection prompts for suggestions-only output
 - **2026-03-29:** Added troubleshooting section
+- **2026-04-28:** Added JSON mode documentation
+
+---
+
+## 🧩 JSON Mode
+
+При `JSON_MODE=true` все стадии используют структурированный JSON ввод/вывод.
+
+### Активация
+
+```bash
+# .env
+JSON_MODE=true
+```
+
+### Стадия 1: INITIAL (JSON Mode)
+
+**Prompt Category:** `initial_translation_json`
+
+**JSON Input:**
+```json
+{
+  "source": "текст для перевода",
+  "source_lang": "en",
+  "target_lang": "ru",
+  "country": "RU",
+  "vocabulary": {"term": "перевод"},
+  "synopsis": "контекст из предыдущих чанков"
+}
+```
+
+**JSON Output:**
+```json
+{"translation": "переведённый текст"}
+```
+
+---
+
+### Стадия 2: REFLECTION (JSON Mode)
+
+**Prompt Category:** `reflection_json`
+
+**JSON Input:**
+```json
+{
+  "source": "оригинальный текст",
+  "translation": "перевод",
+  "source_lang": "en",
+  "target_lang": "ru",
+  "country": "RU",
+  "vocabulary": {}
+}
+```
+
+**JSON Output:**
+```json
+{"suggestions": ["Replace 'X' with 'Y' (reason)"]}
+```
+
+---
+
+### Стадия 3: IMPROVE (JSON Mode)
+
+**Prompt Category:** `improve_json`
+
+**JSON Input:**
+```json
+{
+  "translation": "текущий перевод",
+  "suggestions": ["suggestion 1", "suggestion 2"],
+  "target_lang": "ru",
+  "country": "RU",
+  "vocabulary": {}
+}
+```
+
+**JSON Output:**
+```json
+{"translation": "улучшенный перевод"}
+```
+
+---
+
+### Стадия 4: FINAL_EDIT (JSON Mode)
+
+**Prompt Category:** `editor_json`
+
+**JSON Input:**
+```json
+{
+  "translation": "перевод после IMPROVE",
+  "target_lang": "ru",
+  "country": "RU"
+}
+```
+
+**JSON Output:**
+```json
+{"translation": "финальный перевод"}
+```
+
+---
+
+### Ссылки
+
+- [docs/JSON_MODE_ANALYSIS.md](../JSON_MODE_ANALYSIS.md) — полная документация
+- [docs/superpowers/specs/2026-04-28-json-llm-response-design.md](../superpowers/specs/2026-04-28-json-llm-response-design.md) — спецификация дизайна
