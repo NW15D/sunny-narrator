@@ -232,12 +232,13 @@ result = llm_service.complete(
 
 ## 📦 JSON Mode
 
-Set `JSON_MODE=true` in `.env` to use structured JSON for LLM input/output.
+Set `JSON_MODE=true` in `.env` to use structured JSON for LLM input/output across all 4 translation stages.
 
 ### Benefits
 - More reliable parsing (no XML tag conflicts)
 - Structured input with vocabulary, synopsis, context
 - Consistent output format across all stages
+- Better control over LLM response structure
 
 ### Configuration
 ```bash
@@ -245,7 +246,36 @@ Set `JSON_MODE=true` in `.env` to use structured JSON for LLM input/output.
 JSON_MODE=true
 ```
 
+### Prompt Categories
+JSON prompts use `*_json` suffix in `prompts.json`. The system looks up the category by stage:
+
+| Stage | JSON Prompt Category |
+|-------|---------------------|
+| **INITIAL** | `initial_translation_json` |
+| **REFLECTION** | `reflection_json` |
+| **IMPROVE** | `improve_json` |
+| **FINAL_EDIT** | `editor_json` |
+
+> ⚠️ **Important:** Use the `*_json` category (not `system_json`/`user_text_json` keys inside). The JSON prompt has its own system/user messages with escaped braces.
+
+### Escaped Curly Braces
+JSON prompts use double curly braces `{{ }}` to escape template variables. This prevents Python f-string interpolation of the JSON structure itself — only the `{variable}` placeholders are substituted.
+
+Example from `prompts.json`:
+```json
+{
+    "initial_translation_json": {
+        "system": "You are a professional literary translator...",
+        "user": "{{\"source\": \"{source_text}\", \"target_lang\": \"{target_lang}\"}}"
+    }
+}
+```
+
+The `{{` and `}}` become `{` and `}` in the actual prompt sent to the LLM.
+
 ### Input Format (all stages)
+All JSON prompts receive a structured input object:
+
 ```json
 {
   "source": "текст для перевода",
@@ -256,6 +286,13 @@ JSON_MODE=true
   "synopsis": "краткое содержание"
 }
 ```
+
+**Field descriptions:**
+- `source` — text to translate
+- `source_lang` / `target_lang` — language codes
+- `country` — localization country for regional variants
+- `vocabulary` — term dictionary (key = source term, value = target translation)
+- `synopsis` — context summary from previous chunk
 
 ### Output Format (by stage)
 
@@ -269,14 +306,12 @@ JSON_MODE=true
 {"suggestions": ["suggestion 1", "suggestion 2"]}
 ```
 
-### Prompts
-JSON prompts are defined in `prompts.json` with `_json` suffix:
-- `initial_translation_json`
-- `reflection_json`
-- `improve_json`
-- `editor_json`
-
 ### Fallback
-If JSON parsing fails, the system falls back to XML tag extraction.
+If JSON parsing fails, the system falls back to XML tag extraction (`<ttext>...</ttext>`).
 
-- **2026-04-28**: Added JSON Mode for structured LLM input/output
+### Related Documentation
+- [JSON_MODE_ANALYSIS.md](../JSON_MODE_ANALYSIS.md) — Detailed analysis of JSON mode implementation, input/output formats for all stages
+
+---
+
+*Updated: 2026-04-28 — Expanded with escaped braces, prompt categories, and structured input details*
