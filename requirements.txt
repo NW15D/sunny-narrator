@@ -1,4 +1,5 @@
 # Core dependencies
+nltk
 icecream
 python-dotenv
 openai

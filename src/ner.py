@@ -62,22 +62,67 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
             print("No text to process.")
         return
 
-    # Define default stop words or use user provided
-    default_stop_words = set([
-        # Common articles, prepositions, pronouns
-        "the", "and", "a", "an", "of", "to", "in", "that", "is", "it", "for", "on",
-        "with", "as", "was", "at", "be", "this", "have", "from", "or", "by", "not", "but",
-        "what", "all", "were", "we", "when", "your", "can", "said", "there", "use", "each",
-        # Generic book terms
+    # Try to load NLTK stopwords (top ~200 words), fallback to manual list
+    # NLTK stopwords are high-frequency words that are usually not meaningful for vocabulary
+    default_stop_words = set()
+    
+    try:
+        import nltk
+        try:
+            from nltk.corpus import stopwords
+            nltk.data.find('corpora/stopwords')
+        except LookupError:
+            nltk.download('stopwords', quiet=True)
+        default_stop_words = set(stopwords.words('english'))
+        if config.debug:
+            print(f"Loaded {len(default_stop_words)} NLTK stopwords")
+    except ImportError:
+        if config.debug:
+            print("NLTK not available, using manual stopwords list")
+        # Fallback manual list (NLTK english stopwords)
+        default_stop_words = set([
+            "i", "me", "my", "myself", "we", "our", "ours", "ourselves", "you", "your", 
+            "yours", "yourself", "yourselves", "he", "him", "his", "himself", "she", "her", 
+            "hers", "herself", "it", "its", "itself", "they", "them", "their", "theirs", 
+            "themselves", "what", "which", "who", "whom", "this", "that", "these", "those", 
+            "am", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had", 
+            "having", "do", "does", "did", "doing", "a", "an", "the", "and", "but", "if", 
+            "or", "because", "as", "until", "while", "of", "at", "by", "for", "with", 
+            "about", "against", "between", "into", "through", "during", "before", "after", 
+            "above", "below", "to", "from", "up", "down", "in", "out", "on", "off", "over", 
+            "under", "again", "further", "then", "once", "here", "there", "when", "where", 
+            "why", "how", "all", "any", "both", "each", "few", "more", "most", "other", 
+            "some", "such", "no", "nor", "not", "only", "own", "same", "so", "than", "too", 
+            "very", "s", "t", "can", "will", "just", "don", "should", "now",
+            # Additional common words from books
+            "d", "ll", "m", "re", "ve", "said", "would", "could", "upon", "must", "might",
+            "yet", "thing", "things", "way", "ways", "like", "even", "also", "back", "still",
+            "much", "get", "got", "go", "went", "come", "came", "see", "saw", "know", "knew",
+            "think", "thought", "want", "wanted", "take", "took", "give", "gave", "make", "made",
+            "first", "second", "one", "two", "time", "times", "new", "old", "great", "little",
+            # Book/format specific
+            "chapter", "part", "book", "volume", "section", "page", "p", "title", "author",
+            # Common verbs to filter
+            "said", "ask", "asked", "say", "tell", "told", "look", "looked", "seem", "seemed",
+            "feel", "felt", "leave", "left", "call", "called", "turn", "turned", "get", "got",
+            "inside", "emphasis",
+        ])
+    
+    # Add custom stopwords that are common in books but not in NLTK list
+    custom_stop_words = {
         "p", "section", "chapter", "part", "book", "volume", "title", "author", "name",
-        # Common verbs (often not meaningful for vocabulary)
-        "said", "like", "just", "know", "think", "see", "look", "come", "take", "give",
-        "make", "find", "tell", "ask", "work", "seem", "feel", "try", "leave", "call",
-        "would", "could", "asked", "inside", "emphasis", "first", "second", "one", "two",
-    ])
+        "emphasis", "inside", "asked", "would", "could", "shall", "may", "might", "must",
+        "every", "any", "another", "such", "however", "though", "although", "because",
+        "therefore", "since", "without", "within", "around", "toward", "towards", "upon",
+        "ever", "never", "always", "often", "sometimes", "usually", "again", "already",
+        "yet", "still", "perhaps", "maybe", "certainly", "exactly", "especially",
+    }
+    default_stop_words.update(custom_stop_words)
 
     if stop_words is None:
         stop_words = default_stop_words
+        if config.debug:
+            print(f"Using {len(stop_words)} total stopwords (NLTK + custom)")
     else:
         stop_words = set(stop_words)
 
