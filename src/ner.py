@@ -904,7 +904,7 @@ def create_series_vocab(
         config.target_lang,
         terms_text,
         config.country,
-        "Proofread"
+        "Translate"
     )
     
     # Parse translations from JSON response
@@ -927,6 +927,7 @@ def create_series_vocab(
     except (json.JSONDecodeError, AttributeError) as e:
         # Fallback to old CSV parsing if JSON fails
         print(f"JSON parse failed ({e}), falling back to CSV parsing")
+        print(f"vocab_translated starts with: {vocab_translated[:200]}")
         for line in vocab_translated.strip().split('\n'):
             line = line.strip()
             if not line or line.startswith('#'):
