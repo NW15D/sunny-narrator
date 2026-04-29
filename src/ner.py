@@ -907,24 +907,79 @@ def create_series_vocab(
         "Translate"
     )
     
+    if config.debug:
+        print(f"Raw LLM response length: {len(vocab_translated)} chars")
+        print(f"Raw LLM response preview: {vocab_translated[:500]}")
+        if len(vocab_translated) > 500:
+            print(f"... (truncated)")
+    
     # Parse translations from JSON response
     # Format: {"terms": [{"source": "...", "target": "...", "category": "..."}, ...]}
     translations = {}
     categories = {}
     
+    def extract_json_from_response(text):
+        """Extract JSON object from potentially wrapped response."""
+        import re
+        import json
+        
+        # Try to find JSON object in the response
+        # Look for {...} pattern that contains "terms" key
+        json_match = re.search(r'\{[^{}]*"terms"[^{}]*\{.*?\}\s*\]', text, re.DOTALL)
+        if json_match:
+            try:
+                return json.loads(json_match.group(0))
+            except json.JSONDecodeError:
+                pass
+        
+        # Try to find any JSON object
+        json_match = re.search(r'\{.*\}', text, re.DOTALL)
+        if json_match:
+            try:
+                return json.loads(json_match.group(0))
+            except json.JSONDecodeError:
+                pass
+        
+        # If no JSON found, try to parse the whole response
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            return None
+    
     try:
         import json
-        vocab_json = json.loads(vocab_translated)
+        # Use robust JSON extraction
+        vocab_json = extract_json_from_response(vocab_translated)
+        if vocab_json is None:
+            raise json.JSONDecodeError("No valid JSON found", vocab_translated, 0)
+            
         terms = vocab_json.get('terms', [])
+        if not terms:
+            # Check if the response is directly the terms array
+            if isinstance(vocab_json, list):
+                terms = vocab_json
+            else:
+                print(f"WARNING: No 'terms' key found in JSON response. Keys: {list(vocab_json.keys()) if isinstance(vocab_json, dict) else 'not a dict'}")
+                
+        parsed_count = 0
         for term in terms:
-            source = term.get('source', '').strip()
-            target = term.get('target', '').strip()
-            category = term.get('category', '').strip()
-            if source and target:
-                translations[source.lower()] = target
-                categories[source.lower()] = category
-        print(f"Parsed {len(translations)} terms from JSON")
-    except (json.JSONDecodeError, AttributeError) as e:
+            if isinstance(term, dict):
+                source = term.get('source', '').strip()
+                target = term.get('target', '').strip()
+                category = term.get('category', '').strip()
+                if source and target:
+                    translations[source.lower()] = target
+                    categories[source.lower()] = category
+                    parsed_count += 1
+            else:
+                print(f"WARNING: Term is not a dict: {term}")
+                
+        print(f"Parsed {parsed_count} terms from JSON (total terms in response: {len(terms)})")
+        
+        if parsed_count == 0:
+            print(f"WARNING: No valid terms parsed from JSON response. Response preview: {vocab_translated[:500]}")
+            
+    except (json.JSONDecodeError, AttributeError, TypeError) as e:
         # Fallback to old CSV parsing if JSON fails
         print(f"JSON parse failed ({e}), falling back to CSV parsing")
         print(f"vocab_translated starts with: {vocab_translated[:200]}")
@@ -939,11 +994,19 @@ def create_series_vocab(
                 csv_parts = rest.split(',')
                 target = csv_parts[0].strip() if csv_parts else rest.strip()
                 category = csv_parts[1].strip() if len(csv_parts) > 1 and csv_parts[1].strip() else ''
-                translations[source.lower()] = target
-                categories[source.lower()] = category
+                if source and target:
+                    translations[source.lower()] = target
+                    categories[source.lower()] = category
     
     # Build final vocabulary list in CSV format
     # Format: source = target, category, gender, notes
+    
+    # Ensure output directory exists
+    import os
+    output_dir = os.path.dirname(output_file)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+        print(f"Created output directory: {output_dir}")
     
     # Write dictionary in proper CSV format
     with open(output_file, 'w', encoding='utf-8') as f:
@@ -982,11 +1045,17 @@ def create_series_vocab(
             f.write(f"{cat_header}\n")
             for source, target, notes in entries:
                 if category:  # NER entities have category
-                    notes_str = f", {notes}" if notes else ""
-                    f.write(f"{source} = {target}, {category}, ,{notes_str}\n")
+                    # Determine gender based on category
+                    if category == "PERSON":
+                        gender = ""  # Could be enhanced to detect gender from name, but leave empty for now
+                    else:
+                        gender = ""  # LOC, ORG, TERM don't have gender
+                    
+                    # Format: source = target, category, gender, notes
+                    f.write(f"{source} = {target}, {category}, {gender}, {notes}\n")
                 else:  # Words - no category
-                    f.write(f"{source} = {target}, , , \n")  # trailing space as per docs
-            f.write("\n")
+                    # Format: source = target, , , notes
+                    f.write(f"{source} = {target}, , , {notes}\n")
             f.write("\n")
     
     print(f"Dictionary saved to: {output_file}")
