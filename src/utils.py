@@ -403,7 +403,9 @@ class LLMService:
         track_tokens: bool = True,  # NEW: extract token usage from response
         allow_empty: bool = False,  # NEW: if True, don't retry on empty response (for synopsis)
         temperature: float = None,  # NEW: override temperature for smart retry
-        force_json_mode: bool = False  # NEW: force JSON mode ignoring config disable
+        force_json_mode: bool = False,  # NEW: force JSON mode ignoring config disable
+        reasoning_budget: int = None,  # NEW: disable reasoning for vocabulary requests
+        chat_template_kwargs: dict = None  # NEW: additional chat template kwargs
     ) -> tuple:
         """
         Execute LLM completion with role-appropriate client.
@@ -415,6 +417,7 @@ class LLMService:
         NEW: Automatic retry on empty response (max 2 retries).
         NEW: Configurable JSON mode disable for local LLMs.
         NEW: Returns token usage from API response.
+        NEW: reasoning_budget and chat_template_kwargs for vocabulary requests.
         
         Args:
             role: LLMRole.PRIMARY or LLMRole.SECONDARY
@@ -426,6 +429,8 @@ class LLMService:
             retry_count: Internal retry counter (do not set manually)
             track_tokens: Whether to extract token usage from response
             allow_empty: If True, accept empty response without retry (for synopsis stage)
+            reasoning_budget: Set to 0 to disable reasoning (for vocabulary requests)
+            chat_template_kwargs: Additional kwargs for chat template (e.g., {"enable_thinking": false})
             
         Returns:
             Tuple of (generated_text, tokens_used)
@@ -485,6 +490,15 @@ class LLMService:
             "max_tokens": max_tokens,
             "messages": messages
         }
+        
+        # Add reasoning_budget if specified
+        if reasoning_budget is not None:
+            comp_kwargs["reasoning_budget"] = reasoning_budget
+            
+        # Add chat_template_kwargs if specified
+        if chat_template_kwargs is not None:
+            comp_kwargs["chat_template_kwargs"] = chat_template_kwargs
+            
         if json_mode:
             comp_kwargs["response_format"] = {"type": "json_object"}
         
@@ -1289,7 +1303,9 @@ class LLMServiceCompat:
             json_mode=json_mode,
             stage=stage,  # Pass stage for temperature selection
             track_tokens=False,
-            force_json_mode=kwargs.get('force_json_mode', False)
+            force_json_mode=kwargs.get('force_json_mode', False),
+            reasoning_budget=kwargs.get('reasoning_budget', None),
+            chat_template_kwargs=kwargs.get('chat_template_kwargs', None)
         )
         return text
 
