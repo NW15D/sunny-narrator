@@ -182,11 +182,16 @@ class VocabularyManager:
         else:
             logger.info(f"Dictionary not found. Creating: {self.dict_file}")
             self._create_dictionary()
-            # Exit to let user edit the dictionary
-            print(f"\nDictionary created: {self.dict_file}")
-            print("Please review and edit the dictionary, then restart.")
-            import sys
-            sys.exit(0)
+            # Check if auto-continue is enabled
+            if config.get('auto_continue_after_dict', False):
+                logger.info("Auto-continue enabled, proceeding without manual review")
+                return self.vocab
+            else:
+                # Exit to let user edit the dictionary
+                print(f"\nDictionary created: {self.dict_file}")
+                print("Please review and edit the dictionary, then restart.")
+                import sys
+                sys.exit(0)
     
     def _create_dictionary(self):
         """
@@ -227,8 +232,10 @@ class VocabularyManager:
                 # Format terms for translation
                 terms_text = '\n'.join([term for term, cat, notes in extracted_terms])
                 
-                # Split into ~16K chunks and translate each, writing immediately
-                CHUNK_SIZE = 16384
+                # Split into chunks based on MAX_LEN_CHUNK configuration
+                CHUNK_SIZE = int(config.max_len_chunk) if hasattr(config, 'max_len_chunk') else 16384
+                logger.info(f"Using chunk size: {CHUNK_SIZE} characters (from MAX_LEN_CHUNK)")
+                
                 lines = terms_text.split('\n')
                 chunks = []
                 current = []
@@ -253,6 +260,9 @@ class VocabularyManager:
                     f.write(f"# Vocabulary for {self.book_name}\n")
                     f.write(f"# Format: source = target, category, gender, notes\n")
                     f.write(f"# Generated automatically by NER\n\n")
+                
+                # Clear existing vocab to avoid duplicates
+                self.vocab.clear()
                 
                 total_parsed = 0
                 for idx, chunk in enumerate(chunks):
@@ -393,40 +403,66 @@ class VocabularyManager:
             Number of entries parsed and written
         """
         import json
+        import re
         
         parsed = 0
         
-        # Try to parse JSON
+        # Try multiple parsing strategies
         vocab_json = None
+        terms = []
+        
+        # Strategy 1: Full JSON parse
         try:
             vocab_json = json.loads(vocab_translated)
+            terms = vocab_json.get('terms', []) if isinstance(vocab_json, dict) else ([] if not isinstance(vocab_json, list) else vocab_json)
         except json.JSONDecodeError:
-            # Try balanced brace extraction
-            first_brace = vocab_translated.find('{')
-            if first_brace >= 0:
-                depth = 0
-                last_brace = -1
-                for i in range(first_brace, len(vocab_translated)):
-                    if vocab_translated[i] == '{':
-                        depth += 1
-                    elif vocab_translated[i] == '}':
-                        depth -= 1
-                        if depth == 0:
-                            last_brace = i
-                            break
-                if last_brace > first_brace:
-                    try:
+            pass
+        
+        # Strategy 2: Balanced brace extraction
+        if not terms:
+            try:
+                first_brace = vocab_translated.find('{')
+                if first_brace >= 0:
+                    depth = 0
+                    last_brace = -1
+                    for i in range(first_brace, len(vocab_translated)):
+                        if vocab_translated[i] == '{':
+                            depth += 1
+                        elif vocab_translated[i] == '}':
+                            depth -= 1
+                            if depth == 0:
+                                last_brace = i
+                                break
+                    if last_brace > first_brace:
                         vocab_json = json.loads(vocab_translated[first_brace:last_brace + 1])
-                    except json.JSONDecodeError:
-                        pass
+                        terms = vocab_json.get('terms', []) if isinstance(vocab_json, dict) else ([] if not isinstance(vocab_json, list) else vocab_json)
+            except (json.JSONDecodeError, ValueError):
+                pass
         
-        if vocab_json is None:
-            logger.warning(f"Chunk {chunk_num}: No valid JSON found")
+        # Strategy 3: Extract individual JSON objects from response
+        if not terms:
+            # Look for individual term objects like {"source": "...", "target": "...", "category": "..."}
+            term_pattern = r'\{\s*"source"\s*:\s*"([^"]*)"\s*,\s*"target"\s*:\s*"([^"]*)"(?:\s*,\s*"category"\s*:\s*"([^"]*)")?[^}]*\}'
+            matches = re.finditer(term_pattern, vocab_translated)
+            
+            for match in matches:
+                source = match.group(1).strip()
+                target = match.group(2).strip()
+                category = match.group(3).strip() if match.group(3) else ""
+                
+                if source and target:
+                    terms.append({
+                        "source": source,
+                        "target": target,
+                        "category": category
+                    })
+        
+        if not terms:
+            logger.warning(f"Chunk {chunk_num}: No valid terms found in response")
+            # Log a sample of the response for debugging
+            sample = vocab_translated[:200] if len(vocab_translated) > 200 else vocab_translated
+            logger.debug(f"Chunk {chunk_num} response sample: {repr(sample)}")
             return 0
-        
-        terms = vocab_json.get('terms', [])
-        if not terms and isinstance(vocab_json, list):
-            terms = vocab_json
         
         # Append entries to file immediately
         with open(self.dict_file, 'a', encoding='utf-8') as f:
