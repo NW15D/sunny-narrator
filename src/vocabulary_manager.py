@@ -227,18 +227,51 @@ class VocabularyManager:
                 # Format terms for translation
                 terms_text = '\n'.join([term for term, cat, notes in extracted_terms])
                 
-                # Translate terms using LLM
-                from src import utils as ta
-                vocab_translated = ta.vocabulary(
-                    config.source_lang, 
-                    config.target_lang, 
-                    terms_text, 
-                    config.country, 
-                    "Proofread"
-                )
+                # Split into ~16K chunks and translate each, writing immediately
+                CHUNK_SIZE = 16384
+                lines = terms_text.split('\n')
+                chunks = []
+                current = []
+                current_len = 0
+                for line in lines:
+                    current.append(line)
+                    current_len += len(line) + 1
+                    if current_len >= CHUNK_SIZE:
+                        chunks.append('\n'.join(current))
+                        current = []
+                        current_len = 0
+                if current:
+                    chunks.append('\n'.join(current))
                 
-                # Parse and save with structured format
-                self._parse_and_save_structured(vocab_translated, extracted_terms)
+                logger.info(f"Split {len(terms_text)} chars into {len(chunks)} chunk(s) for translation")
+                
+                from src import utils as ta
+                import json as _json
+                
+                # Write header once
+                with open(self.dict_file, 'w', encoding='utf-8') as f:
+                    f.write(f"# Vocabulary for {self.book_name}\n")
+                    f.write(f"# Format: source = target, category, gender, notes\n")
+                    f.write(f"# Generated automatically by NER\n\n")
+                
+                total_parsed = 0
+                for idx, chunk in enumerate(chunks):
+                    logger.info(f"Translating chunk {idx + 1}/{len(chunks)} ({len(chunk)} chars)...")
+                    
+                    vocab_translated = ta.vocabulary(
+                        config.source_lang,
+                        config.target_lang,
+                        chunk,
+                        config.country,
+                        "Proofread"
+                    )
+                    
+                    # Parse JSON response and write immediately
+                    parsed = self._parse_and_append_chunk(vocab_translated, idx + 1, len(chunks))
+                    total_parsed += parsed
+                    logger.info(f"Chunk {idx + 1}: wrote {parsed} entries")
+                
+                logger.info(f"Dictionary saved: {self.dict_file} ({total_parsed} total entries)")
             else:
                 logger.warning("No terms extracted by NER")
                 self._create_template()
@@ -346,6 +379,79 @@ class VocabularyManager:
             json.dump(vocab_list, f, indent=2, ensure_ascii=False)
         
         logger.info(f"Dictionary saved: {self.dict_file} ({len(self.vocab)} entries)")
+    
+    def _parse_and_append_chunk(self, vocab_translated: str, chunk_num: int, total_chunks: int) -> int:
+        """
+        Parse a single chunk's JSON response and append entries to the dictionary file.
+        
+        Args:
+            vocab_translated: JSON response from LLM
+            chunk_num: Current chunk number (1-based)
+            total_chunks: Total number of chunks
+            
+        Returns:
+            Number of entries parsed and written
+        """
+        import json
+        
+        parsed = 0
+        
+        # Try to parse JSON
+        vocab_json = None
+        try:
+            vocab_json = json.loads(vocab_translated)
+        except json.JSONDecodeError:
+            # Try balanced brace extraction
+            first_brace = vocab_translated.find('{')
+            if first_brace >= 0:
+                depth = 0
+                last_brace = -1
+                for i in range(first_brace, len(vocab_translated)):
+                    if vocab_translated[i] == '{':
+                        depth += 1
+                    elif vocab_translated[i] == '}':
+                        depth -= 1
+                        if depth == 0:
+                            last_brace = i
+                            break
+                if last_brace > first_brace:
+                    try:
+                        vocab_json = json.loads(vocab_translated[first_brace:last_brace + 1])
+                    except json.JSONDecodeError:
+                        pass
+        
+        if vocab_json is None:
+            logger.warning(f"Chunk {chunk_num}: No valid JSON found")
+            return 0
+        
+        terms = vocab_json.get('terms', [])
+        if not terms and isinstance(vocab_json, list):
+            terms = vocab_json
+        
+        # Append entries to file immediately
+        with open(self.dict_file, 'a', encoding='utf-8') as f:
+            f.write(f"\n# --- Chunk {chunk_num}/{total_chunks} ---\n")
+            for term in terms:
+                if isinstance(term, dict):
+                    source = term.get('source', '').strip()
+                    target = term.get('target', '').strip()
+                    category = term.get('category', '').strip()
+                    if source and target:
+                        cat = category if category in ['PERSON', 'LOC', 'ORG', 'TERM'] else 'TERM'
+                        f.write(f"{source} = {target}, {cat}, , \n")
+                        
+                        # Add to memory
+                        key = source.replace(' ', '_').lower()
+                        self.vocab[key] = VocabEntry(
+                            source=source,
+                            target=target,
+                            category=cat,
+                            gender="",
+                            notes=""
+                        )
+                        parsed += 1
+        
+        return parsed
     
     def _create_template(self):
         """Create empty dictionary template with JSON format."""
