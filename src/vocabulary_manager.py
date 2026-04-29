@@ -392,10 +392,13 @@ class VocabularyManager:
     
     def _parse_and_append_chunk(self, vocab_translated: str, chunk_num: int, total_chunks: int) -> int:
         """
-        Parse a single chunk's JSON response and append entries to the dictionary file.
+        Parse LLM response and append entries to the dictionary file in consistent CSV format.
+        
+        This method handles various LLM response formats but expects structured data
+        with source, target, and optional category fields.
         
         Args:
-            vocab_translated: JSON response from LLM
+            vocab_translated: Response from LLM (may contain JSON, markdown, or plain text)
             chunk_num: Current chunk number (1-based)
             total_chunks: Total number of chunks
             
@@ -404,58 +407,75 @@ class VocabularyManager:
         """
         import json
         import re
+        import csv
+        from io import StringIO
         
         parsed = 0
-        
-        # Try multiple parsing strategies
-        vocab_json = None
         terms = []
         
-        # Strategy 1: Full JSON parse
+        # Strategy 1: Try to find and parse JSON array or object
         try:
-            vocab_json = json.loads(vocab_translated)
-            terms = vocab_json.get('terms', []) if isinstance(vocab_json, dict) else ([] if not isinstance(vocab_json, list) else vocab_json)
-        except json.JSONDecodeError:
+            # Look for JSON array first
+            json_array_match = re.search(r'\[\s*\{.*?\}\s*\]', vocab_translated, re.DOTALL)
+            if json_array_match:
+                json_str = json_array_match.group(0)
+                terms = json.loads(json_str)
+                if not isinstance(terms, list):
+                    terms = []
+            else:
+                # Look for JSON object with terms array
+                json_obj_match = re.search(r'\{\s*"terms"\s*:\s*\[.*?\]\s*\}', vocab_translated, re.DOTALL)
+                if json_obj_match:
+                    json_str = json_obj_match.group(0)
+                    obj = json.loads(json_str)
+                    terms = obj.get('terms', []) if isinstance(obj, dict) else []
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.debug(f"JSON parsing failed for chunk {chunk_num}: {e}")
             pass
         
-        # Strategy 2: Balanced brace extraction
+        # Strategy 2: If no JSON found, try to extract structured data from markdown/table format
         if not terms:
-            try:
-                first_brace = vocab_translated.find('{')
-                if first_brace >= 0:
-                    depth = 0
-                    last_brace = -1
-                    for i in range(first_brace, len(vocab_translated)):
-                        if vocab_translated[i] == '{':
-                            depth += 1
-                        elif vocab_translated[i] == '}':
-                            depth -= 1
-                            if depth == 0:
-                                last_brace = i
-                                break
-                    if last_brace > first_brace:
-                        vocab_json = json.loads(vocab_translated[first_brace:last_brace + 1])
-                        terms = vocab_json.get('terms', []) if isinstance(vocab_json, dict) else ([] if not isinstance(vocab_json, list) else vocab_json)
-            except (json.JSONDecodeError, ValueError):
-                pass
+            # Look for markdown table format
+            table_pattern = r'\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|\s*([^|]*)\s*\|'
+            matches = re.findall(table_pattern, vocab_translated)
+            if matches:
+                for match in matches:
+                    source = match[0].strip()
+                    target = match[1].strip()
+                    category = match[2].strip() if match[2].strip() else "TERM"
+                    if source and target and not source.startswith('-') and not target.startswith('-'):
+                        terms.append({
+                            "source": source,
+                            "target": target,
+                            "category": category
+                        })
         
-        # Strategy 3: Extract individual JSON objects from response
+        # Strategy 3: Last resort - look for simple key-value pairs
         if not terms:
-            # Look for individual term objects like {"source": "...", "target": "...", "category": "..."}
-            term_pattern = r'\{\s*"source"\s*:\s*"([^"]*)"\s*,\s*"target"\s*:\s*"([^"]*)"(?:\s*,\s*"category"\s*:\s*"([^"]*)")?[^}]*\}'
-            matches = re.finditer(term_pattern, vocab_translated)
+            # Look for patterns like "source: target" or "source -> target"
+            kv_patterns = [
+                r'"([^"]+)"\s*:\s*"([^"]+)"',  # "source": "target"
+                r'([^:\n]+):\s*([^\n]+)',         # source: target
+                r'([^→\n]+)→\s*([^\n]+)',        # source → target
+                r'([^=\n]+)=\s*([^\n]+)'         # source = target
+            ]
             
-            for match in matches:
-                source = match.group(1).strip()
-                target = match.group(2).strip()
-                category = match.group(3).strip() if match.group(3) else ""
-                
-                if source and target:
-                    terms.append({
-                        "source": source,
-                        "target": target,
-                        "category": category
-                    })
+            for pattern in kv_patterns:
+                matches = re.findall(pattern, vocab_translated)
+                if matches:
+                    for match in matches:
+                        source = match[0].strip()
+                        target = match[1].strip()
+                        # Skip if looks like metadata or instruction
+                        if source.lower() in ['terms', 'translation', 'note', 'example']:
+                            continue
+                        if source and target and len(source) > 1 and len(target) > 1:
+                            terms.append({
+                                "source": source,
+                                "target": target,
+                                "category": "TERM"
+                            })
+                    break  # Use first successful pattern
         
         if not terms:
             logger.warning(f"Chunk {chunk_num}: No valid terms found in response")
@@ -464,119 +484,155 @@ class VocabularyManager:
             logger.debug(f"Chunk {chunk_num} response sample: {repr(sample)}")
             return 0
         
-        # Append entries to file immediately
+        # Validate and normalize terms
+        valid_terms = []
+        valid_categories = {'PERSON', 'LOC', 'ORG', 'TERM'}
+        
+        for term in terms:
+            if isinstance(term, dict):
+                source = str(term.get('source', '')).strip()
+                target = str(term.get('target', '')).strip()
+                category = str(term.get('category', 'TERM')).strip()
+                
+                # Skip empty or invalid entries
+                if not source or not target:
+                    continue
+                
+                # Normalize category
+                if category.upper() not in valid_categories:
+                    category = "TERM"
+                else:
+                    category = category.upper()
+                
+                valid_terms.append({
+                    "source": source,
+                    "target": target,
+                    "category": category
+                })
+        
+        if not valid_terms:
+            logger.warning(f"Chunk {chunk_num}: No valid terms after normalization")
+            return 0
+        
+        # Append entries to file in consistent CSV format
         with open(self.dict_file, 'a', encoding='utf-8') as f:
-            f.write(f"\n# --- Chunk {chunk_num}/{total_chunks} ---\n")
-            for term in terms:
-                if isinstance(term, dict):
-                    source = term.get('source', '').strip()
-                    target = term.get('target', '').strip()
-                    category = term.get('category', '').strip()
-                    if source and target:
-                        cat = category if category in ['PERSON', 'LOC', 'ORG', 'TERM'] else 'TERM'
-                        f.write(f"{source} = {target}, {cat}, , \n")
-                        
-                        # Add to memory
-                        key = source.replace(' ', '_').lower()
-                        self.vocab[key] = VocabEntry(
-                            source=source,
-                            target=target,
-                            category=cat,
-                            gender="",
-                            notes=""
-                        )
-                        parsed += 1
+            if chunk_num == 1:
+                # Write header for first chunk
+                f.write(f"\n# --- Translated Terms (CSV Format: source,target,category,gender,notes) ---\n")
+            else:
+                f.write(f"\n# --- Chunk {chunk_num}/{total_chunks} ---\n")
+            
+            # Use CSV writer to handle proper escaping
+            csv_buffer = StringIO()
+            csv_writer = csv.writer(csv_buffer, quoting=csv.QUOTE_MINIMAL)
+            
+            for term in valid_terms:
+                source = term["source"]
+                target = term["target"]
+                category = term["category"]
+                
+                # Write CSV row: source,target,category,gender,notes
+                csv_writer.writerow([source, target, category, "", ""])
+                
+                # Add to memory
+                key = source.replace(' ', '_').lower()
+                self.vocab[key] = VocabEntry(
+                    source=source,
+                    target=target,
+                    category=category,
+                    gender="",
+                    notes=""
+                )
+                parsed += 1
+            
+            # Write the CSV content to file
+            f.write(csv_buffer.getvalue())
         
         return parsed
     
     def _create_template(self):
-        """Create empty dictionary template with JSON format."""
+        """Create empty dictionary template with CSV format."""
         with open(self.dict_file, 'w', encoding='utf-8') as f:
             f.write(f"# Vocabulary for {self.book_name}\n")
-            f.write(f"# Format: JSON array of vocabulary entries\n")
-            f.write(f"# Each entry: {{\"source\": \"...\", \"target\": \"...\", \"category\": \"PERSON|LOC|ORG|TERM\", \"gender\": \"he|she|it\", \"notes\": \"...\"}}\n\n")
-            f.write("# Example:\n")
-            f.write("[\n")
-            f.write("  {\"source\": \"Alice\", \"target\": \"Алиса\", \"category\": \"PERSON\", \"gender\": \"she\", \"notes\": \"Main character\"},\n")
-            f.write("  {\"source\": \"Wonderland\", \"target\": \"Страна чудес\", \"category\": \"LOC\", \"gender\": \"\", \"notes\": \"Setting\"}\n")
-            f.write("]\n")
+            f.write(f"# Format: CSV (Comma-Separated Values)\n")
+            f.write(f"# Columns: source,target,category,gender,notes\n")
+            f.write(f"# Valid categories: PERSON, LOC, ORG, TERM\n")
+            f.write(f"# Valid genders: he, she, it, they (optional)\n")
+            f.write(f"# Fields containing commas will be automatically quoted\n")
+            f.write(f"# Add your vocabulary entries below this line\n\n")
         
         logger.info(f"Template dictionary created: {self.dict_file}")
     
     def _load_from_file(self) -> Dict[str, VocabEntry]:
-        """Load vocabulary from .dic file (supports JSON or legacy format)."""
-        import json
+        """Load vocabulary from .dic file using consistent CSV format.
+        
+        Format: source,target,category,gender,notes
+        Each field is separated by commas, with proper CSV escaping for fields containing commas.
+        Comments start with # and are ignored.
+        """
+        import csv
         
         vocab = {}
         
         with open(self.dict_file, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        # Try JSON format first
-        try:
-            # Find JSON array in content (skip comments)
-            json_match = re.search(r'\[([\s\S]*?)\]', content)
-            if json_match:
-                vocab_list = json.loads(json_match.group(0))
-                for entry in vocab_list:
-                    if isinstance(entry, dict):
-                        key = entry.get('source', '').replace(' ', '_').lower()
-                        vocab[key] = VocabEntry(
-                            source=entry.get('source', ''),
-                            target=entry.get('target', ''),
-                            category=entry.get('category', ''),
-                            gender=entry.get('gender', ''),
-                            notes=entry.get('notes', '')
-                        )
-                logger.info(f"Loaded {len(vocab)} entries from JSON format")
-                return vocab
-        except (json.JSONDecodeError, AttributeError) as e:
-            logger.debug(f"JSON parse failed, trying legacy format: {e}")
-        
-        # Fallback to legacy format (line-by-line)
-        for line_num, line in enumerate(content.split('\n'), 1):
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
+            # Skip comment lines at the beginning
+            lines = []
+            for line in f:
+                stripped = line.strip()
+                if stripped and not stripped.startswith('#'):
+                    lines.append(stripped)
             
-            try:
-                # Format: source = target | category | gender | notes
-                # OR: source = target (legacy format)
-                
-                # Split by = first
-                if '=' not in line:
-                    continue
-                
-                parts = line.split('=', 1)
-                source = parts[0].strip()
-                rest = parts[1].strip()
-                
-                # Split rest by | for extended format
-                if '|' in rest:
-                    subparts = rest.split('|')
-                    target = subparts[0].strip()
-                    category = subparts[1].strip() if len(subparts) > 1 else ""
-                    gender = subparts[2].strip() if len(subparts) > 2 else ""
-                    notes = subparts[3].strip() if len(subparts) > 3 else ""
-                else:
-                    target = rest
-                    category = ""
-                    gender = ""
-                    notes = ""
-                
-                key = source.replace(' ', '_').lower()
-                vocab[key] = VocabEntry(
-                    source=source,
-                    target=target,
-                    category=category,
-                    gender=gender,
-                    notes=notes
-                )
-                
-            except Exception as e:
-                logger.warning(f"Error parsing line {line_num}: {line} - {e}")
+            if not lines:
+                logger.warning(f"No valid entries found in {self.dict_file}")
+                return vocab
+            
+            # Parse as CSV
+            csv_reader = csv.reader(lines)
+            
+            for line_num, row in enumerate(csv_reader, 1):
+                try:
+                    # Ensure we have at least source and target
+                    if len(row) < 2:
+                        logger.warning(f"Line {line_num}: Insufficient fields (need at least source,target)")
+                        continue
+                    
+                    source = row[0].strip()
+                    target = row[1].strip()
+                    
+                    if not source or not target:
+                        logger.warning(f"Line {line_num}: Empty source or target")
+                        continue
+                    
+                    # Get optional fields with defaults
+                    category = row[2].strip() if len(row) > 2 else ""
+                    gender = row[3].strip() if len(row) > 3 else ""
+                    notes = row[4].strip() if len(row) > 4 else ""
+                    
+                    # Validate category
+                    valid_categories = {'PERSON', 'LOC', 'ORG', 'TERM', ''}
+                    if category and category not in valid_categories:
+                        logger.warning(f"Line {line_num}: Invalid category '{category}', defaulting to 'TERM'")
+                        category = "TERM"
+                    
+                    # Validate gender
+                    valid_genders = {'he', 'she', 'it', 'they', ''}
+                    if gender and gender not in valid_genders:
+                        logger.warning(f"Line {line_num}: Invalid gender '{gender}', clearing it")
+                        gender = ""
+                    
+                    key = source.replace(' ', '_').lower()
+                    vocab[key] = VocabEntry(
+                        source=source,
+                        target=target,
+                        category=category,
+                        gender=gender,
+                        notes=notes
+                    )
+                    
+                except Exception as e:
+                    logger.warning(f"Error parsing line {line_num}: {row} - {e}")
         
-        logger.info(f"Loaded {len(vocab)} entries from legacy format")
+        logger.info(f"Loaded {len(vocab)} entries from CSV format")
         return vocab
     
     def _extract_characters(self):
@@ -811,34 +867,49 @@ class VocabularyManager:
         return series_vocab
     
     def _load_from_file_with_path(self, file_path: str) -> Dict[str, VocabEntry]:
-        """Load vocabulary from specific file path."""
+        """Load vocabulary from specific file path using CSV format."""
+        import csv
+        
         vocab = {}
         
         with open(file_path, 'r', encoding='utf-8') as f:
-            for line_num, line in enumerate(f, 1):
-                line = line.strip()
-                if not line or line.startswith('#'):
-                    continue
-                
+            # Skip comment lines
+            lines = []
+            for line in f:
+                stripped = line.strip()
+                if stripped and not stripped.startswith('#'):
+                    lines.append(stripped)
+            
+            if not lines:
+                return vocab
+            
+            # Parse as CSV
+            csv_reader = csv.reader(lines)
+            
+            for line_num, row in enumerate(csv_reader, 1):
                 try:
-                    if '=' not in line:
+                    if len(row) < 2:
                         continue
                     
-                    parts = line.split('=', 1)
-                    source = parts[0].strip()
-                    rest = parts[1].strip()
+                    source = row[0].strip()
+                    target = row[1].strip()
                     
-                    if '|' in rest:
-                        subparts = rest.split('|')
-                        target = subparts[0].strip()
-                        category = subparts[1].strip() if len(subparts) > 1 else ""
-                        gender = subparts[2].strip() if len(subparts) > 2 else ""
-                        notes = subparts[3].strip() if len(subparts) > 3 else ""
-                    else:
-                        target = rest
-                        category = ""
+                    if not source or not target:
+                        continue
+                    
+                    category = row[2].strip() if len(row) > 2 else ""
+                    gender = row[3].strip() if len(row) > 3 else ""
+                    notes = row[4].strip() if len(row) > 4 else ""
+                    
+                    # Validate category
+                    valid_categories = {'PERSON', 'LOC', 'ORG', 'TERM', ''}
+                    if category and category not in valid_categories:
+                        category = "TERM"
+                    
+                    # Validate gender
+                    valid_genders = {'he', 'she', 'it', 'they', ''}
+                    if gender and gender not in valid_genders:
                         gender = ""
-                        notes = ""
                     
                     key = source.replace(' ', '_').lower()
                     vocab[key] = VocabEntry(
