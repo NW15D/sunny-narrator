@@ -263,7 +263,7 @@ class VocabularyManager:
                         config.target_lang,
                         chunk,
                         config.country,
-                        "Proofread"
+                        "Translate"
                     )
                     
                     # Parse JSON response and write immediately
