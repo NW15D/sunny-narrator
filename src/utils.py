@@ -1649,8 +1649,18 @@ def vocabulary(source_lang: str, target_lang: str, source_text: str,
             force_json_mode=True
         )
         
-        # Merge results with newline
-        result = (result1.strip() + '\n' + result2.strip()).strip()
+        # Merge two JSON responses by combining their terms arrays
+        import json as _json
+        try:
+            j1 = _json.loads(result1)
+            j2 = _json.loads(result2)
+            terms1 = j1.get('terms', []) if isinstance(j1, dict) else (j1 if isinstance(j1, list) else [])
+            terms2 = j2.get('terms', []) if isinstance(j2, dict) else (j2 if isinstance(j2, list) else [])
+            merged = {"terms": terms1 + terms2}
+            result = _json.dumps(merged, ensure_ascii=False)
+        except Exception as e:
+            logger.warning(f"Failed to merge JSON vocabulary chunks ({e}), falling back to concatenation")
+            result = (result1.strip() + '\n' + result2.strip()).strip()
     else:
         result = llm_service_compat.get_completion(
             role=role,

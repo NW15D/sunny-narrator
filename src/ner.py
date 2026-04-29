@@ -923,16 +923,34 @@ def create_series_vocab(
         import re
         import json
         
-        # Try to find JSON object in the response
-        # Look for {...} pattern that contains "terms" key
-        json_match = re.search(r'\{[^{}]*"terms"[^{}]*\{.*?\}\s*\]', text, re.DOTALL)
-        if json_match:
-            try:
-                return json.loads(json_match.group(0))
-            except json.JSONDecodeError:
-                pass
+        # Try to parse the whole response first (cleanest case)
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
         
-        # Try to find any JSON object
+        # Try to find JSON with balanced braces starting from first '{'
+        # This handles markdown code fences, prefixes, etc.
+        first_brace = text.find('{')
+        if first_brace >= 0:
+            depth = 0
+            last_brace = -1
+            for i in range(first_brace, len(text)):
+                if text[i] == '{':
+                    depth += 1
+                elif text[i] == '}':
+                    depth -= 1
+                    if depth == 0:
+                        last_brace = i
+                        break
+            if last_brace > first_brace:
+                candidate = text[first_brace:last_brace + 1]
+                try:
+                    return json.loads(candidate)
+                except json.JSONDecodeError:
+                    pass
+        
+        # Last resort: try regex fallback
         json_match = re.search(r'\{.*\}', text, re.DOTALL)
         if json_match:
             try:
@@ -940,11 +958,7 @@ def create_series_vocab(
             except json.JSONDecodeError:
                 pass
         
-        # If no JSON found, try to parse the whole response
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            return None
+        return None
     
     try:
         import json
