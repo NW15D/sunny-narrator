@@ -897,124 +897,6 @@ def create_series_vocab(
     print(f"Terms for translation: {len(terms_for_translation)}")
     terms_text = '\n'.join(terms_for_translation)
     
-    # Translate via LLM
-    from src import utils as ta
-    vocab_translated = ta.vocabulary(
-        config.source_lang,
-        config.target_lang,
-        terms_text,
-        config.country,
-        "Translate"
-    )
-    
-    if config.debug:
-        print(f"Raw LLM response length: {len(vocab_translated)} chars")
-        print(f"Raw LLM response preview: {vocab_translated[:500]}")
-        if len(vocab_translated) > 500:
-            print(f"... (truncated)")
-    
-    # Parse translations from JSON response
-    # Format: {"terms": [{"source": "...", "target": "...", "category": "..."}, ...]}
-    translations = {}
-    categories = {}
-    
-    def extract_json_from_response(text):
-        """Extract JSON object from potentially wrapped response."""
-        import re
-        import json
-        
-        # Try to parse the whole response first (cleanest case)
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            pass
-        
-        # Try to find JSON with balanced braces starting from first '{'
-        # This handles markdown code fences, prefixes, etc.
-        first_brace = text.find('{')
-        if first_brace >= 0:
-            depth = 0
-            last_brace = -1
-            for i in range(first_brace, len(text)):
-                if text[i] == '{':
-                    depth += 1
-                elif text[i] == '}':
-                    depth -= 1
-                    if depth == 0:
-                        last_brace = i
-                        break
-            if last_brace > first_brace:
-                candidate = text[first_brace:last_brace + 1]
-                try:
-                    return json.loads(candidate)
-                except json.JSONDecodeError:
-                    pass
-        
-        # Last resort: try regex fallback
-        json_match = re.search(r'\{.*\}', text, re.DOTALL)
-        if json_match:
-            try:
-                return json.loads(json_match.group(0))
-            except json.JSONDecodeError:
-                pass
-        
-        return None
-    
-    try:
-        import json
-        # Use robust JSON extraction
-        vocab_json = extract_json_from_response(vocab_translated)
-        if vocab_json is None:
-            raise json.JSONDecodeError("No valid JSON found", vocab_translated, 0)
-            
-        terms = vocab_json.get('terms', [])
-        if not terms:
-            # Check if the response is directly the terms array
-            if isinstance(vocab_json, list):
-                terms = vocab_json
-            else:
-                print(f"WARNING: No 'terms' key found in JSON response. Keys: {list(vocab_json.keys()) if isinstance(vocab_json, dict) else 'not a dict'}")
-                
-        parsed_count = 0
-        for term in terms:
-            if isinstance(term, dict):
-                source = term.get('source', '').strip()
-                target = term.get('target', '').strip()
-                category = term.get('category', '').strip()
-                if source and target:
-                    translations[source.lower()] = target
-                    categories[source.lower()] = category
-                    parsed_count += 1
-            else:
-                print(f"WARNING: Term is not a dict: {term}")
-                
-        print(f"Parsed {parsed_count} terms from JSON (total terms in response: {len(terms)})")
-        
-        if parsed_count == 0:
-            print(f"WARNING: No valid terms parsed from JSON response. Response preview: {vocab_translated[:500]}")
-            
-    except (json.JSONDecodeError, AttributeError, TypeError) as e:
-        # Fallback to old CSV parsing if JSON fails
-        print(f"JSON parse failed ({e}), falling back to CSV parsing")
-        print(f"vocab_translated starts with: {vocab_translated[:200]}")
-        for line in vocab_translated.strip().split('\n'):
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
-            if '=' in line:
-                parts = line.split('=', 1)
-                source = parts[0].strip()
-                rest = parts[1].strip()
-                csv_parts = rest.split(',')
-                target = csv_parts[0].strip() if csv_parts else rest.strip()
-                category = csv_parts[1].strip() if len(csv_parts) > 1 and csv_parts[1].strip() else ''
-                if source and target:
-                    translations[source.lower()] = target
-                    categories[source.lower()] = category
-    
-    # Build final vocabulary list in CSV format
-    # Format: source = target, category, gender, notes
-    
     # Ensure output directory exists
     import os
     output_dir = os.path.dirname(output_file)
@@ -1022,55 +904,142 @@ def create_series_vocab(
         os.makedirs(output_dir, exist_ok=True)
         print(f"Created output directory: {output_dir}")
     
-    # Write dictionary in proper CSV format
+    # Split into ~16K chunks for translation
+    CHUNK_SIZE = 16384
+    lines = terms_text.split('\n')
+    chunks = []
+    current = []
+    current_len = 0
+    for line in lines:
+        current.append(line)
+        current_len += len(line) + 1
+        if current_len >= CHUNK_SIZE:
+            chunks.append('\n'.join(current))
+            current = []
+            current_len = 0
+    if current:
+        chunks.append('\n'.join(current))
+    
+    print(f"Split into {len(chunks)} translation chunk(s)")
+    
+    from src import utils as ta
+    import json as _json
+    
+    # Track all parsed translations for final grouped output
+    all_translations = {}  # source_lower -> target
+    all_categories = {}    # source_lower -> category
+    total_parsed = 0
+    
+    def parse_chunk_response(vocab_translated, translations, categories):
+        """Parse a single chunk's JSON response into translations dict."""
+        parsed = 0
+        try:
+            # Try to parse the whole response first
+            try:
+                vocab_json = _json.loads(vocab_translated)
+            except json.JSONDecodeError:
+                # Try balanced brace extraction
+                first_brace = vocab_translated.find('{')
+                if first_brace >= 0:
+                    depth = 0
+                    last_brace = -1
+                    for i in range(first_brace, len(vocab_translated)):
+                        if vocab_translated[i] == '{':
+                            depth += 1
+                        elif vocab_translated[i] == '}':
+                            depth -= 1
+                            if depth == 0:
+                                last_brace = i
+                                break
+                    if last_brace > first_brace:
+                        try:
+                            vocab_json = _json.loads(vocab_translated[first_brace:last_brace + 1])
+                        except json.JSONDecodeError:
+                            vocab_json = None
+                    else:
+                        vocab_json = None
+                else:
+                    vocab_json = None
+            
+            if vocab_json is None:
+                print(f"WARNING: No valid JSON found in chunk response")
+                return 0
+                
+            terms = vocab_json.get('terms', [])
+            if not terms and isinstance(vocab_json, list):
+                terms = vocab_json
+                
+            for term in terms:
+                if isinstance(term, dict):
+                    source = term.get('source', '').strip()
+                    target = term.get('target', '').strip()
+                    category = term.get('category', '').strip()
+                    if source and target:
+                        translations[source.lower()] = target
+                        categories[source.lower()] = category
+                        parsed += 1
+            
+            print(f"  Parsed {parsed} terms from this chunk")
+            return parsed
+                
+        except Exception as e:
+            print(f"  JSON parse error: {e}")
+            return 0
+    
+    # Write header once
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write(f"# Vocabulary for series\n")
         f.write(f"# Format: source = target, category, gender, notes\n")
         f.write(f"# Generated by create_series_vocab\n\n")
+    
+    # Translate each chunk and write immediately
+    for idx, chunk in enumerate(chunks):
+        print(f"Translating chunk {idx + 1}/{len(chunks)} ({len(chunk)} chars)...")
         
-        # Group by category - prefer LLM-provided category, fallback to NER
-        by_category = {}
-        for term, ner_category, count in filtered_entities:
-            term_lower = term.lower()
-            target = translations.get(term_lower, "")
-            # Use category from LLM response if available, otherwise use NER category
-            category = categories.get(term_lower, ner_category)
-            if category not in by_category:
-                by_category[category] = []
-            by_category[category].append((term, target, ""))
+        vocab_translated = ta.vocabulary(
+            config.source_lang,
+            config.target_lang,
+            chunk,
+            config.country,
+            "Translate"
+        )
         
-        # Add words without category (empty) and without notes
-        # Words: source = target, , , 
-        by_category[""] = []
-        for word, count in filtered_words:
-            word_lower = word.lower()
-            target = translations.get(word_lower, "")
-            category = categories.get(word_lower, "TERM")
-            if category not in by_category:
-                by_category[category] = []
-            by_category[category].append((word, target, ""))
+        if config.debug:
+            print(f"  LLM response: {len(vocab_translated)} chars")
         
-        # Write entries grouped by category
-        for category, entries in sorted(by_category.items()):
-            if not entries:
-                continue
-            # Format: source = target, category, gender, notes
-            cat_header = f"# {category} ({len(entries)} terms)" if category else f"# Words ({len(entries)} terms)"
-            f.write(f"{cat_header}\n")
-            for source, target, notes in entries:
-                if category:  # NER entities have category
-                    # Determine gender based on category
-                    if category == "PERSON":
-                        gender = ""  # Could be enhanced to detect gender from name, but leave empty for now
-                    else:
-                        gender = ""  # LOC, ORG, TERM don't have gender
-                    
-                    # Format: source = target, category, gender, notes
-                    f.write(f"{source} = {target}, {category}, {gender}, {notes}\n")
-                else:  # Words - no category
-                    # Format: source = target, , , notes
-                    f.write(f"{source} = {target}, , , {notes}\n")
-            f.write("\n")
+        chunk_parsed = parse_chunk_response(vocab_translated, all_translations, all_categories)
+        total_parsed += chunk_parsed
+        
+        # Write this chunk's entries to file immediately (append)
+        with open(output_file, 'a', encoding='utf-8') as f:
+            f.write(f"\n# --- Chunk {idx + 1}/{len(chunks)} ---\n")
+            for term_text in chunk.split('\n'):
+                term_text = term_text.strip()
+                if not term_text:
+                    continue
+                # Extract term and NER category from format "term [CATEGORY]"
+                import re as _re
+                ner_cat = ""
+                m = _re.match(r'^(.+?)\s+\[([A-Z]+)\]$', term_text)
+                if m:
+                    term_text = m.group(1).strip()
+                    ner_cat = m.group(2)
+                
+                term_lower = term_text.lower()
+                target = all_translations.get(term_lower, "")
+                category = all_categories.get(term_lower, ner_cat)
+                
+                if category:
+                    gender = ""
+                    f.write(f"{term_text} = {target}, {category}, {gender}, \n")
+                else:
+                    f.write(f"{term_text} = {target}, , , \n")
+        
+        print(f"  Chunk {idx + 1} written to file ({chunk_parsed} terms)")
+    
+    print(f"Total parsed: {total_parsed} terms across {len(chunks)} chunk(s)")
+    print(f"Dictionary saved to: {output_file}")
+    return output_file
     
     print(f"Dictionary saved to: {output_file}")
     return output_file
