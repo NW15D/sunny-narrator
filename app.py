@@ -20,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 
 # Suppress FutureWarning from transformers/torch interaction
-warnings.filterwarnings("ignore", category=FutureWarning, 
+warnings.filterwarnings("ignore", category=FutureWarning,
                        message=".*torch.utils._pytree._register_pytree_node.*")
 
 # Import local modules
@@ -68,7 +68,7 @@ if config.ner_opt:
 class TranslationEngine:
     """
     Main translation engine with context management and recursive processing.
-    
+
     Features:
     - Dual-LLM pipeline (Primary for translation, Secondary for quality)
     - Synopsis management for chunk context
@@ -76,7 +76,7 @@ class TranslationEngine:
     - Character tracking for gender-aware translation
     - XML validation and repair
     """
-    
+
     def __init__(self, output_tfile: str, book_path: str = None):
         self.output_tfile = output_tfile
         self.book_path = book_path
@@ -86,7 +86,7 @@ class TranslationEngine:
         self.last_section_idx = 0
         self.last_chunk_idx = 0
         self.start_time = datetime.now()
-        
+
         # Statistics counters
         self.stats = {
             'successful': 0,
@@ -97,14 +97,14 @@ class TranslationEngine:
             'xml_repairs': 0,
             'language_mismatch_retries': 0,
         }
-        
+
         # Character registry (shared between synopsis and vocabulary)
         reset_character_registry()
         self.character_registry = get_character_registry()
-        
+
         # Synopsis manager with character registry integration
         self.synopsis_manager = SynopsisManager(character_registry=self.character_registry)
-        
+
         # Vocabulary manager for dictionary handling
         self.vocab_manager = None
         if book_path:
@@ -113,39 +113,39 @@ class TranslationEngine:
     def get_formatted_vocab_for_chunk(self, chunk: str, s_idx: int, c_idx: int) -> str:
         """
         Get formatted vocabulary for chunk using VocabularyManager.
-        
+
         Returns vocabulary formatted for the current model (Hunyuan, Gemma, etc.)
         """
         if not self.vocab_manager:
             logger.warning("vocab_manager not initialized - returning empty vocabulary")
             return ""
-        
+
         entries = self.vocab_manager.get_vocab_for_chunk(chunk, s_idx, c_idx)
-        
+
         if not entries:
             logger.warning(f"get_vocab_for_chunk returned 0 entries for chunk {s_idx}-{c_idx} (vocab_manager has {len(self.vocab_manager.vocab) if self.vocab_manager else 0} total entries)")
             # Don't return empty - use full vocabulary if available
             if self.vocab_manager and self.vocab_manager.vocab:
                 logger.info(f"Fallback: using full vocabulary ({len(self.vocab_manager.vocab)} entries)")
                 entries = list(self.vocab_manager.vocab.values())
-        
+
         formatted = self.vocab_manager.format_for_model(entries, config.model_translate)
-        
+
         if config.debug:
             logger.debug(f"Vocab for chunk {s_idx}-{c_idx}: {len(entries)} terms, formatted_len={len(formatted) if formatted else 0}")
         elif formatted:
             logger.info(f"Vocabulary: {len(entries)} terms for chunk {s_idx}-{c_idx}")
-        
+
         return formatted
 
     def translate_chunk(self, source_text: str, context: str) -> tuple:
         """
         Translate a single chunk using dual-LLM pipeline.
-        
+
         Args:
             source_text: Text to translate (with XML tags)
             context: Synopsis from previous chunks
-        
+
         Returns:
             (translated_text, synopsis)
         """
@@ -153,7 +153,7 @@ class TranslationEngine:
             # Note: rechunking is now handled inside ta.translate_chunk()
             # Get vocabulary for this chunk (formatted for model)
             vocab_dict = self.get_formatted_vocab_for_chunk(source_text, 0, 0)
-            
+
             translation, synopsis = ta.translate_chunk(
                 source_lang=config.source_lang,
                 target_lang=config.target_lang,
@@ -165,103 +165,103 @@ class TranslationEngine:
                 fast_mode=config.fast_trans,
                 depth=0  # Start at depth 0
             )
-            
+
             if translation is None:
                 raise ValueError("Translation returned None")
-            
+
             return translation, synopsis
-            
+
         except Exception as e:
             logger.error(f"Translation error: {e}")
             raise
 
-    def process_chunk_recursive(self, chunk: str, s_idx: int, c_idx: int, 
+    def process_chunk_recursive(self, chunk: str, s_idx: int, c_idx: int,
                                  g_id: int, context: str, depth: int = 0) -> tuple:
         """
         Translate chunk with XML validation.
-        
+
         Note: Length-based rechunking is now handled inside ta.translate_chunk()
-        
+
         - Translates plain text with XML tags
         - Post-processes XML via validation
         - Retries on XML validation failure
         """
         source_text = chunk if isinstance(chunk, str) else str(chunk)
         source_len = len(source_text)
-        
+
         # Initialize variables
         final_content = ""
         synopsis = ""
         retry_count = 0
-        
+
         # Count source tokens once (before retry loop)
         source_tokens = ta.num_tokens_in_string(source_text)
-        
+
         # Retry loop for XML validation
         for attempt in range(3):
             try:
                 # Rechunking happens inside translate_chunk automatically
                 temp_content, synopsis = self.translate_chunk(source_text, context)
-                
+
                 if temp_content:
                     final_content = self._post_process_xml(source_text, temp_content)
-                    
+
                     if config.debug and attempt > 0:
                         logger.debug(f"XML validation passed on attempt {attempt + 1}")
-                    
+
                     # Count retry tokens if not first attempt
                     if attempt > 0:
                         retry_tokens = ta.num_tokens_in_string(temp_content)
                         self.stats['retry_tokens'] += retry_tokens
-                    
+
                     break
-                    
+
             except Exception as e:
                 logger.warning(f"Translation attempt {attempt + 1} failed: {e}")
                 retry_count += 1
-        
+
         else:
             # All retries failed
             logger.warning(f"All validation attempts failed for chunk {g_id}")
             final_content = self._post_process_xml(source_text, "")
             self.stats['failed'] += 1
             return final_content, synopsis
-        
+
         # Count successful translation
         self.stats['successful'] += 1
-        
+
         # Count total tokens (source + target) after successful translation
         target_tokens = ta.num_tokens_in_string(final_content)
         self.stats['total_tokens'] += source_tokens + target_tokens
-        
+
         # Log length statistics (no rechunking here - done in translate_chunk)
         target_len = len(final_content)
         percent_diff = abs(target_len - source_len) / source_len * 100 if source_len > 0 else 0
-        
+
         if config.debug:
             logger.debug(f"Chunk {g_id} (depth {depth}): {source_len} → {target_len} chars ({percent_diff:.1f}%)")
-        
+
         return final_content, synopsis
 
     def _post_process_xml(self, source_text: str, translated_text: str) -> str:
         """
         Basic XML cleanup after translation.
-        
+
         NOTE: Does NOT repair tag structure for chunks.
         Chunks may have intentionally unbalanced tags
         (e.g., <title> opened in one chunk, closed in another).
         Full XML validation happens only on final assembled document.
-        
+
         - Removes artifacts via rem_tags()
         - Does NOT use LLM repair (would break chunk structure)
         """
         # Basic cleanup only - no XML parsing of chunks
         # rem_tags is for final FB2 validation, not chunk processing
         cleaned = translated_text.strip()
-        
+
         # Remove common artifacts
         cleaned = re.sub(r'\n\s*\n+', '\n\n', cleaned)
-        
+
         return cleaned
 
     def _count_tags(self, text: str) -> dict:
@@ -277,14 +277,14 @@ class TranslationEngine:
         all_tags = set(source_tags.keys()) | set(translated_tags.keys())
         if not all_tags:
             return 0.0
-        
+
         diffs = []
         for tag in all_tags:
             src = source_tags.get(tag, 0)
             trans = translated_tags.get(tag, 0)
             if src > 0:
                 diffs.append(abs(src - trans) / src)
-        
+
         return sum(diffs) / len(diffs) if diffs else 0.0
 
     def _llm_repair_xml(self, source_text: str, translated_text: str) -> str:
@@ -314,41 +314,41 @@ class TranslationEngine:
             logger.error(f"LLM repair failed: {e}")
             return translated_text
 
-    def process_all_chunks(self, all_chunks: list, orig_sections: list, 
+    def process_all_chunks(self, all_chunks: list, orig_sections: list,
                            vocab: dict, output_tfile: str, checkpoint_file: str = None) -> str:
         """
         Process all chunks sequentially.
         Groups chunks by section and wraps each section in <section> tags.
-        
+
         Args:
             all_chunks: List of chunk dicts with metadata
             orig_sections: Original sections structure (list of lists)
             vocab: Vocabulary dictionary
             output_tfile: Temp output file path
             checkpoint_file: Path to checkpoint JSON file (optional)
-        
+
         Returns:
             Combined translated content with proper <section> wrapping
         """
         all_content = ""
         total = len(all_chunks)
-        
+
         logger.info(f"Starting translation: {total} chunks")
         print(f"\n{'='*60}")
         print(f"Starting translation: {total} chunks")
         print(f"{'='*60}\n")
-        
+
         # Track which sections have been written to avoid duplicates on resume
         written_sections = set()
         current_section_idx = -1
         current_section_chunks = []
-        
+
         for item in all_chunks:
             chunk = item['chunk']
             s_idx = item['section_idx']
             c_idx = item['chunk_idx']
             g_id = item['global_id']
-            
+
             # If we moved to a new section, write the previous one
             if s_idx != current_section_idx and current_section_idx != -1:
                 if current_section_idx not in written_sections:
@@ -360,60 +360,60 @@ class TranslationEngine:
                         f.write(section_wrapped + "\n")
                     written_sections.add(current_section_idx)
                 current_section_chunks = []
-            
+
             current_section_idx = s_idx
-            
+
             # Get formatted vocabulary
             formatted_vocab = self.get_formatted_vocab_for_chunk(chunk, s_idx, c_idx)
             vocab_count = len(formatted_vocab.split('|' if 'hunyuan' in config.model_translate.lower() else '\n')) if formatted_vocab else 0
-            
+
             # Progress output
             preview = (chunk[:80] + '...') if len(chunk) > 80 else chunk
             print(f"\n[Chunk {g_id+1}/{total}] Section {s_idx+1}.{c_idx+1} | {len(chunk)} chars | Vocab: {vocab_count}")
             print(f"  Source: {preview}")
-            
+
             # Get synopsis context
             context = self.synopsis_manager.get_synopsis(s_idx, c_idx)
-            
+
             # Translate
             final_content, synopsis = self.process_chunk_recursive(chunk, s_idx, c_idx, g_id, context)
-            
+
             # Update synopsis manager
             self.synopsis_manager.add_chunk_result(s_idx, c_idx, final_content, generated_synopsis=synopsis)
-            
+
             # Progress output
             result_preview = (final_content[:80] + '...') if len(final_content) > 80 else final_content
             print(f"  Result: {result_preview}")
-            
+
             # Statistics
             if final_content:
                 self.total_source_len += len(chunk)
                 self.total_target_len += len(final_content)
-                
+
                 # Clean final_content: remove outer <section> if present (will be wrapped later)
                 cleaned_content = final_content.strip()
                 if cleaned_content.startswith('<section>') and cleaned_content.endswith('</section>'):
                     cleaned_content = cleaned_content[9:-10].strip()
-                
+
                 # Accumulate chunks for this section
                 current_section_chunks.append(cleaned_content)
-            
+
             # Update last processed chunk
             self.last_processed_chunk = g_id
             self.last_section_idx = s_idx
             self.last_chunk_idx = c_idx
-            
+
             # Save checkpoint after each chunk
             if checkpoint_file:
                 self.save_checkpoint(checkpoint_file)
-            
+
             # DEBUG: Print stats after each chunk
             if config.debug:
                 length_diff = len(final_content) - len(chunk) if final_content else 0
                 length_diff_pct = (length_diff / len(chunk) * 100) if chunk and len(chunk) > 0 else 0
                 status = "✓" if final_content else "✗ EMPTY"
                 print(f"  [{status}] {len(chunk)} → {len(final_content):,} chars ({length_diff_pct:+.1f}%) | Successful: {self.stats['successful']}/{self.stats['failed'] + self.stats['successful']}")
-        
+
         # Write the last section after the loop
         if current_section_chunks and current_section_idx not in written_sections:
             section_content = "\n".join(current_section_chunks)
@@ -422,13 +422,13 @@ class TranslationEngine:
             with open(output_tfile, 'a', encoding='utf-8') as f:
                 f.write(section_wrapped + "\n")
             written_sections.add(current_section_idx)
-        
+
         return all_content
 
     def save_checkpoint(self, checkpoint_file: str):
         """
         Save translation progress to checkpoint file (atomic write).
-        
+
         Args:
             checkpoint_file: Path to checkpoint JSON file
         """
@@ -447,7 +447,7 @@ class TranslationEngine:
             "created_at": self.start_time.isoformat(),
             "updated_at": datetime.now().isoformat()
         }
-        
+
         # Atomic write (temp + rename)
         temp_file = checkpoint_file + ".tmp"
         try:
@@ -463,7 +463,7 @@ class TranslationEngine:
     def restore_from_checkpoint(self, checkpoint: dict):
         """
         Restore translation state from checkpoint.
-        
+
         Args:
             checkpoint: Checkpoint dict loaded from JSON
         """
@@ -473,7 +473,7 @@ class TranslationEngine:
         self.last_processed_chunk = checkpoint.get("last_chunk", -1)
         self.last_section_idx = checkpoint.get("last_section_idx", 0)
         self.last_chunk_idx = checkpoint.get("last_chunk_idx", 0)
-        
+
         # Restore synopsis history
         synopsis_history = checkpoint.get("synopsis_history", {})
         if synopsis_history:
@@ -481,7 +481,7 @@ class TranslationEngine:
             self.synopsis_manager.synopsis_cache = {
                 tuple(k.split(",")): v for k, v in synopsis_history.items()
             }
-        
+
         logger.info(f"Restored from checkpoint: chunk {self.last_processed_chunk + 1}, "
                    f"successful: {self.stats['successful']}, failed: {self.stats['failed']}")
 
@@ -501,14 +501,14 @@ def load_vocab_from_file(file_path: str) -> dict:
                 parts = line.split('=', 1)
                 source = parts[0].strip()
                 rest = parts[1].strip()
-                
+
                 # Parse comma-separated values: target, category, gender, notes
                 csv_parts = [p.strip() for p in rest.split(',')]
                 target = csv_parts[0] if len(csv_parts) > 0 else ''
                 category = csv_parts[1] if len(csv_parts) > 1 else ''
                 gender = csv_parts[2] if len(csv_parts) > 2 else ''
                 notes = csv_parts[3] if len(csv_parts) > 3 else ''
-                
+
                 key = source.replace(' ', '_')
                 if key not in vocab:
                     vocab[key] = {}
@@ -535,21 +535,24 @@ def _translate_vocabulary_batch(terms_text: str, source_lang: str, target_lang: 
 def _save_vocabulary_formatted(translated_text: str, dict_file: str, original_terms: str):
     """
     Save vocabulary in proper format according to docs/DICTIONARY_FORMAT.md
-    
+
     Format: source = target, category, gender, notes
-    
+
     Args:
         translated_text: Translated terms from LLM (JSON or CSV format)
         dict_file: Output file path
         original_terms: Original NER output with categories
     """
+    import json
+    import re
+    
     # Parse original terms to extract categories
     original_categories = {}
     for line in original_terms.strip().split('\n'):
         line = line.strip()
         if not line:
             continue
-        
+
         # Extract term and category from NER output
         # Format: "Term [CATEGORY]" or "Term"
         match = re.match(r'^(.+?)\s*\[([^\]]+)\]$', line)
@@ -560,44 +563,87 @@ def _save_vocabulary_formatted(translated_text: str, dict_file: str, original_te
         else:
             # Common word without category - mark as empty
             original_categories[line.lower()] = ''
-    
-    # Try JSON parsing first (new format), fallback to CSV (old format)
+
+    # Robust JSON parsing with multiple strategies
     translations = {}
     categories_from_llm = {}
-    
+
+    # Strategy 1: Full JSON object/array parsing
     try:
-        import json
-        vocab_json = json.loads(translated_text)
-        terms = vocab_json.get('terms', [])
-        for term in terms:
-            source = term.get('source', '').strip()
-            target = term.get('target', '').strip()
-            category = term.get('category', '').strip()
-            if source and target:
-                translations[source.lower()] = (source, target)
-                if category:
-                    categories_from_llm[source.lower()] = category
-        print(f"Parsed {len(translations)} terms from JSON")
-    except (json.JSONDecodeError, AttributeError):
-        # Fallback to old CSV parsing
-        for line in translated_text.strip().split('\n'):
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
+        data = json.loads(translated_text.strip())
+        if isinstance(data, dict) and 'terms' in data:
+            terms = data['terms']
+        elif isinstance(data, list):
+            terms = data
+        else:
+            raise ValueError("Invalid JSON structure")
             
-            if '=' in line:
-                parts = line.split('=', 1)
-                source = parts[0].strip()
-                target = parts[1].strip()
-                translations[source.lower()] = (source, target)
-    
+        for term in terms:
+            if isinstance(term, dict):
+                source = term.get('source', '').strip()
+                target = term.get('target', '').strip()
+                category = term.get('category', '').strip()
+                if source and target:
+                    translations[source.lower()] = (source, target)
+                    if category:
+                        categories_from_llm[source.lower()] = category
+        print(f"Parsed {len(translations)} terms from JSON")
+    except (json.JSONDecodeError, ValueError, AttributeError):
+        # Strategy 2: Extract JSON array from response
+        array_match = re.search(r'\[.*\]', translated_text.strip(), re.DOTALL)
+        if array_match:
+            try:
+                terms = json.loads(array_match.group(0))
+                for term in terms:
+                    if isinstance(term, dict):
+                        source = term.get('source', '').strip()
+                        target = term.get('target', '').strip()
+                        category = term.get('category', '').strip()
+                        if source and target:
+                            translations[source.lower()] = (source, target)
+                            if category:
+                                categories_from_llm[source.lower()] = category
+                print(f"Parsed {len(translations)} terms from JSON array")
+            except (json.JSONDecodeError, AttributeError):
+                pass
+        
+        # Strategy 3: Extract individual JSON objects
+        if not translations:
+            term_pattern = r'\{\s*"source"\s*:\s*"([^"]*)"\s*,\s*"target"\s*:\s*"([^"]*)"(?:\s*,\s*"category"\s*:\s*"([^"]*)")?[^}]*\}'
+            matches = re.findall(term_pattern, translated_text, re.DOTALL)
+            for match in matches:
+                source = match[0].strip()
+                target = match[1].strip()
+                category = match[2].strip() if len(match) > 2 else ''
+                if source and target:
+                    translations[source.lower()] = (source, target)
+                    if category:
+                        categories_from_llm[source.lower()] = category
+            print(f"Parsed {len(translations)} terms from individual JSON objects")
+        
+        # Strategy 4: Fallback to line-based parsing
+        if not translations:
+            for line in translated_text.strip().split('\n'):
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+
+                if '=' in line:
+                    parts = line.split('=', 1)
+                    source = parts[0].strip()
+                    target = parts[1].strip()
+                    # Extract target before any comma
+                    target_clean = target.split(',')[0].strip()
+                    translations[source.lower()] = (source, target_clean)
+            print(f"Parsed {len(translations)} terms from line-based fallback")
+
     # Group by category (prefer LLM category, fallback to NER)
     categories = {'PERSON': [], 'LOC': [], 'ORG': [], 'TERM': [], 'OTHER': []}
-    
+
     for term_key, (source, target) in translations.items():
         # First try LLM-provided category
         cat = categories_from_llm.get(term_key, '')
-        
+
         # Fallback to NER category if LLM didn't provide
         if not cat:
             cat = original_categories.get(term_key, '')
@@ -610,45 +656,45 @@ def _save_vocabulary_formatted(translated_text: str, dict_file: str, original_te
                 pass  # Keep as TERM
             else:
                 cat = 'OTHER' if cat else 'TERM'  # Default to TERM if empty
-        
+
         categories[cat].append((source, target, cat))
-    
+
     # Write dictionary in proper format with commas
     with open(dict_file, 'w', encoding='utf-8') as f:
         f.write(f"# Vocabulary for {Path(dict_file).stem}\n")
         f.write(f"# Format: source = target, category, gender, notes\n")
         f.write(f"# Generated automatically by NER\n")
         f.write(f"# Please review and edit as needed\n\n")
-        
+
         for cat_name in ['PERSON', 'LOC', 'ORG', 'TERM', 'OTHER']:
             entries = categories[cat_name]
             if not entries:
                 continue
-            
+
             f.write(f"# {cat_name} ({len(entries)} terms)\n")
             for source, target, cat in entries:
                 # Format: source = target, category, gender, notes
                 # Empty gender and notes by default
                 f.write(f"{source} = {target}, {cat}, , \n")
-    
+
     logger.info(f"Dictionary saved: {dict_file} ({len(translations)} entries)")
 
 
 def write_to_file(data, output_file: str, auto_repair_fb2: bool = False):
     """Write data to file.
-    
+
     Note: Auto-repair is disabled by default as it may corrupt valid content.
     FB2 structure should be correct at generation time.
     """
     if isinstance(data, str):
         data = [data]
-    
+
     content = '\n'.join(data)
-    
+
     # Write content to file
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write(content)
-    
+
     # Note: Auto-repair disabled - it was causing content loss
     # FB2 structure should be validated at generation time, not repair time
 
@@ -661,7 +707,7 @@ def main():
     """Main translation workflow."""
     # Reset translation statistics
     ta.reset_translation_stats()
-    
+
     # Check input file
     myfile = config.myfile
     if not os.path.exists(myfile):
@@ -673,7 +719,7 @@ def main():
     output_dir = os.path.dirname(myfile) or '.'
     dict_file = f"{output_dir}/{file_name}.dic"
     timestamp = datetime.now().strftime("%H%M-%d%m")
-    
+
     if file_ext.lower() not in ['.fb2', '.epub', '.txt']:
         raise ValueError(f"Unsupported format: {file_ext}")
 
@@ -698,7 +744,7 @@ def main():
         if not os.path.exists(dict_file):
             print("Generating vocabulary...")
             vb = ner.make_vocab(body)
-            
+
             # Check if NER returned any terms
             if not vb or not vb.strip():
                 print("Warning: NER did not extract any terms. Creating empty dictionary.")
@@ -710,14 +756,14 @@ def main():
                 print(f"Empty dictionary created: {dict_file}")
                 print("Please edit the dictionary and restart.")
                 sys.exit(0)
-            
+
             # Translate vocabulary using Secondary LLM with proper prompts
             print(f"Translating {len(vb.strip().split(chr(10)))} terms using Secondary LLM...")
             vocab_raw = ta.vocabulary(config.source_lang, config.target_lang, vb, config.country, "Proofread")
-            
+
             # Parse and save in proper format
             _save_vocabulary_formatted(vocab_raw, dict_file, vb)
-            
+
             print(f"Vocabulary created: {dict_file}")
             print("Please review and restart.")
             sys.exit(0)
@@ -726,11 +772,11 @@ def main():
 
     # 3. Prepare Chunks
     print("Preparing chunks...")
-    
+
     # Use prepare_chunks_with_sections to preserve original FB2 section structure
     # Returns: [[section1_chunk1, section1_chunk2], [section2_chunk1], ...]
     sections = fb2.prepare_chunks_with_sections(body, config.max_len_chunk)
-    
+
     chunks = []
     gid = 0
     for s_idx, section in enumerate(sections):
@@ -742,15 +788,15 @@ def main():
                 'global_id': gid
             })
             gid += 1
-    
+
     print(f"Prepared {len(chunks)} chunks from {len(sections)} sections")
 
     # 4. Translate
     engine = TranslationEngine(output_tfile, book_path=myfile)
-    
+
     # Initialize content variable - will be populated during translation or loaded from temp file
     content = ""
-    
+
     # Check for existing checkpoint and resume
     resume_from_chunk = 0
     if os.path.exists(checkpoint_file):
@@ -758,15 +804,15 @@ def main():
         print(f"Checkpoint found: {checkpoint_file}")
         print("Resuming from previous session...")
         print(f"{'='*60}\n")
-        
+
         try:
             with open(checkpoint_file, 'r', encoding='utf-8') as f:
                 checkpoint = json.load(f)
-            
+
             engine.restore_from_checkpoint(checkpoint)
             resume_from_chunk = checkpoint["last_chunk"] + 1
             chunks = chunks[resume_from_chunk:]
-            
+
             if not chunks:
                 print("All chunks already processed!")
                 # Remove checkpoint and proceed to finalize
@@ -784,14 +830,14 @@ def main():
             print("Starting fresh (checkpoint ignored)")
     else:
         print("No checkpoint found, starting fresh.")
-    
+
     if engine.vocab_manager and resume_from_chunk == 0:
         try:
             vocab = engine.vocab_manager.initialize()
             print(f"Vocabulary loaded: {len(vocab)} entries")
         except SystemExit:
             return
-    
+
     # Process chunks if any remain, or content was already loaded from temp file above
     if chunks:
         content = engine.process_all_chunks(chunks, sections, vocab, output_tfile, checkpoint_file)
@@ -822,14 +868,14 @@ def main():
 
     # 6. Finalize
     xml_str = f"{header}<body>\n{content}</body>\n{footer}"
-    
+
     # Validation
     errors = xc.validate_fb2(xml_str)
     if errors:
         print("WARNING: Validation errors:")
         for err in errors[:5]:  # Show first 5
             print(f"  {err}")
-    
+
     # Write output
     if config.output_format == 'epub':
         try:
@@ -847,10 +893,10 @@ def main():
 
     # Get global translation stats
     global_stats = ta.get_translation_stats()
-    
+
     # Calculate retry token percentage
     retry_pct = (engine.stats['retry_tokens'] / engine.stats['total_tokens'] * 100) if engine.stats['total_tokens'] > 0 else 0
-    
+
     # Statistics
     print("\n--- Statistics ---")
     print(f"Source: {engine.total_source_len:,} chars")
@@ -859,14 +905,14 @@ def main():
         diff = (engine.total_target_len - engine.total_source_len) / engine.total_source_len * 100
         print(f"Length diff: {diff:+.1f}%")
     print("------------------\n")
-    
+
     # Translation Metrics Report
     try:
         from src.utils import print_translation_report
         print_translation_report()
     except Exception as e:
         logger.error(f"Failed to print translation report: {e}")
-    
+
     # Remove checkpoint after successful completion
     if os.path.exists(checkpoint_file):
         os.remove(checkpoint_file)
@@ -875,19 +921,24 @@ def main():
 
 if __name__ == '__main__':
     import argparse
-    
+
     parser = argparse.ArgumentParser(description='Sunny Narrator - AI book translator')
-    parser.add_argument('--build-series-dict', type=str, 
+    parser.add_argument('--build-series-dict', type=str,
                        help='Build unified dictionary from books folder')
     parser.add_argument('--series-dict-output', type=str, default='series.dic',
                        help='Output file for series dictionary')
+    # New: build dictionary for a single book
+    parser.add_argument('--build-dict', type=str,
+                       help='Build dictionary for a single book (path to FB2/EPUB/TXT)')
+    parser.add_argument('--book-dict-output', type=str,
+                       help='Output dictionary file for --build-dict (default: same name with .dic)')
     parser.add_argument('--min-count-ner', type=int, default=2,
                        help='Minimum occurrences for NER entities')
     parser.add_argument('--min-count-word', type=int, default=5,
                        help='Minimum occurrences for common words')
-    
+
     args, unknown = parser.parse_known_args()
-    
+
     # Handle series dictionary build
     if args.build_series_dict:
         from src.ner import create_series_vocab
@@ -912,6 +963,59 @@ if __name__ == '__main__':
             import traceback
             traceback.print_exc()
             sys.exit(1)
+        sys.exit(0)
+
+    # Handle single book dictionary build
+    if args.build_dict:
+        from src.ner import make_vocab, _save_vocabulary_formatted
+        import pathlib
+        book_path = args.build_dict
+        if not os.path.exists(book_path):
+            print(f"Error: Book file not found: {book_path}")
+            sys.exit(1)
+        # Determine output dict path
+        dict_path = args.book_dict_output or f"{os.path.splitext(book_path)[0]}.dic"
+        print(f"Building dictionary for book: {book_path}")
+        print(f"Output dictionary: {dict_path}")
+        # Parse book body (reuse same logic as main)
+        _, file_ext = os.path.splitext(book_path)
+        if file_ext.lower() == '.fb2':
+            body, _, _ = fb2.parse_xml(book_path)
+        elif file_ext.lower() == '.epub':
+            body, _, _ = epub.parse_epub(book_path)
+        else:
+            body, _, _ = txt.parse_txt(book_path)
+        # Generate unverified NER terms first
+        vb = make_vocab(body, min_count_ner=args.min_count_ner, min_count_word=args.min_count_word)
+        # Write initial untranslated dictionary
+        with open(dict_path, 'w', encoding='utf-8') as f:
+            f.write(f"# Vocabulary for {os.path.basename(dict_path)}\n")
+            f.write("# Format: source = target, category, gender, notes\n")
+            # Write NER terms as initial entries
+            for term in vb.strip().split('\n'):
+                if term.strip():
+                    f.write(f"{term}\n")
+            # Add format metadata
+            f.write("# Format: source = target, category, gender, notes\n")
+
+        # Now translate and update dictionary
+        print(f"Translating {len(vb.strip().split('\n'))} terms using secondary LLM...")
+        # Get translation results
+        vocab_raw = ta.vocabulary(config.source_lang, config.target_lang, vb, config.country, "Proofread")
+        # Update dictionary with translations
+        updated_lines = []
+        for line in vocab_raw.split('\n'):
+            if line.strip() and '=' in line:
+                source, _, rest = line.partition('=')
+                target, *extra = rest.strip().split(',')
+                translated_target = target.strip()  # Already translated by LLM
+                updated_lines.append(f"{source} = {translated_target}\n")
+            else:
+                updated_lines.append(line)
+        # Write updated dictionary
+        with open(dict_path, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(updated_lines))
+        print(f"Dictionary updated with translations: {dict_path}")
         sys.exit(0)
     
     main()
