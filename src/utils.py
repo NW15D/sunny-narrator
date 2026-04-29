@@ -1608,59 +1608,61 @@ def vocabulary(source_lang: str, target_lang: str, source_text: str,
     # Vocabulary translation uses Secondary LLM with standard prompt
     prompt_key = "user"
     
-    # Split text if too long (>8192 chars), translate in two parts, then merge
-    TEXT_SPLIT_THRESHOLD = 8192
+    # Split text if too long (>16K chars), translate in chunks, then merge
+    TEXT_SPLIT_THRESHOLD = 16384
+    CHUNK_SIZE = 16384  # Each chunk ~16K chars
     max_tokens = 32512  # Always use 32K tokens for vocabulary
     
     if len(source_text) > TEXT_SPLIT_THRESHOLD:
-        logger.info(f"Vocabulary text too long ({len(source_text)} chars), splitting into two parts")
-        
         # Split by lines to keep entries whole
         lines = source_text.split('\n')
-        mid = len(lines) // 2
-        part1 = '\n'.join(lines[:mid])
-        part2 = '\n'.join(lines[mid:])
+        chunks = []
+        current = []
+        current_len = 0
+        for line in lines:
+            current.append(line)
+            current_len += len(line) + 1  # +1 for newline
+            if current_len >= CHUNK_SIZE:
+                chunks.append('\n'.join(current))
+                current = []
+                current_len = 0
+        if current:
+            chunks.append('\n'.join(current))
         
-        # Translate first part (with JSON mode, force to override config)
-        result1 = llm_service_compat.get_completion(
-            role=role,
-            prompt_category="vocabulary",
-            prompt_key=prompt_key,
-            source_lang=source_lang,
-            target_lang=target_lang,
-            country=country,
-            source_text=part1,
-            max_tokens=max_tokens,
-            json_mode=True,
-            force_json_mode=True
-        )
+        logger.info(f"Vocabulary text too long ({len(source_text)} chars), splitting into {len(chunks)} chunks")
         
-        # Translate second part (with JSON mode, force to override config)
-        result2 = llm_service_compat.get_completion(
-            role=role,
-            prompt_category="vocabulary",
-            prompt_key=prompt_key,
-            source_lang=source_lang,
-            target_lang=target_lang,
-            country=country,
-            source_text=part2,
-            max_tokens=max_tokens,
-            json_mode=True,
-            force_json_mode=True
-        )
-        
-        # Merge two JSON responses by combining their terms arrays
+        # Translate each chunk
         import json as _json
-        try:
-            j1 = _json.loads(result1)
-            j2 = _json.loads(result2)
-            terms1 = j1.get('terms', []) if isinstance(j1, dict) else (j1 if isinstance(j1, list) else [])
-            terms2 = j2.get('terms', []) if isinstance(j2, dict) else (j2 if isinstance(j2, list) else [])
-            merged = {"terms": terms1 + terms2}
+        all_terms = []
+        for idx, chunk in enumerate(chunks):
+            logger.info(f"Translating vocabulary chunk {idx + 1}/{len(chunks)} ({len(chunk)} chars)")
+            chunk_result = llm_service_compat.get_completion(
+                role=role,
+                prompt_category="vocabulary",
+                prompt_key=prompt_key,
+                source_lang=source_lang,
+                target_lang=target_lang,
+                country=country,
+                source_text=chunk,
+                max_tokens=max_tokens,
+                json_mode=True,
+                force_json_mode=True
+            )
+            # Parse and collect terms
+            try:
+                j = _json.loads(chunk_result)
+                terms = j.get('terms', []) if isinstance(j, dict) else (j if isinstance(j, list) else [])
+                all_terms.extend(terms)
+                logger.info(f"Chunk {idx + 1}: collected {len(terms)} terms (total: {len(all_terms)})")
+            except Exception as e:
+                logger.warning(f"Failed to parse chunk {idx + 1} JSON ({e}), skipping")
+        
+        if all_terms:
+            merged = {"terms": all_terms}
             result = _json.dumps(merged, ensure_ascii=False)
-        except Exception as e:
-            logger.warning(f"Failed to merge JSON vocabulary chunks ({e}), falling back to concatenation")
-            result = (result1.strip() + '\n' + result2.strip()).strip()
+        else:
+            logger.error("No terms collected from any chunk")
+            result = ""
     else:
         result = llm_service_compat.get_completion(
             role=role,
