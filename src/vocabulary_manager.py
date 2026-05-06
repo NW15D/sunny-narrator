@@ -564,10 +564,10 @@ class VocabularyManager:
         logger.info(f"Template dictionary created: {self.dict_file}")
     
     def _load_from_file(self) -> Dict[str, VocabEntry]:
-        """Load vocabulary from .dic file using consistent CSV format.
+        """Load vocabulary from .dic file using CSV format.
         
-        Format: source,target,category,gender,notes
-        Each field is separated by commas, with proper CSV escaping for fields containing commas.
+        Format: source = target, category, gender, notes
+        Fields separated by commas after the = sign.
         Comments start with # and are ignored.
         """
         import csv
@@ -586,39 +586,45 @@ class VocabularyManager:
                 logger.warning(f"No valid entries found in {self.dict_file}")
                 return vocab
             
-            # Parse as CSV
-            csv_reader = csv.reader(lines)
-            
-            for line_num, row in enumerate(csv_reader, 1):
+            for line_num, line in enumerate(lines, 1):
                 try:
-                    # Ensure we have at least source and target
-                    if len(row) < 2:
-                        logger.warning(f"Line {line_num}: Insufficient fields (need at least source,target)")
+                    # Parse: source = target, category, gender, notes
+                    if '=' not in line:
+                        logger.warning(f"Line {line_num}: Missing '=' separator, skipping")
                         continue
                     
-                    source = row[0].strip()
-                    target = row[1].strip()
+                    parts = line.split('=', 1)
+                    source = parts[0].strip()
+                    rest = parts[1].strip()
+                    
+                    if not source or not rest:
+                        logger.warning(f"Line {line_num}: Empty source or rest, skipping")
+                        continue
+                    
+                    # Parse comma-separated values: target, category, gender, notes
+                    csv_reader = csv.reader([rest])
+                    try:
+                        row = next(csv_reader)
+                    except StopIteration:
+                        logger.warning(f"Line {line_num}: Empty fields after '=', skipping")
+                        continue
+                    
+                    # Ensure we have at least source and target
+                    if len(row) < 1:
+                        logger.warning(f"Line {line_num}: Insufficient fields (need at least target)")
+                        continue
+                    
+                    target = row[0].strip() if len(row) > 0 else ""
+                    category = row[1].strip() if len(row) > 1 else ""
+                    gender = row[2].strip() if len(row) > 2 else ""
+                    notes = row[3].strip() if len(row) > 3 else ""
                     
                     if not source or not target:
                         logger.warning(f"Line {line_num}: Empty source or target")
                         continue
                     
-                    # Get optional fields with defaults
-                    category = row[2].strip() if len(row) > 2 else ""
-                    gender = row[3].strip() if len(row) > 3 else ""
-                    notes = row[4].strip() if len(row) > 4 else ""
-                    
-                    # Validate category
-                    valid_categories = {'PERSON', 'LOC', 'ORG', 'TERM', ''}
-                    if category and category not in valid_categories:
-                        logger.warning(f"Line {line_num}: Invalid category '{category}', defaulting to 'TERM'")
-                        category = "TERM"
-                    
-                    # Validate gender
-                    valid_genders = {'he', 'she', 'it', 'they', ''}
-                    if gender and gender not in valid_genders:
-                        logger.warning(f"Line {line_num}: Invalid gender '{gender}', clearing it")
-                        gender = ""
+                    # NO VALIDATION - allow any category and gender values (may be in any language)
+                    # category and gender are passed as-is to prompts
                     
                     key = source.replace(' ', '_').lower()
                     vocab[key] = VocabEntry(
@@ -867,7 +873,11 @@ class VocabularyManager:
         return series_vocab
     
     def _load_from_file_with_path(self, file_path: str) -> Dict[str, VocabEntry]:
-        """Load vocabulary from specific file path using CSV format."""
+        """Load vocabulary from specific file path using CSV format.
+        
+        Format: source = target, category, gender, notes
+        Fields separated by commas after the = sign.
+        """
         import csv
         
         vocab = {}
@@ -883,33 +893,38 @@ class VocabularyManager:
             if not lines:
                 return vocab
             
-            # Parse as CSV
-            csv_reader = csv.reader(lines)
-            
-            for line_num, row in enumerate(csv_reader, 1):
+            for line_num, line in enumerate(lines, 1):
                 try:
-                    if len(row) < 2:
+                    # Parse: source = target, category, gender, notes
+                    if '=' not in line:
                         continue
                     
-                    source = row[0].strip()
-                    target = row[1].strip()
+                    parts = line.split('=', 1)
+                    source = parts[0].strip()
+                    rest = parts[1].strip()
+                    
+                    if not source or not rest:
+                        continue
+                    
+                    # Parse comma-separated values: target, category, gender, notes
+                    csv_reader = csv.reader([rest])
+                    try:
+                        row = next(csv_reader)
+                    except StopIteration:
+                        continue
+                    
+                    if len(row) < 1:
+                        continue
+                    
+                    target = row[0].strip() if len(row) > 0 else ""
+                    category = row[1].strip() if len(row) > 1 else ""
+                    gender = row[2].strip() if len(row) > 2 else ""
+                    notes = row[3].strip() if len(row) > 3 else ""
                     
                     if not source or not target:
                         continue
                     
-                    category = row[2].strip() if len(row) > 2 else ""
-                    gender = row[3].strip() if len(row) > 3 else ""
-                    notes = row[4].strip() if len(row) > 4 else ""
-                    
-                    # Validate category
-                    valid_categories = {'PERSON', 'LOC', 'ORG', 'TERM', ''}
-                    if category and category not in valid_categories:
-                        category = "TERM"
-                    
-                    # Validate gender
-                    valid_genders = {'he', 'she', 'it', 'they', ''}
-                    if gender and gender not in valid_genders:
-                        gender = ""
+                    # NO VALIDATION - allow any category and gender values (may be in any language)
                     
                     key = source.replace(' ', '_').lower()
                     vocab[key] = VocabEntry(
