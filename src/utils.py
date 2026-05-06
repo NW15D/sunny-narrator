@@ -32,6 +32,7 @@ import tiktoken
 
 from src.config import Config
 from src.llm_logger import init_llm_logger, get_llm_logger, log_llm_call
+from src.p_tags_processor import post_process_p_tags
 
 # LLMService, TranslationPipeline, translate_chunk are defined in this module
 
@@ -963,6 +964,9 @@ class TranslationPipeline:
         )
         
         text = remove_tags_with_check(text, "final_edit", LLMRole.SECONDARY)
+        
+        # NEW: Post-process <p> tags (validate balance or auto-structure)
+        text = post_process_p_tags(text)
         
         # Retry if text became empty after remove_tags
         if not text or len(text.strip()) == 0 and tokens_used > 0:
