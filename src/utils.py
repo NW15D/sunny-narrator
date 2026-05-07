@@ -1438,7 +1438,7 @@ def parse_json_response(text: str) -> tuple:
         data = json.loads(json_str)
         
         # Check for translation (INITIAL, IMPROVE, EDITOR stages)
-        if 'translation' in data and data['translation']:
+        if 'translation' in data:
             return data['translation'].strip(), True
         
         # Check for suggestions (REFLECTION stage)
