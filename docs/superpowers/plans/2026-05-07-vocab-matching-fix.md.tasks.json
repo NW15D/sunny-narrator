@@ -1,0 +1,14 @@
+{
+  "planPath": "/home/neo/prj/sunny-narrator/docs/superpowers/plans/2026-05-07-vocab-matching-fix.md",
+  "tasks": [
+    {"id": 0, "subject": "Task 0: Write test for exact text match (Stage 1)", "status": "completed", "note": "Tests written, 4/4 PASS"},
+    {"id": 1, "subject": "Task 1: Implement Stage 1: Exact Text Search in ner.py (GPU version)", "status": "completed", "note": "Implemented with Stage 1 + Stage 2"},
+    {"id": 1b, "subject": "Task 1b: Fix Stage 1 bugs - use unmatched_vocab, add CPU version", "status": "completed", "note": "Fixed: unmatched_vocab, word boundary matching, no reset of matched_words_set"},
+    {"id": 2, "subject": "Task 2: Implement Stage 1: Exact Text Search in ner.py (CPU version)", "status": "completed", "note": "Added Stage 1 to CPU version"},
+    {"id": 3, "subject": "Task 3: Write test for formatting without trailing commas", "status": "completed", "note": "Tests added, formatting already correct"},
+    {"id": 4, "subject": "Task 4: Fix formatting in vocabulary_manager.py", "status": "completed", "note": "_format_standard already correct"},
+    {"id": 5, "subject": "Task 5: Remove fallback to full vocabulary in app.py", "status": "completed", "note": "Fallback removed, returns empty string"},
+    {"id": 6, "subject": "Task 6: Run full test suite and verify fixes", "status": "completed", "note": "All 7 tests PASS, existing tests still pass"}
+  ],
+  "lastUpdated": "2026-05-07T19:35:00Z"
+}
