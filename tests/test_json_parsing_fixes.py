@@ -1,6 +1,9 @@
 """Tests for robust JSON parsing fixes (Fix #2)."""
 import sys
-sys.path.insert(0, '/home/neo/prj/sunny-narrator/.worktrees/fix-empty-response')
+from pathlib import Path
+
+# Add project root to path (works from any worktree or main checkout)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.utils import parse_json_response, _extract_json_brace, _strip_markdown_fences
 
