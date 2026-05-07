@@ -136,13 +136,15 @@ class TranslationEngine:
 
         return formatted
 
-    def translate_chunk(self, source_text: str, context: str) -> tuple:
+    def translate_chunk(self, source_text: str, context: str, s_idx: int = 0, c_idx: int = 0) -> tuple:
         """
         Translate a single chunk using dual-LLM pipeline.
 
         Args:
             source_text: Text to translate (with XML tags)
             context: Synopsis from previous chunks
+            s_idx: Section index (for vocabulary matching)
+            c_idx: Chunk index (for vocabulary matching)
 
         Returns:
             (translated_text, synopsis)
@@ -150,7 +152,7 @@ class TranslationEngine:
         try:
             # Note: rechunking is now handled inside ta.translate_chunk()
             # Get vocabulary for this chunk (formatted for model)
-            vocab_dict = self.get_formatted_vocab_for_chunk(source_text, 0, 0)
+            vocab_dict = self.get_formatted_vocab_for_chunk(source_text, s_idx, c_idx)
 
             translation, synopsis = ta.translate_chunk(
                 source_lang=config.source_lang,
@@ -199,7 +201,7 @@ class TranslationEngine:
         for attempt in range(3):
             try:
                 # Rechunking happens inside translate_chunk automatically
-                temp_content, synopsis = self.translate_chunk(source_text, context)
+                temp_content, synopsis = self.translate_chunk(source_text, context, s_idx, c_idx)
 
                 if temp_content:
                     final_content = self._post_process_xml(source_text, temp_content)
