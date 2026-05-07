@@ -467,6 +467,39 @@ def find_matching_words_with_cosine_similarity(text, vocab, lng, threshold=0.8, 
             print("No text or vocabulary to process.")
         return []
 
+    matched_words_set = set()
+
+    # STAGE 1: TEXT SEARCH (exact match)
+    # ==================================
+    text_lower = text.lower()
+
+    for entry_key, entry in vocab.items():
+        source_term = entry.get(lng, "")
+        if not source_term:
+            continue
+
+        source_lower = source_term.lower()
+        # Use word boundary matching to avoid partial matches
+        import re
+        pattern = r'\b' + re.escape(source_lower) + r'\b'
+        if re.search(pattern, text_lower):
+            matched_words_set.add(source_term)
+            if config.debug:
+                print(f"  Text match: '{source_term}' found in chunk")
+
+    # STAGE 2: COSINE SEARCH (semantic)
+    # =================================
+    # Filter vocab: only terms NOT already matched by text search
+    unmatched_vocab = {
+        k: v for k, v in vocab.items() 
+        if v.get(lng, "") not in matched_words_set
+    }
+
+    if not unmatched_vocab:
+        if config.debug:
+            print(f"All terms matched by text search: {len(matched_words_set)}")
+        return list(matched_words_set)
+
     try:
         spacy.prefer_gpu()
         nlp = load_spacy_model(config.nermodel)
@@ -478,7 +511,7 @@ def find_matching_words_with_cosine_similarity(text, vocab, lng, threshold=0.8, 
             print(f"Error loading spaCy model: {e}")
         return []
 
-    orig_values = [entry[lng] for entry in vocab.values() if lng in entry]
+    orig_values = [entry[lng] for entry in unmatched_vocab.values() if lng in entry]
 
     valid_vocab_words = []
     vocab_vectors = []
@@ -497,13 +530,14 @@ def find_matching_words_with_cosine_similarity(text, vocab, lng, threshold=0.8, 
     if not vocab_vectors:
         if config.debug:
             print("No valid vectors in vocab.")
-        return []
+        return list(matched_words_set)  # Return Stage 1 matches
 
     # numpy -> cupy (GPU acceleration)
     vocab_matrix = cp.asarray(np.vstack(vocab_vectors))
     vocab_matrix = vocab_matrix / cp.linalg.norm(vocab_matrix, axis=1, keepdims=True)
 
-    matched_words_set = set()
+    # Don't reset matched_words_set - keep Stage 1 matches
+    # matched_words_set = set()
 
     tokens = [t for t in doc if t.is_alpha and t.vector_norm != 0]
     for i in range(0, len(tokens), batch_size):
@@ -525,10 +559,11 @@ def find_matching_words_with_cosine_similarity(text, vocab, lng, threshold=0.8, 
 
 def find_matching_words_with_cosine_similarity_cpu(text, vocab, lng, threshold=0.8, batch_size=256):
     """
-    Find vocabulary terms in text using cosine similarity (CPU-only fallback).
-
+    Two-stage matching (CPU version):
+    1. TEXT SEARCH: Exact substring match (priority)
+    2. COSINE SEARCH: Semantic similarity for remaining terms
+    
     Uses NumPy instead of CuPy for systems without GPU.
-    Slower but works on any system.
 
     Args:
         text: Source text to search in
@@ -548,6 +583,39 @@ def find_matching_words_with_cosine_similarity_cpu(text, vocab, lng, threshold=0
             print("No text or vocabulary to process.")
         return []
 
+    matched_words_set = set()
+
+    # STAGE 1: TEXT SEARCH (exact match)
+    # ==================================
+    text_lower = text.lower()
+
+    for entry_key, entry in vocab.items():
+        source_term = entry.get(lng, "")
+        if not source_term:
+            continue
+
+        source_lower = source_term.lower()
+        # Use word boundary matching to avoid partial matches
+        import re
+        pattern = r'\b' + re.escape(source_lower) + r'\b'
+        if re.search(pattern, text_lower):
+            matched_words_set.add(source_term)
+            if config.debug:
+                print(f"  Text match: '{source_term}' found in chunk")
+
+    # STAGE 2: COSINE SEARCH (semantic)
+    # =================================
+    # Filter vocab: only terms NOT already matched by text search
+    unmatched_vocab = {
+        k: v for k, v in vocab.items() 
+        if v.get(lng, "") not in matched_words_set
+    }
+
+    if not unmatched_vocab:
+        if config.debug:
+            print(f"All terms matched by text search: {len(matched_words_set)}")
+        return list(matched_words_set)
+
     try:
         # CPU mode - don't call spacy.prefer_gpu()
         nlp = load_spacy_model(config.nermodel)
@@ -557,9 +625,9 @@ def find_matching_words_with_cosine_similarity_cpu(text, vocab, lng, threshold=0
     except Exception as e:
         if config.debug:
             print(f"Error loading spaCy model: {e}")
-        return []
+        return list(matched_words_set)
 
-    orig_values = [entry[lng] for entry in vocab.values() if lng in entry]
+    orig_values = [entry[lng] for entry in unmatched_vocab.values() if lng in entry]
 
     valid_vocab_words = []
     vocab_vectors = []
@@ -577,13 +645,14 @@ def find_matching_words_with_cosine_similarity_cpu(text, vocab, lng, threshold=0
     if not vocab_vectors:
         if config.debug:
             print("No valid vectors in vocab.")
-        return []
+        return list(matched_words_set)  # Return already matched terms from Stage 1
 
     # NumPy only (CPU) - no CuPy
     vocab_matrix = np.vstack(vocab_vectors)
     vocab_matrix = vocab_matrix / np.linalg.norm(vocab_matrix, axis=1, keepdims=True)
 
-    matched_words_set = set()
+    # Don't reset matched_words_set - keep Stage 1 matches
+    # matched_words_set = set()
 
     tokens = [t for t in doc if t.is_alpha and t.vector_norm != 0]
     for i in range(0, len(tokens), batch_size):
