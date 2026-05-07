@@ -503,6 +503,21 @@ class LLMService:
         if json_mode:
             comp_kwargs["response_format"] = {"type": "json_object"}
         
+        # FIX #1: Auto-disable thinking mode for local LLMs (gemma4) when nothink config is True.
+        # Gemma 4 defaults to thinking/reasoning mode which sends tokens to reasoning,
+        # not to .content — causing EMPTY RESPONSE with high token counts.
+        if chat_template_kwargs is None:
+            nothink_enabled = False
+            if role == LLMRole.PRIMARY and config.nothink_translate:
+                nothink_enabled = True
+            elif role == LLMRole.SECONDARY and config.nothink_proofread:
+                nothink_enabled = True
+            
+            if nothink_enabled:
+                comp_kwargs["chat_template_kwargs"] = {"enable_thinking": False}
+                if config.debug:
+                    logger.debug(f"Thinking mode DISABLED for [{role.value}] via nothink config")
+        
         if config.debug:
             logger.debug(f"LLM Request [{role.value}]: {model}, {len(user_prompt)} chars, temp={temp:.2f}, sys_not_promt={use_sys_not_promt}, json_mode={json_mode}")
         
@@ -518,8 +533,19 @@ class LLMService:
                 logger.debug(f"LLM Raw Response [{role.value}]: choices={len(response.choices)}, model={response.model}")
                 if response.choices:
                     msg = response.choices[0].message
-                    logger.debug(f"  message={msg}")
-                    logger.debug(f"  message.content={repr(msg.content) if msg else 'no message'}")
+                    content_type = type(msg.content).__name__ if msg else 'no message'
+                    content_len = len(msg.content) if msg and msg.content else 0
+                    content_is_none = msg.content is None if msg else True
+                    logger.debug(f"  message.content: type={content_type}, len={content_len}, is_none={content_is_none}")
+                    # Log reasoning tokens if present (gemma4 thinking mode)
+                    if hasattr(msg, 'reasoning') and msg.reasoning:
+                        logger.debug(f"  message.reasoning: {len(msg.reasoning)} chars (thinking mode detected!)")
+                    if hasattr(response, 'usage') and response.usage:
+                        # Check for separate reasoning/completion tokens
+                        if hasattr(response.usage, 'completion_tokens_details'):
+                            details = response.usage.completion_tokens_details
+                            if details:
+                                logger.debug(f"  completion_tokens_details: {details}")
                     if hasattr(msg, 'tool_calls') and msg.tool_calls:
                         logger.debug(f"  tool_calls={msg.tool_calls}")
             except Exception as e:
@@ -577,10 +603,17 @@ class LLMService:
                 enhanced_system = system_prompt + "\nIMPORTANT: If you cannot translate, return the original text unchanged."
                 
                 # For JSON mode, add specific fallback instruction
+                retry_json_mode = json_mode
                 if json_mode:
                     enhanced_system += '\nIf no translation, return: {"translation": "ORIGINAL_TEXT"}'
                 
-                logger.debug(f"Smart retry {retry_count + 1}: temp={enhanced_temp:.4f}, enhanced_prompt=True")
+                # FIX #3: On the final retry (retry_count >= 1), disable JSON mode and thinking
+                # to maximize chance of getting ANY response content.
+                if retry_count >= 1:
+                    retry_json_mode = False
+                    logger.debug(f"Final retry [{role.value}]: JSON mode DISABLED for max compatibility")
+                
+                logger.debug(f"Smart retry {retry_count + 1}: temp={enhanced_temp:.4f}, enhanced_prompt=True, json_mode={retry_json_mode}")
                 
                 # Small delay before retry
                 time.sleep(0.5)
@@ -589,7 +622,7 @@ class LLMService:
                     system_prompt=enhanced_system,  # Use enhanced system prompt
                     user_prompt=user_prompt,
                     max_tokens=max_tokens,
-                    json_mode=json_mode,
+                    json_mode=retry_json_mode,
                     stage=stage,
                     retry_count=retry_count + 1,
                     track_tokens=track_tokens,
@@ -898,7 +931,7 @@ class TranslationPipeline:
         text = remove_tags_with_check(text, "improve_translation", LLMRole.SECONDARY)
         
         # Retry if text became empty after remove_tags
-        if not text or len(text.strip()) == 0 and tokens_used > 0:
+        if (not text or len(text.strip()) == 0) and tokens_used > 0:
             logger.error(f"Text became empty after remove_tags (used {tokens_used} tokens), retrying...")
             retry_text, retry_tokens = llm_service.complete(
                 role=LLMRole.SECONDARY,
@@ -969,7 +1002,7 @@ class TranslationPipeline:
         text = post_process_p_tags(text)
         
         # Retry if text became empty after remove_tags
-        if not text or len(text.strip()) == 0 and tokens_used > 0:
+        if (not text or len(text.strip()) == 0) and tokens_used > 0:
             logger.error(f"Text became empty after remove_tags (used {tokens_used} tokens), retrying...")
             retry_text, retry_tokens = llm_service.complete(
                 role=LLMRole.SECONDARY,
@@ -1322,26 +1355,87 @@ llm_service_compat = LLMServiceCompat()
 # JSON Parsing Functions
 # =============================================================================
 
+def _strip_markdown_fences(text: str) -> str:
+    """
+    Remove markdown code fences (```json ... ``` or ``` ... ```).
+    LLMs often wrap JSON in code fences even when asked not to.
+    """
+    if not text:
+        return text
+    # Match ```json\n...\n``` or ```\n...\n```
+    stripped = re.sub(r'```(?:json)?\s*\n([\s\S]*?)\n```', r'\1', text)
+    return stripped
+
+
+def _extract_json_brace(text: str) -> str:
+    """
+    Extract a complete JSON object by counting braces.
+    More robust than simple regex — handles nested objects, arrays, escaped quotes.
+    Returns the first complete JSON string found, or empty string.
+    """
+    if not text:
+        return ""
+    
+    start = text.find('{')
+    if start == -1:
+        return ""
+    
+    depth = 0
+    in_string = False
+    escape_next = False
+    
+    for i in range(start, len(text)):
+        ch = text[i]
+        
+        if escape_next:
+            escape_next = False
+            continue
+        
+        if ch == '\\':
+            if in_string:
+                escape_next = True
+            continue
+        
+        if ch == '"':
+            in_string = not in_string
+            continue
+        
+        if in_string:
+            continue
+        
+        if ch == '{':
+            depth += 1
+        elif ch == '}':
+            depth -= 1
+            if depth == 0:
+                return text[start:i+1]
+    
+    return ""
+
+
 def parse_json_response(text: str) -> tuple:
     """
     Parse JSON response from LLM.
     Returns: (result: str or list, success: bool)
     
     Priority:
-    1. Find first valid JSON block (handles conversational wrappers)
+    1. Strip markdown fences, find complete JSON by brace counting
     2. Extract translation or suggestions
     3. Fallback to non-JSON if invalid
     """
     if not text:
         return "", False
     
-    # Try to find JSON block (handles conversational wrappers like "Here is JSON: {...}")
-    json_match = re.search(r'(\{[\s\S]*?\})', text)
-    if not json_match:
+    # Strip markdown code fences first
+    cleaned = _strip_markdown_fences(text)
+    
+    # Extract JSON by brace counting (handles nested structures)
+    json_str = _extract_json_brace(cleaned)
+    if not json_str:
         return text.strip(), False  # No JSON found, return as-is
     
     try:
-        data = json.loads(json_match.group(1))
+        data = json.loads(json_str)
         
         # Check for translation (INITIAL, IMPROVE, EDITOR stages)
         if 'translation' in data and data['translation']:
@@ -1393,9 +1487,21 @@ def remove_tags(text: str) -> str:
         return ""
     
     # STEP 1: Try to extract from JSON format (PREFERRED)
+    # Use brace-counting extraction to handle escaped quotes and multi-line JSON
+    json_str = _extract_json_brace(text)
+    if json_str:
+        try:
+            data = json.loads(json_str)
+            if 'translation' in data and data['translation']:
+                logger.debug("Extracted translation from JSON format (robust parser)")
+                return data['translation'].strip()
+        except json.JSONDecodeError:
+            pass  # Fall through to regex fallback
+    
+    # Regex fallback for simple JSON cases
     json_match = re.search(r'\{[\s]*["\']translation["\'][\s]*:[\s]*["\']([\s\S]*?)["\'][\s]*\}', text)
     if json_match:
-        logger.debug("Extracted translation from JSON format")
+        logger.debug("Extracted translation from JSON format (regex fallback)")
         return json_match.group(1).strip()
     
     # STEP 2: Try wrapper tags in priority order
