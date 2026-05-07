@@ -496,27 +496,25 @@ class LLMService:
         if reasoning_budget is not None:
             comp_kwargs["reasoning_budget"] = reasoning_budget
             
-        # Add chat_template_kwargs if specified
-        if chat_template_kwargs is not None:
-            comp_kwargs["chat_template_kwargs"] = chat_template_kwargs
-            
         if json_mode:
             comp_kwargs["response_format"] = {"type": "json_object"}
         
-        # FIX #1: Auto-disable thinking mode for local LLMs (gemma4) when nothink config is True.
-        # Gemma 4 defaults to thinking/reasoning mode which sends tokens to reasoning,
-        # not to .content — causing EMPTY RESPONSE with high token counts.
-        if chat_template_kwargs is None:
-            nothink_enabled = False
-            if role == LLMRole.PRIMARY and config.nothink_translate:
-                nothink_enabled = True
-            elif role == LLMRole.SECONDARY and config.nothink_proofread:
-                nothink_enabled = True
-            
-            if nothink_enabled:
-                comp_kwargs["chat_template_kwargs"] = {"enable_thinking": False}
-                if config.debug:
-                    logger.debug(f"Thinking mode DISABLED for [{role.value}] via nothink config")
+        # FIX: Disable thinking mode for local LLMs (gemma4, qwen3) when nothink config is True.
+        # chat_template_kwargs is a llama.cpp-specific parameter, NOT a standard OpenAI API param.
+        # The OpenAI Python SDK rejects unknown kwargs, so we must pass it via extra_body.
+        nothink_enabled = False
+        if role == LLMRole.PRIMARY and config.nothink_translate:
+            nothink_enabled = True
+        elif role == LLMRole.SECONDARY and config.nothink_proofread:
+            nothink_enabled = True
+        
+        # If explicit chat_template_kwargs was passed, use it
+        if chat_template_kwargs is not None:
+            comp_kwargs["extra_body"] = {"chat_template_kwargs": chat_template_kwargs}
+        elif nothink_enabled:
+            comp_kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
+            if config.debug:
+                logger.debug(f"Thinking mode DISABLED for [{role.value}] via nothink config (extra_body)")
         
         if config.debug:
             logger.debug(f"LLM Request [{role.value}]: {model}, {len(user_prompt)} chars, temp={temp:.2f}, sys_not_promt={use_sys_not_promt}, json_mode={json_mode}")
