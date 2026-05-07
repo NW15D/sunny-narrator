@@ -123,11 +123,9 @@ class TranslationEngine:
         entries = self.vocab_manager.get_vocab_for_chunk(chunk, s_idx, c_idx)
 
         if not entries:
-            logger.warning(f"get_vocab_for_chunk returned 0 entries for chunk {s_idx}-{c_idx} (vocab_manager has {len(self.vocab_manager.vocab) if self.vocab_manager else 0} total entries)")
-            # Don't return empty - use full vocabulary if available
-            if self.vocab_manager and self.vocab_manager.vocab:
-                logger.info(f"Fallback: using full vocabulary ({len(self.vocab_manager.vocab)} entries)")
-                entries = list(self.vocab_manager.vocab.values())
+            # Empty vocab is valid for chunks without dictionary terms
+            logger.info(f"Chunk {s_idx}-{c_idx}: No matching vocabulary terms")
+            return ""
 
         formatted = self.vocab_manager.format_for_model(entries, config.model_translate)
 
