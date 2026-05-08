@@ -1116,6 +1116,12 @@ def create_series_vocab(
     ]
     filtered_words = sorted(filtered_words, key=lambda x: -x[1])
 
+    # ============================================================
+    # PHASE 3b: REMOVE DUPLICATES - filter out words that appear in entities
+    # ============================================================
+    entity_term_set = {term.lower() for term, _, _ in filtered_entities}
+    filtered_words = [(w, c) for w, c in filtered_words if w.lower() not in entity_term_set]
+
     # Free memory
     del all_words
 
