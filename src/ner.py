@@ -1029,34 +1029,91 @@ def create_series_vocab(
     print(f"\nTotal raw entities: {len(all_raw_entities)}")
     print(f"Total unique words: {len(all_words)}")
 
-    # Aggregate entity counts across ALL books (sum occurrences)
-    entity_counts = Counter((term, cat) for term, cat, _ in all_raw_entities)
+    # ============================================================
+    # PHASE 1: NORMALIZE & MERGE ENTITIES (by lemma only, keep FIRST category)
+    # ============================================================
 
-    # Free memory - clear raw entities list
-    del all_raw_entities
+    # Re-process raw entities with lemmatization enabled
+    # Group by lemma ONLY, keep first encountered category (ignore later categories)
+    entity_lemmas = {}  # lemma -> (first_category, [(term, count), ...])
 
-    # Filter by min_count_ner AFTER aggregation
+    for term, cat, book in all_raw_entities:
+        # Get lemma for normalization
+        try:
+            doc = nlp(term)
+            lemma = doc[0].lemma_.lower().strip()
+        except Exception:
+            lemma = term.lower().strip()
+
+        if lemma not in entity_lemmas:
+            # First encounter - store category
+            entity_lemmas[lemma] = (cat, [(term, 1)])
+        else:
+            # Already seen - append term but keep first category
+            first_cat, entries = entity_lemmas[lemma]
+            entries.append((term, 1))
+
+    # Aggregate counts per lemma, keep first category
+    # Output lemma in lowercase (infinitive form) - e.g. "dragon" not "Dragon"
+    aggregated_entities = []
+    for lemma, (first_cat, entries) in entity_lemmas.items():
+        total_count = sum(e[1] for e in entries)
+        # Use lowercase lemma as output term (normalized form)
+        output_term = lemma.lower()
+        aggregated_entities.append((output_term, first_cat, total_count))
+
+    print(f"\nEntities after lemma-based merge (first category): {len(aggregated_entities)}")
+
+    # ============================================================
+    # PHASE 2: NORMALIZE & MERGE WORDS (by lemma, case-insensitive)
+    # ============================================================
+
+    # Re-process words with lemmatization
+    word_groups = {}  # lemma -> [(word, count), ...]
+
+    for word, count in all_words.items():
+        try:
+            doc = nlp(word)
+            lemma = doc[0].lemma_.lower().strip()
+        except Exception:
+            lemma = word.lower().strip()
+
+        if lemma not in word_groups:
+            word_groups[lemma] = []
+        word_groups[lemma].append((word, count))
+
+    # Aggregate word counts by lemma
+    # Output lemma in lowercase (infinitive form)
+    aggregated_words = []
+    for lemma, entries in word_groups.items():
+        total_count = sum(e[1] for e in entries)
+        # Use lowercase lemma as output term
+        output_term = lemma.lower()
+        aggregated_words.append((output_term, total_count))
+
+    print(f"Words after lemma-based merge: {len(aggregated_words)}")
+
+    # ============================================================
+    # PHASE 3: FILTER BY MIN COUNT & MERGE OVERLAPPING
+    # ============================================================
+
+    # Filter entities by min_count_ner
     filtered_entities = [
         (term, cat, count)
-        for (term, cat), count in entity_counts.items()
+        for term, cat, count in aggregated_entities
         if count >= min_count_ner
     ]
-
-    # Sort by count descending
     filtered_entities = sorted(filtered_entities, key=lambda x: -x[2])
 
-    # Entity merging - remove substring entities (like make_vocab)
-    # Keep only longest form of each entity
+    # Entity merging - remove substring entities (keep longest form)
     filtered_entities = _merge_overlapping_entities(filtered_entities)
 
-    # Filter words by min_count_word
+    # Filter words by min_count_word and min_word_length
     filtered_words = [
         (word, count)
-        for word, count in all_words.items()
+        for word, count in aggregated_words
         if count >= min_count_word and len(word) >= min_word_length
     ]
-
-    # Sort by count descending (x[1] is count)
     filtered_words = sorted(filtered_words, key=lambda x: -x[1])
 
     # Free memory
