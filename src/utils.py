@@ -125,6 +125,38 @@ class TranslationMetrics:
         logger.info("=" * 60)
 
 
+def replace_vocab_in_text(
+    source_text: str, 
+    vocab_dict: Dict[str, str],
+    source_lang: str = None
+) -> str:
+    """
+    Replace dictionary words in source_text with their translations.
+    Uses word boundary matching for exact matches only.
+    
+    Args:
+        source_text: Original text to translate
+        vocab_dict: Dictionary mapping source words → target translations
+        source_lang: Source language (reserved for future tokenizer use)
+    
+    Returns:
+        Text with dictionary words replaced (e.g., "everytime dragon fly" → "everytime драккар fly")
+    """
+    if not vocab_dict or not source_text:
+        return source_text
+    
+    # Sort by length desc to replace longer matches first (avoids partial replacements)
+    sorted_keys = sorted(vocab_dict.keys(), key=len, reverse=True)
+    escaped_keys = [re.escape(k) for k in sorted_keys]
+    pattern = r'\b(' + '|'.join(escaped_keys) + r')\b'
+    
+    def replace_func(match):
+        word = match.group(1)
+        return vocab_dict.get(word, word)
+    
+    return re.sub(pattern, replace_func, source_text)
+
+
 # Global metrics instance
 metrics = TranslationMetrics()
 
@@ -163,6 +195,134 @@ def get_translation_stats() -> dict:
 def reset_translation_stats():
     """Reset global translation statistics."""
     translation_stats.reset()
+
+
+# =============================================================================
+# Vocabulary Auto-Substitution (before Stage 1 translation)
+# =============================================================================
+
+def replace_vocab_in_text(
+    source_text: str,
+    vocab_dict: Dict[str, str],
+    source_lang: str = None
+) -> str:
+    """
+    Replace dictionary words in source_text with their translations.
+    Uses word boundary matching for exact matches only.
+    
+    This function is called BEFORE Stage 1 (INITIAL) translation to ensure
+    the LLM sees translated terms from the dictionary in context.
+    
+    Stages 2-4 (reflection, improve, final_edit) see the ORIGINAL source_text
+    without substitutions, allowing quality verification.
+    
+    Args:
+        source_text: Original text to translate
+        vocab_dict: Dictionary mapping source words → target translations
+        source_lang: Source language (reserved for future tokenizer use)
+    
+    Returns:
+        Text with dictionary words replaced (e.g., "everytime dragon fly" → "everytime драккар fly")
+    
+    Examples:
+        >>> replace_vocab_in_text("dragon fly", {"dragon": "драккар"})
+        'драккар fly'
+        >>> replace_vocab_in_text("dragonfly is dragon", {"dragon": "драккар"})
+        'dragonfly is драккар'  # only full word match
+        >>> replace_vocab_in_text("", {})
+        ''
+    """
+    if not vocab_dict or not source_text:
+        return source_text
+    
+    # Sort by length desc to replace longer matches first (avoids partial replacements)
+    sorted_keys = sorted(vocab_dict.keys(), key=len, reverse=True)
+    escaped_keys = [re.escape(k) for k in sorted_keys]
+    pattern = r'\b(' + '|'.join(escaped_keys) + r')\b'
+    
+    def replace_func(match):
+        word = match.group(1)
+        return vocab_dict.get(word, word)
+    
+    return re.sub(pattern, replace_func, source_text)
+
+
+def reset_translation_stats():
+    """Reset global translation statistics."""
+    translation_stats.reset()
+
+
+# =============================================================================
+# Unit Tests for replace_vocab_in_text()
+# =============================================================================
+
+def _test_replace_vocab_in_text():
+    """Run tests for replace_vocab_in_text() function."""
+    import sys
+    
+    tests_passed = 0
+    tests_failed = 0
+    
+    # Test 1: Basic replacement
+    try:
+        result = replace_vocab_in_text("dragon fly dragon", {"dragon": "драккар"})
+        assert result == "драккар fly драккар", f"Expected 'драккар fly драккар', got '{result}'"
+        print("✓ Test 1 passed: Basic replacement")
+        tests_passed += 1
+    except AssertionError as e:
+        print(f"✗ Test 1 failed: {e}")
+        tests_failed += 1
+    
+    # Test 2: Word boundary matching
+    try:
+        result = replace_vocab_in_text("dragonfly is dragon", {"dragon": "драккар"})
+        assert result == "dragonfly is драккар", f"Expected 'dragonfly is драккар', got '{result}'"
+        print("✓ Test 2 passed: Word boundary matching")
+        tests_passed += 1
+    except AssertionError as e:
+        print(f"✗ Test 2 failed: {e}")
+        tests_failed += 1
+    
+    # Test 3: Empty inputs
+    try:
+        assert replace_vocab_in_text("", {}) == ""
+        assert replace_vocab_in_text("text", {}) == "text"
+        assert replace_vocab_in_text("dragon", {}) == "dragon"
+        print("✓ Test 3 passed: Empty inputs")
+        tests_passed += 1
+    except AssertionError as e:
+        print(f"✗ Test 3 failed: {e}")
+        tests_failed += 1
+    
+    # Test 4: Multiple words with length ordering
+    try:
+        result = replace_vocab_in_text("dragon fly dragonfly", {"dragon": "драккар", "dragonfly": "драккарий"})
+        # Longer matches first, so dragonfly → драккарий, then dragon → драккар
+        expected = "драккар fly драккарий"
+        assert result == expected, f"Expected '{expected}', got '{result}'"
+        print("✓ Test 4 passed: Multiple words with length ordering")
+        tests_passed += 1
+    except AssertionError as e:
+        print(f"✗ Test 4 failed: {e}")
+        tests_failed += 1
+    
+    # Test 5: Special regex characters in dictionary keys
+    try:
+        result = replace_vocab_in_text("a.b c*d e?f", {"a.b": "X", "c*d": "Y", "e?f": "Z"})
+        assert result == "X Y Z", f"Expected 'X Y Z', got '{result}'"
+        print("✓ Test 5 passed: Special regex characters escaped")
+        tests_passed += 1
+    except AssertionError as e:
+        print(f"✗ Test 5 failed: {e}")
+        tests_failed += 1
+    
+    print(f"\nResults: {tests_passed} passed, {tests_failed} failed")
+    return tests_failed == 0
+
+
+if __name__ == "__main__":
+    success = _test_replace_vocab_in_text()
+    sys.exit(0 if success else 1)
 
 
 # =============================================================================
@@ -1903,3 +2063,71 @@ def num_tokens_in_string(input_str: str, encoding_name: str = "cl100k_base") -> 
 def print_translation_report():
     """Print translation metrics summary at end of translation."""
     metrics.print_report()
+
+
+# =============================================================================
+# Unit Tests for replace_vocab_in_text
+# =============================================================================
+
+if __name__ == "__main__":
+    import sys
+    
+    def test_replace_vocab_in_text():
+        """Test the replace_vocab_in_text function."""
+        
+        # Test 1: Basic word replacement
+        vocab = {"hello": "привет", "world": "мир"}
+        result = replace_vocab_in_text("hello world", vocab)
+        assert result == "привет мир", f"Test 1 failed: {result}"
+        print("✓ Test 1: Basic word replacement")
+        
+        # Test 2: Partial word should NOT be replaced
+        vocab = {"cat": "кошка"}
+        result = replace_vocab_in_text("catastrophe", vocab)
+        assert result == "catastrophe", f"Test 2 failed: {result}"
+        print("✓ Test 2: Partial word NOT replaced")
+        
+        # Test 3: Multiple occurrences
+        vocab = {"dragon": "дракон"}
+        result = replace_vocab_in_text("the dragon saw another dragon", vocab)
+        assert result == "the дракон saw another дракон", f"Test 3 failed: {result}"
+        print("✓ Test 3: Multiple occurrences")
+        
+        # Test 4: Longer match takes priority (avoids partial matches)
+        vocab = {"catastrophe": "катастрофа", "cat": "кошка"}
+        result = replace_vocab_in_text("catastrophe has cat", vocab)
+        # Longest match takes priority - cat in catastrophe should NOT be replaced
+        assert result == "катастрофа has кошка", f"Test 4 failed: {result}"
+        print("✓ Test 4: Longer match priority (avoids partial matches)")
+        
+        # Test 5: Empty vocab
+        result = replace_vocab_in_text("hello world", {})
+        assert result == "hello world", f"Test 5 failed: {result}"
+        print("✓ Test 5: Empty vocab returns original")
+        
+        # Test 6: Empty text
+        result = replace_vocab_in_text("", {"hello": "привет"})
+        assert result == "", f"Test 6 failed: {result}"
+        print("✓ Test 6: Empty text returns empty")
+        
+        # Test 7: Example from spec
+        vocab = {"everytime": "everytime", "dragon": "драккар"}
+        result = replace_vocab_in_text("everytime dragon fly", vocab)
+        assert result == "everytime драккар fly", f"Test 7 failed: {result}"
+        print("✓ Test 7: Spec example")
+        
+        # Test 8: Special regex characters in vocab (escaped via re.escape)
+        vocab = {"it's": "это", "don't": "не"}
+        result = replace_vocab_in_text("it's a test don't worry", vocab)
+        assert result == "это a test не worry", f"Test 8 failed: {result}"
+        print("✓ Test 8: Special regex characters escaped")
+        
+        # Test 9: None vocab returns original
+        result = replace_vocab_in_text("hello", None)
+        assert result == "hello", f"Test 9 failed: {result}"
+        print("✓ Test 9: None vocab returns original")
+        
+        print("\n✅ All tests passed!")
+        sys.exit(0)
+    
+    test_replace_vocab_in_text()
