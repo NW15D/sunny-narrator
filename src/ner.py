@@ -702,40 +702,53 @@ def extract_text_from_book(book_path: str) -> str:
 
 def _merge_overlapping_entities(entities):
     """
-    Merge overlapping entities - keep only longest form.
+    Merge overlapping entities - keep only highest count form.
 
     For example: ["John", "John Smith", "Smith"] -> ["John Smith"]
+    Also merges case-insensitive: ["Gant", "gant"] -> single entry
 
     Args:
         entities: List of (term, category, count) tuples
 
     Returns:
-        Merged list with substring entities removed
+        Merged list with duplicate/substring entities removed
     """
     if not entities:
         return entities
 
+    # Step 1: Deduplicate exact matches (case-insensitive) - keep highest count
+    normalized_groups = {}
+    for term, cat, count in entities:
+        key = term.lower()
+        if key not in normalized_groups:
+            normalized_groups[key] = (term, cat, count)
+        else:
+            # Keep highest count for exact duplicates
+            if count > normalized_groups[key][2]:
+                normalized_groups[key] = (term, cat, count)
+
+    deduped = list(normalized_groups.values())
+
+    # Step 2: Merge substrings - keep LONGEST form (not highest count)
     # Sort by length descending (longest first)
-    sorted_entities = sorted(entities, key=lambda x: len(x[0]), reverse=True)
+    sorted_by_length = sorted(deduped, key=lambda x: len(x[0]), reverse=True)
 
     merged = []
-    seen = set()  # Track normalized terms already kept
-
-    for term, cat, count in sorted_entities:
+    for term, cat, count in sorted_by_length:
         term_lower = term.lower()
-
-        # Skip if this term is a substring of an already-kept longer term
+        # Check if this term is substring of any already-kept LONGER term
         is_substring = False
-        for kept_term, kept_cat, _ in merged:
-            if kept_cat == cat and term_lower in kept_term.lower():
+        for kept_term, _, _ in merged:
+            kept_lower = kept_term.lower()
+            # Skip if this term is substring of kept (and not equal)
+            if term_lower != kept_lower and term_lower in kept_lower:
                 is_substring = True
                 break
 
-        if not is_substring and term_lower not in seen:
+        if not is_substring:
             merged.append((term, cat, count))
-            seen.add(term_lower)
 
-    # Sort by count descending
+    # Sort by count descending for output
     return sorted(merged, key=lambda x: -x[2])
 
 def _parse_vocabulary_response(vocab_translated: str, original_terms: str = "") -> dict:
