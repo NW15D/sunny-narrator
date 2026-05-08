@@ -22,6 +22,7 @@ import io
 import base64
 import httpx
 import time
+import dataclasses
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, field
 from enum import Enum
@@ -812,6 +813,19 @@ class TranslationPipeline:
     @log_entry
     def initial_translation(self, context: TranslationContext) -> TranslationResult:
         """Stage 1: Primary LLM translation."""
+        # Replace dictionary words in source_text BEFORE translation
+        # This ensures LLM sees translated terms in context
+        # Stages 2-4 will see original source_text (no substitution) for quality verification
+        if context.vocab_dict:
+            context = dataclasses.replace(
+                context,
+                source_text=replace_vocab_in_text(
+                    context.source_text,
+                    context.vocab_dict,
+                    context.source_lang
+                )
+            )
+        
         # Handle empty or very short input
         if not context.source_text or len(context.source_text.strip()) < 2:
             return TranslationResult(
