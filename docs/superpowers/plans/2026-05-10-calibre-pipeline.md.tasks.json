@@ -1,0 +1,75 @@
+{
+    "planPath": "docs/superpowers/specs/2026-05-10-calibre-pipeline-design.md",
+    "tasks": [
+        {
+            "id": 0,
+            "subject": "Create src/calibre_pipeline.py with convert_to_markdown() returning (markdown, metadata) tuple",
+            "status": "completed",
+            "files": [
+                "src/calibre_pipeline.py"
+            ]
+        },
+        {
+            "id": 1,
+            "subject": "Implement error handling for Calibre not installed/failed conversion",
+            "status": "completed",
+            "files": [
+                "src/calibre_pipeline.py"
+            ],
+            "blockedBy": [0]
+        },
+        {
+            "id": 2,
+            "subject": "Implement cleanup for temporary files using finally:/context manager",
+            "status": "completed",
+            "files": [
+                "src/calibre_pipeline.py"
+            ],
+            "blockedBy": [0]
+        },
+        {
+            "id": 3,
+            "subject": "Implement translate_chunks() with max_chunk_size parameter and progress tracking",
+            "status": "completed",
+            "files": [
+                "src/calibre_pipeline.py"
+            ],
+            "blockedBy": [0]
+        },
+        {
+            "id": 4,
+            "subject": "Implement build_output() for EPUB/FB2 generation with TOC",
+            "status": "completed",
+            "files": [
+                "src/calibre_pipeline.py"
+            ],
+            "blockedBy": [0]
+        },
+        {
+            "id": 5,
+            "subject": "Create tests/test_calibre_pipeline.py with mocked tests including error handling",
+            "status": "completed",
+            "files": [
+                "tests/test_calibre_pipeline.py"
+            ],
+            "blockedBy": [0]
+        },
+        {
+            "id": 6,
+            "subject": "Modify app.py to support --pipeline new flag",
+            "status": "in_progress",
+            "files": [
+                "app.py"
+            ],
+            "blockedBy": [3, 4, 5]
+        },
+        {
+            "id": 7,
+            "subject": "Run tests and verify pass",
+            "status": "pending",
+            "files": [],
+            "blockedBy": [6]
+        }
+    ],
+    "lastUpdated": "2026-05-10T09:55:00Z"
+}
