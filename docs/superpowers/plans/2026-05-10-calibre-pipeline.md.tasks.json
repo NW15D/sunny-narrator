@@ -57,7 +57,7 @@
         {
             "id": 6,
             "subject": "Modify app.py to support --pipeline new flag",
-            "status": "in_progress",
+            "status": "completed",
             "files": [
                 "app.py"
             ],
@@ -66,10 +66,10 @@
         {
             "id": 7,
             "subject": "Run tests and verify pass",
-            "status": "pending",
+            "status": "completed",
             "files": [],
             "blockedBy": [6]
         }
     ],
-    "lastUpdated": "2026-05-10T09:55:00Z"
+    "lastUpdated": "2026-05-10T09:58:00Z"
 }
