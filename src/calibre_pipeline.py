@@ -225,7 +225,9 @@ def convert_to_markdown(input_path: str) -> tuple[str, dict]:
             try:
                 _run_command(cmd, timeout=300)
             except subprocess.CalledProcessError as e:
-                raise ValueError(f"Calibre conversion failed: {e.stderr}")
+                stderr = e.stderr if e.stderr else "Unknown error"
+                stderr = stderr[:500]  # Limit for readability
+                raise ValueError(f"Calibre conversion failed: {stderr}")
             except subprocess.TimeoutExpired:
                 raise ValueError("Calibre conversion timed out")
             
@@ -292,6 +294,9 @@ def _clean_calibre_markers(text: str) -> str:
     Returns:
         Cleaned text
     """
+    if not text or not text.strip():
+        return text
+    
     # Remove Calibre comment markers like: <!-- 1 -->
     text = re.sub(r'<!--\s*\d+\s*-->', '', text)
     
@@ -341,14 +346,20 @@ def translate_chunks(
     _init_logger()
     
     if not markdown_text or not markdown_text.strip():
-        print("Empty markdown text, skipping translation")
+        if logger:
+            logger.warning("Empty markdown text, skipping translation")
+        else:
+            print("Empty markdown text, skipping translation")
         return markdown_text
     
     # Split into chunks
     chunks = _split_into_chunks(markdown_text, max_chunk_size)
     total_chunks = len(chunks)
     
-    print(f"Translating {total_chunks} chunks (max_chunk_size={max_chunk_size})...")
+    if logger:
+        logger.info(f"Translating {total_chunks} chunks (max_chunk_size={max_chunk_size})...")
+    else:
+        print(f"Translating {total_chunks} chunks (max_chunk_size={max_chunk_size})...")
     
     translated_parts = []
     vocab_dict = {}  # Empty vocab dict for now
@@ -390,7 +401,10 @@ def translate_chunks(
     # Reassemble translated text
     translated_text = '\n\n'.join(translated_parts)
     
-    print(f"Translation complete: {len(translated_text)} chars")
+    if logger:
+        logger.info(f"Translation complete: {len(translated_text)} chars")
+    else:
+        print(f"Translation complete: {len(translated_text)} chars")
     
     return translated_text
 
@@ -463,8 +477,9 @@ def build_output(
     _init_logger()
     
     output_format = output_format.lower()
-    if output_format not in ['fb2', 'epub']:
-        raise ValueError(f"Unsupported output format: {output_format}")
+    valid_formats = {'fb2', 'epub'}
+    if output_format not in valid_formats:
+        raise ValueError(f"Unsupported output format: {output_format}. Valid: {', '.join(sorted(valid_formats))}")
     
     # Check Calibre is installed
     if not check_calibre_installed():
@@ -526,7 +541,9 @@ def build_output(
             try:
                 _run_command(cmd, timeout=300)
             except subprocess.CalledProcessError as e:
-                raise ValueError(f"Calibre output conversion failed: {e.stderr}")
+                stderr = e.stderr if e.stderr else "Unknown error"
+                stderr = stderr[:500]  # Limit for readability
+                raise ValueError(f"Calibre output conversion failed: {stderr}")
             except subprocess.TimeoutExpired:
                 raise ValueError("Calibre output conversion timed out")
             
