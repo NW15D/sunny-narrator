@@ -317,6 +317,49 @@ def _clean_calibre_markers(text: str) -> str:
     return text.strip()
 
 
+def _load_vocab_dict(book_path: str) -> dict:
+    """
+    Load vocabulary dictionary from .dic file.
+    
+    Parses the .dic file (format: source = target, category, gender, notes)
+    and returns a simple source->target mapping.
+    
+    Args:
+        book_path: Path to the book file (used to find corresponding .dic)
+        
+    Returns:
+        Dictionary mapping source terms to target translations
+    """
+    from pathlib import Path
+    
+    book_dir = Path(book_path).parent
+    book_name = Path(book_path).stem
+    dic_path = book_dir / f"{book_name}.dic"
+    
+    if not dic_path.exists():
+        return {}
+    
+    vocab = {}
+    with open(dic_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            if '=' not in line:
+                continue
+            source, _, rest = line.partition('=')
+            source = source.strip()
+            rest = rest.strip()
+            if not source or not rest:
+                continue
+            # Extract target (first field before comma)
+            target = rest.split(',')[0].strip()
+            if target:
+                vocab[source] = target
+    
+    return vocab
+
+
 def translate_chunks(
     markdown_text: str,
     max_chunk_size: int = 6000,
@@ -376,14 +419,9 @@ def translate_chunks(
     # Load vocabulary if book_path provided and no explicit vocab_dict
     if vocab_dict is None and book_path:
         try:
-            from src.vocabulary_manager import get_vocabulary_manager
-            vocab_manager = get_vocabulary_manager(book_path)
-            if vocab_manager:
-                vocab_dict = vocab_manager.get_all_entries()
-                if logger:
-                    logger.info(f"Loaded vocabulary: {len(vocab_dict)} terms from {book_path}")
-                else:
-                    print(f"Loaded vocabulary: {len(vocab_dict)} terms")
+            vocab_dict = _load_vocab_dict(book_path)
+            if vocab_dict and logger:
+                logger.info(f"Loaded vocabulary: {len(vocab_dict)} terms")
         except Exception as e:
             if logger:
                 logger.warning(f"Failed to load vocabulary: {e}")
