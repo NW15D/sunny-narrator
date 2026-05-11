@@ -591,24 +591,14 @@ def build_output(
             
             # Step 2: Convert HTML to output format using Calibre
             # Note: ebook-convert determines format from output file extension
-            # Metadata values are quoted to handle spaces in titles/authors
+            # Metadata (title, author) is already in the HTML via _generate_title_page()
+            # Calibre auto-extracts metadata from HTML content
             logger.info(f"Converting HTML to {output_format.upper()}...")
             cmd = [
                 "ebook-convert",
                 html_path,
                 output_path,
             ]
-            
-            # Add metadata to Calibre command
-            # Note: subprocess.run with list passes args directly, no shell quoting needed
-            if metadata.get('title'):
-                cmd.extend(["--title", metadata['title']])
-            if metadata.get('author'):
-                cmd.extend(["--author", metadata['author']])
-            if metadata.get('language'):
-                cmd.extend(["--language", metadata['language']])
-            if metadata.get('publisher'):
-                cmd.extend(["--publisher", metadata['publisher']])
             
             try:
                 _run_command(cmd, timeout=300)
