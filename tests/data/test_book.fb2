@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink">
+    <description>
+        <title-info>
+            <book-title>Example book</book-title>
+            <author>
+                <first-name>Alex</first-name>
+                <last-name>Unknown</last-name>
+            </author>
+            <language>en</language>
+            <annotation>
+                <p>Small test book. Shows basics of FB2 library</p>
+            </annotation>
+        </title-info>
+        <document-info>
+            <author>
+                <nickname>test</nickname>
+            </author>
+            <program-used>test</program-used>
+            <date>2024-01-01</date>
+            <version>1.0</version>
+        </document-info>
+    </description>
+    <body name="main">
+        <section>
+            <p>Пример книги</p>
+            <p>Введение</p>
+            <p><strong>1. Глава первая. История формата FB2</strong></p>
+            <p>:::{#calibre_link-0 .calibre}:::</p>
+            <p>:::{.calibre1}### Аннотация {#annotation .calibre2}</p>
+            <p>Маленькая тестовая книга. Демонстрирует основы библиотеки FB2</p>
+            <p>:::</p>
+            <p>Пример книги</p>
+            <p>Введение</p>
+            <p>1. Глава первая. История формата FB2</p>
+            <p>2. Глава вторая. Пустая</p>
+            <p>2. Глава вторая. Пустая</p>
+            <p>:::{.calibre8}:::</p>
+            <p>Пример книги {#calibre_link-6 .calibre9} ============</p>
+            <p>Введение {#calibre_link-7 .calibre9} ==================================================================</p>
+            <p>:::{.paragraph}Первый абзац введения:::</p>
+            <p>:::{.paragraph}Второй абзац введения:::</p>
+            <p>:::{.calibre8}:::</p>
+            <p><strong>1. Глава первая. История формата FB2</strong> {#calibre_link-8 .calibre9} ========================================================================================</p>
+            <p>:::{.paragraph}Первый абзац введения:::</p>
+            <p>:::{.paragraph}Второй абзац введения:::</p>
+            <p>:::{.paragraph}Третий абзац введения:::</p>
+            <p>:::{.calibre8}:::</p>
+            <p><strong>2. Глава вторая. Пустая</strong> {#calibre_link-9 .calibre12}</p>
+            <p>и здесь находится этот текст, какой-то текст</p>
+            <p><strong>2. Глава вторая. Пустая</strong>:::</p>
+        </section>
+    </body>
+</FictionBook>
