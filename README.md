@@ -169,6 +169,25 @@ docker-compose -f docker-compose.gpu.yml up -d
 
 ---
 
+## 🔄 Calibre Pipeline (New!)
+
+Accept **EPUB/FB2** directly — no manual conversion needed.
+
+```bash
+# Install system dependencies
+sudo apt install pandoc calibre
+pip install -r requirements.txt
+
+# Translate EPUB/FB2 directly
+python app.py --pipeline new --output-format fb2
+```
+
+**Pipeline:** EPUB/FB2 → Calibre → HTML → Markdown → Translate → HTML → Calibre → FB2/EPUB
+
+**Full guide:** [docs/INSTALLATION.md](docs/INSTALLATION.md#-calibre-pipeline-new-feature)
+
+---
+
 ## 📚 Documentation
 
 | Topic | File |
