@@ -213,6 +213,121 @@ python -m spacy download en_core_web_lg
 
 ---
 
+## 🔄 Calibre Pipeline (New Feature)
+
+Sunny Narrator now supports an alternative pipeline that accepts **EPUB/FB2** input directly, converts via Calibre to Markdown, translates, and outputs back to **FB2/EPUB**.
+
+### Prerequisites
+
+| Dependency | Type | Installation |
+|------------|------|-------------|
+| `pypandoc` | Python package | `pip install pypandoc` |
+| `pandoc` | System package | `sudo apt install pandoc` |
+| `calibre` | System package | `sudo apt install calibre` |
+
+### Step 1: Install Python Dependencies
+
+```bash
+# Already included in requirements.txt
+pip install -r requirements.txt
+```
+
+### Step 2: Install System Dependencies
+
+```bash
+# Pandoc (document converter)
+sudo apt install pandoc
+
+# Calibre (ebook conversion)
+sudo apt install calibre
+```
+
+### Step 3: Verify Installation
+
+```bash
+# Check Calibre
+ebook-convert --version
+
+# Check Pandoc
+pandoc --version
+
+# Check pypandoc
+python3 -c "import pypandoc; print('pypandoc OK')"
+```
+
+### Usage
+
+```bash
+# Basic usage (uses .env config)
+python3 app.py --pipeline new
+
+# Specify output format
+python3 app.py --pipeline new --output-format epub
+
+# Custom chunk size + fast mode
+python3 app.py --pipeline new --output-format fb2 --max-chunk-size 4000 --fast-mode
+```
+
+### .env Configuration for Calibre Pipeline
+
+```bash
+# Input file (EPUB or FB2)
+myfile=/path/to/book.epub
+
+# Translation settings
+source_lang=en
+target_lang=ru
+country=Россия
+
+# Output format (fb2 or epub)
+output_format=fb2
+```
+
+### Pipeline Flow
+
+```
+Input (EPUB/FB2)
+    ↓
+Calibre ebook-convert → HTMLZ
+    ↓
+Extract HTML + metadata from HTMLZ
+    ↓
+pypandoc: HTML → Markdown
+    ↓
+Translate Markdown chunks
+    ↓
+pypandoc: Markdown → HTML (with TOC)
+    ↓
+Calibre: HTML → Output (FB2/EPUB)
+    ↓
+Output file
+```
+
+### Troubleshooting
+
+**Error: `pypandoc is not installed`**
+```bash
+pip install pypandoc
+# Also need system pandoc:
+sudo apt install pandoc
+```
+
+**Error: `Calibre (ebook-convert) is not installed`**
+```bash
+sudo apt install calibre
+# Verify:
+ebook-convert --version
+```
+
+**Error: `Pandoc conversion failed`**
+```bash
+# Check pandoc is accessible
+which pandoc
+pandoc --version
+```
+
+---
+
 ## 🧪 Testing Installation
 
 ### Test 1: Basic Import
