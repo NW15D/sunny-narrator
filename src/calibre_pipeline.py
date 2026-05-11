@@ -251,6 +251,11 @@ def convert_to_markdown(input_path: str) -> tuple[str, dict]:
                         metadata_opf = zf.read(name).decode('utf-8')
                         break
             
+            # Step 2b: Clean Calibre markers from HTML (before Markdown conversion)
+            if html_content:
+                logger.info("Cleaning Calibre markers from HTML...")
+                html_content = _clean_calibre_markers(html_content)
+            
             if not html_content:
                 raise ValueError("No HTML content found in HTMLZ")
             
@@ -292,8 +297,13 @@ def _clean_calibre_markers(text: str) -> str:
     """
     Remove Calibre-specific markers and clean up the text.
     
+    Handles:
+    - HTML Calibre markers: :::{#calibre_link-* .calibre*}:::
+    - Inline Calibre markers: {#calibre_link-* .calibre*}
+    - Class attributes: class="calibreX"
+    
     Args:
-        text: Markdown text with Calibre markers
+        text: Markdown/HTML text with Calibre markers
         
     Returns:
         Cleaned text
@@ -303,6 +313,28 @@ def _clean_calibre_markers(text: str) -> str:
     
     # Remove Calibre comment markers like: <!-- 1 -->
     text = re.sub(r'<!--\s*\d+\s*-->', '', text)
+    
+    # Remove Calibre section markers in HTML format (:::{...}::: inside <div> or <p>)
+    text = re.sub(r'<[^>]*>:::\s*\{#calibre_link-\d+\s+\.calibre\d+\}\s*:::</[^>]*>', '', text, flags=re.DOTALL)
+    text = re.sub(r'<[^>]*>:::\s*\{\.calibre\d+\}\s*:::</[^>]*>', '', text, flags=re.DOTALL)
+    
+    # Remove standalone :::
+    text = re.sub(r'<[^>]*>:::</[^>]*>', '', text, flags=re.DOTALL)
+    text = re.sub(r':::', '', text)
+    
+    # Remove HTML paragraph包围的 Calibre markers
+    text = re.sub(r'<p>\s*\{#.*?\}\s*</p>', '', text, flags=re.DOTALL)
+    
+    # Remove inline Calibre markers: {#calibre_link-* .calibre*} and {#annotation .calibre*}
+    # Use broad pattern to catch all {#...} and {.class} markers
+    text = re.sub(r'\{#[^}]+\}', '', text)  # {#calibre_link-0 .calibre} and similar
+    text = re.sub(r'\{\.\w+\}', '', text)  # {.calibre1} and similar
+    
+    # Remove Calibre IDs: id="calibre_link-*"
+    text = re.sub(r'\s+id\s*=\s*["\'][^"\']*calibre_link[^"\']*["\']', '', text, flags=re.IGNORECASE)
+    
+    # Remove Calibre class attributes from HTML tags
+    text = re.sub(r'\s+class\s*=\s*["\'][^"\']*calibre[^"\']*["\']', '', text, flags=re.IGNORECASE)
     
     # Remove horizontal rules that are Calibre section markers
     text = re.sub(r'\n*---\s*\n*', '\n\n', text)
@@ -589,10 +621,14 @@ def build_output(
             with open(html_path, 'w', encoding='utf-8') as f:
                 f.write(html_content)
             
-            # Step 2: Convert HTML to output format using Calibre
-            # Note: ebook-convert determines format from output file extension
-            # Metadata (title, author) is already in the HTML via _generate_title_page()
-            # Calibre auto-extracts metadata from HTML content
+            # Step 2b: Clean Calibre markers from HTML before conversion
+            # This ensures no Calibre artifacts remain in the output
+            logger.info("Cleaning Calibre markers from HTML...")
+            html_content = _clean_calibre_markers(html_content)
+            with open(html_path, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+            
+            # Step 3: Convert HTML to output format using Calibre
             logger.info(f"Converting HTML to {output_format.upper()}...")
             cmd = [
                 "ebook-convert",
@@ -611,6 +647,15 @@ def build_output(
             
             if not os.path.exists(output_path):
                 raise ValueError(f"Output file was not created: {output_path}")
+            
+            # Step 4: Clean Calibre markers from output FB2 if output_format is fb2
+            if output_format == 'fb2':
+                logger.info("Cleaning Calibre markers from output FB2...")
+                with open(output_path, 'r', encoding='utf-8') as f:
+                    fb2_content = f.read()
+                fb2_content = _clean_calibre_markers(fb2_content)
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    f.write(fb2_content)
             
             logger.info(f"Output created: {output_path}")
             return output_path
