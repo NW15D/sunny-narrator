@@ -460,10 +460,10 @@ def test_build_output_fb2():
         )
         
         assert output_path == "/tmp/test_output.fb2"
-        # Verify Calibre was called with fb2 format
+        # Verify Calibre was called with fb2 output file
         cmd_args = mock_run.call_args[0][0]
-        assert "--output-format" in cmd_args
-        assert "fb2" in cmd_args
+        assert "/tmp/test_output.fb2" in cmd_args
+        assert "ebook-convert" in cmd_args
 
 
 def test_full_pipeline_integration():
