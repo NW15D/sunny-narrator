@@ -1008,7 +1008,8 @@ if __name__ == '__main__':
             f.write("# Format: source = target, category, gender, notes\n")
 
         # Now translate and update dictionary
-        print(f"Translating {len(vb.strip().split('\n'))} terms using secondary LLM...")
+        num_terms = len(vb.strip().splitlines())
+        print(f"Translating {num_terms} terms using secondary LLM...")
         # Get translation results
         vocab_raw = ta.vocabulary(config.source_lang, config.target_lang, vb, config.country, "Proofread")
         # Update dictionary with translations
