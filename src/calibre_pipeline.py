@@ -599,15 +599,16 @@ def build_output(
                 output_path,
             ]
             
-            # Add metadata to Calibre command (quoted to handle spaces)
+            # Add metadata to Calibre command
+            # Note: subprocess.run with list passes args directly, no shell quoting needed
             if metadata.get('title'):
-                cmd.extend(["--title", f"\"{metadata['title']}\""])
+                cmd.extend(["--title", metadata['title']])
             if metadata.get('author'):
-                cmd.extend(["--author", f"\"{metadata['author']}\""])
+                cmd.extend(["--author", metadata['author']])
             if metadata.get('language'):
-                cmd.extend(["--language", f"\"{metadata['language']}\""])
+                cmd.extend(["--language", metadata['language']])
             if metadata.get('publisher'):
-                cmd.extend(["--publisher", f"\"{metadata['publisher']}\""])
+                cmd.extend(["--publisher", metadata['publisher']])
             
             try:
                 _run_command(cmd, timeout=300)
