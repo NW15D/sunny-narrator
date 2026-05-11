@@ -18,6 +18,7 @@ import re
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Dict, Optional, List, Tuple
 
 # Suppress FutureWarning from transformers/torch interaction
 warnings.filterwarnings("ignore", category=FutureWarning,
@@ -110,31 +111,37 @@ class TranslationEngine:
         if book_path:
             self.vocab_manager = get_vocabulary_manager(book_path)
 
-    def get_formatted_vocab_for_chunk(self, chunk: str, s_idx: int, c_idx: int) -> str:
+    def get_vocab_entries_for_chunk(self, chunk: str, s_idx: int, c_idx: int) -> List:
         """
-        Get formatted vocabulary for chunk using VocabularyManager.
-
-        Returns vocabulary formatted for the current model (Hunyuan, Gemma, etc.)
+        Get vocabulary entries for chunk (full VocabEntry objects).
+        
+        Returns List[VocabEntry] with source, target, category, gender, notes.
         """
         if not self.vocab_manager:
-            logger.warning("vocab_manager not initialized - returning empty vocabulary")
-            return ""
+            logger.warning("vocab_manager not initialized - returning empty entries")
+            return []
 
         entries = self.vocab_manager.get_vocab_for_chunk(chunk, s_idx, c_idx)
 
         if not entries:
-            # Empty vocab is valid for chunks without dictionary terms
             logger.info(f"Chunk {s_idx}-{c_idx}: No matching vocabulary terms")
-            return ""
-
-        formatted = self.vocab_manager.format_for_model(entries, config.model_translate)
+            return []
 
         if config.debug:
-            logger.debug(f"Vocab for chunk {s_idx}-{c_idx}: {len(entries)} terms, formatted_len={len(formatted) if formatted else 0}")
-        elif formatted:
+            logger.debug(f"Vocab entries for chunk {s_idx}-{c_idx}: {len(entries)} terms")
+        elif entries:
             logger.info(f"Vocabulary: {len(entries)} terms for chunk {s_idx}-{c_idx}")
 
-        return formatted
+        return entries
+
+    def get_vocab_dict_for_chunk(self, chunk: str, s_idx: int, c_idx: int) -> Dict[str, str]:
+        """
+        Get vocabulary dict for chunk (source -> target mapping).
+        
+        Used for auto-substitution in source_text.
+        """
+        entries = self.get_vocab_entries_for_chunk(chunk, s_idx, c_idx)
+        return {entry.source: entry.target for entry in entries}
 
     def translate_chunk(self, source_text: str, context: str, s_idx: int = 0, c_idx: int = 0) -> tuple:
         """

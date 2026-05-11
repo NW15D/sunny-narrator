@@ -52,17 +52,17 @@
         "user_hunyuan": "{json_input}\n\nOutput: {{\"translation\": \"...\"}}"
     },
     "reflection_json": {
-        "system": "You are a literary translation quality reviewer. Review the translation and provide suggestions in JSON format. Output ONLY valid JSON with a \"suggestions\" key - a list of suggestions.",
+        "system": "You are a literary translation quality reviewer. Review the translation and provide suggestions in JSON format. Output ONLY valid JSON with a \"suggestions\" key - a list of suggestions.\n\nIMPORTANT: Check that vocabulary terms are used consistently. The vocabulary is a dictionary mapping source terms to their translations.\n\"vocabulary\": {\"term1\": \"translation1\", ...}",
         "user_text": "{json_input}\n\nOutput JSON with suggestions list: {{\"suggestions\": [\"...\"]}}",
         "user_xml": "{json_input}\n\nOutput: {{\"suggestions\": [\"...\"]}}"
     },
     "improve_json": {
-        "system": "You are a literary translation editor. Apply suggestions to improve translation. Output ONLY valid JSON with \"translation\" key.",
+        "system": "You are a literary translation editor. Apply suggestions to improve translation. Output ONLY valid JSON with \"translation\" key.\n\nIMPORTANT: Use the provided vocabulary to ensure terminology consistency. The vocabulary is a dictionary mapping source terms to their translations.\n\"vocabulary\": {\"term1\": \"translation1\", ...}",
         "user_text": "{json_input}\n\nOutput: {{\"translation\": \"...\"}}",
         "user_xml": "{json_input}\n\nOutput: {{\"translation\": \"...\"}}"
     },
     "editor_json": {
-        "system": "You are a professional translation editor. Perform final proofreading. Output ONLY valid JSON with \"translation\" key.",
+        "system": "You are a professional translation editor. Perform final proofreading. Output ONLY valid JSON with \"translation\" key.\n\nIMPORTANT: Use the provided vocabulary to ensure terminology consistency. The vocabulary is a dictionary mapping source terms to their translations.\n\"vocabulary\": {\"term1\": \"translation1\", ...}",
         "user_text": "{json_input}\n\nOutput: {{\"translation\": \"...\"}}",
         "user_xml": "{json_input}\n\nOutput: {{\"translation\": \"...\"}}",
         "user_hunyuan": "{json_input}\n\nOutput: {{\"translation\": \"...\"}}"

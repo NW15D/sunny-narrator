@@ -202,6 +202,30 @@ def reset_translation_stats():
 # Vocabulary Auto-Substitution (before Stage 1 translation)
 # =============================================================================
 
+def _format_vocab_for_prompt(vocab_dict: Dict[str, str]) -> str:
+    """
+    Format vocabulary dictionary for prompt injection.
+    
+    Converts {"source": "target"} to "source = target, category, gender, notes"
+    format expected by LLM.
+    
+    Args:
+        vocab_dict: Dictionary mapping source words → target translations
+        
+    Returns:
+        Formatted string for prompt injection
+    """
+    if not vocab_dict:
+        return ""
+    
+    lines = []
+    for source, target in vocab_dict.items():
+        line = f"{source} = {target}"
+        lines.append(line)
+    
+    return "\n".join(lines)
+
+
 def replace_vocab_in_text(
     source_text: str,
     vocab_dict: Dict[str, str],
@@ -859,30 +883,36 @@ class TranslationPipeline:
             )
             system_prompt = config.get_prompt("initial_translation_json", "system")
         elif context.style == "xml":
+            # Format vocab_dict for prompt: convert dict to formatted string
+            vocab_str = _format_vocab_for_prompt(context.vocab_dict)
             user_prompt = config.get_prompt(
                 "initial_translation", "user_xml",
                 source_lang=context.source_lang,
                 target_lang=context.target_lang,
                 outline_text=context.outline_text,
-                vocab_dict=context.vocab_dict,
+                vocab_dict=vocab_str,
                 source_text=context.source_text
             )
         elif config.model_translate == "Hunyuan":
+            # Format vocab_dict for prompt: convert dict to formatted string
+            vocab_str = _format_vocab_for_prompt(context.vocab_dict)
             user_prompt = config.get_prompt(
                 "initial_translation", "user_hunyuan",
                 source_lang=context.source_lang,
                 target_lang=context.target_lang,
                 outline_text=context.outline_text,
-                vocab_dict=context.vocab_dict,
+                vocab_dict=vocab_str,
                 source_text=context.source_text
             )
         else:
+            # Format vocab_dict for prompt: convert dict to formatted string
+            vocab_str = _format_vocab_for_prompt(context.vocab_dict)
             user_prompt = config.get_prompt(
                 "initial_translation", "user_text",
                 source_lang=context.source_lang,
                 target_lang=context.target_lang,
                 outline_text=context.outline_text,
-                vocab_dict=context.vocab_dict,
+                vocab_dict=vocab_str,
                 source_text=context.source_text
             )
         
@@ -1023,6 +1053,8 @@ class TranslationPipeline:
                 country=context.country
             )
         else:
+            # Format vocab_dict for prompt: convert dict to formatted string
+            vocab_str = _format_vocab_for_prompt(context.vocab_dict)
             user_prompt = config.get_prompt(
                 "reflection", f"user_{context.style}",
                 source_lang=context.source_lang,
@@ -1030,7 +1062,7 @@ class TranslationPipeline:
                 source_text=context.source_text,
                 translation=translation,
                 country=context.country,
-                vocab_dict=context.vocab_dict
+                vocab_dict=vocab_str
             )
             system_prompt = config.get_prompt("reflection", "system",
                 target_lang=context.target_lang,
@@ -1079,12 +1111,15 @@ class TranslationPipeline:
                 country=context.country
             )
         else:
+            # Format vocab_dict for prompt: convert dict to formatted string
+            vocab_str = _format_vocab_for_prompt(context.vocab_dict)
             user_prompt = config.get_prompt(
                 "improve", f"user_{context.style}",
                 target_lang=context.target_lang,
                 country=context.country,
                 translation=translation,
-                reflection=reflection
+                reflection=reflection,
+                vocab_dict=vocab_str
             )
             system_prompt = config.get_prompt("improve", "system",
                 target_lang=context.target_lang,
