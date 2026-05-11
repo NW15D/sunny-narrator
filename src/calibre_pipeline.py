@@ -557,8 +557,8 @@ def build_output(
     # Generate output filename if not provided
     if not output_path:
         title = metadata.get('title', 'output')
-        # Sanitize filename
-        safe_title = re.sub(r'[^\w\s-]', '', title).strip()[:50]
+        # Sanitize filename: remove special chars and spaces
+        safe_title = re.sub(r'[^\w\-]', '_', title).strip()[:50]
         output_path = f"{safe_title}.{output_format}"
     
     with TempDir(prefix="calibre_output_") as temp_dir:
