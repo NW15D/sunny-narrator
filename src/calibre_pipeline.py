@@ -271,7 +271,7 @@ def convert_to_markdown(input_path: str) -> tuple[str, dict]:
                     html_content,
                     'markdown',
                     format='html',
-                    extra_args=['--wrap=none', '--standalone']
+                    extra_args=['--wrap=none']
                 )
             except Exception as e:
                 raise ValueError(f"Pandoc conversion failed: {e}")
@@ -581,7 +581,7 @@ def build_output(
                     full_html,
                     'html',
                     format='markdown',
-                    extra_args=['--standalone', '--toc', '--toc-depth=2']
+                    extra_args=['--wrap=none']
                 )
             except Exception as e:
                 raise ValueError(f"Pandoc HTML conversion failed: {e}")
