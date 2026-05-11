@@ -213,13 +213,12 @@ def convert_to_markdown(input_path: str) -> tuple[str, dict]:
             htmlz_path = os.path.join(temp_dir, "output.htmlz")
             
             # Step 1: Convert to HTMLZ using Calibre
+            # Note: ebook-convert determines format from file extensions
             logger.info(f"Converting {input_path} to HTMLZ...")
             cmd = [
                 "ebook-convert",
                 input_path,
                 htmlz_path,
-                "--input-format", input_ext[1:],  # Remove leading dot
-                "--output-format", "htmlz"
             ]
             
             try:
@@ -553,13 +552,12 @@ def build_output(
                 f.write(html_content)
             
             # Step 2: Convert HTML to output format using Calibre
+            # Note: ebook-convert determines format from output file extension
             logger.info(f"Converting HTML to {output_format.upper()}...")
             cmd = [
                 "ebook-convert",
                 html_path,
                 output_path,
-                "--input-format", "html",
-                "--output-format", output_format
             ]
             
             # Add metadata to Calibre command
