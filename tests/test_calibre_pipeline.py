@@ -432,7 +432,7 @@ def test_build_output_epub():
         assert mock_pandoc.call_count == 1
         call_args = mock_pandoc.call_args
         assert 'html' in str(call_args)
-        assert 'toc' in str(call_args)
+        assert '--wrap=none' in str(call_args)
 
 
 def test_build_output_fb2():
