@@ -32,6 +32,24 @@ flowchart LR
 
 ---
 
+## 🧹 Calibre Markers Cleanup
+
+When converting books through Calibre (`ebook-convert`), internal markers used for styling may remain in the output. Sunny Narrator automatically removes these markers:
+
+- `:::{#calibre_link-* .calibre}:::` — block markers
+- `{#calibre_link-* .calibre*}` — inline markers
+- `class="calibreX"` — CSS classes
+- `id="calibre_link-*"` — IDs
+
+**Automatic cleanup is applied:**
+- After HTML→Markdown conversion
+- Before Markdown→FB2/EPUB conversion
+- After FB2 generation (for direct FB2→FB2 conversion)
+
+**Details:** [docs/CALIBRE_MARKERS_CLEANUP.md](docs/CALIBRE_MARKERS_CLEANUP.md)
+
+---
+
 ## 🚀 Quick Start
 
 ```bash

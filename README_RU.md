@@ -92,6 +92,24 @@ DEBUG=off
 
 ---
 
+## 🧹 Очистка маркеров Calibre
+
+При конвертации книг через Calibre (`ebook-convert`) служебные маркеры для стилизации могут остаться в выходном файле. Sunny Narrator автоматически удаляет эти маркеры:
+
+- `:::{#calibre_link-* .calibre}:::` — блочные маркеры
+- `{#calibre_link-* .calibre*}` — inline маркеры
+- `class="calibreX"` — CSS классы
+- `id="calibre_link-*"` — ID атрибуты
+
+**Автоматическая очистка применяется:**
+- После HTML→Markdown конвертации
+- Перед Markdown→FB2/EPUB конвертацией
+- После генерации FB2 (для прямых FB2→FB2 конвертаций)
+
+**Подробности:** [docs/CALIBRE_MARKERS_CLEANUP.md](docs/CALIBRE_MARKERS_CLEANUP.md)
+
+---
+
 ## 📎 Словарь
 
 Файл словаря (`.dic`) обеспечивает консистентность терминологии:
