@@ -262,6 +262,11 @@ def convert_to_markdown(input_path: str) -> tuple[str, dict]:
             
             # Step 4: Convert HTML to Markdown using pypandoc
             logger.info("Converting HTML to Markdown...")
+            if not PANDOC_AVAILABLE:
+                raise FileNotFoundError(
+                    "pypandoc is not installed. "
+                    "Install it: pip install pypandoc (requires pandoc: https://pandoc.org/installing.html)"
+                )
             try:
                 markdown_text = pypandoc.convert_text(
                     html_content,
@@ -320,7 +325,9 @@ def translate_chunks(
     target_lang: str = "ru",
     country: str = "Russia",
     style: str = "text",
-    fast_mode: bool = False
+    fast_mode: bool = False,
+    vocab_dict: Optional[dict] = None,
+    book_path: Optional[str] = None
 ) -> str:
     """
     Translate Markdown text in chunks using existing translate_chunk.
@@ -339,6 +346,9 @@ def translate_chunks(
         country: Target country for cultural context (default "Russia")
         style: Translation style - "text" or "xml" (default "text")
         fast_mode: Skip reflection/improve stages (default False)
+        vocab_dict: Optional vocabulary dictionary. If None and book_path is provided,
+                    will be loaded from book's .dic file
+        book_path: Optional path to the book file (used to load vocabulary)
         
     Returns:
         Translated markdown text
@@ -362,8 +372,27 @@ def translate_chunks(
         print(f"Translating {total_chunks} chunks (max_chunk_size={max_chunk_size})...")
     
     translated_parts = []
-    vocab_dict = {}  # Empty vocab dict for now
     outline_text = ""  # Context for next chunk
+    
+    # Load vocabulary if book_path provided and no explicit vocab_dict
+    if vocab_dict is None and book_path:
+        try:
+            from src.vocabulary_manager import get_vocabulary_manager
+            vocab_manager = get_vocabulary_manager(book_path)
+            if vocab_manager:
+                vocab_dict = vocab_manager.get_all_entries()
+                if logger:
+                    logger.info(f"Loaded vocabulary: {len(vocab_dict)} terms from {book_path}")
+                else:
+                    print(f"Loaded vocabulary: {len(vocab_dict)} terms")
+        except Exception as e:
+            if logger:
+                logger.warning(f"Failed to load vocabulary: {e}")
+            else:
+                print(f"Warning: Failed to load vocabulary: {e}")
+            vocab_dict = {}
+    elif vocab_dict is None:
+        vocab_dict = {}
     
     for i, chunk in enumerate(chunks):
         # Show progress
@@ -505,6 +534,11 @@ def build_output(
             title_html = _generate_title_page(metadata)
             full_html = f"{title_html}\n\n{translated_md}"
             
+            if not PANDOC_AVAILABLE:
+                raise FileNotFoundError(
+                    "pypandoc is not installed. "
+                    "Install it: pip install pypandoc (requires pandoc: https://pandoc.org/installing.html)"
+                )
             try:
                 html_content = pypandoc.convert_text(
                     full_html,
@@ -638,7 +672,8 @@ def run_pipeline(
         source_lang=source_lang,
         target_lang=target_lang,
         country=country,
-        fast_mode=fast_mode
+        fast_mode=fast_mode,
+        book_path=input_path  # Enable vocabulary loading
     )
     
     # Step 3: Build output
