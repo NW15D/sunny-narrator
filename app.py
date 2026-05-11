@@ -936,6 +936,15 @@ if __name__ == '__main__':
                        help='Minimum occurrences for NER entities')
     parser.add_argument('--min-count-word', type=int, default=5,
                        help='Minimum occurrences for common words')
+    # Calibre pipeline mode
+    parser.add_argument('--pipeline', choices=['classic', 'new'], default='classic',
+                       help='Translation pipeline: classic (FB2/EPUB parser) or new (Calibre-based)')
+    parser.add_argument('--output-format', type=str, default=None,
+                       help='Output format for --pipeline new: fb2 or epub (default: from config)')
+    parser.add_argument('--max-chunk-size', type=int, default=6000,
+                       help='Max chunk size in chars for --pipeline new translation')
+    parser.add_argument('--fast-mode', action='store_true',
+                       help='Skip reflection/improve stages in --pipeline new')
 
     args, unknown = parser.parse_known_args()
 
@@ -1018,4 +1027,51 @@ if __name__ == '__main__':
         print(f"Dictionary updated with translations: {dict_path}")
         sys.exit(0)
     
+    # Handle new Calibre pipeline
+    if args.pipeline == 'new':
+        import src.calibre_pipeline as cp
+
+        # Determine input file
+        input_file = config.myfile
+        if input_file and not os.path.exists(input_file):
+            print(f"Error: Input file not found: {input_file}")
+            sys.exit(1)
+        if not input_file:
+            print("Error: No input file specified. Set myfile in .env or pass via --input")
+            sys.exit(1)
+
+        output_format = args.output_format or config.output_format or 'fb2'
+        output_format = output_format.lower()
+        if output_format not in ('fb2', 'epub'):
+            print(f"Error: Unsupported output format: {output_format}. Use fb2 or epub.")
+            sys.exit(1)
+
+        print(f"Pipeline: new (Calibre-based)")
+        print(f"Input: {input_file}")
+        print(f"Output format: {output_format}")
+        print(f"Chunk size: {args.max_chunk_size}")
+
+        if not cp.check_calibre_installed():
+            print("Error: Calibre (ebook-convert) is not installed.")
+            print("Install it: https://calibre-ebook.com/download")
+            sys.exit(1)
+
+        try:
+            output_path = cp.run_pipeline(
+                input_path=input_file,
+                output_format=output_format,
+                max_chunk_size=args.max_chunk_size,
+                source_lang=config.source_lang,
+                target_lang=config.target_lang,
+                country=config.country,
+                fast_mode=args.fast_mode
+            )
+            print(f"\n✓ Pipeline complete: {output_path}")
+        except Exception as e:
+            print(f"\n✗ Pipeline failed: {e}")
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
+        sys.exit(0)
+
     main()
