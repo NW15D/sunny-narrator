@@ -14,6 +14,7 @@ more-itertools
 joblib
 EbookLib
 Pillow
+pypandoc
 
 # spaCy for NER (CPU version - stable)
 # For GPU support, install: pip install "spacy[cuda12x]" instead
