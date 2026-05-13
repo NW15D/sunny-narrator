@@ -205,7 +205,8 @@ class TranslationEngine:
                 target_lang=config.target_lang,
                 source_text=source_text,
                 outline_text=context,
-                vocab_dict=vocab_dict,  # Use formatted vocabulary
+                vocab_dict=vocab_dict,
+                vocab_entries=entries,  # Full VocabEntry objects for rich format
                 country=config.country,
                 style='xml',
                 fast_mode=config.fast_trans,
