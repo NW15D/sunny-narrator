@@ -156,6 +156,21 @@ def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) 
     chapters = []
     chapter_count = 0
     
+    # Validate body is not empty and contains translated text
+    if not body or not body.strip():
+        raise ValueError("FB2 body is empty - translation may have failed")
+    
+    # Check if body looks like it hasn't been translated (still mostly English for Russian target)
+    if config.target_lang.lower() != 'english':
+        import re
+        ascii_chars = len(re.findall(r'[a-zA-Z]', body))
+        total_chars = len(body)
+        ascii_ratio = ascii_chars / total_chars if total_chars > 0 else 0
+        
+        if ascii_ratio > 0.7:  # More than 70% English-ish characters
+            logger.warning(f"High ASCII ratio ({ascii_ratio:.1%}) in FB2 body. "
+                          f"May indicate translation failed or content not properly updated.")
+    
     # Parse body
     body_soup = BeautifulSoup(f"<body>{body}</body>", 'xml')
     
