@@ -574,6 +574,21 @@ def build_output(
     """
     _init_logger()
     
+    # Validate translated markdown is not empty or identical to source
+    if not translated_md or not translated_md.strip():
+        raise ValueError("Translated markdown is empty or whitespace")
+    
+    # Check if markdown looks like it hasn't been translated (still mostly English)
+    # Simple heuristic: if more than 95% of content is English-like ASCII, might not be translated
+    import re
+    ascii_chars = len(re.findall(r'[a-zA-Z0-9]', translated_md))
+    total_chars = len(translated_md)
+    ascii_ratio = ascii_chars / total_chars if total_chars > 0 else 0
+    
+    if ascii_ratio > 0.95 and config.target_lang.lower() != 'english':
+        logger.warning(f"High ASCII ratio ({ascii_ratio:.1%}) in translated markdown. "
+                      f"May indicate translation failed or output not replaced properly.")
+    
     output_format = output_format.lower()
     valid_formats = {'fb2', 'epub'}
     if output_format not in valid_formats:
@@ -710,7 +725,7 @@ def _generate_title_page(metadata: dict) -> str:
 def run_pipeline(
     input_path: str,
     output_format: str = "fb2",
-    max_chunk_size: int = 6000,
+    max_chunk_size: int = None,  # None = use MAX_LEN_CHUNK from config
     source_lang: str = "en",
     target_lang: str = "ru",
     country: str = "Russia",
@@ -739,6 +754,18 @@ def run_pipeline(
     
     # Step 2: Translate
     logger.info("Step 2/3: Translating...")
+    
+    # Use MAX_LEN_CHUNK from config if max_chunk_size not specified
+    if max_chunk_size is None:
+        try:
+            from src.config import Config
+            config = Config()
+            max_chunk_size = config.max_len_chunk
+            logger.info(f"Using MAX_LEN_CHUNK from config: {max_chunk_size}")
+        except Exception as e:
+            logger.warning(f"Failed to get MAX_LEN_CHUNK from config, using default 6000: {e}")
+            max_chunk_size = 6000
+    
     translated_md = translate_chunks(
         markdown_text,
         max_chunk_size=max_chunk_size,

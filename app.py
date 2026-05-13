@@ -143,6 +143,41 @@ class TranslationEngine:
         entries = self.get_vocab_entries_for_chunk(chunk, s_idx, c_idx)
         return {entry.source: entry.target for entry in entries}
 
+    def get_formatted_vocab_for_chunk(self, chunk: str, s_idx: int, c_idx: int) -> str:
+        """
+        Get vocabulary formatted for specific model.
+        
+        Returns vocabulary as formatted string (source = target, category, gender, notes)
+        for display/presentation purposes.
+        
+        Args:
+            chunk: Text chunk to match vocabulary against
+            s_idx: Section index
+            c_idx: Chunk index
+            
+        Returns:
+            Formatted vocabulary string
+        """
+        if not self.vocab_manager:
+            logger.warning("vocab_manager not initialized - returning empty vocabulary")
+            return ""
+        
+        entries = self.vocab_manager.get_vocab_for_chunk(chunk, s_idx, c_idx)
+        
+        if not entries:
+            # Empty vocab is valid for chunks without dictionary terms
+            return ""
+        
+        # Format for specific model
+        formatted = self.vocab_manager.format_for_model(entries, config.model_translate)
+        
+        if config.debug:
+            logger.debug(f"Vocab for chunk {s_idx}-{c_idx}: {len(entries)} terms, formatted_len={len(formatted) if formatted else 0}")
+        elif formatted:
+            logger.info(f"Vocabulary: {len(entries)} terms for chunk {s_idx}-{c_idx}")
+        
+        return formatted
+
     def translate_chunk(self, source_text: str, context: str, s_idx: int = 0, c_idx: int = 0) -> tuple:
         """
         Translate a single chunk using dual-LLM pipeline.
@@ -158,9 +193,13 @@ class TranslationEngine:
         """
         try:
             # Note: rechunking is now handled inside ta.translate_chunk()
-            # Get vocabulary for this chunk (formatted for model)
-            vocab_dict = self.get_formatted_vocab_for_chunk(source_text, s_idx, c_idx)
+            # Get vocabulary for this chunk (dict for translation)
+            vocab_dict = self.get_vocab_dict_for_chunk(source_text, s_idx, c_idx)
+            formatted_vocab = self.get_formatted_vocab_for_chunk(source_text, s_idx, c_idx)
 
+            if config.debug:
+                logger.debug(f"Vocab dict: {len(vocab_dict)} terms, formatted: {len(formatted_vocab)} chars")
+            
             translation, synopsis = ta.translate_chunk(
                 source_lang=config.source_lang,
                 target_lang=config.target_lang,
@@ -948,8 +987,8 @@ if __name__ == '__main__':
                        help='Translation pipeline: classic (FB2/EPUB parser) or new (Calibre-based)')
     parser.add_argument('--output-format', type=str, default=None,
                        help='Output format for --pipeline new: fb2 or epub (default: from config)')
-    parser.add_argument('--max-chunk-size', type=int, default=6000,
-                       help='Max chunk size in chars for --pipeline new translation')
+    parser.add_argument('--max-chunk-size', type=int, default=None,
+                       help='Max chunk size in chars for --pipeline new translation (default: MAX_LEN_CHUNK=8192 from config)')
     parser.add_argument('--fast-mode', action='store_true',
                        help='Skip reflection/improve stages in --pipeline new')
 
