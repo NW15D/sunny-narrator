@@ -272,11 +272,13 @@ def convert_to_markdown(input_path: str) -> tuple[str, dict]:
                     "Install it: pip install pypandoc (requires pandoc: https://pandoc.org/installing.html)"
                 )
             try:
+                # Use --wrap=auto to prevent extremely long lines
+                # This ensures better chunking behavior later
                 markdown_text = pypandoc.convert_text(
                     html_content,
                     'markdown',
                     format='html',
-                    extra_args=['--wrap=none']
+                    extra_args=['--wrap=auto']
                 )
             except Exception as e:
                 raise ValueError(f"Pandoc conversion failed: {e}")
@@ -436,13 +438,31 @@ def translate_chunks(
             print("Empty markdown text, skipping translation")
         return markdown_text
     
-    # Split into chunks
-    chunks = _split_into_chunks(markdown_text, max_chunk_size)
+    # Split into chunks using paragraph-aware splitter (for new Calibre pipeline)
+    # This ensures chunks don't exceed max_chunk_size (unlike old _split_into_chunks)
+    chunks = _split_into_chunks_md(markdown_text, max_chunk_size)
     total_chunks = len(chunks)
     
     if logger:
+        logger.info(f"Text length: {len(markdown_text):,} chars, max_chunk_size: {max_chunk_size}")
+        logger.info(f"Generated {total_chunks} chunks")
+        
+        # Log first few chunk sizes for debugging
+        if len(chunks) > 0:
+            sample_sizes = [len(c) for c in chunks[:5]]
+            if len(chunks) > 5:
+                sample_sizes.extend([len(c) for c in chunks[-2:]])
+            logger.info(f"First chunk sizes: {sample_sizes}")
+        
         logger.info(f"Translating {total_chunks} chunks (max_chunk_size={max_chunk_size})...")
     else:
+        print(f"Text length: {len(markdown_text):,} chars, max_chunk_size: {max_chunk_size}")
+        print(f"Generated {total_chunks} chunks")
+        if len(chunks) > 0:
+            sample_sizes = [len(c) for c in chunks[:5]]
+            if len(chunks) > 5:
+                sample_sizes.extend([len(c) for c in chunks[-2:]])
+            print(f"First chunk sizes: {sample_sizes}")
         print(f"Translating {total_chunks} chunks (max_chunk_size={max_chunk_size})...")
     
     translated_parts = []
@@ -507,11 +527,84 @@ def translate_chunks(
     return translated_text
 
 
+def _split_into_chunks_md(text: str, max_chunk_size: int) -> list[str]:
+    """
+    Split Markdown text into chunks of approximately max_chunk_size.
+    Preserves paragraph and heading boundaries.
+    
+    Args:
+        text: Markdown text to split
+        max_chunk_size: Maximum size per chunk
+        
+    Returns:
+        List of text chunks
+    """
+    # Initialize logger if not yet done
+    global logger
+    if logger is None:
+        import logging
+        logging.basicConfig(level=logging.DEBUG)
+        logger = logging.getLogger(__name__)
+    
+    if len(text) <= max_chunk_size:
+        return [text]
+    
+    chunks = []
+    current_pos = 0
+    text_len = len(text)
+    split_count = 0
+    
+    while current_pos < text_len:
+        # Calculate potential end position
+        potential_end = current_pos + max_chunk_size
+        
+        if potential_end >= text_len:
+            # Last chunk
+            chunks.append(text[current_pos:])
+            break
+        
+        # Find best breaking point before potential_end
+        # Priority: paragraph break (\n\n), then newline (\n), then hard limit
+        
+        # Look for paragraph break (\n\n) before potential_end
+        best_break = -1
+        
+        # Try to find \n\n (empty line - paragraph break)
+        paragraph_break = text.rfind('\n\n', current_pos, potential_end)
+        if paragraph_break > current_pos + 100:  # Minimum chunk size check
+            best_break = paragraph_break + 2  # Include the \n\n
+            split_count += 1
+            if split_count <= 3:  # Log first 3 splits for debugging
+                logger.debug(f"Split at paragraph break {split_count}: pos {paragraph_break} (chunk size ~{paragraph_break - current_pos})")
+        else:
+            # Try single \n (line break)
+            line_break = text.rfind('\n', current_pos, potential_end)
+            if line_break > current_pos + 100:
+                best_break = line_break + 1  # Include the \n
+                split_count += 1
+                if split_count <= 3:
+                    logger.debug(f"Split at line break {split_count}: pos {line_break} (chunk size ~{line_break - current_pos})")
+        
+        # If no good break found, use hard limit
+        if best_break == -1:
+            best_break = potential_end
+            split_count += 1
+            if split_count <= 3:
+                logger.debug(f"Split at hard limit {split_count}: pos {potential_end} (chunk size ~{max_chunk_size})")
+        
+        chunks.append(text[current_pos:best_break])
+        current_pos = best_break
+    
+    logger.debug(f"_split_into_chunks_md: total chunks={len(chunks)}, total_splits={split_count}")
+    return chunks
+
+
 def _split_into_chunks(text: str, max_chunk_size: int) -> list[str]:
     """
     Split text into chunks of approximately max_chunk_size.
     
     Uses split_text_smartly for respecting paragraph boundaries.
+    This is the ORIGINAL logic for backward compatibility with classic pipeline.
     
     Args:
         text: Text to split
