@@ -1,7 +1,13 @@
 # Sunny Narrator
 
 **Version:** 1.4  
-Book translation program for FB2/EPUB formats. Dual-LLM translation system with 5-stage quality control.
+**Glossary-Driven AI Book Translator** for FB2/EPUB formats. Dual-LLM translation system with 5-stage quality control.
+
+**Designed for:**
+- 📚 Glossary-driven translation of book series (consistent terminology across volumes)
+- 🔨 Dictionary creation for book and series translations
+- 💻 Local GPUs (16-24GB VRAM) via llama.cpp or Ollama API
+- ☁️ Online translation services
 
 ## 🔄 General Workflow
 

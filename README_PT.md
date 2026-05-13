@@ -1,8 +1,13 @@
 # Sunny Narrator
 
 **Versão:** 1.4  
-Programa de tradução de livros para formatos FB2/EPUB.  
-Sistema de tradução AI com controle de qualidade em 5 estágios.
+**Tradutor de Livros GUIADO por Glossário** para formatos FB2/EPUB. Sistema de tradução AI com controle de qualidade em 5 estágios.
+
+**Projetado para:**
+- 📚 Tradução guiada por glossário de séries de livros (terminologia consistente em todos os volumes)
+- 🔨 Criação de dicionários para traduções de livros e séries
+- 💻 GPUs locais (16-24GB VRAM) via llama.cpp ou Ollama API
+- ☁️ Serviços de tradução online
 
 ## 🔄 Workflow Geral
 
