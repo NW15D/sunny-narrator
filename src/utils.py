@@ -202,25 +202,93 @@ def reset_translation_stats():
 # Vocabulary Auto-Substitution (before Stage 1 translation)
 # =============================================================================
 
-def _format_vocab_for_prompt(vocab_dict: Dict[str, str]) -> str:
+def _format_vocab_for_prompt(
+    vocab_dict: Optional[Dict[str, str]] = None,
+    vocab_entries: Optional[List[Any]] = None,
+    model: str = ""
+) -> str:
     """
-    Format vocabulary dictionary for prompt injection.
+    Format vocabulary for prompt injection.
     
-    Converts {"source": "target"} to "source = target, category, gender, notes"
-    format expected by LLM.
+    Two modes:
+    1. Dict mode: {"source": "target"} → "source = target" (original format)
+    2. Entries mode: List[VocabEntry] → "source = target, category, gender, notes"
     
     Args:
-        vocab_dict: Dictionary mapping source words → target translations
+        vocab_dict: Dictionary mapping source words → target translations (deprecated)
+        vocab_entries: List of VocabEntry objects with full metadata
+        model: Model name for formatting (e.g., "Hunyuan", "Gemma")
         
     Returns:
         Formatted string for prompt injection
     """
+    # Prefer entries mode if available
+    if vocab_entries and len(vocab_entries) > 0:
+        # Check if entries have required attributes
+        try:
+            # Try to use format_for_model from vocab_manager if available
+            if hasattr(vocab_entries[0], 'source') and hasattr(vocab_entries[0], 'target'):
+                # Import lazily to avoid circular dependency
+                try:
+                    from src.vocabulary_manager import VocabularyManager
+                    vm = VocabularyManager()
+                    # Use standard format with full metadata
+                    return vm._format_standard(vocab_entries)
+                except Exception:
+                    # Fallback: format manually
+                    return _format_entries_standard(vocab_entries)
+        except Exception:
+            pass
+    
+    # Fallback to dict mode (original behavior)
     if not vocab_dict:
         return ""
     
     lines = []
     for source, target in vocab_dict.items():
         line = f"{source} = {target}"
+        lines.append(line)
+    
+    return "\n".join(lines)
+
+
+def _format_entries_standard(entries: List[Any]) -> str:
+    """
+    Format VocabEntry list to standard format: source = target, category, gender, notes
+    """
+    if not entries:
+        return ""
+    
+    lines = []
+    for entry in entries:
+        # Use to_dict() if available (VocabEntry)
+        if hasattr(entry, 'to_dict'):
+            d = entry.to_dict()
+            source = d.get('source', entry.source if hasattr(entry, 'source') else '')
+            target = d.get('target', entry.target if hasattr(entry, 'target') else '')
+            category = d.get('category', '')
+            gender = d.get('gender', '')
+            notes = d.get('notes', '')
+        else:
+            # Fallback: direct attribute access
+            source = getattr(entry, 'source', '')
+            target = getattr(entry, 'target', '')
+            category = getattr(entry, 'category', '')
+            gender = getattr(entry, 'gender', '')
+            notes = getattr(entry, 'notes', '')
+        
+        line = f"{source} = {target}"
+        parts = []
+        if category:
+            parts.append(category)
+        if gender:
+            parts.append(gender)
+        if notes:
+            parts.append(notes)
+        
+        if parts:
+            line += ", " + ", ".join(parts)
+        
         lines.append(line)
     
     return "\n".join(lines)
@@ -377,6 +445,7 @@ class TranslationContext:
     source_text: str
     outline_text: str = ""
     vocab_dict: Dict[str, str] = field(default_factory=dict)
+    vocab_entries: List[Any] = field(default_factory=list)  # Full VocabEntry objects
     country: str = ""
     style: str = "text"  # "xml" or "text"
     
@@ -386,6 +455,13 @@ class TranslationContext:
             "target_lang": self.target_lang,
             "outline_text": self.outline_text,
             "vocab_dict": self.vocab_dict,
+            "vocab_entries": [e.to_dict() if hasattr(e, 'to_dict') else {
+                'source': e.source,
+                'target': e.target,
+                'category': getattr(e, 'category', ''),
+                'gender': getattr(e, 'gender', ''),
+                'notes': getattr(e, 'notes', '')
+            } for e in self.vocab_entries],
             "country": self.country,
             "style": self.style,
         }
@@ -883,8 +959,12 @@ class TranslationPipeline:
             )
             system_prompt = config.get_prompt("initial_translation_json", "system")
         elif context.style == "xml":
-            # Format vocab_dict for prompt: convert dict to formatted string
-            vocab_str = _format_vocab_for_prompt(context.vocab_dict)
+            # Format vocab for prompt: prefer vocab_entries, fallback to vocab_dict
+            vocab_str = _format_vocab_for_prompt(
+                vocab_dict=context.vocab_dict,
+                vocab_entries=context.vocab_entries,
+                model=config.model_translate
+            )
             user_prompt = config.get_prompt(
                 "initial_translation", "user_xml",
                 source_lang=context.source_lang,
@@ -894,8 +974,12 @@ class TranslationPipeline:
                 source_text=context.source_text
             )
         elif config.model_translate == "Hunyuan":
-            # Format vocab_dict for prompt: convert dict to formatted string
-            vocab_str = _format_vocab_for_prompt(context.vocab_dict)
+            # Format vocab for prompt: prefer vocab_entries, fallback to vocab_dict
+            vocab_str = _format_vocab_for_prompt(
+                vocab_dict=context.vocab_dict,
+                vocab_entries=context.vocab_entries,
+                model=config.model_translate
+            )
             user_prompt = config.get_prompt(
                 "initial_translation", "user_hunyuan",
                 source_lang=context.source_lang,
@@ -905,8 +989,12 @@ class TranslationPipeline:
                 source_text=context.source_text
             )
         else:
-            # Format vocab_dict for prompt: convert dict to formatted string
-            vocab_str = _format_vocab_for_prompt(context.vocab_dict)
+            # Format vocab for prompt: prefer vocab_entries, fallback to vocab_dict
+            vocab_str = _format_vocab_for_prompt(
+                vocab_dict=context.vocab_dict,
+                vocab_entries=context.vocab_entries,
+                model=config.model_translate
+            )
             user_prompt = config.get_prompt(
                 "initial_translation", "user_text",
                 source_lang=context.source_lang,
@@ -1053,8 +1141,12 @@ class TranslationPipeline:
                 country=context.country
             )
         else:
-            # Format vocab_dict for prompt: convert dict to formatted string
-            vocab_str = _format_vocab_for_prompt(context.vocab_dict)
+            # Format vocab for prompt: prefer vocab_entries, fallback to vocab_dict
+            vocab_str = _format_vocab_for_prompt(
+                vocab_dict=context.vocab_dict,
+                vocab_entries=context.vocab_entries,
+                model=config.model_translate
+            )
             user_prompt = config.get_prompt(
                 "reflection", f"user_{context.style}",
                 source_lang=context.source_lang,
@@ -1111,8 +1203,12 @@ class TranslationPipeline:
                 country=context.country
             )
         else:
-            # Format vocab_dict for prompt: convert dict to formatted string
-            vocab_str = _format_vocab_for_prompt(context.vocab_dict)
+            # Format vocab for prompt: prefer vocab_entries, fallback to vocab_dict
+            vocab_str = _format_vocab_for_prompt(
+                vocab_dict=context.vocab_dict,
+                vocab_entries=context.vocab_entries,
+                model=config.model_translate
+            )
             user_prompt = config.get_prompt(
                 "improve", f"user_{context.style}",
                 target_lang=context.target_lang,
@@ -1232,8 +1328,8 @@ class TranslationPipeline:
         )
     
     def execute(self, source_lang: str, target_lang: str, source_text: str,
-                outline_text: str, vocab_dict: dict, country: str,
-                style: str = "text", fast_mode: bool = False) -> PipelineState:
+                outline_text: str, vocab_dict: dict, vocab_entries: list = None,
+                country: str = "", style: str = "text", fast_mode: bool = False) -> PipelineState:
         """
         Execute the complete translation pipeline.
         
@@ -1250,6 +1346,7 @@ class TranslationPipeline:
             source_text=source_text,
             outline_text=outline_text,
             vocab_dict=vocab_dict,
+            vocab_entries=vocab_entries or [],
             country=country,
             style=style
         )
@@ -1352,8 +1449,8 @@ def validate_translation_length(source_text: str, translated_text: str,
 
 
 def translate_chunk(source_lang: str, target_lang: str, source_text: str,
-                    outline_text: str, vocab_dict: dict, country: str,
-                    style: str = "text", fast_mode: bool = False,
+                    outline_text: str, vocab_dict: dict, vocab_entries: list = None,
+                    country: str = "", style: str = "text", fast_mode: bool = False,
                     depth: int = 0) -> tuple:
     """
     Translate a single chunk using the dual-LLM pipeline.
@@ -1366,6 +1463,7 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
         source_text: Text to translate
         outline_text: Context synopsis from previous chunks
         vocab_dict: Translation dictionary
+        vocab_entries: Full VocabEntry objects for rich formatting (optional)
         country: Target country for cultural context
         style: "xml" or "text"
         fast_mode: Skip reflection/improve stages
@@ -1377,7 +1475,8 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
     # Debug: Log vocabulary status
     if config.debug:
         vocab_count = len(vocab_dict) if vocab_dict else 0
-        logger.debug(f"translate_chunk: vocab_dict has {vocab_count} terms, outline_len={len(outline_text) if outline_text else 0}")
+        entries_count = len(vocab_entries) if vocab_entries else 0
+        logger.debug(f"translate_chunk: vocab_dict={vocab_count} terms, vocab_entries={entries_count}, outline_len={len(outline_text) if outline_text else 0}")
     
     # Execute pipeline
     state = _pipeline.execute(
@@ -1386,6 +1485,7 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
         source_text=source_text,
         outline_text=outline_text,
         vocab_dict=vocab_dict,
+        vocab_entries=vocab_entries,
         country=country,
         style=style,
         fast_mode=fast_mode
@@ -1405,7 +1505,7 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
             logger.error(f"Retrying translation at depth {depth}...")
             return translate_chunk(
                 source_lang, target_lang, source_text, outline_text,
-                vocab_dict, country, style, fast_mode, depth + 1
+                vocab_dict, vocab_entries, country, style, fast_mode, depth + 1
             )
         return "", ""
     
@@ -1419,15 +1519,15 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
         # Translate parts recursively
         result1, syn1 = translate_chunk(
             source_lang, target_lang, part1, outline_text,
-            vocab_dict, country, style, fast_mode, depth + 1
+            vocab_dict, vocab_entries, country, style, fast_mode, depth + 1
         )
         result2, syn2 = translate_chunk(
             source_lang, target_lang, part2, outline_text,
-            vocab_dict, country, style, fast_mode, depth + 1
+            vocab_dict, vocab_entries, country, style, fast_mode, depth + 1
         )
         
         # Combine results
-        combined_translation = (result1 or "") + (result2 or "")
+        combined_translation = (result1 or "") + "\n\n" + (result2 or "")
         combined_synopsis = (syn1 or "") + " " + (syn2 or "")
         
         return combined_translation, combined_synopsis
