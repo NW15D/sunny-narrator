@@ -1,9 +1,11 @@
 """Tests for markdown_utils module."""
 import pytest
+from bs4 import BeautifulSoup
 from src.markdown_utils import (
     split_markdown_by_size,
     generate_toc_html,
     clean_calibre_markers,
+    extract_headings,
 )
 
 
@@ -27,3 +29,18 @@ def test_clean_calibre_markers():
     text = "Hello <!-- 1 -->world{#calibre_link-1 .calibre1}</p>"
     cleaned = clean_calibre_markers(text)
     assert "1" not in cleaned
+
+
+def test_extract_headings_from_html():
+    """Test extracting headings from HTML using BeautifulSoup."""
+    html_content = '<h1>Chapter 1</h1><h2>Section 1.1</h2><h2>Section 1.2</h2>'
+    soup = BeautifulSoup(html_content, 'html.parser')
+    headings = extract_headings(soup)
+    
+    assert len(headings) == 3
+    assert headings[0]['level'] == 1
+    assert headings[0]['text'] == 'Chapter 1'
+    assert headings[1]['level'] == 2
+    assert headings[1]['text'] == 'Section 1.1'
+    assert headings[2]['level'] == 2
+    assert headings[2]['text'] == 'Section 1.2'
