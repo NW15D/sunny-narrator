@@ -44,3 +44,20 @@ def test_extract_headings_from_html():
     assert headings[1]['text'] == 'Section 1.1'
     assert headings[2]['level'] == 2
     assert headings[2]['text'] == 'Section 1.2'
+
+
+def test_add_toc_to_html():
+    """Test adding TOC to HTML content."""
+    from src.markdown_utils import generate_toc_html
+    
+    toc_data = [
+        {'level': 1, 'text': 'Chapter 1', 'id': 'chapter-1'},
+        {'level': 2, 'text': 'Section 1.1', 'id': 'section-1-1'},
+        {'level': 2, 'text': 'Section 1.2', 'id': 'section-1-2'},
+        {'level': 1, 'text': 'Chapter 2', 'id': 'chapter-2'},
+    ]
+    
+    toc_html = generate_toc_html(toc_data)
+    assert '<nav class="toc">' in toc_html
+    assert 'Chapter 1' in toc_html
+    assert 'Section 1.1' in toc_html

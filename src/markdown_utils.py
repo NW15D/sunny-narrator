@@ -163,20 +163,34 @@ def clean_markdown_content(text: str) -> str:
     return text.strip()
 
 
-def copy_images_to_output(markdown_text: str, output_dir: str) -> str:
+def copy_images_to_output(source_dir: str, output_dir: str) -> List[str]:
     """
-    Process image references in markdown for output.
+    Copy images from source directory to output directory.
     
     Args:
-        markdown_text: Markdown text with image references
-        output_dir: Output directory path
+        source_dir: Source directory containing images/ subdirectory
+        output_dir: Output directory for copied images
         
     Returns:
-        Updated markdown text with processed image paths
+        List of copied image filenames
     """
-    # This is a placeholder - actual implementation depends on the pipeline
-    # For now, just return the text as-is
-    return markdown_text
+    import shutil
+    
+    images_dir = os.path.join(source_dir, 'images')
+    if not os.path.exists(images_dir):
+        return []
+    
+    os.makedirs(output_dir, exist_ok=True)
+    
+    copied = []
+    for filename in os.listdir(images_dir):
+        src_path = os.path.join(images_dir, filename)
+        if os.path.isfile(src_path):
+            dst_path = os.path.join(output_dir, filename)
+            shutil.copy2(src_path, dst_path)
+            copied.append(filename)
+    
+    return copied
 
 
 def clean_calibre_markers(text: str) -> str:
