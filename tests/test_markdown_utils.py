@@ -1,11 +1,14 @@
 """Tests for markdown_utils module."""
 import pytest
 from bs4 import BeautifulSoup
+import os
+import tempfile
 from src.markdown_utils import (
     split_markdown_by_size,
     generate_toc_html,
     clean_calibre_markers,
     extract_headings,
+    copy_images_to_output,
 )
 
 
@@ -44,6 +47,22 @@ def test_extract_headings_from_html():
     assert headings[1]['text'] == 'Section 1.1'
     assert headings[2]['level'] == 2
     assert headings[2]['text'] == 'Section 1.2'
+
+
+def test_copy_images_to_output():
+    """Test that images are properly copied to output."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Create test images
+        images_dir = os.path.join(temp_dir, "images")
+        os.makedirs(images_dir, exist_ok=True)
+        open(os.path.join(images_dir, "test.png"), 'w').close()
+        open(os.path.join(images_dir, "test.jpg"), 'w').close()
+        
+        with tempfile.TemporaryDirectory() as output_dir:
+            copied = copy_images_to_output(temp_dir, output_dir)
+            assert "test.png" in copied
+            assert "test.jpg" in copied
+            assert os.path.exists(os.path.join(output_dir, "test.png"))
 
 
 def test_add_toc_to_html():
