@@ -1,8 +1,12 @@
 """Tests for markdown_utils module."""
 import pytest
-from bs4 import BeautifulSoup
 import os
+import sys
 import tempfile
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+from bs4 import BeautifulSoup
 from src.markdown_utils import (
     split_markdown_by_size,
     generate_toc_html,
@@ -10,6 +14,7 @@ from src.markdown_utils import (
     extract_headings,
     copy_images_to_output,
 )
+from src.utils import validate_translation_length
 
 
 def test_split_markdown_by_size_small_text():
