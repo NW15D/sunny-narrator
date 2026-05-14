@@ -33,8 +33,9 @@ except ImportError:
     pypandoc = None
 
 # Import existing utilities
-from src.utils import split_text_smartly, translate_chunk, num_tokens_in_string, config
+from src.utils import split_text_smartly, translate_chunk, num_tokens_in_string, config, validate_translation_length
 from src.config import Config
+from src import markdown_utils
 
 logger = None
 
@@ -238,6 +239,10 @@ def convert_to_markdown(input_path: str) -> tuple[str, dict]:
             html_content = ""
             metadata_opf = ""
             
+            # Create images directory for HTMLZ images
+            htmlz_images_dir = os.path.join(temp_dir, "htmlz_images")
+            os.makedirs(htmlz_images_dir, exist_ok=True)
+            
             with zipfile.ZipFile(htmlz_path, 'r') as zf:
                 # Find and read the main HTML file
                 for name in zf.namelist():
@@ -250,6 +255,19 @@ def convert_to_markdown(input_path: str) -> tuple[str, dict]:
                     if name.endswith('.opf'):
                         metadata_opf = zf.read(name).decode('utf-8')
                         break
+                
+                # Extract images from HTMLZ
+                image_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp')
+                for name in zf.namelist():
+                    if name.lower().endswith(image_extensions):
+                        try:
+                            img_data = zf.read(name)
+                            img_name = os.path.basename(name)
+                            img_path = os.path.join(htmlz_images_dir, img_name)
+                            with open(img_path, 'wb') as img_file:
+                                img_file.write(img_data)
+                        except Exception as e:
+                            logger.warning(f"Failed to extract image {name}: {e}")
             
             # Step 2b: Clean Calibre markers from HTML (before Markdown conversion)
             if html_content:
@@ -502,6 +520,14 @@ def translate_chunks(
                 depth=0
             )
             
+            # Validate translation length
+            is_valid, percent_diff, should_split = validate_translation_length(
+                chunk, translation, f"chunk_{i+1}"
+            )
+            
+            if not is_valid:
+                logger.warning(f"Chunk {i+1} length validation failed ({percent_diff:.1f}% diff)")
+            
             # Fallback: if translation is empty, keep original
             if not translation or not translation.strip():
                 print(f"Empty translation for chunk {i + 1}, keeping original")
@@ -528,75 +554,8 @@ def translate_chunks(
 
 
 def _split_into_chunks_md(text: str, max_chunk_size: int) -> list[str]:
-    """
-    Split Markdown text into chunks of approximately max_chunk_size.
-    Preserves paragraph and heading boundaries.
-    
-    Args:
-        text: Markdown text to split
-        max_chunk_size: Maximum size per chunk
-        
-    Returns:
-        List of text chunks
-    """
-    # Initialize logger if not yet done
-    global logger
-    if logger is None:
-        import logging
-        logging.basicConfig(level=logging.DEBUG)
-        logger = logging.getLogger(__name__)
-    
-    if len(text) <= max_chunk_size:
-        return [text]
-    
-    chunks = []
-    current_pos = 0
-    text_len = len(text)
-    split_count = 0
-    
-    while current_pos < text_len:
-        # Calculate potential end position
-        potential_end = current_pos + max_chunk_size
-        
-        if potential_end >= text_len:
-            # Last chunk
-            chunks.append(text[current_pos:])
-            break
-        
-        # Find best breaking point before potential_end
-        # Priority: paragraph break (\n\n), then newline (\n), then hard limit
-        
-        # Look for paragraph break (\n\n) before potential_end
-        best_break = -1
-        
-        # Try to find \n\n (empty line - paragraph break)
-        paragraph_break = text.rfind('\n\n', current_pos, potential_end)
-        if paragraph_break > current_pos + 100:  # Minimum chunk size check
-            best_break = paragraph_break + 2  # Include the \n\n
-            split_count += 1
-            if split_count <= 3:  # Log first 3 splits for debugging
-                logger.debug(f"Split at paragraph break {split_count}: pos {paragraph_break} (chunk size ~{paragraph_break - current_pos})")
-        else:
-            # Try single \n (line break)
-            line_break = text.rfind('\n', current_pos, potential_end)
-            if line_break > current_pos + 100:
-                best_break = line_break + 1  # Include the \n
-                split_count += 1
-                if split_count <= 3:
-                    logger.debug(f"Split at line break {split_count}: pos {line_break} (chunk size ~{line_break - current_pos})")
-        
-        # If no good break found, use hard limit
-        if best_break == -1:
-            best_break = potential_end
-            split_count += 1
-            if split_count <= 3:
-                logger.debug(f"Split at hard limit {split_count}: pos {potential_end} (chunk size ~{max_chunk_size})")
-        
-        chunks.append(text[current_pos:best_break])
-        current_pos = best_break
-    
-    logger.debug(f"_split_into_chunks_md: total chunks={len(chunks)}, total_splits={split_count}")
-    return chunks
+    """Wrapper for markdown_utils.split_markdown_by_size."""
+    return markdown_utils.split_markdown_by_size(text, target_size=max_chunk_size)
 
 
 def _split_into_chunks(text: str, max_chunk_size: int) -> list[str]:
@@ -812,6 +771,26 @@ def _generate_title_page(metadata: dict) -> str:
     html += "</body></html>"
     
     return html
+
+
+def _add_toc_to_html(markdown_text: str) -> str:
+    """Add TOC to HTML after pandoc conversion."""
+    from bs4 import BeautifulSoup
+    
+    if not PANDOC_AVAILABLE:
+        raise ImportError("pypandoc is required for TOC generation")
+    
+    html_content = pypandoc.convert_text(markdown_text, 'html', format='markdown')
+    soup = BeautifulSoup(html_content, 'html.parser')
+    headings = markdown_utils.extract_headings(soup)
+    toc_html = markdown_utils.generate_toc_html(headings)
+    
+    if soup.body:
+        soup.body.insert(0, BeautifulSoup(toc_html, 'html.parser').nav)
+    elif soup.html:
+        soup.html.insert(0, BeautifulSoup(toc_html, 'html.parser').nav)
+    
+    return str(soup)
 
 
 # Convenience function for full pipeline
