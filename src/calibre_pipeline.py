@@ -33,7 +33,7 @@ except ImportError:
     pypandoc = None
 
 # Import existing utilities
-from src.utils import split_text_smartly, translate_chunk, num_tokens_in_string, config, validate_translation_length
+from src.utils import split_text_smartly, translate_chunk, num_tokens_in_string, config, validate_translation_length, _pipeline
 from src.config import Config
 from src import markdown_utils
 
@@ -412,6 +412,59 @@ def _load_vocab_dict(book_path: str) -> dict:
     return vocab
 
 
+def _load_vocab_entries(book_path: str) -> list:
+    """
+    Load vocabulary entries from .dic file as dict objects with full metadata.
+    
+    Parses the .dic file (format: source = target, category, gender, notes)
+    and returns a list of dict objects with keys: source, target, category, gender, notes.
+    
+    Args:
+        book_path: Path to the book file (used to find corresponding .dic)
+        
+    Returns:
+        List of dict objects with vocabulary entry metadata
+    """
+    from pathlib import Path
+    
+    book_dir = Path(book_path).parent
+    book_name = Path(book_path).stem
+    dic_path = book_dir / f"{book_name}.dic"
+    
+    if not dic_path.exists():
+        return []
+    
+    entries = []
+    with open(dic_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            if '=' not in line:
+                continue
+            source, _, rest = line.partition('=')
+            source = source.strip()
+            rest = rest.strip()
+            if not source or not rest:
+                continue
+            # Extract fields: target, category, gender, notes
+            parts = rest.split(',')
+            target = parts[0].strip() if parts else ""
+            category = parts[1].strip() if len(parts) > 1 else ""
+            gender = parts[2].strip() if len(parts) > 2 else ""
+            notes = parts[3].strip() if len(parts) > 3 else ""
+            
+            entries.append({
+                'source': source,
+                'target': target,
+                'category': category,
+                'gender': gender,
+                'notes': notes
+            })
+    
+    return entries
+
+
 def translate_chunks(
     markdown_text: str,
     max_chunk_size: int = 6000,
@@ -485,6 +538,7 @@ def translate_chunks(
     
     translated_parts = []
     outline_text = ""  # Context for next chunk
+    vocab_entries = []  # Full metadata entries for 5-stage translation
     
     # Load vocabulary if book_path provided and no explicit vocab_dict
     if vocab_dict is None and book_path:
@@ -492,12 +546,17 @@ def translate_chunks(
             vocab_dict = _load_vocab_dict(book_path)
             if vocab_dict and logger:
                 logger.info(f"Loaded vocabulary: {len(vocab_dict)} terms")
+            # Also load vocab_entries for 5-stage translation
+            vocab_entries = _load_vocab_entries(book_path)
+            if vocab_entries and logger:
+                logger.info(f"Loaded vocab_entries: {len(vocab_entries)} entries")
         except Exception as e:
             if logger:
                 logger.warning(f"Failed to load vocabulary: {e}")
             else:
                 print(f"Warning: Failed to load vocabulary: {e}")
             vocab_dict = {}
+            vocab_entries = []
     elif vocab_dict is None:
         vocab_dict = {}
     
@@ -506,19 +565,22 @@ def translate_chunks(
         progress = ((i + 1) / total_chunks) * 100
         print(f"\rProgress: {i + 1}/{total_chunks} ({progress:.1f}%)", end="", flush=True)
         
-        # Translate chunk
+        # Translate chunk using 5-stage translation pipeline
         try:
-            translation, outline_text = translate_chunk(
+            state = _pipeline.execute(
                 source_lang=source_lang,
                 target_lang=target_lang,
                 source_text=chunk,
                 outline_text=outline_text,
                 vocab_dict=vocab_dict,
+                vocab_entries=vocab_entries,
                 country=country,
                 style=style,
-                fast_mode=fast_mode,
-                depth=0
+                fast_mode=fast_mode
             )
+            
+            translation = state.final_translation
+            outline_text = state.synopsis or ""
             
             # Validate translation length
             is_valid, percent_diff, should_split = validate_translation_length(
