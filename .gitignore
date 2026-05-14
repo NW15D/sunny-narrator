@@ -5,6 +5,9 @@ __pycache__/
 *$py.class
 .idea/
 .git/
+docs/plans/
+docs/specs/
+docs/superpowers/
 # C extensions
 *.so
 .vscode/

@@ -1,28 +1,16 @@
 # Sunny Narrator
 
-**Version:** 1.4  
+**Version:** 1.5  
 **Glossary-Driven AI Book Translator** for FB2/EPUB formats. Dual-LLM translation system with 5-stage quality control.
 
 **Designed for:**
 - 📚 Glossary-driven translation of book series (consistent terminology across volumes)
 - 🔨 Dictionary creation for book and series translations
-- 💻 Local GPUs (16-24GB VRAM) via llama.cpp or Ollama API
-- ☁️ Online translation services
+- 💻 Local GPUs (16-24GB VRAM) via API , llama.cpp or Ollama , LMStudio etc
+- ☁️ Online translation services via API
 
 ## 🔄 General Workflow
 
-```mermaid
-flowchart LR
-    A[1. Clone repo] --> B[2. Install Python deps]
-    B --> C[3. Download spaCy dictionaries]
-    C --> D[4. Configure .env file]
-    D --> E[5. Convert book to book.fb2]
-    E --> F[6. Run python app.py → book.dic]
-    F --> G[7. Edit/verify/clean dictionary]
-    G --> H[8. Run translation]
-    H --> I[9. Fix FB2 format errors in text editor]
-    I --> J[10. Read & proofread book]
-```
 
 **Step-by-step workflow:**
 1. **Clone repository** - `git clone` the project
@@ -36,25 +24,7 @@ flowchart LR
 9. **Fix format errors** - In text editor: remove extra tags, fix double brackets, correct translation errors, etc.
 10. **Read & proofread** - Final review of translated book
 
----
 
-## 🧹 Calibre Markers Cleanup
-
-When converting books through Calibre (`ebook-convert`), internal markers used for styling may remain in the output. Sunny Narrator automatically removes these markers:
-
-- `:::{#calibre_link-* .calibre}:::` — block markers
-- `{#calibre_link-* .calibre*}` — inline markers
-- `class="calibreX"` — CSS classes
-- `id="calibre_link-*"` — IDs
-
-**Automatic cleanup is applied:**
-- After HTML→Markdown conversion
-- Before Markdown→FB2/EPUB conversion
-- After FB2 generation (for direct FB2→FB2 conversion)
-
-**Details:** [docs/CALIBRE_MARKERS_CLEANUP.md](docs/CALIBRE_MARKERS_CLEANUP.md)
-
----
 
 ## 🚀 Quick Start
 
@@ -193,7 +163,7 @@ docker-compose -f docker-compose.gpu.yml up -d
 
 ---
 
-## 🔄 Calibre Pipeline (New!)
+## 🔄 Calibre Pipeline (New! as https://github.com/deusyu/translate-book) still developing 
 
 Accept **EPUB/FB2** directly — no manual conversion needed.
 
@@ -231,6 +201,7 @@ python app.py --pipeline new --output-format fb2
 | **Prompts Guide** | [docs/PROMPTS_GUIDE.md](docs/PROMPTS_GUIDE.md) |
 
 ---
+
 
 ## 📝 Versions
 
