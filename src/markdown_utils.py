@@ -1,6 +1,6 @@
 """Markdown utilities for processing and generating markdown content."""
 import re
-from typing import List
+from typing import List, Union
 from bs4 import BeautifulSoup
 
 
@@ -42,20 +42,36 @@ def split_markdown_by_size(text: str, target_size: int = 4000) -> List[str]:
     return chunks if chunks else [text]
 
 
-def extract_headings(markdown_text: str) -> List[dict]:
+def extract_headings(content: Union[str, BeautifulSoup]) -> List[dict]:
     """
-    Extract headings from markdown text.
+    Extract headings from markdown text or HTML.
     
     Args:
-        markdown_text: Markdown content to parse
+        content: Markdown text (str) or BeautifulSoup object (HTML)
         
     Returns:
         List of heading dicts with level, text, and id
     """
     headings = []
+    
+    # Handle BeautifulSoup/HTML input
+    if hasattr(content, 'find_all'):  # BeautifulSoup object
+        html_headings = content.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+        for h in html_headings:
+            level = int(h.name[1])  # h1 -> 1, h2 -> 2, etc.
+            text = h.get_text().strip()
+            heading_id = generate_heading_id(text, headings)
+            headings.append({
+                'level': level,
+                'text': text,
+                'id': heading_id
+            })
+        return headings
+    
+    # Handle markdown text input
     pattern = r'^(#{1,6})\s+(.+)$'
     
-    for line in markdown_text.split('\n'):
+    for line in content.split('\n'):
         match = re.match(pattern, line)
         if match:
             level = len(match.group(1))
