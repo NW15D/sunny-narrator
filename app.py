@@ -197,8 +197,12 @@ class TranslationEngine:
             vocab_dict = self.get_vocab_dict_for_chunk(source_text, s_idx, c_idx)
             formatted_vocab = self.get_formatted_vocab_for_chunk(source_text, s_idx, c_idx)
 
+            # Get full VocabEntry objects for rich format
+            entries = self.get_vocab_entries_for_chunk(source_text, s_idx, c_idx)
+
             if config.debug:
                 logger.debug(f"Vocab dict: {len(vocab_dict)} terms, formatted: {len(formatted_vocab)} chars")
+                logger.debug(f"Vocab entries: {len(entries)} full objects")
             
             translation, synopsis = ta.translate_chunk(
                 source_lang=config.source_lang,
@@ -206,7 +210,7 @@ class TranslationEngine:
                 source_text=source_text,
                 outline_text=context,
                 vocab_dict=vocab_dict,
-                vocab_entries=entries,  # Full VocabEntry objects for rich format
+                vocab_entries=entries,
                 country=config.country,
                 style='xml',
                 fast_mode=config.fast_trans,
