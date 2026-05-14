@@ -85,3 +85,53 @@ def test_add_toc_to_html():
     assert '<nav class="toc">' in toc_html
     assert 'Chapter 1' in toc_html
     assert 'Section 1.1' in toc_html
+
+
+def test_validate_translation_length():
+    """Test length validation function from src.utils."""
+    from src.utils import validate_translation_length
+    
+    # Test chunk with 50% diff (above threshold of 20%) - need >2000 chars for MIN_CHUNK_SIZE
+    is_valid, percent_diff, should_split = validate_translation_length(
+        "x" * 2000, "x" * 3000, "test"
+    )
+    # percent_diff = 50% > threshold 20%, so should_split = True
+    assert percent_diff == 50.0
+    assert should_split == True
+    
+    # Test chunk with 51% diff
+    is_valid, percent_diff, should_split = validate_translation_length(
+        "x" * 2000, "x" * 3020, "test"
+    )
+    assert percent_diff == 51.0
+    assert should_split == True
+
+
+def test_validate_translation_length():
+    """Test length validation function from src.utils."""
+    # Test chunk with 50% diff (source_len >= 2000 required for split)
+    is_valid, percent_diff, should_split = validate_translation_length(
+        "x" * 2500, "x" * 3750, "test"  # 50% diff, source >= MIN_CHUNK_SIZE
+    )
+    # percent_diff = 50% > threshold 20%, so should_split = True
+    assert percent_diff == 50.0
+    assert should_split == True
+    assert is_valid == False
+
+    # Test chunk with 15% diff (below threshold)
+    is_valid, percent_diff, should_split = validate_translation_length(
+        "x" * 2500, "x" * 2875, "test"  # 15% diff
+    )
+    # percent_diff = 15% < threshold 20%, so should_split = False
+    assert percent_diff == 15.0
+    assert should_split == False
+    assert is_valid == True
+
+    # Test small chunk (source_len < MIN_CHUNK_SIZE = 2000) - should NOT split
+    is_valid, percent_diff, should_split = validate_translation_length(
+        "x" * 1000, "x" * 1500, "test"  # 50% diff but source < MIN_CHUNK_SIZE
+    )
+    # should_split = False because source_len < MIN_CHUNK_SIZE
+    assert percent_diff == 50.0
+    assert should_split == False
+    assert is_valid == True
