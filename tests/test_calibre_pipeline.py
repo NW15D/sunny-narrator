@@ -15,6 +15,7 @@ sys.path.insert(0, "/home/neo/prj/sunny-narrator")
 # Mock third-party modules before importing calibre_pipeline
 sys.modules['pypandoc'] = MagicMock()
 sys.modules['pypandoc.convert_text'] = MagicMock()
+sys.modules['bs4'] = MagicMock()
 
 
 def setup_mocks():
@@ -23,6 +24,11 @@ def setup_mocks():
     import pypandoc
     pypandoc.convert_text = MagicMock(return_value="mocked markdown")
     pypandoc.convert_file = MagicMock(return_value="mocked file")
+    
+    # Mock BeautifulSoup
+    from bs4 import BeautifulSoup
+    BeautifulSoup.find_all = MagicMock(return_value=[])
+    BeautifulSoup.get_text = MagicMock(return_value="")
     
     return pypandoc
 
@@ -198,12 +204,16 @@ def test_translate_chunks_empty_text():
 
 
 def test_translate_chunks_returns_string():
-    """Test translate_chunks returns a string."""
+    """Test translate_chunks returns a string (5-stage pipeline)."""
     from src.calibre_pipeline import translate_chunks
+    from unittest.mock import MagicMock
     
-    with patch('src.utils.translate_chunk') as mock_translate:
-        mock_translate.return_value = ("translated text", "outline")
-        
+    # Mock _pipeline.execute to return a PipelineState-like object
+    mock_state = MagicMock()
+    mock_state.final_translation = "translated text"
+    mock_state.synopsis = ""
+    
+    with patch('src.utils._pipeline.execute', return_value=mock_state):
         result = translate_chunks("some text", max_chunk_size=1000)
         
         assert isinstance(result, str)
@@ -339,17 +349,20 @@ def test_convert_to_markdown_mocked():
 
 
 def test_translate_chunks_unit():
-    """Unit test for translate_chunks with mocked translate_chunk."""
+    """Unit test for translate_chunks with mocked _pipeline.execute."""
     from src.calibre_pipeline import translate_chunks
     
-    with patch('src.calibre_pipeline.translate_chunk') as mock_translate:
-        mock_translate.return_value = ("переведённый текст", "synopsis")
-        
+    # Mock _pipeline.execute to return a PipelineState-like object
+    mock_state = MagicMock()
+    mock_state.final_translation = "переведённый текст"
+    mock_state.synopsis = "synopsis"
+    
+    with patch('src.utils._pipeline.execute', return_value=mock_state) as mock_execute:
         # Short text - single chunk
         result = translate_chunks("Hello world", max_chunk_size=1000)
         
         assert isinstance(result, str)
-        assert mock_translate.call_count == 1
+        assert mock_execute.call_count == 1
 
 
 def test_translate_chunks_with_progress():
@@ -357,15 +370,40 @@ def test_translate_chunks_with_progress():
     from src.calibre_pipeline import translate_chunks
     
     # Create text that will be split into multiple chunks
-    long_text = "Chunk text. " * 500  # ~6500 chars
+    # Use longer text with clear paragraph breaks
+    long_text = """# Chapter 1
+
+Once upon a time, there was a dragon named Ignis who lived in a cave. He liked to collect shiny things.
+
+# Chapter 2
+
+One day, a knight named Arthur came to visit the dragon.
+
+# Chapter 3
+
+They fought an epic battle and the knight emerged victorious.
+
+# Chapter 4
+
+After the battle, the dragon and knight became friends.
+
+# Chapter 5
+
+They lived happily ever after in the kingdom."""
+    # ~1500 chars - enough to create multiple chunks at 6000 char limit
+    # Actually, let's make it much longer to ensure chunking
+    long_text = ("# Chapter " + "\n\n" + "text " * 2000 + "\n") * 3  # ~18000 chars
     
-    with patch('src.calibre_pipeline.translate_chunk') as mock_translate:
-        mock_translate.return_value = ("перевод", "synopsis")
+    # Mock _pipeline.execute to return a PipelineState-like object
+    mock_state = MagicMock()
+    mock_state.final_translation = "перевод"
+    mock_state.synopsis = ""
+    
+    with patch('src.utils._pipeline.execute', return_value=mock_state) as mock_execute:
+        result = translate_chunks(long_text, max_chunk_size=6000)
         
-        result = translate_chunks(long_text, max_chunk_size=2000)
-        
-        # Should have multiple translate calls
-        assert mock_translate.call_count >= 2
+        # Should have multiple execute calls
+        assert mock_execute.call_count >= 2, f"Expected >=2 calls, got {mock_execute.call_count}"
         assert isinstance(result, str)
 
 
@@ -388,13 +426,15 @@ One day, a knight named Arthur came to visit the dragon."""
     ]
     
     call_count = 0
-    def mock_translate(**kwargs):
+    def mock_execute(**kwargs):
         nonlocal call_count
-        result = translations[call_count]
+        mock_state = MagicMock()
+        mock_state.final_translation = translations[call_count][0]
+        mock_state.synopsis = translations[call_count][1]
         call_count += 1
-        return result
+        return mock_state
     
-    with patch('src.calibre_pipeline.translate_chunk', side_effect=mock_translate):
+    with patch('src.utils._pipeline.execute', side_effect=mock_execute):
         with patch('src.calibre_pipeline.split_text_smartly', side_effect=lambda t: (t[:len(t)//2], t[len(t)//2:])):
             result = translate_chunks(mock_markdown, max_chunk_size=150)
             
@@ -479,6 +519,11 @@ def test_full_pipeline_integration():
 </metadata></package>"""
     html_content = b"<html><body><p>Test content</p></body></html>"
     
+    # Mock _pipeline.execute to return a PipelineState-like object
+    mock_state = MagicMock()
+    mock_state.final_translation = "Переведённый текст"
+    mock_state.synopsis = "synopsis"
+    
     htmlz_buffer = BytesIO()
     with zipfile.ZipFile(htmlz_buffer, 'w') as zf:
         zf.writestr('index.html', html_content)
@@ -489,12 +534,11 @@ def test_full_pipeline_integration():
          patch('os.path.exists', return_value=True), \
          patch('zipfile.ZipFile') as mock_zipfile, \
          patch('pypandoc.convert_text') as mock_pandoc, \
-         patch('src.calibre_pipeline.translate_chunk') as mock_translate, \
+         patch('src.utils._pipeline.execute', return_value=mock_state) as mock_execute, \
          patch('src.calibre_pipeline.split_text_smartly', return_value=("Test content", "")):
         
         mock_subprocess.return_value = MagicMock(returncode=0)
         mock_pandoc.return_value = "# Глава\n\nПереведённый текст"
-        mock_translate.return_value = ("Переведённый текст", "synopsis")
         
         mock_zf_instance = MagicMock()
         mock_zf_instance.namelist.return_value = ['index.html', 'metadata.opf']
@@ -511,7 +555,7 @@ def test_full_pipeline_integration():
         assert isinstance(output, str)
         # Verify full pipeline was called
         assert mock_subprocess.call_count >= 2  # At least convert + output
-        assert mock_translate.call_count >= 1
+        assert mock_execute.call_count >= 1
 
 
 def test_error_handling():
@@ -591,13 +635,16 @@ def test_translate_chunks_with_vocab_dict():
     
     vocab = {"dragon": "дракон", "knight": "рыцарь"}
     
-    with patch('src.calibre_pipeline.translate_chunk') as mock_translate, \
+    # Mock _pipeline.execute to return a PipelineState-like object
+    mock_state = MagicMock()
+    mock_state.final_translation = "дракон рыцарь"
+    mock_state.synopsis = "synopsis"
+    
+    with patch('src.utils._pipeline.execute', return_value=mock_state) as mock_execute, \
          patch('src.calibre_pipeline.split_text_smartly', return_value=("dragon knight", "")):
-        
-        mock_translate.return_value = ("дракон рыцарь", "synopsis")
         
         result = translate_chunks("dragon knight", vocab_dict=vocab)
         
-        # Verify vocab_dict was passed to translate_chunk
-        call_kwargs = mock_translate.call_args[1]
+        # Verify vocab_dict was passed to _pipeline.execute
+        call_kwargs = mock_execute.call_args[1]
         assert 'vocab_dict' in call_kwargs
