@@ -1158,8 +1158,10 @@ def create_series_vocab(
         os.makedirs(output_dir, exist_ok=True)
         print(f"Created output directory: {output_dir}")
 
-    # Split into ~16K chunks for translation
-    CHUNK_SIZE = 16384
+    # Split into smaller chunks to avoid 500 errors from LLM API
+    # Current: ~16K chars → too large for vocabulary endpoint
+    # Target: ~4K chars per chunk (safe for most LLMs)
+    CHUNK_SIZE = 4096
     lines = terms_text.split('\n')
     chunks = []
     current = []
@@ -1174,7 +1176,7 @@ def create_series_vocab(
     if current:
         chunks.append('\n'.join(current))
 
-    print(f"Split into {len(chunks)} translation chunk(s)")
+    print(f"Split into {len(chunks)} translation chunk(s) (CHUNK_SIZE={CHUNK_SIZE})")
 
     from src import utils as ta
     import json as _json
