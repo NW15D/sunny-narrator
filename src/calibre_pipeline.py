@@ -1082,6 +1082,267 @@ def validate_output(output_path: str, output_format: str) -> ValidationReport:
         return report
 
 
+# --- Dictionary Builder ---
+
+def extract_dictionary_from_md(
+    source_md: str,
+    source_lang: str = "en",
+    target_lang: str = "ru",
+    country: str = "Russia",
+    min_count_ner: int = 5,
+    min_count_word: int = 10,
+    min_word_length: int = 5
+) -> List[Dict]:
+    """
+    Extract dictionary entries from source markdown using NER.
+
+    Algorithm:
+    1. Use NER (spaCy) to identify named entities (PERSON, LOC, ORG)
+    2. Extract frequent words (filtered by min_count_word, min_word_length)
+    3. Translate extracted terms via LLM (utils.vocabulary)
+    4. Parse LLM response into structured dictionary entries
+
+    Args:
+        source_md: Source (untranslated) markdown text
+        source_lang: Source language code (default "en")
+        target_lang: Target language code (default "ru")
+        country: Target country for cultural context (default "Russia")
+        min_count_ner: Minimum occurrences for NER entities (default 5)
+        min_count_word: Minimum occurrences for common words (default 10)
+        min_word_length: Minimum word length for common words (default 5)
+
+    Returns:
+        List of dictionary entries: [{'source': ..., 'target': ..., 'category': ..., 'gender': '', 'notes': ...}, ...]
+    """
+    _init_logger()
+
+    if not source_md or not source_md.strip():
+        logger.warning("extract_dictionary_from_md: empty source text")
+        return []
+
+    # Step 1: Extract terms using NER (reuses existing ner.create_dictionary_from_text)
+    from src import ner as ner_module
+
+    logger.info(
+        f"Extracting dictionary terms via NER "
+        f"(min_count_ner={min_count_ner}, min_count_word={min_count_word}, "
+        f"min_word_length={min_word_length})..."
+    )
+
+    extracted_terms = ner_module.create_dictionary_from_text(
+        source_md,
+        min_count_ner=min_count_ner,
+        min_count_word=min_count_word,
+        min_word_length=min_word_length
+    )
+
+    if not extracted_terms:
+        logger.info("No terms extracted by NER")
+        return []
+
+    logger.info(f"Extracted {len(extracted_terms)} terms from source text")
+
+    # Step 2: Format terms for LLM translation
+    terms_text = '\n'.join([term for term, cat, notes in extracted_terms])
+
+    # Split into chunks for LLM (respect max_len_chunk)
+    chunk_size = int(config.max_len_chunk) if hasattr(config, 'max_len_chunk') else 16384
+    lines = terms_text.split('\n')
+    chunks = []
+    current: list = []
+    current_len = 0
+    for line in lines:
+        current.append(line)
+        current_len += len(line) + 1
+        if current_len >= chunk_size:
+            chunks.append('\n'.join(current))
+            current = []
+            current_len = 0
+    if current:
+        chunks.append('\n'.join(current))
+
+    logger.info(f"Split {len(terms_text)} chars into {len(chunks)} chunk(s) for translation")
+
+    # Step 3: Translate each chunk via LLM
+    from src import utils as ta
+
+    all_translations: Dict[str, str] = {}  # source_lower -> target
+
+    for idx, chunk in enumerate(chunks):
+        logger.info(f"Translating dictionary chunk {idx + 1}/{len(chunks)} ({len(chunk)} chars)...")
+        try:
+            vocab_translated = ta.vocabulary(
+                source_lang, target_lang, chunk, country, "Translate"
+            )
+            # Parse translations from LLM response
+            chunk_translations = _parse_dictionary_llm_response(vocab_translated)
+            all_translations.update(chunk_translations)
+            logger.info(f"  Chunk {idx + 1}: parsed {len(chunk_translations)} translations")
+        except Exception as e:
+            logger.error(f"  Chunk {idx + 1} translation failed: {e}")
+
+    # Step 4: Build structured dictionary entries
+    dictionary: List[Dict] = []
+    valid_categories = {'PERSON', 'LOC', 'ORG', 'GPE', 'TERM'}
+
+    for term, category, notes in extracted_terms:
+        term_lower = term.lower()
+        target = all_translations.get(term_lower, "")
+
+        if not target:
+            # Try case-insensitive lookup
+            for src_key, tgt_val in all_translations.items():
+                if src_key == term_lower:
+                    target = tgt_val
+                    break
+
+        if not target:
+            logger.debug(f"No translation found for term '{term}', skipping")
+            continue
+
+        # Normalize category
+        if category.upper() not in valid_categories:
+            category = "TERM"
+        else:
+            category = category.upper()
+
+        dictionary.append({
+            'source': term,
+            'target': target,
+            'category': category,
+            'gender': '',
+            'notes': notes or 'auto-extracted from source markdown'
+        })
+
+    logger.info(f"Dictionary built: {len(dictionary)} entries (from {len(extracted_terms)} extracted terms)")
+    return dictionary
+
+
+def _parse_dictionary_llm_response(vocab_translated: str) -> Dict[str, str]:
+    """
+    Parse LLM vocabulary response into source->target mapping.
+
+    Handles multiple response formats:
+    - JSON array: [{"source": "...", "target": "..."}, ...]
+    - Markdown table: | source | target | category |
+    - Key-value: source = target / source: target / source → target
+
+    Args:
+        vocab_translated: Raw LLM response text
+
+    Returns:
+        Dict mapping source_lower -> target
+    """
+    import json as _json
+
+    translations: Dict[str, str] = {}
+    if not vocab_translated or not vocab_translated.strip():
+        return translations
+
+    # Strategy 1: JSON array
+    try:
+        json_array_match = re.search(r'\[\s*\{.*?\}\s*\]', vocab_translated, re.DOTALL)
+        if json_array_match:
+            terms = _json.loads(json_array_match.group(0))
+            if isinstance(terms, list):
+                for item in terms:
+                    if isinstance(item, dict):
+                        src = str(item.get('source', '')).strip()
+                        tgt = str(item.get('target', '')).strip()
+                        if src and tgt:
+                            translations[src.lower()] = tgt
+                if translations:
+                    return translations
+    except (_json.JSONDecodeError, ValueError):
+        pass
+
+    # Strategy 2: Markdown table
+    table_pattern = r'\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|\s*([^|]*)\s*\|'
+    matches = re.findall(table_pattern, vocab_translated)
+    if matches:
+        for match in matches:
+            source = match[0].strip()
+            target = match[1].strip()
+            if (source and target
+                    and not source.startswith('-')
+                    and not target.startswith('-')
+                    and source.lower() not in ('source', 'term', 'english')):
+                translations[source.lower()] = target
+        if translations:
+            return translations
+
+    # Strategy 3: Key-value patterns
+    kv_patterns = [
+        r'"([^"]+)"\s*:\s*"([^"]+)"',   # "source": "target"
+        r'([^:=\n]+)[=:]\s*([^\n]+)',      # source = target / source: target
+        r'([^→\n]+)→\s*([^\n]+)',          # source → target
+    ]
+    for pattern in kv_patterns:
+        matches = re.findall(pattern, vocab_translated)
+        if matches:
+            for match in matches:
+                source = match[0].strip()
+                target = match[1].strip()
+                if (source and target
+                        and len(source) > 1
+                        and len(target) > 1
+                        and source.lower() not in ('source', 'terms', 'translation', 'note')):
+                    translations[source.lower()] = target
+            if translations:
+                return translations
+
+    return translations
+
+
+def save_dictionary(dictionary: List[Dict], output_path: str) -> None:
+    """
+    Save dictionary entries in .dic format.
+
+    Format (compatible with _load_vocab_dict / _load_vocab_entries):
+        # Vocabulary header
+        source = target, category, gender, notes
+
+    Args:
+        dictionary: List of dictionary entries from extract_dictionary_from_md()
+        output_path: Output .dic file path
+    """
+    _init_logger()
+
+    if not dictionary:
+        logger.warning("save_dictionary: empty dictionary, nothing to save")
+        return
+
+    # Ensure parent directory exists
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(f"# Vocabulary dictionary\n")
+        f.write(f"# Format: source = target, category, gender, notes\n")
+        f.write(f"# Generated automatically from source markdown by NER + LLM\n")
+        f.write(f"# Entries: {len(dictionary)}\n\n")
+
+        for entry in dictionary:
+            source = entry.get('source', '')
+            target = entry.get('target', '')
+            category = entry.get('category', '')
+            gender = entry.get('gender', '')
+            notes = entry.get('notes', '')
+
+            if not source or not target:
+                continue
+
+            line = f"{source} = {target}"
+            if category:
+                line += f", {category}"
+            if gender:
+                line += f", {gender}"
+            if notes:
+                line += f", {notes}"
+            f.write(line + '\n')
+
+    logger.info(f"Dictionary saved: {output_path} ({len(dictionary)} entries)")
+
+
 # Convenience function for full pipeline
 def run_pipeline(
     input_path: str,
@@ -1112,11 +1373,11 @@ def run_pipeline(
     _init_logger()
     
     # Step 1: Convert to Markdown
-    logger.info(f"Step 1/3: Converting {input_path} to Markdown...")
+    logger.info(f"Step 1/5: Converting {input_path} to Markdown...")
     markdown_text, metadata = convert_to_markdown(input_path)
     
     # Step 2: Translate
-    logger.info("Step 2/3: Translating...")
+    logger.info("Step 2/5: Translating...")
     
     # Use MAX_LEN_CHUNK from config if max_chunk_size not specified
     if max_chunk_size is None:
@@ -1139,17 +1400,38 @@ def run_pipeline(
         book_path=input_path  # Enable vocabulary loading
     )
     
-    # Step 3: Build output
-    logger.info(f"Step 3/4: Building {output_format.upper()} output...")
+    # Step 3: Build dictionary if .dic doesn't exist
+    dic_path = Path(input_path).with_suffix('.dic')
+    if not dic_path.exists():
+        logger.info("Step 3/5: Building dictionary from source markdown...")
+        try:
+            dictionary = extract_dictionary_from_md(
+                markdown_text,
+                source_lang=source_lang,
+                target_lang=target_lang,
+                country=country
+            )
+            if dictionary:
+                save_dictionary(dictionary, str(dic_path))
+                logger.info(f"  Dictionary created: {dic_path} ({len(dictionary)} entries)")
+            else:
+                logger.info("  No dictionary terms extracted")
+        except Exception as e:
+            logger.warning(f"  Dictionary building failed (non-fatal): {e}")
+    else:
+        logger.info(f"Step 3/5: Dictionary already exists: {dic_path} (skipped)")
+    
+    # Step 4: Build output
+    logger.info(f"Step 4/5: Building {output_format.upper()} output...")
     output_path = build_output(
         translated_md,
         output_format,
         metadata
     )
     
-    # Step 4: Validate output
+    # Step 5: Validate output
     if not skip_validation:
-        logger.info("Step 4/4: Validating output file...")
+        logger.info("Step 5/5: Validating output file...")
         validation = validate_output(output_path, output_format)
         
         if validation.is_valid:
