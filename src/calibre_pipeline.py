@@ -14,6 +14,13 @@ __all__ = [
     'run_pipeline',
     'check_calibre_installed',
     'TempDir',
+    'ValidationIssue',
+    'ValidationReport',
+    'validate_epub',
+    'validate_fb2',
+    'validate_output',
+    'extract_dictionary_from_md',
+    'save_dictionary',
 ]
 
 import os
@@ -21,9 +28,11 @@ import re
 import shutil
 import subprocess
 import tempfile
+import xml.etree.ElementTree as ET
 import zipfile
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Dict, List, Optional
 
 try:
     import pypandoc
@@ -36,6 +45,44 @@ except ImportError:
 from src.utils import split_text_smartly, translate_chunk, num_tokens_in_string, config, validate_translation_length, _pipeline
 from src.config import Config
 from src import markdown_utils
+
+@dataclass
+class ValidationIssue:
+    """Single validation issue found during output file validation."""
+    severity: str  # "error" or "warning"
+    message: str
+    details: str = ""
+    file_line: int = 0
+
+
+@dataclass
+class ValidationReport:
+    """Validation result report for output file."""
+    is_valid: bool = False
+    file_path: str = ""
+    file_size: int = 0
+    format: str = ""
+    issues: List[ValidationIssue] = field(default_factory=list)
+
+    def add_issue(self, severity: str, message: str, details: str = "", line: int = 0):
+        """Add an issue to the report."""
+        self.issues.append(ValidationIssue(severity, message, details, line))
+
+    def has_errors(self) -> bool:
+        """Check if report has any errors (not warnings)."""
+        return any(issue.severity == "error" for issue in self.issues)
+
+    def summary(self) -> str:
+        """Return human-readable summary of validation results."""
+        errors = sum(1 for i in self.issues if i.severity == "error")
+        warnings = sum(1 for i in self.issues if i.severity == "warning")
+        status = "PASS" if self.is_valid else "FAIL"
+        return (
+            f"Validation {status}: {self.file_path} "
+            f"({self.file_size} bytes, {self.format}) — "
+            f"{errors} error(s), {warnings} warning(s)"
+        )
+
 
 logger = None
 
@@ -855,6 +902,186 @@ def _add_toc_to_html(markdown_text: str) -> str:
     return str(soup)
 
 
+# ---------------------------------------------------------------------------
+# Output file validation
+# ---------------------------------------------------------------------------
+
+def validate_epub(output_path: str) -> ValidationReport:
+    """
+    Validate EPUB file structure and content.
+
+    Checks:
+    - File exists and size > 0
+    - Valid ZIP structure
+    - META-INF/container.xml exists
+    - OPF file exists and contains dc:title / dc:creator
+    - TOC file present (warning if missing)
+    - No Calibre artifact markers
+
+    Args:
+        output_path: Path to EPUB file
+
+    Returns:
+        ValidationReport with results
+    """
+    _init_logger()
+    report = ValidationReport(is_valid=False, file_path=output_path, format="epub")
+
+    # --- File existence & size ---
+    if not os.path.exists(output_path):
+        report.add_issue("error", "File does not exist")
+        return report
+
+    file_size = os.path.getsize(output_path)
+    if file_size == 0:
+        report.add_issue("error", "File is empty")
+        return report
+    report.file_size = file_size
+
+    # --- ZIP structure ---
+    try:
+        with zipfile.ZipFile(output_path, 'r') as zf:
+            names = set(zf.namelist())
+
+            # container.xml
+            if 'META-INF/container.xml' not in names:
+                report.add_issue("error", "Missing META-INF/container.xml")
+
+            # OPF file
+            opf_files = [n for n in names if n.endswith('.opf')]
+            if not opf_files:
+                report.add_issue("error", "No OPF file found in EPUB")
+            else:
+                for opf_name in opf_files:
+                    with zf.open(opf_name) as f:
+                        opf_content = f.read().decode('utf-8', errors='replace')
+                    if '<dc:title>' not in opf_content:
+                        report.add_issue("error", f"Missing <dc:title> in {opf_name}")
+                    if '<dc:creator>' not in opf_content:
+                        report.add_issue("warning", f"Missing <dc:creator> in {opf_name}")
+
+            # TOC (NCX or NAV / XHTML with 'toc' in name)
+            toc_found = (
+                any('toc' in n.lower() for n in names)
+                or any(n.endswith('.ncx') for n in names)
+            )
+            if not toc_found:
+                report.add_issue("warning", "No TOC file found")
+
+            # Calibre artifacts
+            for name in names:
+                if 'calibre' in name.lower():
+                    report.add_issue("warning", f"Calibre artifact found: {name}")
+
+    except zipfile.BadZipFile:
+        report.add_issue("error", "Invalid ZIP structure (not a valid EPUB)")
+        return report
+
+    report.is_valid = not report.has_errors()
+    logger.info(f"EPUB validation: {report.summary()}")
+    return report
+
+
+def validate_fb2(output_path: str) -> ValidationReport:
+    """
+    Validate FB2 file structure and content.
+
+    Checks:
+    - File exists and size > 0
+    - Valid XML structure
+    - Root element is FictionBook (with FB2 namespace)
+    - <title-info> section present
+    - <body> section present
+    - No Calibre artifact markers
+
+    Args:
+        output_path: Path to FB2 file
+
+    Returns:
+        ValidationReport with results
+    """
+    _init_logger()
+    report = ValidationReport(is_valid=False, file_path=output_path, format="fb2")
+
+    if not os.path.exists(output_path):
+        report.add_issue("error", "File does not exist")
+        return report
+
+    file_size = os.path.getsize(output_path)
+    if file_size == 0:
+        report.add_issue("error", "File is empty")
+        return report
+    report.file_size = file_size
+
+    # --- XML parsing ---
+    try:
+        tree = ET.parse(output_path)
+        root = tree.getroot()
+    except ET.ParseError as e:
+        report.add_issue("error", f"Invalid XML structure: {e}")
+        return report
+
+    # FB2 namespace
+    FB2_NS = 'http://www.gribuser.ru/xml/fictionbook/2.0'
+    ns = {'fb2': FB2_NS}
+
+    # Root element check — accept with or without namespace
+    root_tag = root.tag
+    if root_tag != f'{{{FB2_NS}}}FictionBook' and root_tag != 'FictionBook':
+        report.add_issue("error", f"Invalid FB2 root element: {root_tag}")
+        return report
+
+    # title-info
+    title_info = root.find('.//fb2:title-info', ns)
+    if title_info is None:
+        # Try without namespace
+        title_info = root.find('.//title-info')
+    if title_info is None:
+        report.add_issue("error", "Missing <title-info> section")
+
+    # body
+    bodies = root.findall('.//fb2:body', ns)
+    if not bodies:
+        bodies = root.findall('.//body')
+    if not bodies:
+        report.add_issue("error", "Missing <body> section")
+
+    # Calibre artifacts
+    with open(output_path, 'r', encoding='utf-8', errors='ignore') as f:
+        content = f.read()
+    if 'calibre-' in content.lower():
+        report.add_issue("warning", "Calibre artifact found in FB2 content")
+
+    report.is_valid = not report.has_errors()
+    logger.info(f"FB2 validation: {report.summary()}")
+    return report
+
+
+def validate_output(output_path: str, output_format: str) -> ValidationReport:
+    """
+    Validate output file based on format.
+
+    Dispatches to validate_epub() or validate_fb2() depending on format.
+
+    Args:
+        output_path: Path to output file
+        output_format: "epub" or "fb2"
+
+    Returns:
+        ValidationReport with results
+    """
+    _init_logger()
+    fmt = output_format.lower()
+    if fmt == "epub":
+        return validate_epub(output_path)
+    elif fmt == "fb2":
+        return validate_fb2(output_path)
+    else:
+        report = ValidationReport(is_valid=False, file_path=output_path, format=fmt)
+        report.add_issue("error", f"Unsupported output format: {output_format}")
+        return report
+
+
 # Convenience function for full pipeline
 def run_pipeline(
     input_path: str,
@@ -863,10 +1090,11 @@ def run_pipeline(
     source_lang: str = "en",
     target_lang: str = "ru",
     country: str = "Russia",
-    fast_mode: bool = False
+    fast_mode: bool = False,
+    skip_validation: bool = False
 ) -> str:
     """
-    Run the complete Calibre pipeline: convert -> translate -> build output.
+    Run the complete Calibre pipeline: convert -> translate -> build output -> validate.
     
     Args:
         input_path: Path to input EPUB/FB2 file
@@ -876,6 +1104,7 @@ def run_pipeline(
         target_lang: Target language code
         country: Target country for cultural context
         fast_mode: Skip reflection/improve stages
+        skip_validation: Skip output validation step (for testing)
         
     Returns:
         Path to the generated output file
@@ -911,12 +1140,26 @@ def run_pipeline(
     )
     
     # Step 3: Build output
-    logger.info(f"Step 3/3: Building {output_format.upper()} output...")
+    logger.info(f"Step 3/4: Building {output_format.upper()} output...")
     output_path = build_output(
         translated_md,
         output_format,
         metadata
     )
+    
+    # Step 4: Validate output
+    if not skip_validation:
+        logger.info("Step 4/4: Validating output file...")
+        validation = validate_output(output_path, output_format)
+        
+        if validation.is_valid:
+            logger.info(f"  ✓ {validation.summary()}")
+        else:
+            logger.error(f"  ✗ Validation failed:")
+            for issue in validation.issues:
+                logger.error(f"    [{issue.severity.upper()}] {issue.message}")
+    else:
+        logger.info("Step 4/4: Validation skipped (skip_validation=True)")
     
     logger.info(f"Pipeline complete: {output_path}")
     return output_path
