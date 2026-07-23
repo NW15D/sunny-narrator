@@ -1,6 +1,43 @@
 import os
 from datetime import datetime
+from xml.sax.saxutils import escape as xml_escape
+
+try:
+    from charset_normalizer import from_bytes as detect_encoding
+except ImportError:
+    detect_encoding = None
+
 import src.fb2_handler as fb2
+
+
+def _read_with_fallback(file_path):
+    """Read a text file trying multiple encodings.
+
+    Fallback chain: utf-8 → charset-normalizer → cp1251 → latin-1 (errors='replace').
+    """
+    raw = open(file_path, 'rb').read()
+
+    # 1. Try UTF-8
+    try:
+        return raw.decode('utf-8')
+    except UnicodeDecodeError:
+        pass
+
+    # 2. Try charset-normalizer if available
+    if detect_encoding is not None:
+        result = detect_encoding(raw).best()
+        if result is not None:
+            return str(result)
+
+    # 3. Try cp1251 (common for Russian text)
+    try:
+        return raw.decode('cp1251')
+    except UnicodeDecodeError:
+        pass
+
+    # 4. Last resort: latin-1 never raises (maps all 256 byte values)
+    return raw.decode('latin-1', errors='replace')
+
 
 def parse_txt(file_path):
     """
@@ -8,8 +45,7 @@ def parse_txt(file_path):
     Returns body, header, footer.
     """
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+        content = _read_with_fallback(file_path)
     except Exception as e:
         raise ValueError(f"Failed to read TXT file: {e}")
 
@@ -24,7 +60,7 @@ def parse_txt(file_path):
     <title-info>
         <genre>unknown</genre>
         <author><first-name></first-name><last-name>Unknown</last-name></author>
-        <book-title>{title}</book-title>
+        <book-title>{xml_escape(title)}</book-title>
         <date>{date_str}</date>
         <lang>en</lang>
     </title-info>

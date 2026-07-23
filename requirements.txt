@@ -36,3 +36,6 @@ torch
 
 # Thinc (required by spaCy)
 thinc
+
+# Encoding detection for TXT files
+charset-normalizer
