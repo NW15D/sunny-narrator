@@ -14,6 +14,7 @@ import ebooklib
 from ebooklib import epub
 
 from src.config import Config
+from src.xml_utils import get_safe_bs4_features
 from .epub_repair import validate_and_repair_epub
 
 config = Config()
@@ -36,7 +37,7 @@ def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) 
     book = epub.EpubBook()
     
     # Parse header for metadata
-    soup = BeautifulSoup(header, 'xml')
+    soup = BeautifulSoup(header, 'xml', features=get_safe_bs4_features())
     title_info = soup.find('title-info')
     
     # --- Extract Metadata ---
@@ -174,7 +175,7 @@ def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) 
                           f"May indicate translation failed or content not properly updated.")
     
     # Parse body
-    body_soup = BeautifulSoup(f"<body>{body}</body>", 'xml')
+    body_soup = BeautifulSoup(f"<body>{body}</body>", 'xml', features=get_safe_bs4_features())
     
     for section in body_soup.find_all('section'):
         chapter_count += 1

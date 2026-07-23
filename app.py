@@ -11,6 +11,8 @@ Usage:
 
 import os
 import sys
+import signal
+import time
 import warnings
 import base64
 import logging
@@ -270,11 +272,15 @@ class TranslationEngine:
             except Exception as e:
                 logger.warning(f"Translation attempt {attempt + 1} failed: {e}")
                 retry_count += 1
+                if attempt < 2:  # Don't sleep after last attempt
+                    backoff = 2 ** attempt  # 1s, 2s
+                    logger.info(f"Retrying chunk {g_id} in {backoff}s...")
+                    time.sleep(backoff)
 
         else:
-            # All retries failed
+            # All retries failed — return visible placeholder instead of silent empty string
             logger.warning(f"All validation attempts failed for chunk {g_id}")
-            final_content = self._post_process_xml(source_text, "")
+            final_content = f"[TRANSLATION FAILED: chunk {g_id}]"
             self.stats['failed'] += 1
             return final_content, synopsis
 
@@ -339,7 +345,7 @@ class TranslationEngine:
         return sum(diffs) / len(diffs) if diffs else 0.0
 
     def _llm_repair_xml(self, source_text: str, translated_text: str) -> str:
-        """Repair lost XML tags using LLM."""
+        """Repair lost XML tags using LLM with 1 retry."""
         prompt = f"""ОРИГИНАЛ ({config.source_lang}):
 {source_text[:1000]}
 
@@ -349,30 +355,37 @@ class TranslationEngine:
 ЗАДАЧА: Восстанови XML-тэги FB2 (<p>, </p>, <strong>, <em>, etc.) в переводе.
 Верни ТОЛЬКО исправленный перевод с тэгами."""
 
-        try:
-            # Safe getattr: avoid eager evaluation of default arg
-            client = getattr(ta.llm_service, 'clientProofread', None)
-            if client is None:
-                client = getattr(ta.llm_service, '_secondary_client', None)
-            if client is None:
-                client = getattr(ta.llm_service, 'clientTranslate', None)
-            if client is None:
-                client = getattr(ta.llm_service, '_primary_client', None)
-            if client is None:
-                raise AttributeError("LLMService has no usable client attribute")
-            response = client.chat.completions.create(
-                model=config.model_proofread,
-                messages=[
-                    {"role": "system", "content": "Ты редактор XML. Восстанавливай тэги FB2."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.1,
-                max_tokens=2000
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            logger.error(f"LLM repair failed: {e}")
-            return translated_text
+        max_tokens = getattr(config, 'llm_repair_max_tokens', 2000)
+
+        for attempt in range(2):  # 1 initial + 1 retry
+            try:
+                # Safe getattr: avoid eager evaluation of default arg
+                client = getattr(ta.llm_service, 'clientProofread', None)
+                if client is None:
+                    client = getattr(ta.llm_service, '_secondary_client', None)
+                if client is None:
+                    client = getattr(ta.llm_service, 'clientTranslate', None)
+                if client is None:
+                    client = getattr(ta.llm_service, '_primary_client', None)
+                if client is None:
+                    raise AttributeError("LLMService has no usable client attribute")
+                response = client.chat.completions.create(
+                    model=config.model_proofread,
+                    messages=[
+                        {"role": "system", "content": "Ты редактор XML. Восстанавливай тэги FB2."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.1,
+                    max_tokens=max_tokens
+                )
+                return response.choices[0].message.content
+            except Exception as e:
+                logger.error(f"LLM repair attempt {attempt + 1} failed ({type(e).__name__}): {e}")
+                if attempt == 0:
+                    time.sleep(1)  # Brief pause before retry
+
+        logger.warning("LLM repair exhausted all retries, returning original text")
+        return translated_text
 
     def process_all_chunks(self, all_chunks: list, orig_sections: list,
                            vocab: dict, output_tfile: str, checkpoint_file: str = None) -> str:
@@ -482,6 +495,12 @@ class TranslationEngine:
             with open(output_tfile, 'a', encoding='utf-8') as f:
                 f.write(section_wrapped + "\n")
             written_sections.add(current_section_idx)
+
+        # Warn if too many chunks failed
+        total_processed = self.stats['successful'] + self.stats['failed']
+        if total_processed > 0 and self.stats['failed'] / total_processed > 0.1:
+            print(f"\n⚠️ WARNING: {self.stats['failed']}/{total_processed} chunks failed to translate!")
+            logger.warning(f"High failure rate: {self.stats['failed']}/{total_processed} chunks failed")
 
         return all_content
 
@@ -775,6 +794,14 @@ def assemble_resume_content(new_content: str, resume_from_chunk: int, output_tfi
 
 def main():
     """Main translation workflow."""
+    # Graceful shutdown handler
+    def _handle_shutdown(signum, frame):
+        logger.warning(f"Received signal {signum}, saving checkpoint...")
+        sys.exit(1)
+
+    signal.signal(signal.SIGINT, _handle_shutdown)
+    signal.signal(signal.SIGTERM, _handle_shutdown)
+
     # Reset translation statistics
     ta.reset_translation_stats()
 
@@ -910,8 +937,14 @@ def main():
 
     # Process chunks if any remain, or content was already loaded from temp file above
     if chunks:
-        content = engine.process_all_chunks(chunks, sections, vocab, output_tfile, checkpoint_file)
-        content = assemble_resume_content(content, resume_from_chunk, output_tfile)
+        try:
+            content = engine.process_all_chunks(chunks, sections, vocab, output_tfile, checkpoint_file)
+            content = assemble_resume_content(content, resume_from_chunk, output_tfile)
+        finally:
+            # Ensure checkpoint is saved on unexpected exit (signal handler triggers SystemExit)
+            if checkpoint_file:
+                engine.save_checkpoint(checkpoint_file)
+                logger.info(f"Checkpoint saved: {checkpoint_file}")
 
     # 5. Metadata & Cover
     if header:

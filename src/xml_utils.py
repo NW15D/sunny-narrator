@@ -6,8 +6,56 @@ Used by fb2_handler, epub_handler, txt_handler.
 """
 
 import re
+import os
+import tempfile
 from bs4 import BeautifulSoup
 from typing import Dict, List, Any, Tuple
+
+
+def get_safe_xml_parser():
+    """Create XXE-safe lxml XML parser.
+
+    Disables external entity resolution, network access, and DTD validation
+    to prevent XXE attacks from malicious EPUB/FB2 files.
+    """
+    from lxml import etree
+    return etree.XMLParser(
+        resolve_entities=False,
+        no_network=True,
+        dtd_validation=False,
+        huge_tree=False,
+        recover=True,
+    )
+
+
+def get_safe_bs4_features():
+    """Return bs4 features dict for XXE-safe XML parsing."""
+    return {'resolve_entities': False, 'no_network': True}
+
+
+def atomic_write(target_path: str, content: str, encoding: str = 'utf-8') -> None:
+    """Atomically write content to target_path using tmp+rename.
+
+    Writes to a temporary file in the same directory, then uses os.replace()
+    for an atomic rename. This prevents partial/corrupt files on crash.
+    """
+    target_dir = os.path.dirname(os.path.abspath(target_path))
+    fd = tempfile.NamedTemporaryFile(
+        mode='w', dir=target_dir, delete=False, suffix='.tmp', encoding=encoding
+    )
+    try:
+        fd.write(content)
+        fd.flush()
+        os.fsync(fd.fileno())
+        fd.close()
+        os.replace(fd.name, target_path)
+    except BaseException:
+        fd.close()
+        try:
+            os.unlink(fd.name)
+        except OSError:
+            pass
+        raise
 
 
 def extract_metadata(header: str) -> Dict[str, Any]:
@@ -20,7 +68,7 @@ def extract_metadata(header: str) -> Dict[str, Any]:
     Returns:
         Dictionary with metadata fields
     """
-    soup = BeautifulSoup(header, 'xml')
+    soup = BeautifulSoup(header, 'xml', features=get_safe_bs4_features())
     title_info = soup.find('title-info')
     if not title_info:
         return {}
@@ -97,7 +145,7 @@ def update_header_with_metadata(header: str, metadata: Dict[str, Any]) -> str:
     Returns:
         Updated header string
     """
-    soup = BeautifulSoup(header, 'xml')
+    soup = BeautifulSoup(header, 'xml', features=get_safe_bs4_features())
     title_info = soup.find('title-info')
     
     if not title_info:
@@ -152,7 +200,7 @@ def get_cover_image(header: str, footer: str) -> Tuple[str, str]:
         Tuple of (image_href, image_data)
     """
     # Parse header to find cover reference
-    soup = BeautifulSoup(header, 'xml')
+    soup = BeautifulSoup(header, 'xml', features=get_safe_bs4_features())
     cover_tag = soup.find('coverpage')
     
     if not cover_tag:
@@ -203,7 +251,7 @@ def replace_cover_image(header: str, footer: str, body: str, new_content: str) -
         image_href = f"#{image_id}"
         
         # Add coverpage to header if not exists
-        soup = BeautifulSoup(header, 'xml')
+        soup = BeautifulSoup(header, 'xml', features=get_safe_bs4_features())
         title_info = soup.find('title-info')
         if title_info:
             cover_tag = soup.new_tag('coverpage')
