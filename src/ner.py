@@ -1,12 +1,21 @@
 from collections import Counter
+import logging
 import re
 import spacy
 import spacy.cli
 import torch
 import numpy as np
-import cupy as cp
+
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    cp = None
+    CUPY_AVAILABLE = False
 
 from src.config import Config
+
+logger = logging.getLogger(__name__)
 
 # Initialize config
 config = Config()
@@ -236,7 +245,8 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
 
                 del doc
                 gc.collect()
-            except:
+            except Exception as e:
+                logger.debug(f"Skipping word due to error: {e}")
                 continue
 
     except Exception as e:
@@ -459,6 +469,9 @@ def find_matching_words_with_cosine_similarity(text, vocab, lng, threshold=0.8, 
     Returns:
         List of matched vocabulary terms
     """
+    if not CUPY_AVAILABLE:
+        raise RuntimeError("CuPy is required for GPU processing. Use the CPU variant instead.")
+
     if config.debug:
         print("Starting cosine similarity matching (GPU)")
 
