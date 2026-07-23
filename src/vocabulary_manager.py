@@ -20,6 +20,7 @@ import os
 import re
 import tempfile
 import logging
+import fcntl
 from typing import Dict, List, Set, Optional, Tuple
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -32,9 +33,19 @@ config = Config()
 logger = logging.getLogger(__name__)
 
 
+class DictionaryCreatedSignal(Exception):
+    """Raised when a new dictionary has been created and the pipeline should stop for user review."""
+    def __init__(self, dict_path: str):
+        self.dict_path = dict_path
+        super().__init__(f"Dictionary created at {dict_path}. Review it, then re-run to start translation.")
+
+
 def validate_dictionary(dict_file: str) -> List[str]:
     """
-    Validate JSON dictionary format.
+    Validate CSV dictionary format.
+    
+    Expected format: source = target, category, gender, notes
+    Comment lines start with # and are ignored.
     
     Args:
         dict_file: Path to .dic file
@@ -42,69 +53,47 @@ def validate_dictionary(dict_file: str) -> List[str]:
     Returns:
         List of validation errors (empty if valid)
     """
-    import json
-    
     errors = []
     
     try:
+        if not os.path.exists(dict_file):
+            errors.append(f"Dictionary file not found: {dict_file}")
+            return errors
+        
         with open(dict_file, 'r', encoding='utf-8') as f:
-            content = f.read()
+            lines = f.readlines()
         
-        # Try to find JSON array in content (skip comments)
-        json_match = re.search(r'\[([\s\S]*?)\]', content)
-        if not json_match:
-            errors.append("No JSON array found in dictionary file")
+        # Filter out comment lines and empty lines
+        entry_lines = []
+        for line_num, line in enumerate(lines, 1):
+            stripped = line.strip()
+            if stripped and not stripped.startswith('#'):
+                entry_lines.append((line_num, stripped))
+        
+        if not entry_lines:
+            errors.append("Dictionary file is empty (no entries found)")
             return errors
         
-        vocab_list = json.loads(json_match.group(0))
+        # CSV pattern: source = target, category, gender, notes
+        # At minimum: source = target
+        csv_pattern = re.compile(r'^[^=]+=\s*\S+')
         
-        if not isinstance(vocab_list, list):
-            errors.append("Dictionary must be a JSON array")
-            return errors
-        
-        valid_categories = {'PERSON', 'LOC', 'ORG', 'TERM', 'OTHER', ''}
-        valid_genders = {'he', 'she', 'it', 'they', ''}
-        
-        for i, entry in enumerate(vocab_list):
-            if not isinstance(entry, dict):
-                errors.append(f"Entry {i}: must be an object, got {type(entry).__name__}")
+        sources_seen = []
+        for line_num, line in entry_lines:
+            if not csv_pattern.match(line):
+                errors.append(f"Line {line_num}: does not match 'source = target' format: {line[:80]}")
                 continue
             
-            # Check required fields
-            if 'source' not in entry:
-                errors.append(f"Entry {i}: missing required field 'source'")
-            elif not isinstance(entry['source'], str) or not entry['source'].strip():
-                errors.append(f"Entry {i}: 'source' must be a non-empty string")
-            
-            if 'target' not in entry:
-                errors.append(f"Entry {i}: missing required field 'target'")
-            elif not isinstance(entry['target'], str) or not entry['target'].strip():
-                errors.append(f"Entry {i}: 'target' must be a non-empty string")
-            
-            # Check optional fields
-            if 'category' in entry:
-                if not isinstance(entry['category'], str):
-                    errors.append(f"Entry {i}: 'category' must be a string")
-                elif entry['category'] not in valid_categories:
-                    errors.append(f"Entry {i}: invalid category '{entry['category']}'. Valid: {valid_categories}")
-            
-            if 'gender' in entry:
-                if not isinstance(entry['gender'], str):
-                    errors.append(f"Entry {i}: 'gender' must be a string")
-                elif entry['gender'] not in valid_genders:
-                    errors.append(f"Entry {i}: invalid gender '{entry['gender']}'. Valid: {valid_genders}")
-            
-            if 'notes' in entry and not isinstance(entry['notes'], str):
-                errors.append(f"Entry {i}: 'notes' must be a string")
+            # Parse source for duplicate check
+            source = line.split('=', 1)[0].strip()
+            if source:
+                sources_seen.append(source.lower())
         
         # Check for duplicates
-        sources = [entry.get('source', '').lower() for entry in vocab_list if isinstance(entry, dict)]
-        duplicates = set([s for s in sources if sources.count(s) > 1])
+        duplicates = set([s for s in sources_seen if sources_seen.count(s) > 1])
         if duplicates:
             errors.append(f"Duplicate source terms: {', '.join(duplicates)}")
         
-    except json.JSONDecodeError as e:
-        errors.append(f"Invalid JSON: {e}")
     except FileNotFoundError:
         errors.append(f"Dictionary file not found: {dict_file}")
     except Exception as e:
@@ -173,7 +162,7 @@ class VocabularyManager:
             Vocabulary dictionary
             
         Raises:
-            SystemExit if dictionary needs to be created
+            DictionaryCreatedSignal: if dictionary was created and needs user review
         """
         if os.path.exists(self.dict_file):
             logger.info(f"Loading vocabulary from {self.dict_file}")
@@ -188,11 +177,8 @@ class VocabularyManager:
                 logger.info("Auto-continue enabled, proceeding without manual review")
                 return self.vocab
             else:
-                # Exit to let user edit the dictionary
-                print(f"\nDictionary created: {self.dict_file}")
-                print("Please review and edit the dictionary, then restart.")
-                import sys
-                sys.exit(0)
+                # Signal that dictionary was created and needs review
+                raise DictionaryCreatedSignal(self.dict_file)
     
     def _atomic_write(self, content: str):
         """Write content to dict_file atomically (write to temp, then rename)."""
@@ -529,12 +515,7 @@ class VocabularyManager:
             logger.warning(f"Chunk {chunk_num}: No valid terms after normalization")
             return 0
         
-        # Append entries atomically: read existing, append new, write back
-        existing_content = ""
-        if os.path.exists(self.dict_file):
-            with open(self.dict_file, 'r', encoding='utf-8') as f:
-                existing_content = f.read()
-        
+        # Build new lines to append
         new_lines = []
         if chunk_num == 1:
             new_lines.append(f"\n# --- Translated Terms (Format: source = target, category, gender, notes) ---\n")
@@ -560,7 +541,8 @@ class VocabularyManager:
             )
             parsed += 1
         
-        self._atomic_write(existing_content + ''.join(new_lines))
+        # Append with file lock to prevent lost updates from concurrent access
+        self._locked_append(self.dict_file, ''.join(new_lines))
         return parsed
     
     def _create_template(self):
@@ -654,13 +636,24 @@ class VocabularyManager:
         logger.info(f"Loaded {len(vocab)} entries from CSV format")
         return vocab
     
+    def _locked_append(self, filepath: str, new_content: str):
+        """Append content with file lock to prevent lost updates."""
+        with open(filepath, 'a', encoding='utf-8') as f:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            try:
+                f.write(new_content)
+                f.flush()
+                os.fsync(f.fileno())
+            finally:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
     def _extract_characters(self):
         """Extract characters from vocabulary (PERSON category) and sync with CharacterRegistry."""
         # Get or create character registry
         registry = get_character_registry()
         
         for key, entry in self.vocab.items():
-            if entry.category.upper() == "PERSON" or not entry.category:
+            if entry.category.upper() == "PERSON":
                 # Create local character
                 self.characters[key] = Character(
                     name=entry.source,
