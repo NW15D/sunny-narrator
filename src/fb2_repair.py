@@ -12,6 +12,8 @@ import re
 from lxml import etree
 from typing import List, Tuple
 
+from src.xml_utils import get_safe_xml_parser
+
 
 def repair_fb2(xml_string: str, max_iterations: int = 3) -> Tuple[str, List[str]]:
     """
@@ -101,7 +103,7 @@ def _fix_unclosed_tags(xml_string: str) -> Tuple[str, str]:
     """Fix unclosed tags using lxml recovery parser."""
     try:
         # Try to parse with recovery
-        parser = etree.XMLParser(recover=True, encoding='utf-8')
+        parser = get_safe_xml_parser()
         root = etree.fromstring(xml_string.encode('utf-8'), parser)
         
         if root is not None:

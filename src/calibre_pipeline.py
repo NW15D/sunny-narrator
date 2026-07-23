@@ -28,6 +28,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 import xml.etree.ElementTree as ET
 import zipfile
 from dataclasses import dataclass, field
@@ -586,6 +587,7 @@ def translate_chunks(
     translated_parts = []
     outline_text = ""  # Context for next chunk
     vocab_entries = []  # Full metadata entries for 5-stage translation
+    failed_chunks = 0  # Track chunks that failed translation
     
     # Load vocabulary if book_path provided and no explicit vocab_dict
     if vocab_dict is None and book_path:
@@ -612,23 +614,34 @@ def translate_chunks(
         progress = ((i + 1) / total_chunks) * 100
         print(f"\rProgress: {i + 1}/{total_chunks} ({progress:.1f}%)", end="", flush=True)
         
-        # Translate chunk using 5-stage translation pipeline
-        try:
-            state = _pipeline.execute(
-                source_lang=source_lang,
-                target_lang=target_lang,
-                source_text=chunk,
-                outline_text=outline_text,
-                vocab_dict=vocab_dict,
-                vocab_entries=vocab_entries,
-                country=country,
-                style=style,
-                fast_mode=fast_mode
-            )
-            
-            translation = state.final_translation
-            outline_text = state.synopsis or ""
-            
+        # Translate chunk using 5-stage translation pipeline with retry
+        translation = None
+        for attempt in range(3):  # Up to 3 attempts
+            try:
+                state = _pipeline.execute(
+                    source_lang=source_lang,
+                    target_lang=target_lang,
+                    source_text=chunk,
+                    outline_text=outline_text,
+                    vocab_dict=vocab_dict,
+                    vocab_entries=vocab_entries,
+                    country=country,
+                    style=style,
+                    fast_mode=fast_mode
+                )
+                
+                translation = state.final_translation
+                outline_text = state.synopsis or ""
+                break  # Success
+                
+            except Exception as e:
+                logger.warning(f"Translation attempt {attempt + 1} failed for chunk {i + 1} ({type(e).__name__}): {e}")
+                if attempt < 2:
+                    backoff = 2 ** (attempt + 1)  # 2s, 4s
+                    logger.info(f"Retrying chunk {i + 1} in {backoff}s...")
+                    time.sleep(backoff)
+        
+        if translation is not None:
             # Validate translation length
             is_valid, percent_diff, should_split = validate_translation_length(
                 chunk, translation, f"chunk_{i+1}"
@@ -641,15 +654,26 @@ def translate_chunks(
             if not translation or not translation.strip():
                 print(f"Empty translation for chunk {i + 1}, keeping original")
                 translation = chunk
-            
-            translated_parts.append(translation)
-            
-        except Exception as e:
-            logger.error(f"Translation failed for chunk {i + 1}: {e}")
-            # Keep original chunk on failure
-            translated_parts.append(chunk)
+                failed_chunks += 1
+        else:
+            # All retries exhausted
+            logger.error(f"All retries exhausted for chunk {i + 1}, keeping original")
+            translation = chunk
+            failed_chunks += 1
+        
+        translated_parts.append(translation)
     
     print()  # New line after progress
+    
+    # Report failures
+    if failed_chunks > 0:
+        fail_pct = failed_chunks / total_chunks * 100
+        logger.warning(f"⚠️ {failed_chunks}/{total_chunks} chunks failed to translate ({fail_pct:.1f}%)")
+        if failed_chunks / total_chunks > 0.3:
+            raise RuntimeError(
+                f"Translation failed: {failed_chunks}/{total_chunks} chunks ({fail_pct:.1f}%) "
+                f"exceeded 30% failure threshold. Output would be mostly untranslated."
+            )
     
     # Reassemble translated text
     translated_text = '\n\n'.join(translated_parts)

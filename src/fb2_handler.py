@@ -6,8 +6,14 @@ Uses xml_utils for common XML operations.
 """
 
 import re
+import logging
 from pathlib import Path
+
+import chardet
+
 from src.config import Config
+
+logger = logging.getLogger(__name__)
 from src.xml_utils import (
     extract_metadata,
     update_header_with_metadata,
@@ -33,6 +39,26 @@ __all__ = [
 ]
 
 
+def _read_file_with_encoding_fallback(file_path):
+    """Read file trying UTF-8 first, then detect encoding."""
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    except UnicodeDecodeError:
+        pass
+
+    with open(file_path, 'rb') as f:
+        raw = f.read()
+    detected = chardet.detect(raw[:10000])
+    encoding = detected.get('encoding', 'windows-1251') or 'windows-1251'
+    logger.info(f"Detected encoding '{encoding}' for {file_path}")
+
+    try:
+        return raw.decode(encoding)
+    except (UnicodeDecodeError, LookupError):
+        return raw.decode('windows-1251', errors='replace')
+
+
 def parse_xml(file_path: str) -> tuple:
     """
     Parses an FB2 XML file and separates the header, body, and footer.
@@ -44,39 +70,37 @@ def parse_xml(file_path: str) -> tuple:
     Returns:
         Tuple of (body, header, footer)
     """
-    with open(file_path, 'r', encoding='utf-8') as f:
-        content = f.read()
-        start_body = content.find('<body')
-        end_body_tag = content.find('</body>')
+    content = _read_file_with_encoding_fallback(file_path)
+    start_body = content.find('<body')
+    end_body_tag = content.find('</body>')
 
-        if start_body == -1 or end_body_tag == -1:
-            raise ValueError("Body tag not found in the XML file")
+    if start_body == -1 or end_body_tag == -1:
+        raise ValueError("Body tag not found in the XML file")
 
-        # Find the end of the opening <body> tag
-        end_start_body = content.find('>', start_body) + 1
-        end_body = end_body_tag
+    # Find the end of the opening <body> tag
+    end_start_body = content.find('>', start_body) + 1
+    end_body = end_body_tag
 
-        header = content[:start_body]
-        body = content[end_start_body:end_body]
-        footer = content[end_body_tag + len('</body>'):]
+    header = content[:start_body]
+    body = content[end_start_body:end_body]
+    footer = content[end_body_tag + len('</body>'):]
 
+    # Remove namespaces
+    body = re.sub(r'\sxmlns="[^"]+"', '', body, count=1)
+    body = re.sub(r'<myheader>.*?</myheader>', '', body, flags=re.DOTALL)
+    body = re.sub(r'<myfooter>.*?</myfooter>', '', body, flags=re.DOTALL)
 
-        # Remove namespaces
-        body = re.sub(r'\sxmlns="[^"]+"', '', body, count=1)
-        body = re.sub(r'<myheader>.*?</myheader>', '', body, flags=re.DOTALL)
-        body = re.sub(r'<myfooter>.*?</myfooter>', '', body, flags=re.DOTALL)
-        
-        # Add translator info
-        header = add_translator_info(header)
+    # Add translator info
+    header = add_translator_info(header)
 
-        # Remove <myheader> and <myfooter> from header and footer
-        header = re.sub(r'<myheader>.*?</myheader>', '', header, flags=re.DOTALL)
-        footer = re.sub(r'<myfooter>.*?</myfooter>', '', footer, flags=re.DOTALL)
+    # Remove <myheader> and <myfooter> from header and footer
+    header = re.sub(r'<myheader>.*?</myheader>', '', header, flags=re.DOTALL)
+    footer = re.sub(r'<myfooter>.*?</myfooter>', '', footer, flags=re.DOTALL)
 
-        if config.debug:
-            print(f"Body length: {len(body)}")
-            
-        return body, header, footer
+    if config.debug:
+        print(f"Body length: {len(body)}")
+
+    return body, header, footer
 
 
 def add_translator_info(header: str) -> str:
