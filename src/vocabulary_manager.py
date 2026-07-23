@@ -696,10 +696,22 @@ class VocabularyManager:
         
         if not config.ner_opt or not ner_module:
             if config.debug:
-                logger.warning(f"get_vocab_for_chunk: NER disabled or module not available (ner_opt={config.ner_opt}, ner_module={ner_module is not None})")
-            # Fallback: return all vocabulary entries (no chunk-specific matching)
-            # This ensures vocabulary is still used even without NER matching
-            return list(self.vocab.values())
+                logger.debug(f"get_vocab_for_chunk: NER disabled, using text matching (ner_opt={config.ner_opt}, ner_module={ner_module is not None})")
+            # Fallback: simple text matching — find vocab terms present in chunk
+            chunk_lower = chunk_text.lower()
+            entries = []
+            matched_keys = []
+            for key, entry in self.vocab.items():
+                # Match by source term (with spaces instead of underscores)
+                source_lower = entry.source.lower() if entry.source else key.replace('_', ' ')
+                if source_lower in chunk_lower:
+                    entries.append(entry)
+                    matched_keys.append(key)
+            # Cache results
+            self.matched_terms_cache[cache_key] = matched_keys
+            if config.debug:
+                logger.debug(f"Chunk {s_idx}-{c_idx} (text match): {len(entries)}/{len(self.vocab)} vocab terms matched")
+            return entries
         
         # Check if GPU is available and select appropriate function
         use_gpu = False
