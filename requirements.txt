@@ -39,3 +39,4 @@ thinc
 
 # Encoding detection for TXT files
 charset-normalizer
+chardet
