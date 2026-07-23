@@ -15,7 +15,8 @@ def _read_with_fallback(file_path):
 
     Fallback chain: utf-8 → charset-normalizer → cp1251 → latin-1 (errors='replace').
     """
-    raw = open(file_path, 'rb').read()
+    with open(file_path, 'rb') as f:
+        raw = f.read()
 
     # 1. Try UTF-8
     try:
