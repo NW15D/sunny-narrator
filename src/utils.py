@@ -2137,10 +2137,19 @@ def process_image_request(image_data: str, source_lang: str, target_lang: str,
 # Utility Functions
 # =============================================================================
 
+_tiktoken_encoding = None
+
+def _get_tiktoken_encoding(encoding_name: str = "cl100k_base"):
+    """Get cached tiktoken encoding (avoids reloading on every call)."""
+    global _tiktoken_encoding
+    if _tiktoken_encoding is None or _tiktoken_encoding.name != encoding_name:
+        _tiktoken_encoding = tiktoken.get_encoding(encoding_name)
+    return _tiktoken_encoding
+
 def num_tokens_in_string(input_str: str, encoding_name: str = "cl100k_base") -> int:
     """Calculate number of tokens in string."""
     try:
-        encoding = tiktoken.get_encoding(encoding_name)
+        encoding = _get_tiktoken_encoding(encoding_name)
     except Exception:
         encoding = tiktoken.get_encoding("cl100k_base")
     return len(encoding.encode(input_str))

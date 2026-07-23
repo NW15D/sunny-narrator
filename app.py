@@ -22,7 +22,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional, List, Tuple
 
-# Suppress FutureWarning from transformers/torch interaction
+# Suppress FutureWarning from transformers/torch interaction.
+# This warning is triggered by torch.utils._pytree._register_pytree_node
+# during import of transformers. It's harmless but noisy in logs.
+# Kept targeted to this specific message to avoid hiding other warnings.
 warnings.filterwarnings("ignore", category=FutureWarning,
                        message=".*torch.utils._pytree._register_pytree_node.*")
 
