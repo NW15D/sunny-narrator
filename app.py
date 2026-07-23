@@ -750,6 +750,16 @@ def write_to_file(data, output_file: str, auto_repair_fb2: bool = False):
     # FB2 structure should be validated at generation time, not repair time
 
 
+def assemble_resume_content(new_content: str, resume_from_chunk: int, output_tfile: str) -> str:
+    """On resume, output_tfile has ALL sections (prior + new) but
+    process_all_chunks only returns new chunks' content.
+    Read the full accumulated file to avoid data loss."""
+    if resume_from_chunk > 0 and os.path.exists(output_tfile):
+        with open(output_tfile, 'r', encoding='utf-8') as f:
+            return f.read()
+    return new_content
+
+
 # =============================================================================
 # Main Entry Point
 # =============================================================================
@@ -892,6 +902,7 @@ def main():
     # Process chunks if any remain, or content was already loaded from temp file above
     if chunks:
         content = engine.process_all_chunks(chunks, sections, vocab, output_tfile, checkpoint_file)
+        content = assemble_resume_content(content, resume_from_chunk, output_tfile)
 
     # 5. Metadata & Cover
     if header:
