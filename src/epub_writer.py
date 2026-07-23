@@ -6,6 +6,7 @@ Converts internal FB2 representation back to EPUB format.
 """
 
 import base64
+import logging
 import re
 from datetime import datetime
 from bs4 import BeautifulSoup
@@ -16,6 +17,7 @@ from src.config import Config
 from .epub_repair import validate_and_repair_epub
 
 config = Config()
+logger = logging.getLogger(__name__)
 
 
 def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) -> str:
@@ -102,7 +104,7 @@ def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) 
     
     # --- Extract Images from Footer ---
     images = {}
-    binary_pattern = r'<binary[^>]*id="([^"]+)"[^>]*content-type="([^"]+)"[^>]*>([^<]+)</binary>'
+    binary_pattern = r'<binary(?=[^>]*?id="([^"]+)")(?=[^>]*?content-type="([^"]+)")[^>]*?>([^<]+)</binary>'
     
     for match in re.finditer(binary_pattern, footer):
         image_id = match.group(1)
