@@ -303,16 +303,27 @@ def prepare_chunks(body: str, max_len_chunk: int) -> List[str]:
 
 
 def _ensure_balanced_tags(chunk: str) -> str:
-    """Ensure chunk has balanced XML tags."""
-    # Simple balancing - add closing tags if needed
-    open_tags = len(re.findall(r'<(?!/)([^>/]+?)(?:\s[^>]*)?>', chunk))
-    close_tags = len(re.findall(r'</[^>]+>', chunk))
-    
-    # Add missing closing tags
-    while open_tags > close_tags:
-        chunk += '</section>'
-        close_tags += 1
-    
+    """Ensure chunk has balanced XML tags using stack-based matching."""
+    VOID_ELEMENTS = {'br', 'hr', 'img', 'image', 'empty-line', 'input', 'meta', 'link'}
+    open_stack: list[str] = []
+    for m in re.finditer(r'<(/?)(\w[\w-]*)([^>]*?)(/?)>', chunk):
+        closing, tag, attrs, selfclose = m.groups()
+        tag_lower = tag.lower()
+        if selfclose or tag_lower in VOID_ELEMENTS:
+            continue
+        if closing:
+            if open_stack and open_stack[-1] == tag_lower:
+                open_stack.pop()
+            elif tag_lower in open_stack:
+                # Close tags until we find the matching one
+                while open_stack and open_stack[-1] != tag_lower:
+                    open_stack.pop()
+                if open_stack:
+                    open_stack.pop()
+        else:
+            open_stack.append(tag_lower)
+    for tag in reversed(open_stack):
+        chunk += f'</{tag}>'
     return chunk
 
 
