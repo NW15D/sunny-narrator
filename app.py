@@ -350,7 +350,16 @@ class TranslationEngine:
 Верни ТОЛЬКО исправленный перевод с тэгами."""
 
         try:
-            client = getattr(ta.llm_service, 'clientProofread', ta.llm_service.clientTranslate)
+            # Safe getattr: avoid eager evaluation of default arg
+            client = getattr(ta.llm_service, 'clientProofread', None)
+            if client is None:
+                client = getattr(ta.llm_service, '_secondary_client', None)
+            if client is None:
+                client = getattr(ta.llm_service, 'clientTranslate', None)
+            if client is None:
+                client = getattr(ta.llm_service, '_primary_client', None)
+            if client is None:
+                raise AttributeError("LLMService has no usable client attribute")
             response = client.chat.completions.create(
                 model=config.model_proofread,
                 messages=[
