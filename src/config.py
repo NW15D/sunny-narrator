@@ -1,6 +1,9 @@
 import os
+import logging
 from pathlib import Path
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 class Config:
     def __init__(self, env_path: str = None):
@@ -11,9 +14,9 @@ class Config:
             load_dotenv(config_dir / ".env")
 
         # Translation API (Primary/Big model)
-        self.api_key_translate = os.getenv('API_KEY_TRANSLATE', os.getenv('API_KEY', 'a132b20c-96be-467f-a15a-ed08aed67345'))
+        self.api_key_translate = os.getenv('API_KEY_TRANSLATE', os.getenv('API_KEY', ''))
         self.base_url_translate = os.getenv('API_BASE_TRANSLATE', os.getenv('API_BASE', 'http://192.168.0.55:6150/v1'))
-        self.sys_not_promt_translate = bool(os.getenv('S_PROMT_TRANSLATE', os.getenv('S_PROMT')))
+        self.sys_not_promt_translate = os.getenv('S_PROMT_TRANSLATE', os.getenv('S_PROMT', '')).lower() in ('true', '1', 'on')
         self.model_translate = os.getenv('MODEL_TRANSLATE', os.getenv('MODEL', 'Mistral'))
         self.temp_translate = float(os.getenv('TEMP_TRANSLATE', os.getenv('TEMP', 0.01)))
         self.timeout_translate = int(os.getenv('TIMEOUT_TRANSLATE', os.getenv('TIMEOUT', 6000)))
@@ -46,9 +49,9 @@ class Config:
         self.temp_synopsis = float(os.getenv('TEMP_SYNOPSIS', 0.15))
 
         # Proofread API (Secondary/Small model)
-        self.api_key_proofread = os.getenv('API_KEY_PROOFREAD', os.getenv('API_KEY2', 'a132b20c-96be-467f-a15a-ed08aed67345'))
+        self.api_key_proofread = os.getenv('API_KEY_PROOFREAD', os.getenv('API_KEY2', ''))
         self.base_url_proofread = os.getenv('API_BASE_PROOFREAD', os.getenv('API_BASE2', 'https://api.openai.com/v1'))
-        self.sys_not_promt_proofread = bool(os.getenv('S_PROMT_PROOFREAD', os.getenv('S_PROMT2')))
+        self.sys_not_promt_proofread = os.getenv('S_PROMT_PROOFREAD', os.getenv('S_PROMT2', '')).lower() in ('true', '1', 'on')
         self.model_proofread = os.getenv('MODEL_PROOFREAD', os.getenv('MODEL2', 'tencent/Hunyuan-MT-7B'))
         self.temp_proofread = float(os.getenv('TEMP_PROOFREAD', os.getenv('TEMP2', 0.7)))
         self.timeout_proofread = int(os.getenv('TIMEOUT_PROOFREAD', os.getenv('TIMEOUT2', 6000)))
@@ -57,7 +60,7 @@ class Config:
         # Images API (Cover API)
         self.api_key_images = os.getenv('API_KEY_IMAGES', os.getenv('API_KEY3', ''))
         self.base_url_images = os.getenv('API_BASE_IMAGES', os.getenv('API_BASE3', ''))
-        self.sys_not_promt_images = bool(os.getenv('S_PROMT_IMAGES', os.getenv('S_PROMT3')))
+        self.sys_not_promt_images = os.getenv('S_PROMT_IMAGES', os.getenv('S_PROMT3', '')).lower() in ('true', '1', 'on')
         self.model_images = os.getenv('MODEL_IMAGES', os.getenv('MODEL3', 'gpt-image-1.5'))
         self.temp_images = float(os.getenv('TEMP_IMAGES', os.getenv('TEMP3', 0.5)))
         self.timeout_images = int(os.getenv('TIMEOUT_IMAGES', os.getenv('TIMEOUT3', 600)))
@@ -127,6 +130,12 @@ class Config:
         
         # FB2 auto-repair: write _fixed version alongside original (default: false)
         self.fb2_auto_repair = os.getenv('FB2_AUTO_REPAIR', 'false').lower() in ['true', '1', 't', 'on', 'yes']
+
+        # Validate API keys
+        if not self.api_key_translate:
+            logger.warning("API_KEY_TRANSLATE not set — LLM calls will fail")
+        if not self.api_key_proofread:
+            logger.warning("API_KEY_PROOFREAD not set — proofread LLM calls will fail")
 
         # Load prompts
         self.prompts = self._load_prompts()
