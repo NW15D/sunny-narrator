@@ -407,8 +407,6 @@ class VocabularyManager:
         """
         import json
         import re
-        import csv
-        from io import StringIO
         
         parsed = 0
         terms = []
@@ -514,25 +512,21 @@ class VocabularyManager:
             logger.warning(f"Chunk {chunk_num}: No valid terms after normalization")
             return 0
         
-        # Append entries to file in consistent CSV format
+        # Append entries to file in dictionary format
         with open(self.dict_file, 'a', encoding='utf-8') as f:
             if chunk_num == 1:
                 # Write header for first chunk
-                f.write(f"\n# --- Translated Terms (CSV Format: source,target,category,gender,notes) ---\n")
+                f.write(f"\n# --- Translated Terms (Format: source = target, category, gender, notes) ---\n")
             else:
                 f.write(f"\n# --- Chunk {chunk_num}/{total_chunks} ---\n")
-            
-            # Use CSV writer to handle proper escaping
-            csv_buffer = StringIO()
-            csv_writer = csv.writer(csv_buffer, quoting=csv.QUOTE_MINIMAL)
             
             for term in valid_terms:
                 source = term["source"]
                 target = term["target"]
                 category = term["category"]
                 
-                # Write CSV row: source,target,category,gender,notes
-                csv_writer.writerow([source, target, category, "", ""])
+                # Write in format: source = target, category, gender, notes
+                f.write(f"{source} = {target}, {category}, , \n")
                 
                 # Add to memory
                 key = source.replace(' ', '_').lower()
@@ -544,9 +538,6 @@ class VocabularyManager:
                     notes=""
                 )
                 parsed += 1
-            
-            # Write the CSV content to file
-            f.write(csv_buffer.getvalue())
         
         return parsed
     
@@ -554,11 +545,9 @@ class VocabularyManager:
         """Create empty dictionary template with CSV format."""
         with open(self.dict_file, 'w', encoding='utf-8') as f:
             f.write(f"# Vocabulary for {self.book_name}\n")
-            f.write(f"# Format: CSV (Comma-Separated Values)\n")
-            f.write(f"# Columns: source,target,category,gender,notes\n")
+            f.write(f"# Format: source = target, category, gender, notes\n")
             f.write(f"# Valid categories: PERSON, LOC, ORG, TERM\n")
             f.write(f"# Valid genders: he, she, it, they (optional)\n")
-            f.write(f"# Fields containing commas will be automatically quoted\n")
             f.write(f"# Add your vocabulary entries below this line\n\n")
         
         logger.info(f"Template dictionary created: {self.dict_file}")
