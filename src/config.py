@@ -147,6 +147,16 @@ class Config:
         # FB2 auto-repair: write _fixed version alongside original (default: false)
         self.fb2_auto_repair = os.getenv('FB2_AUTO_REPAIR', 'false').lower() in ['true', '1', 't', 'on', 'yes']
 
+        # Language code mapping for metadata
+        self.lang_code_map = {
+            'russian': 'ru', 'english': 'en', 'french': 'fr', 'german': 'de',
+            'spanish': 'es', 'italian': 'it', 'chinese': 'zh', 'japanese': 'ja',
+            'dutch': 'nl', 'portuguese': 'pt', 'polish': 'pl', 'ukrainian': 'uk',
+            'catalan': 'ca', 'danish': 'da', 'finnish': 'fi', 'swedish': 'sv',
+            'norwegian': 'nb', 'korean': 'ko', 'romanian': 'ro', 'greek': 'el',
+            'lithuanian': 'lt', 'macedonian': 'mk', 'croatian': 'hr', 'slovenian': 'sl',
+        }
+
         # Validate API keys
         if not self.api_key_translate:
             logger.warning("API_KEY_TRANSLATE not set — LLM calls will fail")
