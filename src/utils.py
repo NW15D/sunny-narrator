@@ -784,7 +784,18 @@ class LLMService:
         log_system_prompt = system_prompt if not use_sys_not_promt else ""
         log_user_prompt = user_prompt if not use_sys_not_promt else (f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt)
         
-        response = client.chat.completions.create(**comp_kwargs)
+        # Exponential backoff for API errors (network, rate limits, etc.)
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = client.chat.completions.create(**comp_kwargs)
+                break
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    raise
+                wait = min(2 ** attempt * 2, 30)
+                logger.warning(f"API error (attempt {attempt+1}/{max_retries}): {e}. Retrying in {wait}s")
+                time.sleep(wait)
         
         # Debug: log full response structure
         if config.debug:
@@ -1411,6 +1422,7 @@ _pipeline = TranslationPipeline()
 
 MIN_CHUNK_SIZE = 2000  # Minimum chunk size for rechunking
 MAX_DEPTH = 3  # Maximum recursion depth
+MAX_LLM_CALLS_PER_CHUNK = 15  # Cap total LLM calls per chunk (prevents exponential blowup)
 
 
 def validate_translation_length(source_text: str, translated_text: str, 
@@ -1451,7 +1463,7 @@ def validate_translation_length(source_text: str, translated_text: str,
 def translate_chunk(source_lang: str, target_lang: str, source_text: str,
                     outline_text: str, vocab_dict: dict, vocab_entries: list = None,
                     country: str = "", style: str = "text", fast_mode: bool = False,
-                    depth: int = 0) -> tuple:
+                    depth: int = 0, _llm_call_count: list = None) -> tuple:
     """
     Translate a single chunk using the dual-LLM pipeline.
     
@@ -1472,6 +1484,11 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
     Returns:
         Tuple of (final_translation, synopsis)
     """
+    # Initialize LLM call counter (mutable list to share across recursive calls)
+    if _llm_call_count is None:
+        _llm_call_count = [0]
+    _llm_call_count[0] += 1  # Count this invocation
+    
     # Debug: Log vocabulary status
     if config.debug:
         vocab_count = len(vocab_dict) if vocab_dict else 0
@@ -1501,16 +1518,22 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
         metrics.log_failure("Empty translation from LLM")
         logger.error(f"EMPTY TRANSLATION at depth {depth}: LLM returned empty result")
         # Don't rechunk - retry with same chunk
-        if depth < MAX_DEPTH:
+        if depth < MAX_DEPTH and _llm_call_count[0] < MAX_LLM_CALLS_PER_CHUNK:
             logger.error(f"Retrying translation at depth {depth}...")
             return translate_chunk(
                 source_lang, target_lang, source_text, outline_text,
-                vocab_dict, vocab_entries, country, style, fast_mode, depth + 1
+                vocab_dict, vocab_entries, country, style, fast_mode, depth + 1,
+                _llm_call_count=_llm_call_count
             )
+        if _llm_call_count[0] >= MAX_LLM_CALLS_PER_CHUNK:
+            logger.warning(f"LLM call cap ({MAX_LLM_CALLS_PER_CHUNK}) reached, stopping recursion")
         return "", ""
     
     # Rechunking if needed (ERROR logging)
     if should_split and depth < MAX_DEPTH:
+        if _llm_call_count[0] >= MAX_LLM_CALLS_PER_CHUNK:
+            logger.warning(f"LLM call cap ({MAX_LLM_CALLS_PER_CHUNK}) reached before split, stopping recursion")
+            return state.final_translation, state.synopsis
         metrics.log_rechunk(depth, percent_diff)  # ERROR level
         
         # Split source text
@@ -1519,11 +1542,13 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
         # Translate parts recursively
         result1, syn1 = translate_chunk(
             source_lang, target_lang, part1, outline_text,
-            vocab_dict, vocab_entries, country, style, fast_mode, depth + 1
+            vocab_dict, vocab_entries, country, style, fast_mode, depth + 1,
+            _llm_call_count=_llm_call_count
         )
         result2, syn2 = translate_chunk(
             source_lang, target_lang, part2, outline_text,
-            vocab_dict, vocab_entries, country, style, fast_mode, depth + 1
+            vocab_dict, vocab_entries, country, style, fast_mode, depth + 1,
+            _llm_call_count=_llm_call_count
         )
         
         # Combine results
