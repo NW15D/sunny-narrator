@@ -35,7 +35,7 @@ import src.txt_handler as txt
 from src.config import Config
 from src.synopsis_manager import SynopsisManager
 from src.llm_logger import init_llm_logger
-from src.vocabulary_manager import get_vocabulary_manager
+from src.vocabulary_manager import get_vocabulary_manager, DictionaryCreatedSignal
 from src.character_registry import get_character_registry, reset_character_registry
 from src.epub_writer import create_epub_from_fb2
 
@@ -932,8 +932,9 @@ def main():
         try:
             vocab = engine.vocab_manager.initialize()
             print(f"Vocabulary loaded: {len(vocab)} entries")
-        except SystemExit:
-            return
+        except DictionaryCreatedSignal as e:
+            print(f"\n📖 {e}")
+            sys.exit(0)
 
     # Process chunks if any remain, or content was already loaded from temp file above
     if chunks:
