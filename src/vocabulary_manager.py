@@ -18,6 +18,7 @@ Workflow:
 
 import os
 import re
+import tempfile
 import logging
 from typing import Dict, List, Set, Optional, Tuple
 from dataclasses import dataclass, field
@@ -193,6 +194,18 @@ class VocabularyManager:
                 import sys
                 sys.exit(0)
     
+    def _atomic_write(self, content: str):
+        """Write content to dict_file atomically (write to temp, then rename)."""
+        dir_path = os.path.dirname(self.dict_file)
+        tmp_fd, tmp_path = tempfile.mkstemp(dir=dir_path, suffix='.tmp')
+        try:
+            with os.fdopen(tmp_fd, 'w', encoding='utf-8') as f:
+                f.write(content)
+            os.replace(tmp_path, self.dict_file)
+        except:
+            os.unlink(tmp_path)
+            raise
+
     def _create_dictionary(self):
         """
         Create dictionary from book using NER.
@@ -293,42 +306,44 @@ class VocabularyManager:
         """Parse translated vocabulary and save to file."""
         lines = vocab_text.strip().split('\n')
         
-        with open(self.dict_file, 'w', encoding='utf-8') as f:
-            f.write(f"# Vocabulary for {self.book_name}\n")
-            f.write(f"# Format: source = target | category | gender | notes\n\n")
-            
-            for line in lines:
-                line = line.strip()
-                if not line or line.startswith('#'):
-                    continue
-                
-                # Parse "Source = Target" format
-                if '=' in line:
-                    parts = line.split('=', 1)
-                    source = parts[0].strip()
-                    target = parts[1].strip()
-                    
-                    # Try to extract category from parentheses
-                    category = ""
-                    match = re.search(r'\(([^)]+)\)', source)
-                    if match:
-                        category = match.group(1)
-                        source = re.sub(r'\s*\([^)]+\)', '', source).strip()
-                    
-                    # Write with template for user editing
-                    f.write(f"{source} = {target}")
-                    if category:
-                        f.write(f" | {category}")
-                    f.write(" | | \n")  # gender | notes
-                    
-                    # Add to memory
-                    key = source.replace(' ', '_').lower()
-                    self.vocab[key] = VocabEntry(
-                        source=source,
-                        target=target,
-                        category=category
-                    )
+        content_lines = []
+        content_lines.append(f"# Vocabulary for {self.book_name}\n")
+        content_lines.append(f"# Format: source = target | category | gender | notes\n\n")
         
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            
+            # Parse "Source = Target" format
+            if '=' in line:
+                parts = line.split('=', 1)
+                source = parts[0].strip()
+                target = parts[1].strip()
+                
+                # Try to extract category from parentheses
+                category = ""
+                match = re.search(r'\(([^)]+)\)', source)
+                if match:
+                    category = match.group(1)
+                    source = re.sub(r'\s*\([^)]+\)', '', source).strip()
+                
+                # Build line with template for user editing
+                entry_line = f"{source} = {target}"
+                if category:
+                    entry_line += f" | {category}"
+                entry_line += " | | \n"  # gender | notes
+                content_lines.append(entry_line)
+                
+                # Add to memory
+                key = source.replace(' ', '_').lower()
+                self.vocab[key] = VocabEntry(
+                    source=source,
+                    target=target,
+                    category=category
+                )
+        
+        self._atomic_write(''.join(content_lines))
         logger.info(f"Dictionary saved: {self.dict_file}")
     
     def _parse_and_save_structured(self, vocab_text: str, extracted_terms: List[Tuple[str, str, str]]):
@@ -380,13 +395,15 @@ class VocabularyManager:
                     notes=notes
                 )
         
-        # Write dictionary in JSON format
-        with open(self.dict_file, 'w', encoding='utf-8') as f:
-            f.write(f"# Vocabulary for {self.book_name}\n")
-            f.write(f"# Format: JSON array of vocabulary entries\n")
-            f.write(f"# Generated automatically by NER\n")
-            f.write(f"# Please review and edit as needed\n\n")
-            json.dump(vocab_list, f, indent=2, ensure_ascii=False)
+        # Write dictionary in JSON format atomically
+        import io
+        buf = io.StringIO()
+        buf.write(f"# Vocabulary for {self.book_name}\n")
+        buf.write(f"# Format: JSON array of vocabulary entries\n")
+        buf.write(f"# Generated automatically by NER\n")
+        buf.write(f"# Please review and edit as needed\n\n")
+        json.dump(vocab_list, buf, indent=2, ensure_ascii=False)
+        self._atomic_write(buf.getvalue())
         
         logger.info(f"Dictionary saved: {self.dict_file} ({len(self.vocab)} entries)")
     
@@ -512,43 +529,50 @@ class VocabularyManager:
             logger.warning(f"Chunk {chunk_num}: No valid terms after normalization")
             return 0
         
-        # Append entries to file in dictionary format
-        with open(self.dict_file, 'a', encoding='utf-8') as f:
-            if chunk_num == 1:
-                # Write header for first chunk
-                f.write(f"\n# --- Translated Terms (Format: source = target, category, gender, notes) ---\n")
-            else:
-                f.write(f"\n# --- Chunk {chunk_num}/{total_chunks} ---\n")
-            
-            for term in valid_terms:
-                source = term["source"]
-                target = term["target"]
-                category = term["category"]
-                
-                # Write in format: source = target, category, gender, notes
-                f.write(f"{source} = {target}, {category}, , \n")
-                
-                # Add to memory
-                key = source.replace(' ', '_').lower()
-                self.vocab[key] = VocabEntry(
-                    source=source,
-                    target=target,
-                    category=category,
-                    gender="",
-                    notes=""
-                )
-                parsed += 1
+        # Append entries atomically: read existing, append new, write back
+        existing_content = ""
+        if os.path.exists(self.dict_file):
+            with open(self.dict_file, 'r', encoding='utf-8') as f:
+                existing_content = f.read()
         
+        new_lines = []
+        if chunk_num == 1:
+            new_lines.append(f"\n# --- Translated Terms (Format: source = target, category, gender, notes) ---\n")
+        else:
+            new_lines.append(f"\n# --- Chunk {chunk_num}/{total_chunks} ---\n")
+        
+        for term in valid_terms:
+            source = term["source"]
+            target = term["target"]
+            category = term["category"]
+            
+            # Write in format: source = target, category, gender, notes
+            new_lines.append(f"{source} = {target}, {category}, , \n")
+            
+            # Add to memory
+            key = source.replace(' ', '_').lower()
+            self.vocab[key] = VocabEntry(
+                source=source,
+                target=target,
+                category=category,
+                gender="",
+                notes=""
+            )
+            parsed += 1
+        
+        self._atomic_write(existing_content + ''.join(new_lines))
         return parsed
     
     def _create_template(self):
         """Create empty dictionary template with CSV format."""
-        with open(self.dict_file, 'w', encoding='utf-8') as f:
-            f.write(f"# Vocabulary for {self.book_name}\n")
-            f.write(f"# Format: source = target, category, gender, notes\n")
-            f.write(f"# Valid categories: PERSON, LOC, ORG, TERM\n")
-            f.write(f"# Valid genders: he, she, it, they (optional)\n")
-            f.write(f"# Add your vocabulary entries below this line\n\n")
+        content = (
+            f"# Vocabulary for {self.book_name}\n"
+            f"# Format: source = target, category, gender, notes\n"
+            f"# Valid categories: PERSON, LOC, ORG, TERM\n"
+            f"# Valid genders: he, she, it, they (optional)\n"
+            f"# Add your vocabulary entries below this line\n\n"
+        )
+        self._atomic_write(content)
         
         logger.info(f"Template dictionary created: {self.dict_file}")
     
