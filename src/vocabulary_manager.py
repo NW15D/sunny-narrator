@@ -60,7 +60,7 @@ def validate_dictionary(dict_file: str) -> List[str]:
             errors.append(f"Dictionary file not found: {dict_file}")
             return errors
         
-        with open(dict_file, 'r', encoding='utf-8') as f:
+        with open(dict_file, 'r', encoding='utf-8-sig') as f:
             lines = f.readlines()
         
         # Filter out comment lines and empty lines
@@ -569,7 +569,7 @@ class VocabularyManager:
         
         vocab = {}
         
-        with open(self.dict_file, 'r', encoding='utf-8') as f:
+        with open(self.dict_file, 'r', encoding='utf-8-sig') as f:
             # Skip comment lines at the beginning
             lines = []
             for line in f:
@@ -888,7 +888,7 @@ class VocabularyManager:
         
         vocab = {}
         
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, 'r', encoding='utf-8-sig') as f:
             # Skip comment lines
             lines = []
             for line in f:

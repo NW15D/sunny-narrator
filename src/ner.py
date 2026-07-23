@@ -1268,6 +1268,3 @@ def create_series_vocab(
     print(f"Total parsed: {total_parsed} terms across {len(chunks)} chunk(s)")
     print(f"Dictionary saved to: {output_file}")
     return output_file
-
-    print(f"Dictionary saved to: {output_file}")
-    return output_file
