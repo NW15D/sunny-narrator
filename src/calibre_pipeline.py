@@ -47,6 +47,20 @@ from src.utils import split_text_smartly, translate_chunk, num_tokens_in_string,
 from src.config import Config
 from src import markdown_utils
 
+# Precompiled Calibre-specific cleanup patterns (narrowed to avoid removing valid Pandoc attributes)
+_RE_CALIBRE_COMMENT = re.compile(r'<!--\s*\d+\s*-->')
+_RE_CALIBRE_SECTION_FULL = re.compile(r'<[^>]*>:::\s*\{#calibre_link-\d+\s+\.calibre\d+\}\s*:::</[^>]*>', re.DOTALL)
+_RE_CALIBRE_SECTION_CLASS = re.compile(r'<[^>]*>:::\s*\{\.calibre\d+\}\s*:::</[^>]*>', re.DOTALL)
+_RE_CALIBRE_SECTION_BARE = re.compile(r'<[^>]*>:::</[^>]*>', re.DOTALL)
+_RE_CALIBRE_TRIPLE_COLON = re.compile(r':::')
+_RE_CALIBRE_PARA = re.compile(r'<p>\s*\{#calibre[^}]*\}\s*</p>', re.DOTALL)
+_RE_CALIBRE_ANCHOR = re.compile(r'\{#calibre[^}]*\}')  # Only calibre-specific anchors
+_RE_CALIBRE_CLASS = re.compile(r'\{\.calibre\d*\}')  # Only calibre-specific classes
+_RE_CALIBRE_ID_ATTR = re.compile(r'\s+id\s*=\s*["\'][^"\']*calibre_link[^"\']*["\']', re.IGNORECASE)
+_RE_CALIBRE_CLASS_ATTR = re.compile(r'\s+class\s*=\s*["\'][^"\']*calibre[^"\']*["\']', re.IGNORECASE)
+_RE_HR_MARKERS = re.compile(r'\n*---\s*\n*')
+_RE_MULTI_BLANK = re.compile(r'\n{3,}')
+
 @dataclass
 class ValidationIssue:
     """Single validation issue found during output file validation."""
@@ -380,35 +394,34 @@ def _clean_calibre_markers(text: str) -> str:
         return text
     
     # Remove Calibre comment markers like: <!-- 1 -->
-    text = re.sub(r'<!--\s*\d+\s*-->', '', text)
+    text = _RE_CALIBRE_COMMENT.sub('', text)
     
     # Remove Calibre section markers in HTML format (:::{...}::: inside <div> or <p>)
-    text = re.sub(r'<[^>]*>:::\s*\{#calibre_link-\d+\s+\.calibre\d+\}\s*:::</[^>]*>', '', text, flags=re.DOTALL)
-    text = re.sub(r'<[^>]*>:::\s*\{\.calibre\d+\}\s*:::</[^>]*>', '', text, flags=re.DOTALL)
+    text = _RE_CALIBRE_SECTION_FULL.sub('', text)
+    text = _RE_CALIBRE_SECTION_CLASS.sub('', text)
     
     # Remove standalone :::
-    text = re.sub(r'<[^>]*>:::</[^>]*>', '', text, flags=re.DOTALL)
-    text = re.sub(r':::', '', text)
+    text = _RE_CALIBRE_SECTION_BARE.sub('', text)
+    text = _RE_CALIBRE_TRIPLE_COLON.sub('', text)
     
-    # Remove HTML paragraph包围的 Calibre markers
-    text = re.sub(r'<p>\s*\{#.*?\}\s*</p>', '', text, flags=re.DOTALL)
+    # Remove HTML paragraphs containing only Calibre markers
+    text = _RE_CALIBRE_PARA.sub('', text)
     
-    # Remove inline Calibre markers: {#calibre_link-* .calibre*} and {#annotation .calibre*}
-    # Use broad pattern to catch all {#...} and {.class} markers
-    text = re.sub(r'\{#[^}]+\}', '', text)  # {#calibre_link-0 .calibre} and similar
-    text = re.sub(r'\{\.\w+\}', '', text)  # {.calibre1} and similar
+    # Remove inline Calibre markers (narrowed to Calibre-specific only)
+    text = _RE_CALIBRE_ANCHOR.sub('', text)  # {#calibre_link-0 .calibre} and similar
+    text = _RE_CALIBRE_CLASS.sub('', text)  # {.calibre1} and similar
     
     # Remove Calibre IDs: id="calibre_link-*"
-    text = re.sub(r'\s+id\s*=\s*["\'][^"\']*calibre_link[^"\']*["\']', '', text, flags=re.IGNORECASE)
+    text = _RE_CALIBRE_ID_ATTR.sub('', text)
     
     # Remove Calibre class attributes from HTML tags
-    text = re.sub(r'\s+class\s*=\s*["\'][^"\']*calibre[^"\']*["\']', '', text, flags=re.IGNORECASE)
+    text = _RE_CALIBRE_CLASS_ATTR.sub('', text)
     
     # Remove horizontal rules that are Calibre section markers
-    text = re.sub(r'\n*---\s*\n*', '\n\n', text)
+    text = _RE_HR_MARKERS.sub('\n\n', text)
     
     # Clean up multiple blank lines
-    text = re.sub(r'\n{3,}', '\n\n', text)
+    text = _RE_MULTI_BLANK.sub('\n\n', text)
     
     # Remove leading/trailing whitespace per line
     lines = [line.rstrip() for line in text.split('\n')]
@@ -817,9 +830,6 @@ def build_output(
                 )
             except Exception as e:
                 raise ValueError(f"Pandoc HTML conversion failed: {e}")
-            
-            with open(html_path, 'w', encoding='utf-8') as f:
-                f.write(html_content)
             
             # Step 2b: Clean Calibre markers from HTML before conversion
             # This ensures no Calibre artifacts remain in the output
