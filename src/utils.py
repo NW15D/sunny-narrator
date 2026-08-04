@@ -722,7 +722,14 @@ class LLMService:
             except Exception as e:
                 logger.debug(f"Error logging response: {e}")
         
-        result = response.choices[0].message.content
+        _choice = response.choices[0]
+        # C12: truncated response must fail loudly, not produce partial translation
+        if getattr(_choice, 'finish_reason', None) == 'length':
+            raise ValueError(
+                "LLM response was truncated (finish_reason='length'). "
+                "Increase max_tokens or shorten the input."
+            )
+        result = _choice.message.content
         
         # Extract token usage from response
         tokens_used = 0
