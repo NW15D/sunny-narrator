@@ -38,7 +38,7 @@ def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) 
     book = epub.EpubBook()
     
     # Parse header for metadata
-    soup = BeautifulSoup(header, 'xml', features=get_safe_bs4_features())
+    soup = BeautifulSoup(header, 'xml')
     title_info = soup.find('title-info')
     
     # --- Extract Metadata ---
@@ -176,7 +176,7 @@ def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) 
                           f"May indicate translation failed or content not properly updated.")
     
     # Parse body
-    body_soup = BeautifulSoup(f"<body>{body}</body>", 'xml', features=get_safe_bs4_features())
+    body_soup = BeautifulSoup(f"<body>{body}</body>", 'xml')
     
     for section in body_soup.find_all('section'):
         chapter_count += 1
