@@ -5,7 +5,6 @@ Provides FB2 XML validation using XSD schema and tag cleaning.
 """
 
 import os
-from bs4 import BeautifulSoup
 from lxml import etree
 
 

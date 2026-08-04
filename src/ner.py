@@ -1189,7 +1189,6 @@ def create_series_vocab(
     print(f"Split into {len(chunks)} translation chunk(s) (CHUNK_SIZE={CHUNK_SIZE})")
 
     from src import utils as ta
-    import json as _json
 
     # Track all parsed translations for final grouped output
     all_translations = {}  # source_lower -> target

@@ -10,12 +10,10 @@ Covers:
 
 import os
 import sys
-import tempfile
 import zipfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import pytest
 
 # ---------------------------------------------------------------------------
 # Path setup — ensure src/ is importable

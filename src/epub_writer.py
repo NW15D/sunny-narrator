@@ -10,12 +10,9 @@ import logging
 import re
 from datetime import datetime
 from bs4 import BeautifulSoup
-import ebooklib
 from ebooklib import epub
 
 from src.config import Config
-from src.xml_utils import get_safe_bs4_features
-from .epub_repair import validate_and_repair_epub
 
 config = Config()
 logger = logging.getLogger(__name__)

@@ -1,5 +1,4 @@
 """Tests for epub_writer.py fixes: missing imports + image regex."""
-import importlib
 import sys
 import os
 import re
