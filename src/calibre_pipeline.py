@@ -694,10 +694,12 @@ def translate_chunks(
     if failed_chunks > 0:
         fail_pct = failed_chunks / total_chunks * 100
         logger.warning(f"⚠️ {failed_chunks}/{total_chunks} chunks failed to translate ({fail_pct:.1f}%)")
-        if failed_chunks / total_chunks > 0.3:
+        # C11: by default ANY untranslated chunk is a failure; threshold is configurable
+        max_failed_ratio = float(getattr(config, 'max_failed_chunk_ratio', 0.0))
+        if failed_chunks / total_chunks > max_failed_ratio:
             raise RuntimeError(
-                f"Translation failed: {failed_chunks}/{total_chunks} chunks ({fail_pct:.1f}%) "
-                f"exceeded 30% failure threshold. Output would be mostly untranslated."
+                f"Translation failed: {failed_chunks}/{total_chunks} chunks ({fail_pct:.1f}%) untranslated. "
+                f"Threshold: {max_failed_ratio:.0%}. Fix LLM output or raise max_failed_chunk_ratio."
             )
     
     # Reassemble translated text
