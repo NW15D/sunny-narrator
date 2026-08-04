@@ -759,7 +759,8 @@ def build_output(
     translated_md: str,
     output_format: str,
     metadata: dict,
-    output_path: Optional[str] = None
+    output_path: Optional[str] = None,
+    images_dir: Optional[str] = None
 ) -> str:
     """
     Build final output (FB2/EPUB) from translated Markdown.
@@ -850,6 +851,14 @@ def build_output(
             with open(html_path, 'w', encoding='utf-8') as f:
                 f.write(html_content)
             
+            # C8 fix: put book images next to the HTML so ebook-convert embeds them
+            if images_dir and os.path.isdir(images_dir):
+                import shutil
+                for img_name in os.listdir(images_dir):
+                    src_img = os.path.join(images_dir, img_name)
+                    if os.path.isfile(src_img):
+                        shutil.copy2(src_img, os.path.join(temp_dir, img_name))
+
             # Step 3: Convert HTML to output format using Calibre
             logger.info(f"Converting HTML to {output_format.upper()}...")
             cmd = [
@@ -1425,6 +1434,8 @@ def run_pipeline(
     # Step 1: Convert to Markdown
     logger.info(f"Step 1/5: Converting {input_path} to Markdown...")
     markdown_text, metadata = convert_to_markdown(input_path)
+    # C8: convert_to_markdown persisted images next to the input file
+    images_dir = os.path.splitext(input_path)[0] + '_images'
     
     # Step 2: Translate
     logger.info("Step 2/5: Translating...")
@@ -1476,7 +1487,8 @@ def run_pipeline(
     output_path = build_output(
         translated_md,
         output_format,
-        metadata
+        metadata,
+        images_dir=images_dir
     )
     
     # Step 5: Validate output
