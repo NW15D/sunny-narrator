@@ -1402,6 +1402,15 @@ def save_dictionary(dictionary: List[Dict], output_path: str) -> None:
     logger.info(f"Dictionary saved: {output_path} ({len(dictionary)} entries)")
 
 
+def _enforce_validation(validation, allow_invalid: bool) -> None:
+    """C10: raise when validation found errors unless explicitly allowed."""
+    if validation.is_valid or allow_invalid:
+        return
+    raise RuntimeError(
+        f"Output validation failed ({validation.file_path}): {validation.summary()}"
+    )
+
+
 # Convenience function for full pipeline
 def run_pipeline(
     input_path: str,
@@ -1411,7 +1420,8 @@ def run_pipeline(
     target_lang: str = "ru",
     country: str = "Russia",
     fast_mode: bool = False,
-    skip_validation: bool = False
+    skip_validation: bool = False,
+    allow_invalid: bool = False
 ) -> str:
     """
     Run the complete Calibre pipeline: convert -> translate -> build output -> validate.
@@ -1502,6 +1512,7 @@ def run_pipeline(
             logger.error(f"  ✗ Validation failed:")
             for issue in validation.issues:
                 logger.error(f"    [{issue.severity.upper()}] {issue.message}")
+            _enforce_validation(validation, allow_invalid)
     else:
         logger.info("Step 4/4: Validation skipped (skip_validation=True)")
     
