@@ -12,9 +12,8 @@ from pathlib import Path
 # Setup path
 sys.path.insert(0, "/home/neo/prj/sunny-narrator")
 
-# Mock third-party modules before importing calibre_pipeline
-sys.modules['pypandoc'] = MagicMock()
-sys.modules['pypandoc.convert_text'] = MagicMock()
+# NOTE: pypandoc is a real installed dependency. Mocking it in sys.modules
+# polluted every later test module that needs the real pypandoc (B4 incident).
 # NOTE: bs4 is a real installed dependency (4.14.x). Mocking it in sys.modules
 # polluted every later test module (isinstance() failures in bs4 internals).
 

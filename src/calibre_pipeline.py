@@ -320,6 +320,14 @@ def convert_to_markdown(input_path: str) -> tuple[str, dict]:
                 
                 # Extract images from HTMLZ
                 image_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp')
+                # C8 fix: keep images in a persistent dir next to the input file;
+                # the temp dir is deleted when convert_to_markdown returns
+                persistent_images_dir = os.path.splitext(input_path)[0] + '_images'
+                try:
+                    os.makedirs(persistent_images_dir, exist_ok=True)
+                except OSError as e:
+                    logger.warning(f"Cannot create persistent images dir {persistent_images_dir}: {e}")
+                    persistent_images_dir = None
                 for name in zf.namelist():
                     if name.lower().endswith(image_extensions):
                         try:
@@ -328,6 +336,10 @@ def convert_to_markdown(input_path: str) -> tuple[str, dict]:
                             img_path = os.path.join(htmlz_images_dir, img_name)
                             with open(img_path, 'wb') as img_file:
                                 img_file.write(img_data)
+                            if persistent_images_dir:
+                                persistent_img_path = os.path.join(persistent_images_dir, img_name)
+                                with open(persistent_img_path, 'wb') as img_file:
+                                    img_file.write(img_data)
                         except Exception as e:
                             logger.warning(f"Failed to extract image {name}: {e}")
             
