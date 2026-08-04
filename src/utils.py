@@ -1465,8 +1465,15 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
             _llm_call_count=_llm_call_count
         )
         
-        # Combine results
-        combined_translation = (result1 or "") + "\n\n" + (result2 or "")
+        # Combine results (C4: fail-fast — an empty half means lost content)
+        if not (result1 or "").strip() or not (result2 or "").strip():
+            metrics.log_failure("Rechunk half returned empty translation")
+            logger.error(
+                f"RECHUNK FAIL-FAST at depth {depth}: a half returned empty "
+                "translation — refusing to combine partial results"
+            )
+            return "", ""
+        combined_translation = result1 + "\n\n" + result2
         combined_synopsis = (syn1 or "") + " " + (syn2 or "")
         
         return combined_translation, combined_synopsis
