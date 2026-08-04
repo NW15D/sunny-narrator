@@ -8,6 +8,28 @@ import os
 from lxml import etree
 
 
+# F2: XSD schema cache - FictionBook.xsd is static; parsing it on
+# every validate_fb2 call wasted time on repeated validations.
+_XSD_CACHE = {}
+
+
+def _get_fb2_schema():
+    """Lazily load and cache the FictionBook XSD schema.
+
+    Returns:
+        Tuple of (XMLSchema or None, schema_path).
+    """
+    if 'schema' not in _XSD_CACHE:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        schema_path = os.path.join(base_dir, 'schemas', 'FictionBook.xsd')
+        if os.path.exists(schema_path):
+            _XSD_CACHE['schema'] = etree.XMLSchema(etree.parse(schema_path))
+        else:
+            _XSD_CACHE['schema'] = None
+        _XSD_CACHE['path'] = schema_path
+    return _XSD_CACHE['schema'], _XSD_CACHE['path']
+
+
 def ic(*args):
     """Debug print function (icecream replacement)."""
     if len(args) == 1:
@@ -177,15 +199,10 @@ def validate_fb2(xml_string: str) -> list:
     """
     errors = []
     try:
-        # Load XSD Schema
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        schema_path = os.path.join(base_dir, 'schemas', 'FictionBook.xsd')
-        
-        if not os.path.exists(schema_path):
+        # Load XSD Schema (F2: cached - the XSD file is static)
+        xml_schema, schema_path = _get_fb2_schema()
+        if xml_schema is None:
             return [f"Schema file not found at: {schema_path}"]
-
-        xml_schema_doc = etree.parse(schema_path)
-        xml_schema = etree.XMLSchema(xml_schema_doc)
 
         # Parse XML string
         parser = etree.XMLParser(recover=False)
