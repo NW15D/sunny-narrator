@@ -961,7 +961,9 @@ def main():
     else:
         print("No checkpoint found, starting fresh.")
 
-    if engine.vocab_manager and resume_from_chunk == 0:
+    # Vocabulary must be loaded on resume too: without it resumed chunks are
+    # translated without dictionary terms (silent quality loss).
+    if engine.vocab_manager:
         try:
             vocab = engine.vocab_manager.initialize()
             print(f"Vocabulary loaded: {len(vocab)} entries")
