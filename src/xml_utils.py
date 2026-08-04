@@ -286,6 +286,35 @@ def replace_cover_image(header: str, footer: str, body: str, new_content: str) -
     return header, footer, body
 
 
+_SECTION_OPEN_RE = re.compile(r'<section\b[^>]*>', re.IGNORECASE)
+_SECTION_CLOSE_RE = re.compile(r'</section\s*>', re.IGNORECASE)
+
+
+def _find_matching_section_end(body_str: str, content_start: int):
+    """Find the closing </section> matching the section whose content starts
+    at content_start, tracking nesting depth.
+
+    Returns:
+        Tuple (close_start, close_end) — span of the matching closing tag,
+        or (-1, -1) if not found.
+    """
+    depth = 1
+    pos = content_start
+    while True:
+        next_open = _SECTION_OPEN_RE.search(body_str, pos)
+        next_close = _SECTION_CLOSE_RE.search(body_str, pos)
+        if next_close is None:
+            return -1, -1
+        if next_open is not None and next_open.start() < next_close.start():
+            depth += 1
+            pos = next_open.end()
+        else:
+            depth -= 1
+            if depth == 0:
+                return next_close.start(), next_close.end()
+            pos = next_close.end()
+
+
 def prepare_chunks(body: str, max_len_chunk: int) -> List[str]:
     """
     Splits the body content into sections and chunks based on max_len_chunk.
@@ -300,22 +329,16 @@ def prepare_chunks(body: str, max_len_chunk: int) -> List[str]:
     """
     body_str = body
     sections = []
-    start_tags = {'<section>', '<SECTION>'}
     
     start = 0
     while start < len(body_str):
-        # Find the start of the next section
-        found_start_tag = None
-        for tag in start_tags:
-            pos = body_str.find(tag, start)
-            if pos != -1 and (found_start_tag is None or pos < found_start_tag[1]):
-                found_start_tag = (tag, pos)
-
-        if not found_start_tag:
+        # Find the start of the next section (any attributes, any case)
+        m = _SECTION_OPEN_RE.search(body_str, start)
+        if not m:
             break
 
-        section_start = found_start_tag[1] + len(found_start_tag[0])
-        section_end = body_str.find('</section>', section_start)
+        section_start = m.end()
+        section_end, section_close_end = _find_matching_section_end(body_str, section_start)
 
         if section_end == -1:
             break
@@ -341,7 +364,7 @@ def prepare_chunks(body: str, max_len_chunk: int) -> List[str]:
                 chunk_start = chunk_end
 
         sections.extend(chunks)
-        start = section_end + len('</section>')
+        start = section_close_end
 
     if not sections:
         # Fallback: split entire body
@@ -408,23 +431,16 @@ def prepare_chunks_with_sections(body: str, max_len_chunk: int) -> List[List[str
     """
     body_str = body
     sections = []
-    start_tags = {'<section>', '<SECTION>'}
-    end_tags = {'</section>', '</SECTION>'}
     
     start = 0
     while start < len(body_str):
-        # Find the start of the next section
-        found_start_tag = None
-        for tag in start_tags:
-            pos = body_str.find(tag, start)
-            if pos != -1 and (found_start_tag is None or pos < found_start_tag[1]):
-                found_start_tag = (tag, pos)
-
-        if not found_start_tag:
+        # Find the start of the next section (any attributes, any case)
+        m = _SECTION_OPEN_RE.search(body_str, start)
+        if not m:
             break
 
-        section_start = found_start_tag[1] + len(found_start_tag[0])
-        section_end = body_str.find('</section>', section_start)
+        section_start = m.end()
+        section_end, section_close_end = _find_matching_section_end(body_str, section_start)
 
         if section_end == -1:
             break
@@ -451,7 +467,7 @@ def prepare_chunks_with_sections(body: str, max_len_chunk: int) -> List[List[str
                 chunk_start = chunk_end
 
         sections.append(chunks)
-        start = section_end + len('</section>')
+        start = section_close_end
 
     if not sections:
         # Fallback: split entire body as one section
