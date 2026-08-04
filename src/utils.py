@@ -1288,7 +1288,7 @@ class TranslationPipeline:
             state.add_result(final_result)
             
             # Even in fast mode, generate synopsis from final translation
-            synopsis_result = self.generate_synopsis(context, initial_result.text)
+            synopsis_result = self.generate_synopsis(context, final_edit_result.text)
             state.add_result(synopsis_result)
         else:
             # Stage 2: Reflection (Secondary LLM) - NO vocab_dict
@@ -1306,7 +1306,7 @@ class TranslationPipeline:
             state.add_result(final_edit_result)
             
             # Stage 5: Synopsis (Primary LLM) - from final translation
-            synopsis_result = self.generate_synopsis(context, initial_result.text)
+            synopsis_result = self.generate_synopsis(context, final_edit_result.text)
             state.add_result(synopsis_result)
             
             final_result = TranslationResult(
