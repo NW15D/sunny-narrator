@@ -217,7 +217,7 @@ def extract_epub_body(book) -> str:
     body_content = []
     
     # Get all documents (chapters)
-    items = list(book.get_items_of_kind('content'))
+    items = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
     
     for item in items:
         if item.get_type() == ebooklib.ITEM_DOCUMENT:
