@@ -36,7 +36,8 @@ class CheckpointManager:
 
     def save(self, chunk_id: int, section_idx: int, chunk_idx: int,
              stats: dict, total_source_len: int, total_target_len: int,
-             synopsis_history: dict, book_path: str, start_time_iso: str) -> None:
+             synopsis_history: dict, book_path: str, start_time_iso: str,
+             extra: dict | None = None) -> None:
         """
         Save translation progress to checkpoint file (atomic write).
 
@@ -66,6 +67,8 @@ class CheckpointManager:
             "created_at": start_time_iso,
             "updated_at": datetime.now().isoformat()
         }
+        if extra:
+            checkpoint["extra"] = extra
 
         # Atomic write (temp + rename)
         temp_file = self.checkpoint_path + ".tmp"
