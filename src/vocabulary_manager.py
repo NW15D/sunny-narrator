@@ -173,7 +173,7 @@ class VocabularyManager:
             logger.info(f"Dictionary not found. Creating: {self.dict_file}")
             self._create_dictionary()
             # Check if auto-continue is enabled
-            if config.get('auto_continue_after_dict', False):
+            if getattr(config, 'auto_continue_after_dict', False):
                 logger.info("Auto-continue enabled, proceeding without manual review")
                 return self.vocab
             else:
