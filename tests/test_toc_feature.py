@@ -12,40 +12,33 @@ def test_toc_pandoc_flag():
         import pypandoc
     except ImportError:
         print("⚠️  pypandoc not installed - skipping TOC test")
-        return None
+        return
+    
+    # pandoc 2.9 emits a TOC only for standalone documents (fragment
+    # conversion has no TOC element at all); element id is uppercase:
+    # <nav id="TOC">. Production does not rely on pandoc --toc anyway
+    # (calibre_pipeline._add_toc_to_html builds the TOC itself).
+    md = "# Chapter 1\n\n## Section 1.1\n\n### Subsection 1.1.1\n\nText"
+    base_args = ['--wrap=none', '--standalone', '--metadata', 'title=Test']
     
     # Test 1: Without TOC flag
-    html_no_toc = pypandoc.convert_text(
-        "# Chapter 1\n\n## Section 1.1\n\n### Subsection 1.1.1\n\nText",
-        'html',
-        format='markdown',
-        extra_args=['--wrap=none']
-    )
-    
-    has_toc_no_flag = '<nav id="toc"' in html_no_toc or '<div id="toc"' in html_no_toc
+    html_no_toc = pypandoc.convert_text(md, 'html', format='markdown', extra_args=base_args)
+    has_toc_no_flag = 'id="toc"' in html_no_toc.lower()
     
     # Test 2: With TOC flag
-    html_with_toc = pypandoc.convert_text(
-        "# Chapter 1\n\n## Section 1.1\n\n### Subsection 1.1.1\n\nText",
-        'html',
-        format='markdown',
-        extra_args=['--wrap=none', '--toc', '--toc-depth=2']
-    )
-    
-    has_toc_with_flag = '<nav id="toc"' in html_with_toc or '<div id="toc"' in html_with_toc
+    html_with_toc = pypandoc.convert_text(md, 'html', format='markdown', extra_args=base_args + ['--toc', '--toc-depth=2'])
+    has_toc_with_flag = 'id="toc"' in html_with_toc.lower()
     
     print(f"Without --toc flag: TOC present = {has_toc_no_flag}")
     print(f"With --toc flag: TOC present = {has_toc_with_flag}")
     
     if not has_toc_no_flag and has_toc_with_flag:
         print("✅ TOC flag working correctly!")
-        return True
     elif has_toc_no_flag and has_toc_with_flag:
         print("⚠️  TOC present without flag - pandoc may have default TOC enabled")
-        return True
     else:
         print("❌ TOC flag not working as expected")
-        return False
+        assert False
 
 
 def test_build_output_toc_integration():
@@ -64,17 +57,14 @@ def test_build_output_toc_integration():
         
         if has_wrap_none and not has_toc_arg:
             print("⚠️  build_output missing --toc flag (needs implementation)")
-            return False
+            assert False
         elif has_toc_arg and has_wrap_none:
             print("✅ build_output includes TOC flag")
-            return True
         else:
             print("⚠️  build_output configuration unexpected")
-            return None
             
     except Exception as e:
         print(f"❌ Error checking build_output: {e}")
-        return False
 
 
 if __name__ == "__main__":

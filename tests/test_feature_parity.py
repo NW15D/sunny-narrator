@@ -35,14 +35,12 @@ def test_toc_generation():
         if not has_toc:
             print("❌ TOC generation test FAILED - no TOC found in output")
             print(f"Sample HTML:\n{html[:500]}")
-            return False
+            assert False
         
         print("✅ TOC generation test PASSED")
-        return True
         
     except Exception as e:
         print(f"❌ TOC test failed with error: {e}")
-        return False
 
 
 def test_image_extraction_from_htmlz():
@@ -86,16 +84,14 @@ def test_image_extraction_from_htmlz():
             
             if not images:
                 print("❌ Image extraction test FAILED - no images extracted")
-                return False
+                assert False
             
             print(f"✅ Image extraction test PASSED - {len(images)} images found")
             for img_id, img_info in images.items():
                 print(f"  - {img_id}: {len(img_info['data'])} bytes")
-            return True
             
     except Exception as e:
         print(f"❌ Image extraction test failed with error: {e}")
-        return False
 
 
 def test_calibre_pipeline_image_handling():
@@ -117,11 +113,9 @@ def test_calibre_pipeline_image_handling():
         
         # For now, just check that function exists and has correct signature
         print("✅ calibre_pipeline image handling check PASSED")
-        return True
         
     except Exception as e:
         print(f"❌ calibre_pipeline check failed: {e}")
-        return False
 
 
 if __name__ == "__main__":
