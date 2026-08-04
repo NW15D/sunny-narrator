@@ -68,7 +68,7 @@ def extract_metadata(header: str) -> Dict[str, Any]:
     Returns:
         Dictionary with metadata fields
     """
-    soup = BeautifulSoup(header, 'xml', features=get_safe_bs4_features())
+    soup = BeautifulSoup(header, 'xml')
     title_info = soup.find('title-info')
     if not title_info:
         return {}
@@ -145,7 +145,7 @@ def update_header_with_metadata(header: str, metadata: Dict[str, Any]) -> str:
     Returns:
         Updated header string
     """
-    soup = BeautifulSoup(header, 'xml', features=get_safe_bs4_features())
+    soup = BeautifulSoup(header, 'xml')
     title_info = soup.find('title-info')
     
     if not title_info:
@@ -200,7 +200,7 @@ def get_cover_image(header: str, footer: str) -> Tuple[str, str]:
         Tuple of (image_href, image_data)
     """
     # Parse header to find cover reference
-    soup = BeautifulSoup(header, 'xml', features=get_safe_bs4_features())
+    soup = BeautifulSoup(header, 'xml')
     cover_tag = soup.find('coverpage')
     
     if not cover_tag:
@@ -251,7 +251,7 @@ def replace_cover_image(header: str, footer: str, body: str, new_content: str) -
         image_href = f"#{image_id}"
         
         # Add coverpage to header if not exists
-        soup = BeautifulSoup(header, 'xml', features=get_safe_bs4_features())
+        soup = BeautifulSoup(header, 'xml')
         title_info = soup.find('title-info')
         if title_info:
             cover_tag = soup.new_tag('coverpage')
