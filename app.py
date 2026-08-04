@@ -768,8 +768,6 @@ def main():
     signal.signal(signal.SIGINT, _handle_shutdown)
     signal.signal(signal.SIGTERM, _handle_shutdown)
 
-    # Reset translation statistics
-    ta.reset_translation_stats()
 
     # Check input file
     myfile = config.myfile
@@ -965,8 +963,6 @@ def main():
         if config.fb2_auto_repair:
             print(f"  (Auto-repair check enabled - fixed version may be created alongside)")
 
-    # Get global translation stats
-    global_stats = ta.get_translation_stats()
 
     # Calculate retry token percentage
     retry_pct = (engine.stats['retry_tokens'] / engine.stats['total_tokens'] * 100) if engine.stats['total_tokens'] > 0 else 0
