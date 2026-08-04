@@ -1478,8 +1478,9 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
         
         return combined_translation, combined_synopsis
     
-    # Success - log tokens
-    tokens = state.final_result.tokens_used if hasattr(state, 'final_result') and hasattr(state.final_result, 'tokens_used') else 0
+    # Success - log tokens (F6: state.total_tokens is accumulated in
+    # PipelineState.add_result; state.final_result does not exist)
+    tokens = state.total_tokens
     metrics.log_success(tokens)  # INFO level
     
     return state.final_translation, state.synopsis
