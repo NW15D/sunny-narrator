@@ -68,6 +68,8 @@ class XmlPostProcessor:
 Верни ТОЛЬКО исправленный перевод с тэгами."""
 
         max_tokens = getattr(self.config, 'llm_repair_max_tokens', 2000)
+        # The prompt above truncates both inputs to 1000 chars
+        truncated_input = len(source_text) > 1000 or len(translated_text) > 1000
 
         for attempt in range(2):  # 1 initial + 1 retry
             try:
@@ -90,7 +92,17 @@ class XmlPostProcessor:
                     temperature=0.1,
                     max_tokens=max_tokens
                 )
-                return response.choices[0].message.content
+                result = response.choices[0].message.content
+                # Guard: with a truncated prompt the LLM only sees a prefix.
+                # If its answer is shorter than the full translation, using it
+                # would silently drop the tail — keep the original text.
+                if truncated_input and len(result.strip()) < len(translated_text.strip()):
+                    logger.warning(
+                        "repair_xml: prompt was truncated and LLM result is shorter "
+                        "than the full translation — keeping original to avoid content loss"
+                    )
+                    return translated_text
+                return result
             except Exception as e:
                 logger.error(f"LLM repair attempt {attempt + 1} failed ({type(e).__name__}): {e}")
                 if attempt == 0:

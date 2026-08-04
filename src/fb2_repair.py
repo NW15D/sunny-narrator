@@ -59,11 +59,6 @@ def repair_fb2(xml_string: str, max_iterations: int = 3) -> Tuple[str, List[str]
     if repair:
         repairs.append(repair)
     
-    # Step 7: Remove duplicate closing tags
-    xml_string, repair = _remove_duplicate_closings(xml_string)
-    if repair:
-        repairs.append(repair)
-    
     if repairs:
         repairs.insert(0, f"FB2 auto-repair completed: {len(repairs)} fix(es) applied")
     
@@ -190,26 +185,6 @@ def _balance_section_tags(xml_string: str) -> Tuple[str, str]:
         if missing > 0:
             xml_string = xml_string.rstrip() + '\n' + '</section>\n' * missing
             return xml_string, f"Added {missing} missing </section> tag(s) at end"
-    
-    return xml_string, ""
-
-
-def _remove_duplicate_closings(xml_string: str) -> Tuple[str, str]:
-    """Remove duplicate closing tags."""
-    # Fix duplicate FictionBook closings
-    fiction_closings = len(re.findall(r'</FictionBook>', xml_string))
-    if fiction_closings > 1:
-        # Keep only the last one
-        parts = xml_string.rsplit('</FictionBook>', 1)
-        xml_string = parts[0].rstrip() + '</FictionBook>' + parts[1] if len(parts) > 1 else xml_string
-        return xml_string, f"Removed duplicate </FictionBook> tags (had {fiction_closings})"
-    
-    # Fix duplicate body closings
-    body_closings = len(re.findall(r'</body>', xml_string))
-    if body_closings > 1:
-        parts = xml_string.rsplit('</body>', 1)
-        xml_string = parts[0] + '</body>' + parts[1] if len(parts) > 1 else xml_string
-        return xml_string, f"Removed duplicate </body> tags (had {body_closings})"
     
     return xml_string, ""
 
