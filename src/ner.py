@@ -204,7 +204,7 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
             print(f"Unique entities before filtering by count: {len(unique_ents)}")
 
         # Filter out entities with less than min_count_ner occurrences
-        unique_ents = [ent for ent in unique_ents if ent[3] >= min_count_ner]
+        unique_ents = [ent for ent in unique_ents if ent[2] >= min_count_ner]
 
         if config.debug:
             print(f"Unique entities after filtering by count (min={min_count_ner}): {len(unique_ents)}")
