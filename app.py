@@ -859,6 +859,7 @@ def main():
     output_file = _paths["output_file"]
     output_tfile = _paths["output_tfile"]
     checkpoint_file = _paths["checkpoint_file"]
+    output_base = os.path.splitext(output_file)[0]  # used by EPUB writer/fallback
 
     # 1. Parse Input
     print(f"Parsing {file_ext.upper()} file...")
