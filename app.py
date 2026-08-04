@@ -793,6 +793,25 @@ def write_to_file(data, output_file: str, auto_repair_fb2: bool = False):
     # FB2 structure should be validated at generation time, not repair time
 
 
+def build_resume_paths(myfile: str, target_lang: str) -> dict:
+    """Build output paths for a translation run.
+
+    checkpoint_file and output_tfile are deterministic (no timestamp) so a
+    new run can find the previous checkpoint and resume. The final output
+    file keeps a timestamp so finished books don't overwrite each other.
+    """
+    file_name, _ = os.path.splitext(os.path.basename(myfile))
+    output_dir = os.path.dirname(myfile) or '.'
+    timestamp = datetime.now().strftime("%H%M-%d%m")
+    stable_base = f"{output_dir}/{file_name}_{target_lang}"
+    output_base = f"{stable_base}_{timestamp}"
+    return {
+        "output_file": f"{output_base}.{config.output_format}",
+        "output_tfile": f"{stable_base}_tmp.fb2",
+        "checkpoint_file": f"{stable_base}.checkpoint.json",
+    }
+
+
 def assemble_resume_content(new_content: str, resume_from_chunk: int, output_tfile: str) -> str:
     """On resume, output_tfile has ALL sections (prior + new) but
     process_all_chunks only returns new chunks' content.
@@ -836,10 +855,10 @@ def main():
         raise ValueError(f"Unsupported format: {file_ext}")
 
     # Output paths
-    output_base = f"{output_dir}/{file_name}_{config.target_lang}_{timestamp}"
-    output_file = f"{output_base}.{config.output_format}"
-    output_tfile = f"{output_dir}/{file_name}_{config.target_lang}_tmp_{timestamp}.fb2"
-    checkpoint_file = f"{output_base}.checkpoint.json"
+    _paths = build_resume_paths(myfile, config.target_lang)
+    output_file = _paths["output_file"]
+    output_tfile = _paths["output_tfile"]
+    checkpoint_file = _paths["checkpoint_file"]
 
     # 1. Parse Input
     print(f"Parsing {file_ext.upper()} file...")
