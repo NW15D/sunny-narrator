@@ -9,7 +9,6 @@ import base64
 import logging
 import re
 from datetime import datetime
-from xml.sax.saxutils import escape as xml_escape
 from bs4 import BeautifulSoup
 import ebooklib
 from ebooklib import epub
@@ -44,7 +43,7 @@ def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) 
     # --- Extract Metadata ---
     # Title
     title_tag = title_info.find('book-title') if title_info else None
-    title = xml_escape(title_tag.get_text()) if title_tag else "Unknown Title"
+    title = title_tag.get_text() if title_tag else "Unknown Title"
     book.set_title(title)
     
     # Author
@@ -55,11 +54,11 @@ def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) 
         nickname = author_tag.find('nickname')
         
         if first_name and last_name:
-            author_name = xml_escape(f"{first_name.get_text()} {last_name.get_text()}")
+            author_name = f"{first_name.get_text()} {last_name.get_text()}"
         elif nickname:
-            author_name = xml_escape(nickname.get_text())
+            author_name = nickname.get_text()
         else:
-            author_name = xml_escape(last_name.get_text()) if last_name else "Unknown Author"
+            author_name = last_name.get_text() if last_name else "Unknown Author"
         
         book.add_author(author_name)
     
@@ -77,15 +76,15 @@ def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) 
         # Get all paragraphs
         paragraphs = annotation_tag.find_all('p')
         if paragraphs:
-            description = xml_escape(' '.join(p.get_text() for p in paragraphs))
+            description = ' '.join(p.get_text() for p in paragraphs)
         else:
-            description = xml_escape(annotation_tag.get_text())
+            description = annotation_tag.get_text()
         book.add_metadata('DC', 'description', description)
     
     # Genre/Subject
     genre_tags = title_info.find_all('genre') if title_info else []
     for genre_tag in genre_tags:
-        book.add_metadata('DC', 'subject', xml_escape(genre_tag.get_text()))
+        book.add_metadata('DC', 'subject', genre_tag.get_text())
     
     # Series
     sequence_tag = title_info.find('sequence') if title_info else None
@@ -93,16 +92,16 @@ def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) 
         series_name = sequence_tag.get('name', '')
         series_number = sequence_tag.get('number', '')
         if series_name:
-            book.add_metadata('OPF', 'calibre:series', xml_escape(series_name))
+            book.add_metadata('OPF', 'calibre:series', series_name)
             if series_number:
-                book.add_metadata('OPF', 'calibre:series_index', xml_escape(str(series_number)))
+                book.add_metadata('OPF', 'calibre:series_index', str(series_number))
     
     # Publisher
     publish_info = soup.find('publish-info')
     if publish_info:
         publisher_tag = publish_info.find('publisher')
         if publisher_tag:
-            book.add_metadata('DC', 'publisher', xml_escape(publisher_tag.get_text()))
+            book.add_metadata('DC', 'publisher', publisher_tag.get_text())
     
     # --- Extract Images from Footer ---
     images = {}
@@ -166,7 +165,6 @@ def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) 
     
     # Check if body looks like it hasn't been translated (still mostly English for Russian target)
     if config.target_lang.lower() != 'english':
-        import re
         ascii_chars = len(re.findall(r'[a-zA-Z]', body))
         total_chars = len(body)
         ascii_ratio = ascii_chars / total_chars if total_chars > 0 else 0
