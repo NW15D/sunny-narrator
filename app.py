@@ -566,13 +566,11 @@ class TranslationEngine:
         self.last_section_idx = checkpoint.get("last_section_idx", 0)
         self.last_chunk_idx = checkpoint.get("last_chunk_idx", 0)
 
-        # Restore synopsis history
+        # Restore synopsis history. synopsis_cache getter stores JSON-safe
+        # "section_X" string keys, so the dict can be passed through as-is.
         synopsis_history = checkpoint.get("synopsis_history", {})
         if synopsis_history:
-            # Convert string keys back to tuple keys
-            self.synopsis_manager.synopsis_cache = {
-                tuple(k.split(",")): v for k, v in synopsis_history.items()
-            }
+            self.synopsis_manager.synopsis_cache = synopsis_history
 
         logger.info(f"Restored from checkpoint: chunk {self.last_processed_chunk + 1}, "
                    f"successful: {self.stats['successful']}, failed: {self.stats['failed']}")
