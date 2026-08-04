@@ -11,7 +11,6 @@ prior + new sections appended) when resuming.
 
 import os
 import tempfile
-import pytest
 
 # Import the function under test
 from app import assemble_resume_content

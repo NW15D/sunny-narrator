@@ -1,5 +1,4 @@
 """Tests for markdown_utils module."""
-import pytest
 import os
 import sys
 import tempfile
@@ -9,7 +8,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from bs4 import BeautifulSoup
 from src.markdown_utils import (
     split_markdown_by_size,
-    generate_toc_html,
     clean_calibre_markers,
     extract_headings,
     copy_images_to_output,

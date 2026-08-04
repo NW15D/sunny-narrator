@@ -44,9 +44,8 @@ except ImportError:
     pypandoc = None
 
 # Import existing utilities
-from src.utils import split_text_smartly, translate_chunk, num_tokens_in_string, config, validate_translation_length, _pipeline
+from src.utils import split_text_smartly, config, validate_translation_length, _pipeline
 from src.checkpoint_manager import CheckpointManager
-from src.config import Config
 from src import markdown_utils
 
 # Precompiled Calibre-specific cleanup patterns (narrowed to avoid removing valid Pandoc attributes)

@@ -2,7 +2,6 @@
 import os
 import tempfile
 import shutil
-from pathlib import Path
 
 def test_extract_text_from_book():
     """Test extracting text from FB2 books."""

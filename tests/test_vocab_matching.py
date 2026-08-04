@@ -1,13 +1,12 @@
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 import sys
-import os
 
 # Add the project root to sys.path so we can import src
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.ner import find_matching_words_with_cosine_similarity, find_matching_words_with_cosine_similarity_cpu
+from src.ner import find_matching_words_with_cosine_similarity_cpu
 
 @pytest.fixture(autouse=True)
 def mock_config():

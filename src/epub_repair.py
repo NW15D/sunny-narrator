@@ -12,7 +12,6 @@ import os
 import re
 import shutil
 import zipfile
-from pathlib import Path
 from typing import List, Tuple, Optional
 from lxml import etree
 

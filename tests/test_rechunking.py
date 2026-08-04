@@ -86,7 +86,6 @@ def test_rechunking_logic():
 def test_combine_results_no_separator():
     """Test that combined results after rechunking don't lose separators."""
     try:
-        import src.utils as ta
         from src.config import Config
         
         config = Config()

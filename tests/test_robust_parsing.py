@@ -4,7 +4,6 @@ Test robust vocabulary parsing with various malformed LLM responses.
 """
 
 import sys
-import os
 sys.path.insert(0, 'src')
 
 from src.ner import _parse_vocabulary_response
