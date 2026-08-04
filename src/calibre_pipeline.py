@@ -34,6 +34,7 @@ import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
+from datetime import datetime
 
 try:
     import pypandoc
@@ -44,6 +45,7 @@ except ImportError:
 
 # Import existing utilities
 from src.utils import split_text_smartly, translate_chunk, num_tokens_in_string, config, validate_translation_length, _pipeline
+from src.checkpoint_manager import CheckpointManager
 from src.config import Config
 from src import markdown_utils
 
@@ -547,7 +549,8 @@ def translate_chunks(
     style: str = "text",
     fast_mode: bool = False,
     vocab_dict: Optional[dict] = None,
-    book_path: Optional[str] = None
+    book_path: Optional[str] = None,
+    checkpoint_file: Optional[str] = None
 ) -> str:
     """
     Translate Markdown text in chunks using existing translate_chunk.
@@ -613,7 +616,29 @@ def translate_chunks(
     outline_text = ""  # Context for next chunk
     vocab_entries = []  # Full metadata entries for 5-stage translation
     failed_chunks = 0  # Track chunks that failed translation
-    
+
+    # D5: checkpoint/resume support (per-chunk persistence)
+    checkpoint_mgr = CheckpointManager(checkpoint_file) if checkpoint_file else None
+    start_idx = 0
+    start_time_iso = datetime.now().isoformat()
+    total_source_len = 0
+    total_target_len = 0
+    if checkpoint_mgr is not None:
+        saved = checkpoint_mgr.load()
+        if saved is not None and saved.get("book_path") == (book_path or ""):
+            start_idx = saved.get("last_chunk", -1) + 1
+            extra = saved.get("extra", {}) or {}
+            translated_parts = list(extra.get("translated_parts", []))
+            outline_text = extra.get("outline_text", "")
+            failed_chunks = int(extra.get("failed_chunks", 0))
+            total_source_len = saved.get("lengths", {}).get("total_source_len", 0)
+            total_target_len = saved.get("lengths", {}).get("total_target_len", 0)
+            start_time_iso = saved.get("created_at", start_time_iso)
+            logger.info(f"Resuming from checkpoint: chunk {start_idx}/{total_chunks}")
+        elif saved is not None:
+            logger.warning("Checkpoint belongs to another book, starting fresh")
+            checkpoint_mgr.remove()
+
     # Load vocabulary if book_path provided and no explicit vocab_dict
     if vocab_dict is None and book_path:
         try:
@@ -635,6 +660,9 @@ def translate_chunks(
         vocab_dict = {}
     
     for i, chunk in enumerate(chunks):
+        if i < start_idx:
+            continue  # already translated before the checkpoint
+
         # Show progress
         progress = ((i + 1) / total_chunks) * 100
         print(f"\rProgress: {i + 1}/{total_chunks} ({progress:.1f}%)", end="", flush=True)
@@ -687,6 +715,29 @@ def translate_chunks(
             failed_chunks += 1
         
         translated_parts.append(translation)
+
+        total_source_len += len(chunk)
+        total_target_len += len(translation)
+
+        # Save checkpoint after each chunk (D5)
+        if checkpoint_mgr is not None:
+            checkpoint_mgr.save(
+                chunk_id=i,
+                section_idx=0,
+                chunk_idx=i,
+                stats={'successful': len(translated_parts) - failed_chunks,
+                       'failed': failed_chunks},
+                total_source_len=total_source_len,
+                total_target_len=total_target_len,
+                synopsis_history={},
+                book_path=book_path or "",
+                start_time_iso=start_time_iso,
+                extra={
+                    'translated_parts': translated_parts,
+                    'outline_text': outline_text,
+                    'failed_chunks': failed_chunks,
+                },
+            )
     
     print()  # New line after progress
     
@@ -702,6 +753,10 @@ def translate_chunks(
                 f"Threshold: {max_failed_ratio:.0%}. Fix LLM output or raise max_failed_chunk_ratio."
             )
     
+    # All chunks done: drop the checkpoint so the next run starts fresh
+    if checkpoint_mgr is not None:
+        checkpoint_mgr.remove()
+
     # Reassemble translated text
     translated_text = '\n\n'.join(translated_parts)
     
