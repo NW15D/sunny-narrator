@@ -412,7 +412,21 @@ def _find_chunk_boundary(text: str, start: int, end: int) -> int:
     last_open = text.rfind('<', start, end)
     if last_open != -1 and last_open > start + 100:  # Minimum chunk size
         return last_open
-    
+
+    # Guard: never split inside a tag (between '<' and its '>')
+    lt = text.rfind('<', start, end)
+    if lt != -1 and lt > start:
+        gt = text.find('>', lt, end)
+        if gt == -1:
+            # Tag opened but not closed within window — cut before it
+            return lt
+        if text.startswith('</', lt):
+            # Closing tag — cut after it
+            return gt + 1
+        # Opening tag without closing pair — cut before it
+        if text.find('</', lt, end) == -1:
+            return lt
+
     return end
 
 
