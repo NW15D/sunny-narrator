@@ -16,6 +16,8 @@ Workflow:
 3. If exists: Load → Match terms per chunk → Format for model → Inject into prompts
 """
 
+import csv
+import io
 import os
 import re
 import tempfile
@@ -440,10 +442,16 @@ class VocabularyManager:
             table_pattern = r'\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|\s*([^|]*)\s*\|'
             matches = re.findall(table_pattern, vocab_translated)
             if matches:
+                # Skip table header rows ("Source | Target | Category") —
+                # they are not terms (audit 05-vocabulary: header ended up in the dictionary).
+                _header_words = {'source', 'target', 'category', 'original', 'translation',
+                                 'term', 'word', 'gender', 'notes', 'перевод', 'термин'}
                 for match in matches:
                     source = match[0].strip()
                     target = match[1].strip()
                     category = match[2].strip() if match[2].strip() else "TERM"
+                    if source.lower() in _header_words and target.lower() in _header_words:
+                        continue
                     if source and target and not source.startswith('-') and not target.startswith('-'):
                         terms.append({
                             "source": source,
@@ -527,8 +535,14 @@ class VocabularyManager:
             target = term["target"]
             category = term["category"]
             
-            # Write in format: source = target, category, gender, notes
-            new_lines.append(f"{source} = {target}, {category}, , \n")
+            # Write in format: source = target, category, gender, notes.
+            # CSV-quote fields so commas inside values survive the roundtrip
+            # (the reader parses the part after '=' with csv.reader).
+            buf = io.StringIO()
+            csv.writer(buf, quoting=csv.QUOTE_MINIMAL).writerow(
+                [target, category, term.get("gender", ""), term.get("notes", "")]
+            )
+            new_lines.append(f"{source} = {buf.getvalue().rstrip()}\n")
             
             # Add to memory
             key = source.replace(' ', '_').lower()
