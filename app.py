@@ -287,6 +287,12 @@ class TranslationEngine:
             self.stats['failed'] += 1
             return final_content, synopsis
 
+        # Empty result is a failure, not a success
+        if not final_content or not final_content.strip():
+            logger.warning(f"Empty translation result for chunk {g_id}")
+            self.stats['failed'] += 1
+            return f"[TRANSLATION FAILED: chunk {g_id}]", synopsis
+
         # Count successful translation
         self.stats['successful'] += 1
 
@@ -460,6 +466,10 @@ class TranslationEngine:
             # Progress output
             result_preview = (final_content[:80] + '...') if len(final_content) > 80 else final_content
             print(f"  Result: {result_preview}")
+
+            # Empty result is a failure - fail fast instead of silently dropping the chunk
+            if not final_content or not final_content.strip():
+                raise RuntimeError(f"Empty translation result for chunk {c_idx} in section {s_idx}")
 
             # Statistics
             if final_content:
