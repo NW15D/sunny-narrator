@@ -456,6 +456,27 @@ def create_dictionary_from_text(text, stop_words=None, min_count_ner=5, min_coun
     return result
 
 
+# F4: cache of phrase vectors — the vocabulary does not change during a book
+# translation, but every chunk used to re-run all dictionary words through
+# spaCy. Word vectors of the loaded model are deterministic.
+_PHRASE_VECTOR_CACHE = {}
+
+
+def _get_phrase_vector(phrase, nlp):
+    """Mean vector of the phrase words (cached).
+
+    Returns None (and caches it) when no word of the phrase has a vector.
+    """
+    if phrase in _PHRASE_VECTOR_CACHE:
+        return _PHRASE_VECTOR_CACHE[phrase]
+    sub_words = phrase.split()
+    sub_docs = list(nlp.pipe(sub_words, disable=["ner", "parser", "tagger", "lemmatizer", "attribute_ruler"]))
+    sub_vecs = [d.vector for d in sub_docs if d.vector_norm != 0]
+    vec = np.mean(np.vstack(sub_vecs), axis=0) if sub_vecs else None
+    _PHRASE_VECTOR_CACHE[phrase] = vec
+    return vec
+
+
 def find_matching_words_with_cosine_similarity(text, vocab, lng, threshold=0.8, batch_size=1024):
     """
     Find vocabulary terms in text using cosine similarity (GPU-accelerated).
@@ -529,13 +550,8 @@ def find_matching_words_with_cosine_similarity(text, vocab, lng, threshold=0.8, 
     vocab_vectors = []
 
     for phrase in orig_values:
-        sub_words = phrase.split()
-        # Disable all components that are not needed for vector generation
-        sub_docs = list(nlp.pipe(sub_words, disable=["ner", "parser", "tagger", "lemmatizer", "attribute_ruler"]))
-        sub_vecs = [d.vector for d in sub_docs if d.vector_norm != 0]
-
-        if sub_vecs:
-            mean_vec = np.mean(np.vstack(sub_vecs), axis=0)
+        mean_vec = _get_phrase_vector(phrase, nlp)
+        if mean_vec is not None:
             vocab_vectors.append(mean_vec)
             valid_vocab_words.append(phrase)
 
@@ -641,12 +657,8 @@ def find_matching_words_with_cosine_similarity_cpu(text, vocab, lng, threshold=0
     vocab_vectors = []
 
     for phrase in orig_values:
-        sub_words = phrase.split()
-        sub_docs = list(nlp.pipe(sub_words, disable=["ner", "parser", "tagger", "lemmatizer", "attribute_ruler"]))
-        sub_vecs = [d.vector for d in sub_docs if d.vector_norm != 0]
-
-        if sub_vecs:
-            mean_vec = np.mean(np.vstack(sub_vecs), axis=0)
+        mean_vec = _get_phrase_vector(phrase, nlp)
+        if mean_vec is not None:
             vocab_vectors.append(mean_vec)
             valid_vocab_words.append(phrase)
 
