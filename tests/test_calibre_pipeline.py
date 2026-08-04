@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch, mock_open
 from pathlib import Path
 
 # Setup path
-sys.path.insert(0, "/home/neo/prj/sunny-narrator")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # NOTE: pypandoc is a real installed dependency. Mocking it in sys.modules
 # polluted every later test module that needs the real pypandoc (B4 incident).
@@ -263,7 +263,7 @@ def test_generate_title_page():
 
 def test_calibre_pipeline_module_exists():
     """Test that calibre_pipeline.py file exists."""
-    file_path = "/home/neo/prj/sunny-narrator/src/calibre_pipeline.py"
+    file_path = str(Path(__file__).resolve().parent.parent / "src" / "calibre_pipeline.py")
     assert os.path.exists(file_path), f"calibre_pipeline.py not found at {file_path}"
 
 

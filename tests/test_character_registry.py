@@ -5,7 +5,8 @@ import sys
 import os
 
 # Add project root to sys.path
-sys.path.insert(0, "/home/neo/.openclaw/workspace-dev/sunny-narrator")
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.character_registry import CharacterRegistry, Character, get_character_registry, reset_character_registry
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from pathlib import Path
 """Test script for _clean_calibre_markers"""
 
 import re
@@ -7,7 +8,7 @@ import tempfile
 import zipfile
 
 # Read HTML from HTMLZ
-input_path = '/home/neo/prj/sunny-narrator/tests/data/test_book.fb2'
+input_path = str(Path(__file__).resolve().parent / 'data' / 'test_book.fb2')
 with tempfile.TemporaryDirectory() as temp_dir:
     htmlz_path = f'{temp_dir}/output.htmlz'
     os.system(f'ebook-convert {input_path} {htmlz_path} 2>/dev/null')
