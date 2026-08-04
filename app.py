@@ -346,7 +346,7 @@ class TranslationEngine:
         Returns:
             Combined translated content with proper <section> wrapping
         """
-        all_content = ""
+        content_parts = []  # F1: list+join вместо O(n²)-конкатенации строк
         total = len(all_chunks)
 
         logger.info(f"Starting translation: {total} chunks")
@@ -371,7 +371,7 @@ class TranslationEngine:
                     # Write accumulated section content
                     section_content = "\n".join(current_section_chunks)
                     section_wrapped = f"<section>\n{section_content}\n</section>"
-                    all_content += section_wrapped + "\n"
+                    content_parts.append(section_wrapped + "\n")
                     with open(output_tfile, 'a', encoding='utf-8') as f:
                         f.write(section_wrapped + "\n")
                     written_sections.add(current_section_idx)
@@ -438,7 +438,7 @@ class TranslationEngine:
         if current_section_chunks and current_section_idx not in written_sections:
             section_content = "\n".join(current_section_chunks)
             section_wrapped = f"<section>\n{section_content}\n</section>"
-            all_content += section_wrapped + "\n"
+            content_parts.append(section_wrapped + "\n")
             with open(output_tfile, 'a', encoding='utf-8') as f:
                 f.write(section_wrapped + "\n")
             written_sections.add(current_section_idx)
@@ -449,7 +449,7 @@ class TranslationEngine:
             print(f"\n⚠️ WARNING: {self.stats['failed']}/{total_processed} chunks failed to translate!")
             logger.warning(f"High failure rate: {self.stats['failed']}/{total_processed} chunks failed")
 
-        return all_content
+        return "".join(content_parts)
 
     def save_checkpoint(self, checkpoint_file: str):
         """
