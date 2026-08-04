@@ -4,6 +4,7 @@ Tests chunking -> translation -> reassembly without actual LLM calls
 """
 import sys
 import os
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 # Mock third party modules
@@ -15,7 +16,7 @@ sys.modules['dotenv'] = MagicMock()
 sys.modules['httpx'] = MagicMock()
 
 # Add project root to sys.path
-sys.path.insert(0, "/home/neo/.openclaw/workspace-dev/sunny-narrator")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import src.fb2_handler as fb2
 import src.utils as utils

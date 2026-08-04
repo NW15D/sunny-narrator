@@ -20,7 +20,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # Path setup — ensure src/ is importable
 # ---------------------------------------------------------------------------
-sys.path.insert(0, "/home/neo/prj/sunny-narrator")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # Mock heavy third-party modules ONLY if they are missing. Both pypandoc and
 # bs4 are real installed dependencies; mocking them unconditionally pollutes
