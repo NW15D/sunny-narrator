@@ -17,7 +17,6 @@ config = Config()
 
 __all__ = [
     'parse_epub',
-    'convert_epub_to_fb2_structure',
     'extract_epub_metadata',
     'extract_epub_body'
 ]

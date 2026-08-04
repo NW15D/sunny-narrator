@@ -266,8 +266,8 @@ def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) 
         from .epub_repair import validate_epub
         errors = validate_epub(epub_path)
         if errors:
-            import logging
-            logger = logging.getLogger(__name__)
+            # Use the module-level logger; a late local assignment here made
+            # `logger` function-local and tripped F823 on the earlier use.
             logger.warning(f"EPUB validation warnings: {len(errors)}")
             for error in errors[:3]:
                 logger.warning(f"  {error}")
