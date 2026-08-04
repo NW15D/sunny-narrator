@@ -22,7 +22,7 @@ TRANSLATIONS = {
 def test_single_failed_chunk_aborts(monkeypatch):
     import src.calibre_pipeline as cp
 
-    monkeypatch.setattr(cp, 'split_text_smartly', lambda *a, **kw: CHUNKS)
+    monkeypatch.setattr(cp, '_split_into_chunks_md', lambda *a, **kw: CHUNKS)
 
     class _State:
         def __init__(self, text):
