@@ -15,7 +15,7 @@ from io import StringIO
 from pathlib import Path
 
 # Add src to path to import vocabulary_manager
-sys.path.insert(0, str(Path(__file__).parent / 'src'))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.vocabulary_manager import VocabularyManager, VocabEntry
 

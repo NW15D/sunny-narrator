@@ -4,7 +4,8 @@ import sys
 import os
 
 # Add the project root to sys.path so we can import src
-sys.path.append("/home/neo/prj/sunny-narrator")
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.ner import find_matching_words_with_cosine_similarity, find_matching_words_with_cosine_similarity_cpu
 

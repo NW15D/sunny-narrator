@@ -7,7 +7,8 @@ import time
 from unittest.mock import patch, MagicMock
 import pytest
 
-sys.path.insert(0, "/home/neo/prj/sunny-narrator")
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
 class TestCompleteRetries:
