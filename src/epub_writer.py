@@ -284,57 +284,53 @@ def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) 
 
 def _fb2_to_html(fb2_content: str) -> str:
     """
-    Convert FB2 XML tags to HTML tags.
-    
-    FB2 → HTML mapping:
-    <p> → <p>
-    <strong> → <strong>
-    <emphasis> → <em>
-    <subtitle> → <h2>
-    <cite> → <blockquote>
-    <poem> → <div class="poem">
-    <stanza> → <div class="stanza">
-    <v> → <p class="verse">
-    <empty-line/> → <br/>
+    Convert FB2 XML fragment to HTML using a DOM parser (no regex on tags).
+
+    Preserves element attributes; maps FB2 semantics to HTML equivalents.
     """
-    html = fb2_content
-    
-    # Simple tag replacements
-    replacements = [
-        (r'<emphasis>', '<em>'),
-        (r'</emphasis>', '</em>'),
-        (r'<subtitle>', '<h2>'),
-        (r'</subtitle>', '</h2>'),
-        (r'<cite>', '<blockquote>'),
-        (r'</cite>', '</blockquote>'),
-        (r'<poem>', '<div class="poem">'),
-        (r'</poem>', '</div>'),
-        (r'<stanza>', '<div class="stanza">'),
-        (r'</stanza>', '</div>'),
-        (r'<v>', '<p class="verse">'),
-        (r'</v>', '</p>'),
-        (r'<empty-line\s*/?>', '<br/>'),
-        (r'<title>', '<h1>'),
-        (r'</title>', '</h1>'),
-        # Remove section tags (we handle them separately)
-        (r'</?section[^>]*>', ''),
-    ]
-    
-    for pattern, replacement in replacements:
-        html = re.sub(pattern, replacement, html, flags=re.IGNORECASE)
-    
-    # Handle image tags
-    # <image l:href="#id"/> → <img src="images/id"/>
-    def replace_image(match):
-        href = match.group(1)
+    soup = BeautifulSoup(f"<root>{fb2_content}</root>", 'xml')
+
+    for old, new in (('emphasis', 'em'), ('subtitle', 'h2'), ('cite', 'blockquote'), ('title', 'h1')):
+        for tag in soup.find_all(old):
+            tag.name = new
+
+    for tag in soup.find_all('epigraph'):
+        tag.name = 'blockquote'
+        tag['class'] = 'epigraph'
+
+    for tag in soup.find_all('poem'):
+        tag.name = 'div'
+        tag['class'] = 'poem'
+
+    for tag in soup.find_all('stanza'):
+        tag.name = 'div'
+        tag['class'] = 'stanza'
+
+    for tag in soup.find_all('v'):
+        tag.name = 'p'
+        tag['class'] = 'verse'
+
+    for tag in soup.find_all('text-author'):
+        tag.name = 'p'
+        tag['class'] = 'text-author'
+
+    for tag in soup.find_all('empty-line'):
+        tag.replace_with(soup.new_tag('br'))
+
+    for img in soup.find_all('image'):
+        href = img.get('l:href') or img.get('href') or ''
+        new_img = soup.new_tag('img')
         if href.startswith('#'):
-            img_id = href[1:]
-            return f'<img src="images/{img_id}"/>'
-        return match.group(0)
-    
-    html = re.sub(r'<image[^>]*l:href=["\']([^"\']+)["\'][^>]*/>', replace_image, html)
-    
-    return html
+            new_img['src'] = f"images/{href[1:]}"
+        elif href:
+            new_img['src'] = href
+        img.replace_with(new_img)
+
+    for section in soup.find_all('section'):
+        section.unwrap()
+
+    root = soup.find('root')
+    return root.decode_contents() if root else ''
 
 
 def fb2_to_epub(fb2_path: str, output_path: str = None) -> str:
