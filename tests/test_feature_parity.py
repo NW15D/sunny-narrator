@@ -4,7 +4,6 @@ Test TOC generation and image preservation for new Calibre pipeline.
 
 import sys
 import os
-from pathlib import Path
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))

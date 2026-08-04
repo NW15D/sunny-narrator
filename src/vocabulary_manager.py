@@ -23,13 +23,13 @@ import re
 import tempfile
 import logging
 import fcntl
-from typing import Dict, List, Set, Optional, Tuple
-from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass
 from pathlib import Path
 
 from src.config import Config
 from src import ner as ner_module
-from src.character_registry import CharacterRegistry, get_character_registry, Character
+from src.character_registry import get_character_registry, Character
 
 config = Config()
 logger = logging.getLogger(__name__)
@@ -254,7 +254,6 @@ class VocabularyManager:
                 logger.info(f"Split {len(terms_text)} chars into {len(chunks)} chunk(s) for translation")
                 
                 from src import utils as ta
-                import json as _json
                 
                 # Write header once
                 with open(self.dict_file, 'w', encoding='utf-8') as f:

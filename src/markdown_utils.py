@@ -1,7 +1,6 @@
 """Markdown utilities for processing and generating markdown content."""
 import os
 import re
-import shutil
 from typing import List, Union
 from bs4 import BeautifulSoup
 

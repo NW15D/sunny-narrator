@@ -3,9 +3,8 @@ Integration test for the full FB2 translation workflow
 Tests chunking -> translation -> reassembly without actual LLM calls
 """
 import sys
-import os
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 # Mock third party modules
 sys.modules['openai'] = MagicMock()

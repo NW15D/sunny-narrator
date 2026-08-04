@@ -20,7 +20,7 @@ import re
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional, List, Tuple
+from typing import Dict, List
 
 # Suppress FutureWarning from transformers/torch interaction.
 # This warning is triggered by torch.utils._pytree._register_pytree_node
@@ -1051,7 +1051,6 @@ if __name__ == '__main__':
     # Handle single book dictionary build
     if args.build_dict:
         from src.ner import make_vocab, _save_vocabulary_formatted
-        import pathlib
         book_path = args.build_dict
         if not os.path.exists(book_path):
             print(f"Error: Book file not found: {book_path}")

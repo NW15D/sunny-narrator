@@ -5,23 +5,13 @@ Handles parsing and conversion of EPUB files to FB2 format.
 Uses fb2_handler for common XML operations.
 """
 
-import re
-import base64
 from xml.sax.saxutils import escape as _xml_escape, quoteattr as _xml_quoteattr
-from pathlib import Path
 from datetime import datetime
 from bs4 import BeautifulSoup
 import ebooklib
 from ebooklib import epub
 
 from src.config import Config
-from src.fb2_handler import (
-    extract_metadata,
-    update_header_with_metadata,
-    get_cover_image,
-    replace_cover_image,
-    prepare_chunks
-)
 
 config = Config()
 

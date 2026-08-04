@@ -6,7 +6,7 @@ without requiring those tools to be installed.
 """
 import sys
 import os
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, patch
 from pathlib import Path
 
 # Setup path
@@ -576,7 +576,7 @@ def test_full_pipeline_integration():
 
 def test_error_handling():
     """Test error handling for various failure scenarios."""
-    from src.calibre_pipeline import convert_to_markdown, build_output
+    from src.calibre_pipeline import convert_to_markdown
     
     # Test 1: Unsupported input format
     with patch('src.calibre_pipeline.check_calibre_installed', return_value=True), \

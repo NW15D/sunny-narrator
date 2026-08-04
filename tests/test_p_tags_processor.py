@@ -4,7 +4,6 @@ Tests for p_tags_processor module.
 Tests <p> tag validation and auto-structuring logic.
 """
 
-import pytest
 from src.p_tags_processor import post_process_p_tags, _has_p_tags, _count_p_tags
 
 

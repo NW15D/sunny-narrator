@@ -1,6 +1,4 @@
 """Tests for JSON mode LLM response parsing."""
-import pytest
-import json
 
 
 def test_parse_json_translation():

@@ -29,11 +29,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 from PIL import Image
 
-import openai
 import tiktoken
 
 from src.config import Config
-from src.llm_logger import init_llm_logger, get_llm_logger, log_llm_call
+from src.llm_logger import log_llm_call
 from src.p_tags_processor import post_process_p_tags
 
 # LLMService, TranslationPipeline, translate_chunk are defined in this module

@@ -3,7 +3,6 @@ Tests for LLM retry logic (Task 11: exponential backoff) and
 chunk LLM call cap (Task 16: MAX_LLM_CALLS_PER_CHUNK).
 """
 import sys
-import time
 from unittest.mock import patch, MagicMock
 import pytest
 
