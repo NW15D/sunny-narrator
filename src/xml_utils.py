@@ -374,9 +374,18 @@ def prepare_chunks(body: str, max_len_chunk: int) -> List[str]:
 
 
 def _ensure_balanced_tags(chunk: str) -> str:
-    """Ensure chunk has balanced XML tags using stack-based matching."""
+    """Ensure chunk has balanced XML tags (stack-based).
+
+    Handles:
+    - unclosed tags at chunk end (appends closers),
+    - orphan closing tags at chunk start (prepends openers),
+    - cross-nesting mismatches (explicitly closes intermediate tags).
+    """
     VOID_ELEMENTS = {'br', 'hr', 'img', 'image', 'empty-line', 'input', 'meta', 'link'}
     open_stack: list[str] = []
+    orphan_closers: list[str] = []
+    pieces: list[str] = []
+    last_end = 0
     for m in re.finditer(r'<(/?)(\w[\w-]*)([^>]*?)(/?)>', chunk):
         closing, tag, attrs, selfclose = m.groups()
         tag_lower = tag.lower()
@@ -386,16 +395,25 @@ def _ensure_balanced_tags(chunk: str) -> str:
             if open_stack and open_stack[-1] == tag_lower:
                 open_stack.pop()
             elif tag_lower in open_stack:
-                # Close tags until we find the matching one
+                # Cross-nesting: explicitly close intermediate tags before this closer
+                intermediate: list[str] = []
                 while open_stack and open_stack[-1] != tag_lower:
-                    open_stack.pop()
+                    intermediate.append(open_stack.pop())
                 if open_stack:
                     open_stack.pop()
+                if intermediate:
+                    pieces.append(chunk[last_end:m.start()])
+                    pieces.append(''.join(f'</{t}>' for t in intermediate))
+                    last_end = m.start()
+            else:
+                # Orphan closer: no matching opener in this chunk
+                orphan_closers.append(tag_lower)
         else:
             open_stack.append(tag_lower)
-    for tag in reversed(open_stack):
-        chunk += f'</{tag}>'
-    return chunk
+    rebuilt = (''.join(pieces) + chunk[last_end:]) if pieces else chunk
+    prefix = ''.join(f'<{t}>' for t in reversed(orphan_closers))
+    suffix = ''.join(f'</{t}>' for t in reversed(open_stack))
+    return prefix + rebuilt + suffix
 
 
 def _find_chunk_boundary(text: str, start: int, end: int) -> int:
