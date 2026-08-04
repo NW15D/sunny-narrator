@@ -845,6 +845,13 @@ def build_output(
                 html_path,
                 output_path,
             ]
+            # C9 fix: pass metadata to Calibre so it lands in the output file
+            if metadata.get('title'):
+                cmd += ["--title", str(metadata['title'])]
+            if metadata.get('author'):
+                cmd += ["--authors", str(metadata['author'])]
+            if metadata.get('language'):
+                cmd += ["--language", str(metadata['language'])]
             
             try:
                 _run_command(cmd, timeout=300)
@@ -891,11 +898,8 @@ def _generate_title_page(metadata: dict) -> str:
     language = metadata.get('language', '')
     description = metadata.get('description', '')
     
-    html = f"""<html>
-<head>
-    <title>{title}</title>
-</head>
-<body>
+    # C9 fix: title page must be an HTML fragment, not a full document
+    html = f"""<div class="titlepage">
 <h1>{title}</h1>
 """
     
@@ -911,7 +915,7 @@ def _generate_title_page(metadata: dict) -> str:
     if description:
         html += f"<p>{description}</p>\n"
     
-    html += "</body></html>"
+    html += "</div>"
     
     return html
 
