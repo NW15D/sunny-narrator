@@ -42,8 +42,8 @@ __all__ = [
 def _read_file_with_encoding_fallback(file_path):
     """Read file trying UTF-8 first, then detect encoding."""
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            return f.read()
+        with open(file_path, 'r', encoding='utf-8-sig') as f:
+            return f.read().lstrip('\ufeff')
     except UnicodeDecodeError:
         pass
 

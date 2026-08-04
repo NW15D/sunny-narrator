@@ -18,9 +18,9 @@ def _read_with_fallback(file_path):
     with open(file_path, 'rb') as f:
         raw = f.read()
 
-    # 1. Try UTF-8
+    # 1. Try UTF-8 (utf-8-sig strips the BOM if present; plain utf-8 decodes the same)
     try:
-        return raw.decode('utf-8')
+        return raw.decode('utf-8-sig').lstrip('\ufeff')
     except UnicodeDecodeError:
         pass
 
