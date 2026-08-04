@@ -486,12 +486,18 @@ def test_build_output_fb2():
         "language": "ru"
     }
     
+    def _fake_ebook_convert(cmd, *args, **kwargs):
+        if len(cmd) >= 3:
+            with open(cmd[2], 'w', encoding='utf-8') as f:
+                f.write('<?xml version="1.0" encoding="UTF-8"?><FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0"><description><title-info><book-title>T</book-title><lang>en</lang></title-info></description><body><p>Тест</p></body></FictionBook>')
+        return MagicMock(returncode=0)
+
     with patch('src.calibre_pipeline.check_calibre_installed', return_value=True), \
          patch('pypandoc.convert_text', return_value="<html><body>Тест</body></html>"), \
          patch('subprocess.run') as mock_run, \
          patch('os.path.exists', return_value=True):
         
-        mock_run.return_value = MagicMock(returncode=0)
+        mock_run.side_effect = _fake_ebook_convert
         
         output_path = build_output(
             "# Переведённая глава\n\nПривет мир",
@@ -538,7 +544,13 @@ def test_full_pipeline_integration():
          patch('src.utils._pipeline.execute', return_value=mock_state) as mock_execute, \
          patch('src.calibre_pipeline.split_text_smartly', return_value=("Test content", "")):
         
-        mock_subprocess.return_value = MagicMock(returncode=0)
+        def _fake_ebook_convert(cmd, *args, **kwargs):
+            if len(cmd) >= 3:
+                with open(cmd[2], 'w', encoding='utf-8') as f:
+                    f.write('<?xml version="1.0" encoding="UTF-8"?><FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0"><description><title-info><book-title>T</book-title><lang>en</lang></title-info></description><body><p>Тест</p></body></FictionBook>')
+            return MagicMock(returncode=0)
+
+        mock_subprocess.side_effect = _fake_ebook_convert
         mock_pandoc.return_value = "# Глава\n\nПереведённый текст"
         
         mock_zf_instance = MagicMock()
@@ -557,6 +569,10 @@ def test_full_pipeline_integration():
         # Verify full pipeline was called
         assert mock_subprocess.call_count >= 2  # At least convert + output
         assert mock_execute.call_count >= 1
+
+    # run_pipeline creates Pipeline_Test.fb2 in cwd; clean it up
+    if os.path.exists("Pipeline_Test.fb2"):
+        os.remove("Pipeline_Test.fb2")
 
 
 def test_error_handling():
