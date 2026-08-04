@@ -739,6 +739,8 @@ def _save_vocabulary_formatted(translated_text: str, dict_file: str, original_te
             else:
                 cat = 'OTHER' if cat else 'TERM'  # Default to TERM if empty
 
+        if cat not in categories:
+            cat = 'OTHER'
         categories[cat].append((source, target, cat))
 
     # Write dictionary in proper format with commas
