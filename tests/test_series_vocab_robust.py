@@ -9,7 +9,6 @@ import sys
 import tempfile
 import shutil
 import pytest
-from pathlib import Path
 from unittest.mock import patch
 
 # Add the project root to Python path

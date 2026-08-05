@@ -28,11 +28,13 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 import xml.etree.ElementTree as ET
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
+from datetime import datetime
 
 try:
     import pypandoc
@@ -42,9 +44,23 @@ except ImportError:
     pypandoc = None
 
 # Import existing utilities
-from src.utils import split_text_smartly, translate_chunk, num_tokens_in_string, config, validate_translation_length, _pipeline
-from src.config import Config
+from src.utils import split_text_smartly, config, validate_translation_length, _pipeline
+from src.checkpoint_manager import CheckpointManager
 from src import markdown_utils
+
+# Precompiled Calibre-specific cleanup patterns (narrowed to avoid removing valid Pandoc attributes)
+_RE_CALIBRE_COMMENT = re.compile(r'<!--\s*\d+\s*-->')
+_RE_CALIBRE_SECTION_FULL = re.compile(r'<[^>]*>:::\s*\{#calibre_link-\d+\s+\.calibre\d+\}\s*:::</[^>]*>', re.DOTALL)
+_RE_CALIBRE_SECTION_CLASS = re.compile(r'<[^>]*>:::\s*\{\.calibre\d+\}\s*:::</[^>]*>', re.DOTALL)
+_RE_CALIBRE_SECTION_BARE = re.compile(r'<[^>]*>:::</[^>]*>', re.DOTALL)
+_RE_CALIBRE_TRIPLE_COLON = re.compile(r':::')
+_RE_CALIBRE_PARA = re.compile(r'<p>\s*\{#calibre[^}]*\}\s*</p>', re.DOTALL)
+_RE_CALIBRE_ANCHOR = re.compile(r'\{#calibre[^}]*\}')  # Only calibre-specific anchors
+_RE_CALIBRE_CLASS = re.compile(r'\{\.calibre\d*\}')  # Only calibre-specific classes
+_RE_CALIBRE_ID_ATTR = re.compile(r'\s+id\s*=\s*["\'][^"\']*calibre_link[^"\']*["\']', re.IGNORECASE)
+_RE_CALIBRE_CLASS_ATTR = re.compile(r'\s+class\s*=\s*["\'][^"\']*calibre[^"\']*["\']', re.IGNORECASE)
+_RE_HR_MARKERS = re.compile(r'\n*---\s*\n*')
+_RE_MULTI_BLANK = re.compile(r'\n{3,}')
 
 @dataclass
 class ValidationIssue:
@@ -305,6 +321,14 @@ def convert_to_markdown(input_path: str) -> tuple[str, dict]:
                 
                 # Extract images from HTMLZ
                 image_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp')
+                # C8 fix: keep images in a persistent dir next to the input file;
+                # the temp dir is deleted when convert_to_markdown returns
+                persistent_images_dir = os.path.splitext(input_path)[0] + '_images'
+                try:
+                    os.makedirs(persistent_images_dir, exist_ok=True)
+                except OSError as e:
+                    logger.warning(f"Cannot create persistent images dir {persistent_images_dir}: {e}")
+                    persistent_images_dir = None
                 for name in zf.namelist():
                     if name.lower().endswith(image_extensions):
                         try:
@@ -313,6 +337,10 @@ def convert_to_markdown(input_path: str) -> tuple[str, dict]:
                             img_path = os.path.join(htmlz_images_dir, img_name)
                             with open(img_path, 'wb') as img_file:
                                 img_file.write(img_data)
+                            if persistent_images_dir:
+                                persistent_img_path = os.path.join(persistent_images_dir, img_name)
+                                with open(persistent_img_path, 'wb') as img_file:
+                                    img_file.write(img_data)
                         except Exception as e:
                             logger.warning(f"Failed to extract image {name}: {e}")
             
@@ -379,35 +407,34 @@ def _clean_calibre_markers(text: str) -> str:
         return text
     
     # Remove Calibre comment markers like: <!-- 1 -->
-    text = re.sub(r'<!--\s*\d+\s*-->', '', text)
+    text = _RE_CALIBRE_COMMENT.sub('', text)
     
     # Remove Calibre section markers in HTML format (:::{...}::: inside <div> or <p>)
-    text = re.sub(r'<[^>]*>:::\s*\{#calibre_link-\d+\s+\.calibre\d+\}\s*:::</[^>]*>', '', text, flags=re.DOTALL)
-    text = re.sub(r'<[^>]*>:::\s*\{\.calibre\d+\}\s*:::</[^>]*>', '', text, flags=re.DOTALL)
+    text = _RE_CALIBRE_SECTION_FULL.sub('', text)
+    text = _RE_CALIBRE_SECTION_CLASS.sub('', text)
     
     # Remove standalone :::
-    text = re.sub(r'<[^>]*>:::</[^>]*>', '', text, flags=re.DOTALL)
-    text = re.sub(r':::', '', text)
+    text = _RE_CALIBRE_SECTION_BARE.sub('', text)
+    text = _RE_CALIBRE_TRIPLE_COLON.sub('', text)
     
-    # Remove HTML paragraph包围的 Calibre markers
-    text = re.sub(r'<p>\s*\{#.*?\}\s*</p>', '', text, flags=re.DOTALL)
+    # Remove HTML paragraphs containing only Calibre markers
+    text = _RE_CALIBRE_PARA.sub('', text)
     
-    # Remove inline Calibre markers: {#calibre_link-* .calibre*} and {#annotation .calibre*}
-    # Use broad pattern to catch all {#...} and {.class} markers
-    text = re.sub(r'\{#[^}]+\}', '', text)  # {#calibre_link-0 .calibre} and similar
-    text = re.sub(r'\{\.\w+\}', '', text)  # {.calibre1} and similar
+    # Remove inline Calibre markers (narrowed to Calibre-specific only)
+    text = _RE_CALIBRE_ANCHOR.sub('', text)  # {#calibre_link-0 .calibre} and similar
+    text = _RE_CALIBRE_CLASS.sub('', text)  # {.calibre1} and similar
     
     # Remove Calibre IDs: id="calibre_link-*"
-    text = re.sub(r'\s+id\s*=\s*["\'][^"\']*calibre_link[^"\']*["\']', '', text, flags=re.IGNORECASE)
+    text = _RE_CALIBRE_ID_ATTR.sub('', text)
     
     # Remove Calibre class attributes from HTML tags
-    text = re.sub(r'\s+class\s*=\s*["\'][^"\']*calibre[^"\']*["\']', '', text, flags=re.IGNORECASE)
+    text = _RE_CALIBRE_CLASS_ATTR.sub('', text)
     
     # Remove horizontal rules that are Calibre section markers
-    text = re.sub(r'\n*---\s*\n*', '\n\n', text)
+    text = _RE_HR_MARKERS.sub('\n\n', text)
     
     # Clean up multiple blank lines
-    text = re.sub(r'\n{3,}', '\n\n', text)
+    text = _RE_MULTI_BLANK.sub('\n\n', text)
     
     # Remove leading/trailing whitespace per line
     lines = [line.rstrip() for line in text.split('\n')]
@@ -521,7 +548,8 @@ def translate_chunks(
     style: str = "text",
     fast_mode: bool = False,
     vocab_dict: Optional[dict] = None,
-    book_path: Optional[str] = None
+    book_path: Optional[str] = None,
+    checkpoint_file: Optional[str] = None
 ) -> str:
     """
     Translate Markdown text in chunks using existing translate_chunk.
@@ -586,7 +614,30 @@ def translate_chunks(
     translated_parts = []
     outline_text = ""  # Context for next chunk
     vocab_entries = []  # Full metadata entries for 5-stage translation
-    
+    failed_chunks = 0  # Track chunks that failed translation
+
+    # D5: checkpoint/resume support (per-chunk persistence)
+    checkpoint_mgr = CheckpointManager(checkpoint_file) if checkpoint_file else None
+    start_idx = 0
+    start_time_iso = datetime.now().isoformat()
+    total_source_len = 0
+    total_target_len = 0
+    if checkpoint_mgr is not None:
+        saved = checkpoint_mgr.load()
+        if saved is not None and os.path.realpath(saved.get("book_path", "")) == os.path.realpath(book_path or ""):
+            start_idx = saved.get("last_chunk", -1) + 1
+            extra = saved.get("extra", {}) or {}
+            translated_parts = list(extra.get("translated_parts", []))
+            outline_text = extra.get("outline_text", "")
+            failed_chunks = int(extra.get("failed_chunks", 0))
+            total_source_len = saved.get("lengths", {}).get("total_source_len", 0)
+            total_target_len = saved.get("lengths", {}).get("total_target_len", 0)
+            start_time_iso = saved.get("created_at", start_time_iso)
+            logger.info(f"Resuming from checkpoint: chunk {start_idx}/{total_chunks}")
+        elif saved is not None:
+            logger.warning("Checkpoint belongs to another book, starting fresh")
+            checkpoint_mgr.remove()
+
     # Load vocabulary if book_path provided and no explicit vocab_dict
     if vocab_dict is None and book_path:
         try:
@@ -608,27 +659,41 @@ def translate_chunks(
         vocab_dict = {}
     
     for i, chunk in enumerate(chunks):
+        if i < start_idx:
+            continue  # already translated before the checkpoint
+
         # Show progress
         progress = ((i + 1) / total_chunks) * 100
         print(f"\rProgress: {i + 1}/{total_chunks} ({progress:.1f}%)", end="", flush=True)
         
-        # Translate chunk using 5-stage translation pipeline
-        try:
-            state = _pipeline.execute(
-                source_lang=source_lang,
-                target_lang=target_lang,
-                source_text=chunk,
-                outline_text=outline_text,
-                vocab_dict=vocab_dict,
-                vocab_entries=vocab_entries,
-                country=country,
-                style=style,
-                fast_mode=fast_mode
-            )
-            
-            translation = state.final_translation
-            outline_text = state.synopsis or ""
-            
+        # Translate chunk using 5-stage translation pipeline with retry
+        translation = None
+        for attempt in range(3):  # Up to 3 attempts
+            try:
+                state = _pipeline.execute(
+                    source_lang=source_lang,
+                    target_lang=target_lang,
+                    source_text=chunk,
+                    outline_text=outline_text,
+                    vocab_dict=vocab_dict,
+                    vocab_entries=vocab_entries,
+                    country=country,
+                    style=style,
+                    fast_mode=fast_mode
+                )
+                
+                translation = state.final_translation
+                outline_text = state.synopsis or ""
+                break  # Success
+                
+            except Exception as e:
+                logger.warning(f"Translation attempt {attempt + 1} failed for chunk {i + 1} ({type(e).__name__}): {e}")
+                if attempt < 2:
+                    backoff = 2 ** (attempt + 1)  # 2s, 4s
+                    logger.info(f"Retrying chunk {i + 1} in {backoff}s...")
+                    time.sleep(backoff)
+        
+        if translation is not None:
             # Validate translation length
             is_valid, percent_diff, should_split = validate_translation_length(
                 chunk, translation, f"chunk_{i+1}"
@@ -641,16 +706,59 @@ def translate_chunks(
             if not translation or not translation.strip():
                 print(f"Empty translation for chunk {i + 1}, keeping original")
                 translation = chunk
-            
-            translated_parts.append(translation)
-            
-        except Exception as e:
-            logger.error(f"Translation failed for chunk {i + 1}: {e}")
-            # Keep original chunk on failure
-            translated_parts.append(chunk)
+                failed_chunks += 1
+        else:
+            # All retries exhausted
+            logger.error(f"All retries exhausted for chunk {i + 1}, keeping original")
+            translation = chunk
+            failed_chunks += 1
+        
+        translated_parts.append(translation)
+
+        total_source_len += len(chunk)
+        total_target_len += len(translation)
+
+        # Save checkpoint after each chunk (D5)
+        # On failure (empty translation or all retries exhausted): the original chunk text
+        # is used as the translation and still gets appended to translated_parts +
+        # persisted in checkpoint. This ensures a resumed run can retry the same chunk.
+        if checkpoint_mgr is not None:
+            checkpoint_mgr.save(
+                chunk_id=i,
+                section_idx=0,
+                chunk_idx=i,
+                stats={'successful': len(translated_parts) - failed_chunks,
+                       'failed': failed_chunks},
+                total_source_len=total_source_len,
+                total_target_len=total_target_len,
+                synopsis_history={},
+                book_path=book_path or "",
+                start_time_iso=start_time_iso,
+                extra={
+                    'translated_parts': translated_parts,
+                    'outline_text': outline_text,
+                    'failed_chunks': failed_chunks,
+                },
+            )
     
     print()  # New line after progress
     
+    # Report failures
+    if failed_chunks > 0:
+        fail_pct = failed_chunks / total_chunks * 100
+        logger.warning(f"⚠️ {failed_chunks}/{total_chunks} chunks failed to translate ({fail_pct:.1f}%)")
+        # C11: by default ANY untranslated chunk is a failure; threshold is configurable
+        max_failed_ratio = float(getattr(config, 'max_failed_chunk_ratio', 0.0))
+        if failed_chunks / total_chunks > max_failed_ratio:
+            raise RuntimeError(
+                f"Translation failed: {failed_chunks}/{total_chunks} chunks ({fail_pct:.1f}%) untranslated. "
+                f"Threshold: {max_failed_ratio:.0%}. Fix LLM output or raise max_failed_chunk_ratio."
+            )
+    
+    # All chunks done: drop the checkpoint so the next run starts fresh
+    if checkpoint_mgr is not None:
+        checkpoint_mgr.remove()
+
     # Reassemble translated text
     translated_text = '\n\n'.join(translated_parts)
     
@@ -710,7 +818,8 @@ def build_output(
     translated_md: str,
     output_format: str,
     metadata: dict,
-    output_path: Optional[str] = None
+    output_path: Optional[str] = None,
+    images_dir: Optional[str] = None
 ) -> str:
     """
     Build final output (FB2/EPUB) from translated Markdown.
@@ -794,9 +903,6 @@ def build_output(
             except Exception as e:
                 raise ValueError(f"Pandoc HTML conversion failed: {e}")
             
-            with open(html_path, 'w', encoding='utf-8') as f:
-                f.write(html_content)
-            
             # Step 2b: Clean Calibre markers from HTML before conversion
             # This ensures no Calibre artifacts remain in the output
             logger.info("Cleaning Calibre markers from HTML...")
@@ -804,6 +910,14 @@ def build_output(
             with open(html_path, 'w', encoding='utf-8') as f:
                 f.write(html_content)
             
+            # C8 fix: put book images next to the HTML so ebook-convert embeds them
+            if images_dir and os.path.isdir(images_dir):
+                import shutil
+                for img_name in os.listdir(images_dir):
+                    src_img = os.path.join(images_dir, img_name)
+                    if os.path.isfile(src_img):
+                        shutil.copy2(src_img, os.path.join(temp_dir, img_name))
+
             # Step 3: Convert HTML to output format using Calibre
             logger.info(f"Converting HTML to {output_format.upper()}...")
             cmd = [
@@ -811,6 +925,13 @@ def build_output(
                 html_path,
                 output_path,
             ]
+            # C9 fix: pass metadata to Calibre so it lands in the output file
+            if metadata.get('title'):
+                cmd += ["--title", str(metadata['title'])]
+            if metadata.get('author'):
+                cmd += ["--authors", str(metadata['author'])]
+            if metadata.get('language'):
+                cmd += ["--language", str(metadata['language'])]
             
             try:
                 _run_command(cmd, timeout=300)
@@ -857,11 +978,8 @@ def _generate_title_page(metadata: dict) -> str:
     language = metadata.get('language', '')
     description = metadata.get('description', '')
     
-    html = f"""<html>
-<head>
-    <title>{title}</title>
-</head>
-<body>
+    # C9 fix: title page must be an HTML fragment, not a full document
+    html = f"""<div class="titlepage">
 <h1>{title}</h1>
 """
     
@@ -877,7 +995,7 @@ def _generate_title_page(metadata: dict) -> str:
     if description:
         html += f"<p>{description}</p>\n"
     
-    html += "</body></html>"
+    html += "</div>"
     
     return html
 
@@ -1343,6 +1461,15 @@ def save_dictionary(dictionary: List[Dict], output_path: str) -> None:
     logger.info(f"Dictionary saved: {output_path} ({len(dictionary)} entries)")
 
 
+def _enforce_validation(validation, allow_invalid: bool) -> None:
+    """C10: raise when validation found errors unless explicitly allowed."""
+    if validation.is_valid or allow_invalid:
+        return
+    raise RuntimeError(
+        f"Output validation failed ({validation.file_path}): {validation.summary()}"
+    )
+
+
 # Convenience function for full pipeline
 def run_pipeline(
     input_path: str,
@@ -1352,7 +1479,8 @@ def run_pipeline(
     target_lang: str = "ru",
     country: str = "Russia",
     fast_mode: bool = False,
-    skip_validation: bool = False
+    skip_validation: bool = False,
+    allow_invalid: bool = False
 ) -> str:
     """
     Run the complete Calibre pipeline: convert -> translate -> build output -> validate.
@@ -1375,6 +1503,8 @@ def run_pipeline(
     # Step 1: Convert to Markdown
     logger.info(f"Step 1/5: Converting {input_path} to Markdown...")
     markdown_text, metadata = convert_to_markdown(input_path)
+    # C8: convert_to_markdown persisted images next to the input file
+    images_dir = os.path.splitext(input_path)[0] + '_images'
     
     # Step 2: Translate
     logger.info("Step 2/5: Translating...")
@@ -1426,7 +1556,8 @@ def run_pipeline(
     output_path = build_output(
         translated_md,
         output_format,
-        metadata
+        metadata,
+        images_dir=images_dir
     )
     
     # Step 5: Validate output
@@ -1440,6 +1571,7 @@ def run_pipeline(
             logger.error(f"  ✗ Validation failed:")
             for issue in validation.issues:
                 logger.error(f"    [{issue.severity.upper()}] {issue.message}")
+            _enforce_validation(validation, allow_invalid)
     else:
         logger.info("Step 4/4: Validation skipped (skip_validation=True)")
     

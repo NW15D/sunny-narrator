@@ -1,6 +1,25 @@
 import os
+import logging
 from pathlib import Path
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
+
+
+def _parse_bool_env(name, default='false'):
+    """Parse boolean env var correctly. bool('false') == True in Python!"""
+    val = os.getenv(name, default)
+    return str(val).lower() in ('true', '1', 'on', 'yes')
+
+
+def _parse_numeric_env(name, default, cast=float):
+    """Parse numeric env var with fallback to default on invalid values."""
+    try:
+        return cast(os.getenv(name, default))
+    except (ValueError, TypeError):
+        logger.warning(f"Invalid {name} value, using default {default}")
+        return default
+
 
 class Config:
     def __init__(self, env_path: str = None):
@@ -11,17 +30,17 @@ class Config:
             load_dotenv(config_dir / ".env")
 
         # Translation API (Primary/Big model)
-        self.api_key_translate = os.getenv('API_KEY_TRANSLATE', os.getenv('API_KEY', 'a132b20c-96be-467f-a15a-ed08aed67345'))
+        self.api_key_translate = os.getenv('API_KEY_TRANSLATE', os.getenv('API_KEY', ''))
         self.base_url_translate = os.getenv('API_BASE_TRANSLATE', os.getenv('API_BASE', 'http://192.168.0.55:6150/v1'))
-        self.sys_not_promt_translate = bool(os.getenv('S_PROMT_TRANSLATE', os.getenv('S_PROMT')))
+        self.sys_not_promt_translate = os.getenv('S_PROMT_TRANSLATE', os.getenv('S_PROMT', '')).lower() in ('true', '1', 'on')
         self.model_translate = os.getenv('MODEL_TRANSLATE', os.getenv('MODEL', 'Mistral'))
-        self.temp_translate = float(os.getenv('TEMP_TRANSLATE', os.getenv('TEMP', 0.01)))
-        self.timeout_translate = int(os.getenv('TIMEOUT_TRANSLATE', os.getenv('TIMEOUT', 6000)))
-        self.nothink_translate = bool(os.getenv('NOTHINK_TRANSLATE', os.getenv('NOTHINK2')))
+        self.temp_translate = _parse_numeric_env('TEMP_TRANSLATE', os.getenv('TEMP', 0.01))
+        self.timeout_translate = _parse_numeric_env('TIMEOUT_TRANSLATE', os.getenv('TIMEOUT', 6000), cast=int)
+        self.nothink_translate = _parse_bool_env('NOTHINK_TRANSLATE', os.getenv('NOTHINK2', 'false'))
         
         # Stage-specific temperatures (override general temp_translate/temp_proofread)
         # Stage 1: INITIAL translation
-        self.temp_initial = float(os.getenv('TEMP_INITIAL', self.temp_translate))
+        self.temp_initial = _parse_numeric_env('TEMP_INITIAL', self.temp_translate)
         
         # JSON mode control - use structured JSON for LLM input/output
         # When JSON_MODE=true, JSON is enabled for all stages
@@ -37,30 +56,30 @@ class Config:
             self.disable_json_mode_translate = os.getenv('DISABLE_JSON_MODE_TRANSLATE', 'true').lower() in ['true', '1', 't', 'on', 'yes']
             self.disable_json_mode_proofread = os.getenv('DISABLE_JSON_MODE_PROOFREAD', 'true').lower() in ['true', '1', 't', 'on', 'yes']
         # Stage 2: REFLECTION (quality review)
-        self.temp_reflection = float(os.getenv('TEMP_REFLECTION', 0.4))
+        self.temp_reflection = _parse_numeric_env('TEMP_REFLECTION', 0.4)
         # Stage 3: IMPROVE (apply suggestions)
-        self.temp_improve = float(os.getenv('TEMP_IMPROVE', 0.4))
+        self.temp_improve = _parse_numeric_env('TEMP_IMPROVE', 0.4)
         # Stage 4: FINAL_EDIT (proofreading)
-        self.temp_final_edit = float(os.getenv('TEMP_FINAL_EDIT', 0.15))
+        self.temp_final_edit = _parse_numeric_env('TEMP_FINAL_EDIT', 0.15)
         # Stage 5: SYNOPSIS
-        self.temp_synopsis = float(os.getenv('TEMP_SYNOPSIS', 0.15))
+        self.temp_synopsis = _parse_numeric_env('TEMP_SYNOPSIS', 0.15)
 
         # Proofread API (Secondary/Small model)
-        self.api_key_proofread = os.getenv('API_KEY_PROOFREAD', os.getenv('API_KEY2', 'a132b20c-96be-467f-a15a-ed08aed67345'))
+        self.api_key_proofread = os.getenv('API_KEY_PROOFREAD', os.getenv('API_KEY2', ''))
         self.base_url_proofread = os.getenv('API_BASE_PROOFREAD', os.getenv('API_BASE2', 'https://api.openai.com/v1'))
-        self.sys_not_promt_proofread = bool(os.getenv('S_PROMT_PROOFREAD', os.getenv('S_PROMT2')))
+        self.sys_not_promt_proofread = os.getenv('S_PROMT_PROOFREAD', os.getenv('S_PROMT2', '')).lower() in ('true', '1', 'on')
         self.model_proofread = os.getenv('MODEL_PROOFREAD', os.getenv('MODEL2', 'tencent/Hunyuan-MT-7B'))
-        self.temp_proofread = float(os.getenv('TEMP_PROOFREAD', os.getenv('TEMP2', 0.7)))
-        self.timeout_proofread = int(os.getenv('TIMEOUT_PROOFREAD', os.getenv('TIMEOUT2', 6000)))
-        self.nothink_proofread = bool(os.getenv('NOTHINK_PROOFREAD', os.getenv('NOTHINK')))
+        self.temp_proofread = _parse_numeric_env('TEMP_PROOFREAD', os.getenv('TEMP2', 0.7))
+        self.timeout_proofread = _parse_numeric_env('TIMEOUT_PROOFREAD', os.getenv('TIMEOUT2', 6000), cast=int)
+        self.nothink_proofread = _parse_bool_env('NOTHINK_PROOFREAD', os.getenv('NOTHINK', 'false'))
 
         # Images API (Cover API)
         self.api_key_images = os.getenv('API_KEY_IMAGES', os.getenv('API_KEY3', ''))
         self.base_url_images = os.getenv('API_BASE_IMAGES', os.getenv('API_BASE3', ''))
-        self.sys_not_promt_images = bool(os.getenv('S_PROMT_IMAGES', os.getenv('S_PROMT3')))
+        self.sys_not_promt_images = os.getenv('S_PROMT_IMAGES', os.getenv('S_PROMT3', '')).lower() in ('true', '1', 'on')
         self.model_images = os.getenv('MODEL_IMAGES', os.getenv('MODEL3', 'gpt-image-1.5'))
-        self.temp_images = float(os.getenv('TEMP_IMAGES', os.getenv('TEMP3', 0.5)))
-        self.timeout_images = int(os.getenv('TIMEOUT_IMAGES', os.getenv('TIMEOUT3', 600)))
+        self.temp_images = _parse_numeric_env('TEMP_IMAGES', os.getenv('TEMP3', 0.5))
+        self.timeout_images = _parse_numeric_env('TIMEOUT_IMAGES', os.getenv('TIMEOUT3', 600), cast=int)
         self.cover_prompt = os.getenv('COVER_PROMPT', '')
         
         self.example = os.getenv('EXAMPLE', '')
@@ -103,10 +122,10 @@ class Config:
         default_model = self.lang_model_map.get(self.source_lang.lower(), 'en_core_web_lg')
         self.nermodel = os.getenv('NERMODEL', default_model)
         self.fast_trans = os.getenv('FAST_TRANS', 'on').lower() in ['true', '1', 'on', 'yes']
-        self.concurrent_limit = int(os.getenv('CONCURRENT_LIMIT', 1))
+        self.concurrent_limit = _parse_numeric_env('CONCURRENT_LIMIT', 1, cast=int)
         self.short = os.getenv('SHORT')
-        self.max_len_chunk = int(os.getenv('MAX_LEN_CHUNK', 8192))
-        self.length_check_threshold = int(os.getenv('LENGTH_CHECK_THRESHOLD', 20))
+        self.max_len_chunk = _parse_numeric_env('MAX_LEN_CHUNK', 8192, cast=int)
+        self.length_check_threshold = _parse_numeric_env('LENGTH_CHECK_THRESHOLD', 20, cast=int)
         
         # File defaulted to books/Freedom.fb2 (stripped quotes)
         self.myfile = os.getenv('FILE', 'books/Cargo.fb2')
@@ -127,6 +146,22 @@ class Config:
         
         # FB2 auto-repair: write _fixed version alongside original (default: false)
         self.fb2_auto_repair = os.getenv('FB2_AUTO_REPAIR', 'false').lower() in ['true', '1', 't', 'on', 'yes']
+
+        # Language code mapping for metadata
+        self.lang_code_map = {
+            'russian': 'ru', 'english': 'en', 'french': 'fr', 'german': 'de',
+            'spanish': 'es', 'italian': 'it', 'chinese': 'zh', 'japanese': 'ja',
+            'dutch': 'nl', 'portuguese': 'pt', 'polish': 'pl', 'ukrainian': 'uk',
+            'catalan': 'ca', 'danish': 'da', 'finnish': 'fi', 'swedish': 'sv',
+            'norwegian': 'nb', 'korean': 'ko', 'romanian': 'ro', 'greek': 'el',
+            'lithuanian': 'lt', 'macedonian': 'mk', 'croatian': 'hr', 'slovenian': 'sl',
+        }
+
+        # Validate API keys
+        if not self.api_key_translate:
+            logger.warning("API_KEY_TRANSLATE not set — LLM calls will fail")
+        if not self.api_key_proofread:
+            logger.warning("API_KEY_PROOFREAD not set — proofread LLM calls will fail")
 
         # Load prompts
         self.prompts = self._load_prompts()

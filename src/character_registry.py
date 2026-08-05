@@ -10,7 +10,7 @@ Purpose:
 """
 
 import logging
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from collections import defaultdict
 
@@ -168,7 +168,7 @@ class CharacterRegistry:
             char = self.characters[key]
             if target_name and not char.target_name:
                 char.target_name = target_name
-            if gender and not char.gender:
+            if gender is not None and gender and not char.gender:
                 char.gender = gender
             if notes and not char.notes:
                 char.notes = notes
@@ -185,7 +185,7 @@ class CharacterRegistry:
             self._index_character(char)
             
             # Track gender stats
-            if gender:
+            if gender is not None and gender:
                 self.gender_stats[gender] += 1
         
         return char

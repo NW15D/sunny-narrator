@@ -10,10 +10,12 @@ Validates and repairs EPUB files:
 
 import os
 import re
+import shutil
 import zipfile
-from pathlib import Path
 from typing import List, Tuple, Optional
 from lxml import etree
+
+from src.xml_utils import get_safe_xml_parser
 
 
 def validate_epub(epub_path: str) -> List[str]:
@@ -143,9 +145,9 @@ def repair_epub(epub_path: str, output_path: Optional[str] = None, max_iteration
                     
                     zf_out.writestr(file_name, content)
         
-        # Create backup before overwriting original
+        # Create backup before overwriting original (atomic: copy preserves original)
         if output_path == epub_path and os.path.exists(epub_path):
-            os.replace(epub_path, backup_path)
+            shutil.copy2(epub_path, backup_path)
         
         # Replace original with repaired
         if output_path == epub_path:
@@ -170,7 +172,7 @@ def _find_opf_path(zf: zipfile.ZipFile) -> Optional[str]:
     try:
         if 'META-INF/container.xml' in zf.namelist():
             container_content = zf.read('META-INF/container.xml')
-            soup = etree.fromstring(container_content)
+            soup = etree.fromstring(container_content, get_safe_xml_parser())
             rootfile = soup.find('.//{urn:oasis:names:tc:opendocument:xmlns:container}rootfile')
             if rootfile is not None:
                 return rootfile.get('full-path')
@@ -186,7 +188,7 @@ def _get_xhtml_files_from_opf(zf: zipfile.ZipFile, opf_path: str) -> List[str]:
     """Get list of XHTML files from OPF manifest."""
     try:
         opf_content = zf.read(opf_path)
-        soup = etree.fromstring(opf_content)
+        soup = etree.fromstring(opf_content, get_safe_xml_parser())
         
         # Find all items with XHTML media-type
         xhtml_files = []
@@ -209,7 +211,8 @@ def _validate_xml(content: bytes, context: str) -> List[str]:
     """Validate XML content."""
     errors = []
     try:
-        parser = etree.XMLParser(recover=False)
+        parser = get_safe_xml_parser()
+        parser.recover = False  # strict mode for validation
         etree.fromstring(content, parser)
     except etree.XMLSyntaxError as e:
         for error in e.error_log:
@@ -243,7 +246,7 @@ def _repair_xhtml(content: bytes, file_name: str) -> Tuple[bytes, List[str]]:
     
     # Repair 1: Fix unclosed tags using lxml
     try:
-        parser = etree.XMLParser(recover=True, encoding='utf-8')
+        parser = get_safe_xml_parser()
         root = etree.fromstring(content_str.encode('utf-8'), parser)
         
         if root is not None:

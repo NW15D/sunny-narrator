@@ -11,6 +11,8 @@ Usage:
 
 import os
 import sys
+import signal
+import time
 import warnings
 import base64
 import logging
@@ -18,9 +20,12 @@ import re
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional, List, Tuple
+from typing import Dict, List
 
-# Suppress FutureWarning from transformers/torch interaction
+# Suppress FutureWarning from transformers/torch interaction.
+# This warning is triggered by torch.utils._pytree._register_pytree_node
+# during import of transformers. It's harmless but noisy in logs.
+# Kept targeted to this specific message to avoid hiding other warnings.
 warnings.filterwarnings("ignore", category=FutureWarning,
                        message=".*torch.utils._pytree._register_pytree_node.*")
 
@@ -33,7 +38,7 @@ import src.txt_handler as txt
 from src.config import Config
 from src.synopsis_manager import SynopsisManager
 from src.llm_logger import init_llm_logger
-from src.vocabulary_manager import get_vocabulary_manager
+from src.vocabulary_manager import get_vocabulary_manager, DictionaryCreatedSignal
 from src.character_registry import get_character_registry, reset_character_registry
 from src.epub_writer import create_epub_from_fb2
 
@@ -270,13 +275,23 @@ class TranslationEngine:
             except Exception as e:
                 logger.warning(f"Translation attempt {attempt + 1} failed: {e}")
                 retry_count += 1
+                if attempt < 2:  # Don't sleep after last attempt
+                    backoff = 2 ** attempt  # 1s, 2s
+                    logger.info(f"Retrying chunk {g_id} in {backoff}s...")
+                    time.sleep(backoff)
 
         else:
-            # All retries failed
+            # All retries failed — return visible placeholder instead of silent empty string
             logger.warning(f"All validation attempts failed for chunk {g_id}")
-            final_content = self._post_process_xml(source_text, "")
+            final_content = f"[TRANSLATION FAILED: chunk {g_id}]"
             self.stats['failed'] += 1
             return final_content, synopsis
+
+        # Empty result is a failure, not a success
+        if not final_content or not final_content.strip():
+            logger.warning(f"Empty translation result for chunk {g_id}")
+            self.stats['failed'] += 1
+            return f"[TRANSLATION FAILED: chunk {g_id}]", synopsis
 
         # Count successful translation
         self.stats['successful'] += 1
@@ -315,56 +330,6 @@ class TranslationEngine:
 
         return cleaned
 
-    def _count_tags(self, text: str) -> dict:
-        """Count XML tags in text."""
-        tags = re.findall(r'</?[a-zA-Z][^>]*>', text)
-        counts = {}
-        for tag in tags:
-            counts[tag] = counts.get(tag, 0) + 1
-        return counts
-
-    def _tag_difference(self, source_tags: dict, translated_tags: dict) -> float:
-        """Calculate tag difference ratio (0.0-1.0)."""
-        all_tags = set(source_tags.keys()) | set(translated_tags.keys())
-        if not all_tags:
-            return 0.0
-
-        diffs = []
-        for tag in all_tags:
-            src = source_tags.get(tag, 0)
-            trans = translated_tags.get(tag, 0)
-            if src > 0:
-                diffs.append(abs(src - trans) / src)
-
-        return sum(diffs) / len(diffs) if diffs else 0.0
-
-    def _llm_repair_xml(self, source_text: str, translated_text: str) -> str:
-        """Repair lost XML tags using LLM."""
-        prompt = f"""ОРИГИНАЛ ({config.source_lang}):
-{source_text[:1000]}
-
-ПЕРЕВОД ({config.target_lang}, могут быть потеряны тэги):
-{translated_text[:1000]}
-
-ЗАДАЧА: Восстанови XML-тэги FB2 (<p>, </p>, <strong>, <em>, etc.) в переводе.
-Верни ТОЛЬКО исправленный перевод с тэгами."""
-
-        try:
-            client = getattr(ta.llm_service, 'clientProofread', ta.llm_service.clientTranslate)
-            response = client.chat.completions.create(
-                model=config.model_proofread,
-                messages=[
-                    {"role": "system", "content": "Ты редактор XML. Восстанавливай тэги FB2."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.1,
-                max_tokens=2000
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            logger.error(f"LLM repair failed: {e}")
-            return translated_text
-
     def process_all_chunks(self, all_chunks: list, orig_sections: list,
                            vocab: dict, output_tfile: str, checkpoint_file: str = None) -> str:
         """
@@ -381,7 +346,7 @@ class TranslationEngine:
         Returns:
             Combined translated content with proper <section> wrapping
         """
-        all_content = ""
+        content_parts = []  # F1: list+join вместо O(n²)-конкатенации строк
         total = len(all_chunks)
 
         logger.info(f"Starting translation: {total} chunks")
@@ -406,7 +371,7 @@ class TranslationEngine:
                     # Write accumulated section content
                     section_content = "\n".join(current_section_chunks)
                     section_wrapped = f"<section>\n{section_content}\n</section>"
-                    all_content += section_wrapped + "\n"
+                    content_parts.append(section_wrapped + "\n")
                     with open(output_tfile, 'a', encoding='utf-8') as f:
                         f.write(section_wrapped + "\n")
                     written_sections.add(current_section_idx)
@@ -435,6 +400,10 @@ class TranslationEngine:
             # Progress output
             result_preview = (final_content[:80] + '...') if len(final_content) > 80 else final_content
             print(f"  Result: {result_preview}")
+
+            # Empty result is a failure - fail fast instead of silently dropping the chunk
+            if not final_content or not final_content.strip():
+                raise RuntimeError(f"Empty translation result for chunk {c_idx} in section {s_idx}")
 
             # Statistics
             if final_content:
@@ -469,12 +438,18 @@ class TranslationEngine:
         if current_section_chunks and current_section_idx not in written_sections:
             section_content = "\n".join(current_section_chunks)
             section_wrapped = f"<section>\n{section_content}\n</section>"
-            all_content += section_wrapped + "\n"
+            content_parts.append(section_wrapped + "\n")
             with open(output_tfile, 'a', encoding='utf-8') as f:
                 f.write(section_wrapped + "\n")
             written_sections.add(current_section_idx)
 
-        return all_content
+        # Warn if too many chunks failed
+        total_processed = self.stats['successful'] + self.stats['failed']
+        if total_processed > 0 and self.stats['failed'] / total_processed > 0.1:
+            print(f"\n⚠️ WARNING: {self.stats['failed']}/{total_processed} chunks failed to translate!")
+            logger.warning(f"High failure rate: {self.stats['failed']}/{total_processed} chunks failed")
+
+        return "".join(content_parts)
 
     def save_checkpoint(self, checkpoint_file: str):
         """
@@ -525,13 +500,11 @@ class TranslationEngine:
         self.last_section_idx = checkpoint.get("last_section_idx", 0)
         self.last_chunk_idx = checkpoint.get("last_chunk_idx", 0)
 
-        # Restore synopsis history
+        # Restore synopsis history. synopsis_cache getter stores JSON-safe
+        # "section_X" string keys, so the dict can be passed through as-is.
         synopsis_history = checkpoint.get("synopsis_history", {})
         if synopsis_history:
-            # Convert string keys back to tuple keys
-            self.synopsis_manager.synopsis_cache = {
-                tuple(k.split(",")): v for k, v in synopsis_history.items()
-            }
+            self.synopsis_manager.synopsis_cache = synopsis_history
 
         logger.info(f"Restored from checkpoint: chunk {self.last_processed_chunk + 1}, "
                    f"successful: {self.stats['successful']}, failed: {self.stats['failed']}")
@@ -708,6 +681,11 @@ def _save_vocabulary_formatted(translated_text: str, dict_file: str, original_te
             else:
                 cat = 'OTHER' if cat else 'TERM'  # Default to TERM if empty
 
+        # First guard ('OTHER'/'TERM') handles empty or unrecognized NER tags.
+        # Second guard catches any non-standard category string (e.g. free-form
+        # output from LLM) that is not a key in the categories dict. Both are needed.
+        if cat not in categories:
+            cat = 'OTHER'
         categories[cat].append((source, target, cat))
 
     # Write dictionary in proper format with commas
@@ -750,14 +728,49 @@ def write_to_file(data, output_file: str, auto_repair_fb2: bool = False):
     # FB2 structure should be validated at generation time, not repair time
 
 
+def build_resume_paths(myfile: str, target_lang: str) -> dict:
+    """Build output paths for a translation run.
+
+    checkpoint_file and output_tfile are deterministic (no timestamp) so a
+    new run can find the previous checkpoint and resume. The final output
+    file keeps a timestamp so finished books don't overwrite each other.
+    """
+    file_name, _ = os.path.splitext(os.path.basename(myfile))
+    output_dir = os.path.dirname(myfile) or '.'
+    timestamp = datetime.now().strftime("%H%M-%d%m")
+    stable_base = f"{output_dir}/{file_name}_{target_lang}"
+    output_base = f"{stable_base}_{timestamp}"
+    return {
+        "output_file": f"{output_base}.{config.output_format}",
+        "output_tfile": f"{stable_base}_tmp.fb2",
+        "checkpoint_file": f"{stable_base}.checkpoint.json",
+    }
+
+
+def assemble_resume_content(new_content: str, resume_from_chunk: int, output_tfile: str) -> str:
+    """On resume, output_tfile has ALL sections (prior + new) but
+    process_all_chunks only returns new chunks' content.
+    Read the full accumulated file to avoid data loss."""
+    if resume_from_chunk > 0 and os.path.exists(output_tfile):
+        with open(output_tfile, 'r', encoding='utf-8') as f:
+            return f.read()
+    return new_content
+
+
 # =============================================================================
 # Main Entry Point
 # =============================================================================
 
 def main():
     """Main translation workflow."""
-    # Reset translation statistics
-    ta.reset_translation_stats()
+    # Graceful shutdown handler
+    def _handle_shutdown(signum, frame):
+        logger.warning(f"Received signal {signum}, saving checkpoint...")
+        sys.exit(1)
+
+    signal.signal(signal.SIGINT, _handle_shutdown)
+    signal.signal(signal.SIGTERM, _handle_shutdown)
+
 
     # Check input file
     myfile = config.myfile
@@ -775,10 +788,11 @@ def main():
         raise ValueError(f"Unsupported format: {file_ext}")
 
     # Output paths
-    output_base = f"{output_dir}/{file_name}_{config.target_lang}_{timestamp}"
-    output_file = f"{output_base}.{config.output_format}"
-    output_tfile = f"{output_dir}/{file_name}_{config.target_lang}_tmp_{timestamp}.fb2"
-    checkpoint_file = f"{output_base}.checkpoint.json"
+    _paths = build_resume_paths(myfile, config.target_lang)
+    output_file = _paths["output_file"]
+    output_tfile = _paths["output_tfile"]
+    checkpoint_file = _paths["checkpoint_file"]
+    output_base = os.path.splitext(output_file)[0]  # used by EPUB writer/fallback
 
     # 1. Parse Input
     print(f"Parsing {file_ext.upper()} file...")
@@ -882,16 +896,26 @@ def main():
     else:
         print("No checkpoint found, starting fresh.")
 
-    if engine.vocab_manager and resume_from_chunk == 0:
+    # Vocabulary must be loaded on resume too: without it resumed chunks are
+    # translated without dictionary terms (silent quality loss).
+    if engine.vocab_manager:
         try:
             vocab = engine.vocab_manager.initialize()
             print(f"Vocabulary loaded: {len(vocab)} entries")
-        except SystemExit:
-            return
+        except DictionaryCreatedSignal as e:
+            print(f"\n📖 {e}")
+            sys.exit(0)
 
     # Process chunks if any remain, or content was already loaded from temp file above
     if chunks:
-        content = engine.process_all_chunks(chunks, sections, vocab, output_tfile, checkpoint_file)
+        try:
+            content = engine.process_all_chunks(chunks, sections, vocab, output_tfile, checkpoint_file)
+            content = assemble_resume_content(content, resume_from_chunk, output_tfile)
+        finally:
+            # Ensure checkpoint is saved on unexpected exit (signal handler triggers SystemExit)
+            if checkpoint_file:
+                engine.save_checkpoint(checkpoint_file)
+                logger.info(f"Checkpoint saved: {checkpoint_file}")
 
     # 5. Metadata & Cover
     if header:
@@ -942,8 +966,6 @@ def main():
         if config.fb2_auto_repair:
             print(f"  (Auto-repair check enabled - fixed version may be created alongside)")
 
-    # Get global translation stats
-    global_stats = ta.get_translation_stats()
 
     # Calculate retry token percentage
     retry_pct = (engine.stats['retry_tokens'] / engine.stats['total_tokens'] * 100) if engine.stats['total_tokens'] > 0 else 0
@@ -1028,7 +1050,6 @@ if __name__ == '__main__':
     # Handle single book dictionary build
     if args.build_dict:
         from src.ner import make_vocab, _save_vocabulary_formatted
-        import pathlib
         book_path = args.build_dict
         if not os.path.exists(book_path):
             print(f"Error: Book file not found: {book_path}")

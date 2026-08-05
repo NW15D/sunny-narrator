@@ -14,7 +14,6 @@ def test_brace_counting_nested():
     result, success = parse_json_response(text)
     assert success
     assert result == "He said {something} and left."
-    return True
 
 
 def test_brace_counting_escaped_quotes():
@@ -23,7 +22,6 @@ def test_brace_counting_escaped_quotes():
     result, success = parse_json_response(text)
     assert success
     assert result == 'He said "hello" to me'
-    return True
 
 
 def test_markdown_fence_stripping():
@@ -32,7 +30,6 @@ def test_markdown_fence_stripping():
     result, success = parse_json_response(text)
     assert success
     assert result == "Привет мир"
-    return True
 
 
 def test_markdown_fence_no_lang():
@@ -41,7 +38,6 @@ def test_markdown_fence_no_lang():
     result, success = parse_json_response(text)
     assert success
     assert result == "Test text"
-    return True
 
 
 def test_multi_line_json():
@@ -54,7 +50,6 @@ Hope it helps!'''
     result, success = parse_json_response(text)
     assert success
     assert result == "This is a multi-line test"
-    return True
 
 
 def test_no_json_fallback():
@@ -63,7 +58,6 @@ def test_no_json_fallback():
     result, success = parse_json_response(text)
     assert not success  # No JSON found
     assert result == "This is just plain text translation"
-    return True
 
 
 def test_suggestions_json():
@@ -73,7 +67,6 @@ def test_suggestions_json():
     assert success
     assert isinstance(result, list)
     assert len(result) == 2
-    return True
 
 
 def test_empty_text():
@@ -81,7 +74,6 @@ def test_empty_text():
     result, success = parse_json_response("")
     assert not success
     assert result == ""
-    return True
 
 
 def test_none_text():
@@ -89,7 +81,6 @@ def test_none_text():
     result, success = parse_json_response(None)
     assert not success
     assert result == ""
-    return True
 
 
 def test_extract_json_brace_no_match():
@@ -97,14 +88,12 @@ def test_extract_json_brace_no_match():
     assert _extract_json_brace("no json here") == ""
     assert _extract_json_brace("") == ""
     assert _extract_json_brace(None) == ""
-    return True
 
 
 def test_strip_markdown_fences_no_fence():
     """Passes through text without fences."""
     text = "Just regular text"
     assert _strip_markdown_fences(text) == text
-    return True
 
 
 if __name__ == "__main__":

@@ -16,24 +16,38 @@ Workflow:
 3. If exists: Load → Match terms per chunk → Format for model → Inject into prompts
 """
 
+import csv
+import io
 import os
 import re
+import tempfile
 import logging
-from typing import Dict, List, Set, Optional, Tuple
-from dataclasses import dataclass, field
+import fcntl
+from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass
 from pathlib import Path
 
 from src.config import Config
 from src import ner as ner_module
-from src.character_registry import CharacterRegistry, get_character_registry, Character
+from src.character_registry import get_character_registry, Character
 
 config = Config()
 logger = logging.getLogger(__name__)
 
 
+class DictionaryCreatedSignal(Exception):
+    """Raised when a new dictionary has been created and the pipeline should stop for user review."""
+    def __init__(self, dict_path: str):
+        self.dict_path = dict_path
+        super().__init__(f"Dictionary created at {dict_path}. Review it, then re-run to start translation.")
+
+
 def validate_dictionary(dict_file: str) -> List[str]:
     """
-    Validate JSON dictionary format.
+    Validate CSV dictionary format.
+    
+    Expected format: source = target, category, gender, notes
+    Comment lines start with # and are ignored.
     
     Args:
         dict_file: Path to .dic file
@@ -41,69 +55,47 @@ def validate_dictionary(dict_file: str) -> List[str]:
     Returns:
         List of validation errors (empty if valid)
     """
-    import json
-    
     errors = []
     
     try:
-        with open(dict_file, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        # Try to find JSON array in content (skip comments)
-        json_match = re.search(r'\[([\s\S]*?)\]', content)
-        if not json_match:
-            errors.append("No JSON array found in dictionary file")
+        if not os.path.exists(dict_file):
+            errors.append(f"Dictionary file not found: {dict_file}")
             return errors
         
-        vocab_list = json.loads(json_match.group(0))
+        with open(dict_file, 'r', encoding='utf-8-sig') as f:
+            lines = f.readlines()
         
-        if not isinstance(vocab_list, list):
-            errors.append("Dictionary must be a JSON array")
+        # Filter out comment lines and empty lines
+        entry_lines = []
+        for line_num, line in enumerate(lines, 1):
+            stripped = line.strip()
+            if stripped and not stripped.startswith('#'):
+                entry_lines.append((line_num, stripped))
+        
+        if not entry_lines:
+            errors.append("Dictionary file is empty (no entries found)")
             return errors
         
-        valid_categories = {'PERSON', 'LOC', 'ORG', 'TERM', 'OTHER', ''}
-        valid_genders = {'he', 'she', 'it', 'they', ''}
+        # CSV pattern: source = target, category, gender, notes
+        # At minimum: source = target
+        csv_pattern = re.compile(r'^[^=]+=\s*\S+')
         
-        for i, entry in enumerate(vocab_list):
-            if not isinstance(entry, dict):
-                errors.append(f"Entry {i}: must be an object, got {type(entry).__name__}")
+        sources_seen = []
+        for line_num, line in entry_lines:
+            if not csv_pattern.match(line):
+                errors.append(f"Line {line_num}: does not match 'source = target' format: {line[:80]}")
                 continue
             
-            # Check required fields
-            if 'source' not in entry:
-                errors.append(f"Entry {i}: missing required field 'source'")
-            elif not isinstance(entry['source'], str) or not entry['source'].strip():
-                errors.append(f"Entry {i}: 'source' must be a non-empty string")
-            
-            if 'target' not in entry:
-                errors.append(f"Entry {i}: missing required field 'target'")
-            elif not isinstance(entry['target'], str) or not entry['target'].strip():
-                errors.append(f"Entry {i}: 'target' must be a non-empty string")
-            
-            # Check optional fields
-            if 'category' in entry:
-                if not isinstance(entry['category'], str):
-                    errors.append(f"Entry {i}: 'category' must be a string")
-                elif entry['category'] not in valid_categories:
-                    errors.append(f"Entry {i}: invalid category '{entry['category']}'. Valid: {valid_categories}")
-            
-            if 'gender' in entry:
-                if not isinstance(entry['gender'], str):
-                    errors.append(f"Entry {i}: 'gender' must be a string")
-                elif entry['gender'] not in valid_genders:
-                    errors.append(f"Entry {i}: invalid gender '{entry['gender']}'. Valid: {valid_genders}")
-            
-            if 'notes' in entry and not isinstance(entry['notes'], str):
-                errors.append(f"Entry {i}: 'notes' must be a string")
+            # Parse source for duplicate check
+            source = line.split('=', 1)[0].strip()
+            if source:
+                sources_seen.append(source.lower())
         
         # Check for duplicates
-        sources = [entry.get('source', '').lower() for entry in vocab_list if isinstance(entry, dict)]
-        duplicates = set([s for s in sources if sources.count(s) > 1])
+        duplicates = set([s for s in sources_seen if sources_seen.count(s) > 1])
         if duplicates:
             errors.append(f"Duplicate source terms: {', '.join(duplicates)}")
         
-    except json.JSONDecodeError as e:
-        errors.append(f"Invalid JSON: {e}")
     except FileNotFoundError:
         errors.append(f"Dictionary file not found: {dict_file}")
     except Exception as e:
@@ -172,7 +164,7 @@ class VocabularyManager:
             Vocabulary dictionary
             
         Raises:
-            SystemExit if dictionary needs to be created
+            DictionaryCreatedSignal: if dictionary was created and needs user review
         """
         if os.path.exists(self.dict_file):
             logger.info(f"Loading vocabulary from {self.dict_file}")
@@ -183,16 +175,25 @@ class VocabularyManager:
             logger.info(f"Dictionary not found. Creating: {self.dict_file}")
             self._create_dictionary()
             # Check if auto-continue is enabled
-            if config.get('auto_continue_after_dict', False):
+            if getattr(config, 'auto_continue_after_dict', False):
                 logger.info("Auto-continue enabled, proceeding without manual review")
                 return self.vocab
             else:
-                # Exit to let user edit the dictionary
-                print(f"\nDictionary created: {self.dict_file}")
-                print("Please review and edit the dictionary, then restart.")
-                import sys
-                sys.exit(0)
+                # Signal that dictionary was created and needs review
+                raise DictionaryCreatedSignal(self.dict_file)
     
+    def _atomic_write(self, content: str):
+        """Write content to dict_file atomically (write to temp, then rename)."""
+        dir_path = os.path.dirname(self.dict_file)
+        tmp_fd, tmp_path = tempfile.mkstemp(dir=dir_path, suffix='.tmp')
+        try:
+            with os.fdopen(tmp_fd, 'w', encoding='utf-8') as f:
+                f.write(content)
+            os.replace(tmp_path, self.dict_file)
+        except:
+            os.unlink(tmp_path)
+            raise
+
     def _create_dictionary(self):
         """
         Create dictionary from book using NER.
@@ -253,7 +254,6 @@ class VocabularyManager:
                 logger.info(f"Split {len(terms_text)} chars into {len(chunks)} chunk(s) for translation")
                 
                 from src import utils as ta
-                import json as _json
                 
                 # Write header once
                 with open(self.dict_file, 'w', encoding='utf-8') as f:
@@ -293,42 +293,44 @@ class VocabularyManager:
         """Parse translated vocabulary and save to file."""
         lines = vocab_text.strip().split('\n')
         
-        with open(self.dict_file, 'w', encoding='utf-8') as f:
-            f.write(f"# Vocabulary for {self.book_name}\n")
-            f.write(f"# Format: source = target | category | gender | notes\n\n")
-            
-            for line in lines:
-                line = line.strip()
-                if not line or line.startswith('#'):
-                    continue
-                
-                # Parse "Source = Target" format
-                if '=' in line:
-                    parts = line.split('=', 1)
-                    source = parts[0].strip()
-                    target = parts[1].strip()
-                    
-                    # Try to extract category from parentheses
-                    category = ""
-                    match = re.search(r'\(([^)]+)\)', source)
-                    if match:
-                        category = match.group(1)
-                        source = re.sub(r'\s*\([^)]+\)', '', source).strip()
-                    
-                    # Write with template for user editing
-                    f.write(f"{source} = {target}")
-                    if category:
-                        f.write(f" | {category}")
-                    f.write(" | | \n")  # gender | notes
-                    
-                    # Add to memory
-                    key = source.replace(' ', '_').lower()
-                    self.vocab[key] = VocabEntry(
-                        source=source,
-                        target=target,
-                        category=category
-                    )
+        content_lines = []
+        content_lines.append(f"# Vocabulary for {self.book_name}\n")
+        content_lines.append(f"# Format: source = target | category | gender | notes\n\n")
         
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            
+            # Parse "Source = Target" format
+            if '=' in line:
+                parts = line.split('=', 1)
+                source = parts[0].strip()
+                target = parts[1].strip()
+                
+                # Try to extract category from parentheses
+                category = ""
+                match = re.search(r'\(([^)]+)\)', source)
+                if match:
+                    category = match.group(1)
+                    source = re.sub(r'\s*\([^)]+\)', '', source).strip()
+                
+                # Build line with template for user editing
+                entry_line = f"{source} = {target}"
+                if category:
+                    entry_line += f" | {category}"
+                entry_line += " | | \n"  # gender | notes
+                content_lines.append(entry_line)
+                
+                # Add to memory
+                key = source.replace(' ', '_').lower()
+                self.vocab[key] = VocabEntry(
+                    source=source,
+                    target=target,
+                    category=category
+                )
+        
+        self._atomic_write(''.join(content_lines))
         logger.info(f"Dictionary saved: {self.dict_file}")
     
     def _parse_and_save_structured(self, vocab_text: str, extracted_terms: List[Tuple[str, str, str]]):
@@ -380,13 +382,15 @@ class VocabularyManager:
                     notes=notes
                 )
         
-        # Write dictionary in JSON format
-        with open(self.dict_file, 'w', encoding='utf-8') as f:
-            f.write(f"# Vocabulary for {self.book_name}\n")
-            f.write(f"# Format: JSON array of vocabulary entries\n")
-            f.write(f"# Generated automatically by NER\n")
-            f.write(f"# Please review and edit as needed\n\n")
-            json.dump(vocab_list, f, indent=2, ensure_ascii=False)
+        # Write dictionary in JSON format atomically
+        import io
+        buf = io.StringIO()
+        buf.write(f"# Vocabulary for {self.book_name}\n")
+        buf.write(f"# Format: JSON array of vocabulary entries\n")
+        buf.write(f"# Generated automatically by NER\n")
+        buf.write(f"# Please review and edit as needed\n\n")
+        json.dump(vocab_list, buf, indent=2, ensure_ascii=False)
+        self._atomic_write(buf.getvalue())
         
         logger.info(f"Dictionary saved: {self.dict_file} ({len(self.vocab)} entries)")
     
@@ -407,8 +411,6 @@ class VocabularyManager:
         """
         import json
         import re
-        import csv
-        from io import StringIO
         
         parsed = 0
         terms = []
@@ -439,10 +441,16 @@ class VocabularyManager:
             table_pattern = r'\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|\s*([^|]*)\s*\|'
             matches = re.findall(table_pattern, vocab_translated)
             if matches:
+                # Skip table header rows ("Source | Target | Category") —
+                # they are not terms (audit 05-vocabulary: header ended up in the dictionary).
+                _header_words = {'source', 'target', 'category', 'original', 'translation',
+                                 'term', 'word', 'gender', 'notes', 'перевод', 'термин'}
                 for match in matches:
                     source = match[0].strip()
                     target = match[1].strip()
                     category = match[2].strip() if match[2].strip() else "TERM"
+                    if source.lower() in _header_words and target.lower() in _header_words:
+                        continue
                     if source and target and not source.startswith('-') and not target.startswith('-'):
                         terms.append({
                             "source": source,
@@ -514,52 +522,52 @@ class VocabularyManager:
             logger.warning(f"Chunk {chunk_num}: No valid terms after normalization")
             return 0
         
-        # Append entries to file in consistent CSV format
-        with open(self.dict_file, 'a', encoding='utf-8') as f:
-            if chunk_num == 1:
-                # Write header for first chunk
-                f.write(f"\n# --- Translated Terms (CSV Format: source,target,category,gender,notes) ---\n")
-            else:
-                f.write(f"\n# --- Chunk {chunk_num}/{total_chunks} ---\n")
-            
-            # Use CSV writer to handle proper escaping
-            csv_buffer = StringIO()
-            csv_writer = csv.writer(csv_buffer, quoting=csv.QUOTE_MINIMAL)
-            
-            for term in valid_terms:
-                source = term["source"]
-                target = term["target"]
-                category = term["category"]
-                
-                # Write CSV row: source,target,category,gender,notes
-                csv_writer.writerow([source, target, category, "", ""])
-                
-                # Add to memory
-                key = source.replace(' ', '_').lower()
-                self.vocab[key] = VocabEntry(
-                    source=source,
-                    target=target,
-                    category=category,
-                    gender="",
-                    notes=""
-                )
-                parsed += 1
-            
-            # Write the CSV content to file
-            f.write(csv_buffer.getvalue())
+        # Build new lines to append
+        new_lines = []
+        if chunk_num == 1:
+            new_lines.append(f"\n# --- Translated Terms (Format: source = target, category, gender, notes) ---\n")
+        else:
+            new_lines.append(f"\n# --- Chunk {chunk_num}/{total_chunks} ---\n")
         
+        for term in valid_terms:
+            source = term["source"]
+            target = term["target"]
+            category = term["category"]
+            
+            # Write in format: source = target, category, gender, notes.
+            # CSV-quote fields so commas inside values survive the roundtrip
+            # (the reader parses the part after '=' with csv.reader).
+            buf = io.StringIO()
+            csv.writer(buf, quoting=csv.QUOTE_MINIMAL).writerow(
+                [target, category, term.get("gender", ""), term.get("notes", "")]
+            )
+            new_lines.append(f"{source} = {buf.getvalue().rstrip()}\n")
+            
+            # Add to memory
+            key = source.replace(' ', '_').lower()
+            self.vocab[key] = VocabEntry(
+                source=source,
+                target=target,
+                category=category,
+                gender="",
+                notes=""
+            )
+            parsed += 1
+        
+        # Append with file lock to prevent lost updates from concurrent access
+        self._locked_append(self.dict_file, ''.join(new_lines))
         return parsed
     
     def _create_template(self):
         """Create empty dictionary template with CSV format."""
-        with open(self.dict_file, 'w', encoding='utf-8') as f:
-            f.write(f"# Vocabulary for {self.book_name}\n")
-            f.write(f"# Format: CSV (Comma-Separated Values)\n")
-            f.write(f"# Columns: source,target,category,gender,notes\n")
-            f.write(f"# Valid categories: PERSON, LOC, ORG, TERM\n")
-            f.write(f"# Valid genders: he, she, it, they (optional)\n")
-            f.write(f"# Fields containing commas will be automatically quoted\n")
-            f.write(f"# Add your vocabulary entries below this line\n\n")
+        content = (
+            f"# Vocabulary for {self.book_name}\n"
+            f"# Format: source = target, category, gender, notes\n"
+            f"# Valid categories: PERSON, LOC, ORG, TERM\n"
+            f"# Valid genders: he, she, it, they (optional)\n"
+            f"# Add your vocabulary entries below this line\n\n"
+        )
+        self._atomic_write(content)
         
         logger.info(f"Template dictionary created: {self.dict_file}")
     
@@ -574,7 +582,7 @@ class VocabularyManager:
         
         vocab = {}
         
-        with open(self.dict_file, 'r', encoding='utf-8') as f:
+        with open(self.dict_file, 'r', encoding='utf-8-sig') as f:
             # Skip comment lines at the beginning
             lines = []
             for line in f:
@@ -641,13 +649,24 @@ class VocabularyManager:
         logger.info(f"Loaded {len(vocab)} entries from CSV format")
         return vocab
     
+    def _locked_append(self, filepath: str, new_content: str):
+        """Append content with file lock to prevent lost updates."""
+        with open(filepath, 'a', encoding='utf-8') as f:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            try:
+                f.write(new_content)
+                f.flush()
+                os.fsync(f.fileno())
+            finally:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
     def _extract_characters(self):
         """Extract characters from vocabulary (PERSON category) and sync with CharacterRegistry."""
         # Get or create character registry
         registry = get_character_registry()
         
         for key, entry in self.vocab.items():
-            if entry.category.upper() == "PERSON" or not entry.category:
+            if entry.category.upper() == "PERSON":
                 # Create local character
                 self.characters[key] = Character(
                     name=entry.source,
@@ -690,10 +709,22 @@ class VocabularyManager:
         
         if not config.ner_opt or not ner_module:
             if config.debug:
-                logger.warning(f"get_vocab_for_chunk: NER disabled or module not available (ner_opt={config.ner_opt}, ner_module={ner_module is not None})")
-            # Fallback: return all vocabulary entries (no chunk-specific matching)
-            # This ensures vocabulary is still used even without NER matching
-            return list(self.vocab.values())
+                logger.debug(f"get_vocab_for_chunk: NER disabled, using text matching (ner_opt={config.ner_opt}, ner_module={ner_module is not None})")
+            # Fallback: simple text matching — find vocab terms present in chunk
+            chunk_lower = chunk_text.lower()
+            entries = []
+            matched_keys = []
+            for key, entry in self.vocab.items():
+                # Match by source term (with spaces instead of underscores)
+                source_lower = entry.source.lower() if entry.source else key.replace('_', ' ')
+                if source_lower in chunk_lower:
+                    entries.append(entry)
+                    matched_keys.append(key)
+            # Cache results
+            self.matched_terms_cache[cache_key] = matched_keys
+            if config.debug:
+                logger.debug(f"Chunk {s_idx}-{c_idx} (text match): {len(entries)}/{len(self.vocab)} vocab terms matched")
+            return entries
         
         # Check if GPU is available and select appropriate function
         use_gpu = False
@@ -882,7 +913,7 @@ class VocabularyManager:
         
         vocab = {}
         
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, 'r', encoding='utf-8-sig') as f:
             # Skip comment lines
             lines = []
             for line in f:
