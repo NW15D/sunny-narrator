@@ -11,7 +11,6 @@ except ImportError:
     # Fallback if src not explicitly a package in some envs
     sys.path.append(os.path.join(os.getcwd(), 'src'))
     from epub_handler import parse_epub
-from icecream import ic
 
 def create_mock_epub(filename):
     book = epub.EpubBook()

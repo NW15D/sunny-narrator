@@ -1,15 +1,38 @@
 from collections import Counter
+import logging
 import re
 import spacy
 import spacy.cli
 import torch
 import numpy as np
-import cupy as cp
+
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    cp = None
+    CUPY_AVAILABLE = False
 
 from src.config import Config
 
+logger = logging.getLogger(__name__)
+
 # Initialize config
 config = Config()
+
+# Module-level cache for spaCy models (Problem 3 fix)
+_nlp_cache = {}
+
+def _get_nlp(model_name, max_length=200000):
+    """Get or create a cached spaCy model instance."""
+    if model_name not in _nlp_cache:
+        _nlp_cache[model_name] = load_spacy_model(model_name)
+        _nlp_cache[model_name].max_length = max_length
+    else:
+        # Ensure max_length is at least what's requested
+        if _nlp_cache[model_name].max_length < max_length:
+            _nlp_cache[model_name].max_length = max_length
+    return _nlp_cache[model_name]
 
 def load_spacy_model(model_name):
     """
@@ -139,10 +162,7 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
         gpu = spacy.prefer_gpu()
         if config.debug:
             print(gpu)
-        nlp = load_spacy_model(config.nermodel)
-
-        # Increase max length limit for large documents
-        nlp.max_length = 200000
+        nlp = _get_nlp(config.nermodel, max_length=200000)
 
         # Split text into chunks (100k chars per chunk for balance of speed/memory)
         chunk_size = 100000
@@ -159,7 +179,7 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
                 # We only need NER here, so we can disable parser and lemmatizer to save time and avoid warnings
                 doc = nlp(chunk, disable=["parser", "lemmatizer", "attribute_ruler"])
                 ents.extend([
-                    (ent.text.strip(), ent.label_, tuple(ent.vector.get()) if hasattr(ent.vector, 'get') else tuple(ent.vector) if ent.vector.size > 0 else None)
+                    (ent.text.strip(), ent.label_)
                     for ent in doc.ents if ent.vector_norm != 0 and ent.label_ in ner_category
                 ])
 
@@ -176,40 +196,32 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
                 continue
 
         # Count occurrences of each entity
-        item_counts = Counter((text, label) for text, label, vector in ents)
-        unique_ents = [(text, label, next((vector for t2, l2, vector in ents if t2 == text and l2 == label), None), count)
+        item_counts = Counter(ents)
+        unique_ents = [(text, label, count)
                        for (text, label), count in item_counts.items()]
 
         if config.debug:
             print(f"Unique entities before filtering by count: {len(unique_ents)}")
 
         # Filter out entities with less than min_count_ner occurrences
-        unique_ents = [ent for ent in unique_ents if ent[3] >= min_count_ner]
+        unique_ents = [ent for ent in unique_ents if ent[2] >= min_count_ner]
 
         if config.debug:
             print(f"Unique entities after filtering by count (min={min_count_ner}): {len(unique_ents)}")
 
-        # Merge entities that contain substrings of other entities
-        merged_ents = []
-        for ent1 in unique_ents:
-            is_substring = False
-            for ent2 in unique_ents:
-                if ent1[0].lower() != ent2[0].lower() and ent1[0].lower() in ent2[0].lower():
-                    is_substring = True
-                    break
-            if not is_substring:
-                merged_ents.append(ent1)
-
-        # Further merging to ensure the longest entity is kept
+        # Merge entities that contain substrings of other entities (Problem 1 fix)
+        # Sort by length descending so longer entities are kept
+        unique_ents.sort(key=lambda x: len(x[0]), reverse=True)
         final_merged_ents = []
-        for ent1 in merged_ents:
-            longer_ent_found = False
-            for ent2 in merged_ents:
-                if ent1[0].lower() != ent2[0].lower() and ent2[0].lower() in ent1[0].lower():
-                    longer_ent_found = True
+        for ent in unique_ents:
+            ent_lower = ent[0].lower()
+            is_sub = False
+            for existing in final_merged_ents:
+                if ent_lower in existing[0].lower():
+                    is_sub = True
                     break
-            if not longer_ent_found:
-                final_merged_ents.append(ent1)
+            if not is_sub:
+                final_merged_ents.append(ent)
 
         if config.debug:
             print(f"Unique entities after merging: {len(final_merged_ents)}")
@@ -236,7 +248,8 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
 
                 del doc
                 gc.collect()
-            except:
+            except Exception as e:
+                logger.debug(f"Skipping word due to error: {e}")
                 continue
 
     except Exception as e:
@@ -353,7 +366,7 @@ def extract_keywords_from_text(text: str, nlp=None, stop_words: set = None) -> l
 
     try:
         if nlp is None:
-            nlp = load_spacy_model(config.nermodel)
+            nlp = _get_nlp(config.nermodel, max_length=200000)
 
         # Split into chunks for large texts
         chunk_size = 100000
@@ -443,6 +456,27 @@ def create_dictionary_from_text(text, stop_words=None, min_count_ner=5, min_coun
     return result
 
 
+# F4: cache of phrase vectors — the vocabulary does not change during a book
+# translation, but every chunk used to re-run all dictionary words through
+# spaCy. Word vectors of the loaded model are deterministic.
+_PHRASE_VECTOR_CACHE = {}
+
+
+def _get_phrase_vector(phrase, nlp):
+    """Mean vector of the phrase words (cached).
+
+    Returns None (and caches it) when no word of the phrase has a vector.
+    """
+    if phrase in _PHRASE_VECTOR_CACHE:
+        return _PHRASE_VECTOR_CACHE[phrase]
+    sub_words = phrase.split()
+    sub_docs = list(nlp.pipe(sub_words, disable=["ner", "parser", "tagger", "lemmatizer", "attribute_ruler"]))
+    sub_vecs = [d.vector for d in sub_docs if d.vector_norm != 0]
+    vec = np.mean(np.vstack(sub_vecs), axis=0) if sub_vecs else None
+    _PHRASE_VECTOR_CACHE[phrase] = vec
+    return vec
+
+
 def find_matching_words_with_cosine_similarity(text, vocab, lng, threshold=0.8, batch_size=1024):
     """
     Find vocabulary terms in text using cosine similarity (GPU-accelerated).
@@ -459,6 +493,9 @@ def find_matching_words_with_cosine_similarity(text, vocab, lng, threshold=0.8, 
     Returns:
         List of matched vocabulary terms
     """
+    if not CUPY_AVAILABLE:
+        raise RuntimeError("CuPy is required for GPU processing. Use the CPU variant instead.")
+
     if config.debug:
         print("Starting cosine similarity matching (GPU)")
 
@@ -469,20 +506,17 @@ def find_matching_words_with_cosine_similarity(text, vocab, lng, threshold=0.8, 
 
     matched_words_set = set()
 
-    # STAGE 1: TEXT SEARCH (exact match)
+    # STAGE 1: TEXT SEARCH (exact match) — Problem 2 fix: pre-compile patterns
     # ==================================
     text_lower = text.lower()
 
-    for entry_key, entry in vocab.items():
-        source_term = entry.get(lng, "")
-        if not source_term:
-            continue
-
-        source_lower = source_term.lower()
-        # Use word boundary matching to avoid partial matches
-        import re
-        pattern = r'\b' + re.escape(source_lower) + r'\b'
-        if re.search(pattern, text_lower):
+    compiled_patterns = [
+        (re.compile(r'\b' + re.escape(entry.get(lng, "").lower()) + r'\b'), entry.get(lng, ""))
+        for entry in vocab.values()
+        if entry.get(lng, "")
+    ]
+    for pattern, source_term in compiled_patterns:
+        if pattern.search(text_lower):
             matched_words_set.add(source_term)
             if config.debug:
                 print(f"  Text match: '{source_term}' found in chunk")
@@ -502,8 +536,7 @@ def find_matching_words_with_cosine_similarity(text, vocab, lng, threshold=0.8, 
 
     try:
         spacy.prefer_gpu()
-        nlp = load_spacy_model(config.nermodel)
-        nlp.max_length = 110000
+        nlp = _get_nlp(config.nermodel, max_length=200000)
         # For cosine similarity, we only need vectors. Disable everything else to avoid W108 and other warnings.
         doc = nlp(text, disable=["ner", "parser", "tagger", "lemmatizer", "attribute_ruler"])
     except Exception as e:
@@ -517,13 +550,8 @@ def find_matching_words_with_cosine_similarity(text, vocab, lng, threshold=0.8, 
     vocab_vectors = []
 
     for phrase in orig_values:
-        sub_words = phrase.split()
-        # Disable all components that are not needed for vector generation
-        sub_docs = list(nlp.pipe(sub_words, disable=["ner", "parser", "tagger", "lemmatizer", "attribute_ruler"]))
-        sub_vecs = [d.vector for d in sub_docs if d.vector_norm != 0]
-
-        if sub_vecs:
-            mean_vec = np.mean(np.vstack(sub_vecs), axis=0)
+        mean_vec = _get_phrase_vector(phrase, nlp)
+        if mean_vec is not None:
             vocab_vectors.append(mean_vec)
             valid_vocab_words.append(phrase)
 
@@ -585,20 +613,17 @@ def find_matching_words_with_cosine_similarity_cpu(text, vocab, lng, threshold=0
 
     matched_words_set = set()
 
-    # STAGE 1: TEXT SEARCH (exact match)
+    # STAGE 1: TEXT SEARCH (exact match) — Problem 2 fix: pre-compile patterns
     # ==================================
     text_lower = text.lower()
 
-    for entry_key, entry in vocab.items():
-        source_term = entry.get(lng, "")
-        if not source_term:
-            continue
-
-        source_lower = source_term.lower()
-        # Use word boundary matching to avoid partial matches
-        import re
-        pattern = r'\b' + re.escape(source_lower) + r'\b'
-        if re.search(pattern, text_lower):
+    compiled_patterns = [
+        (re.compile(r'\b' + re.escape(entry.get(lng, "").lower()) + r'\b'), entry.get(lng, ""))
+        for entry in vocab.values()
+        if entry.get(lng, "")
+    ]
+    for pattern, source_term in compiled_patterns:
+        if pattern.search(text_lower):
             matched_words_set.add(source_term)
             if config.debug:
                 print(f"  Text match: '{source_term}' found in chunk")
@@ -618,8 +643,7 @@ def find_matching_words_with_cosine_similarity_cpu(text, vocab, lng, threshold=0
 
     try:
         # CPU mode - don't call spacy.prefer_gpu()
-        nlp = load_spacy_model(config.nermodel)
-        nlp.max_length = 110000
+        nlp = _get_nlp(config.nermodel, max_length=200000)
         # For cosine similarity, we only need vectors
         doc = nlp(text, disable=["ner", "parser", "tagger", "lemmatizer", "attribute_ruler"])
     except Exception as e:
@@ -633,12 +657,8 @@ def find_matching_words_with_cosine_similarity_cpu(text, vocab, lng, threshold=0
     vocab_vectors = []
 
     for phrase in orig_values:
-        sub_words = phrase.split()
-        sub_docs = list(nlp.pipe(sub_words, disable=["ner", "parser", "tagger", "lemmatizer", "attribute_ruler"]))
-        sub_vecs = [d.vector for d in sub_docs if d.vector_norm != 0]
-
-        if sub_vecs:
-            mean_vec = np.mean(np.vstack(sub_vecs), axis=0)
+        mean_vec = _get_phrase_vector(phrase, nlp)
+        if mean_vec is not None:
             vocab_vectors.append(mean_vec)
             valid_vocab_words.append(phrase)
 
@@ -968,8 +988,7 @@ def create_series_vocab(
     book_names = {}  # book_path -> book_name
 
     # Load spaCy model once for all books
-    nlp = load_spacy_model(config.nermodel)
-    nlp.max_length = 200000
+    nlp = _get_nlp(config.nermodel, max_length=200000)
 
     ner_category = ["ORG", "LOC", "GPE", "PERSON", "EVENT", "FAC", "PRODUCT"]
 
@@ -1037,13 +1056,14 @@ def create_series_vocab(
     # Group by lemma ONLY, keep first encountered category (ignore later categories)
     entity_lemmas = {}  # lemma -> (first_category, [(term, count), ...])
 
+    # Problem 4 fix: batch lemmatization using nlp.pipe()
+    unique_terms = list(set(term for term, _, _ in all_raw_entities))
+    term_to_lemma = {}
+    for doc in nlp.pipe(unique_terms, batch_size=256, disable=["ner", "parser", "attribute_ruler"]):
+        term_to_lemma[doc.text] = doc[0].lemma_.lower().strip() if doc else doc.text.lower().strip()
+
     for term, cat, book in all_raw_entities:
-        # Get lemma for normalization
-        try:
-            doc = nlp(term)
-            lemma = doc[0].lemma_.lower().strip()
-        except Exception:
-            lemma = term.lower().strip()
+        lemma = term_to_lemma.get(term, term.lower().strip())
 
         if lemma not in entity_lemmas:
             # First encounter - store category
@@ -1071,12 +1091,14 @@ def create_series_vocab(
     # Re-process words with lemmatization
     word_groups = {}  # lemma -> [(word, count), ...]
 
+    # Problem 4 fix: batch lemmatization using nlp.pipe()
+    unique_words = list(all_words.keys())
+    word_to_lemma = {}
+    for doc in nlp.pipe(unique_words, batch_size=256, disable=["ner", "parser", "attribute_ruler"]):
+        word_to_lemma[doc.text] = doc[0].lemma_.lower().strip() if doc else doc.text.lower().strip()
+
     for word, count in all_words.items():
-        try:
-            doc = nlp(word)
-            lemma = doc[0].lemma_.lower().strip()
-        except Exception:
-            lemma = word.lower().strip()
+        lemma = word_to_lemma.get(word, word.lower().strip())
 
         if lemma not in word_groups:
             word_groups[lemma] = []
@@ -1179,7 +1201,6 @@ def create_series_vocab(
     print(f"Split into {len(chunks)} translation chunk(s) (CHUNK_SIZE={CHUNK_SIZE})")
 
     from src import utils as ta
-    import json as _json
 
     # Track all parsed translations for final grouped output
     all_translations = {}  # source_lower -> target
@@ -1256,8 +1277,5 @@ def create_series_vocab(
         print(f"  Chunk {idx + 1} written to file ({chunk_parsed} terms)")
 
     print(f"Total parsed: {total_parsed} terms across {len(chunks)} chunk(s)")
-    print(f"Dictionary saved to: {output_file}")
-    return output_file
-
     print(f"Dictionary saved to: {output_file}")
     return output_file

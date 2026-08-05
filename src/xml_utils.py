@@ -6,8 +6,56 @@ Used by fb2_handler, epub_handler, txt_handler.
 """
 
 import re
+import os
+import tempfile
 from bs4 import BeautifulSoup
 from typing import Dict, List, Any, Tuple
+
+
+def get_safe_xml_parser():
+    """Create XXE-safe lxml XML parser.
+
+    Disables external entity resolution, network access, and DTD validation
+    to prevent XXE attacks from malicious EPUB/FB2 files.
+    """
+    from lxml import etree
+    return etree.XMLParser(
+        resolve_entities=False,
+        no_network=True,
+        dtd_validation=False,
+        huge_tree=False,
+        recover=True,
+    )
+
+
+def get_safe_bs4_features():
+    """Return bs4 features dict for XXE-safe XML parsing."""
+    return {'resolve_entities': False, 'no_network': True}
+
+
+def atomic_write(target_path: str, content: str, encoding: str = 'utf-8') -> None:
+    """Atomically write content to target_path using tmp+rename.
+
+    Writes to a temporary file in the same directory, then uses os.replace()
+    for an atomic rename. This prevents partial/corrupt files on crash.
+    """
+    target_dir = os.path.dirname(os.path.abspath(target_path))
+    fd = tempfile.NamedTemporaryFile(
+        mode='w', dir=target_dir, delete=False, suffix='.tmp', encoding=encoding
+    )
+    try:
+        fd.write(content)
+        fd.flush()
+        os.fsync(fd.fileno())
+        fd.close()
+        os.replace(fd.name, target_path)
+    except BaseException:
+        fd.close()
+        try:
+            os.unlink(fd.name)
+        except OSError:
+            pass
+        raise
 
 
 def extract_metadata(header: str) -> Dict[str, Any]:
@@ -238,6 +286,35 @@ def replace_cover_image(header: str, footer: str, body: str, new_content: str) -
     return header, footer, body
 
 
+_SECTION_OPEN_RE = re.compile(r'<section\b[^>]*>', re.IGNORECASE)
+_SECTION_CLOSE_RE = re.compile(r'</section\s*>', re.IGNORECASE)
+
+
+def _find_matching_section_end(body_str: str, content_start: int):
+    """Find the closing </section> matching the section whose content starts
+    at content_start, tracking nesting depth.
+
+    Returns:
+        Tuple (close_start, close_end) — span of the matching closing tag,
+        or (-1, -1) if not found.
+    """
+    depth = 1
+    pos = content_start
+    while True:
+        next_open = _SECTION_OPEN_RE.search(body_str, pos)
+        next_close = _SECTION_CLOSE_RE.search(body_str, pos)
+        if next_close is None:
+            return -1, -1
+        if next_open is not None and next_open.start() < next_close.start():
+            depth += 1
+            pos = next_open.end()
+        else:
+            depth -= 1
+            if depth == 0:
+                return next_close.start(), next_close.end()
+            pos = next_close.end()
+
+
 def prepare_chunks(body: str, max_len_chunk: int) -> List[str]:
     """
     Splits the body content into sections and chunks based on max_len_chunk.
@@ -252,22 +329,16 @@ def prepare_chunks(body: str, max_len_chunk: int) -> List[str]:
     """
     body_str = body
     sections = []
-    start_tags = {'<section>', '<SECTION>'}
     
     start = 0
     while start < len(body_str):
-        # Find the start of the next section
-        found_start_tag = None
-        for tag in start_tags:
-            pos = body_str.find(tag, start)
-            if pos != -1 and (found_start_tag is None or pos < found_start_tag[1]):
-                found_start_tag = (tag, pos)
-
-        if not found_start_tag:
+        # Find the start of the next section (any attributes, any case)
+        m = _SECTION_OPEN_RE.search(body_str, start)
+        if not m:
             break
 
-        section_start = found_start_tag[1] + len(found_start_tag[0])
-        section_end = body_str.find('</section>', section_start)
+        section_start = m.end()
+        section_end, section_close_end = _find_matching_section_end(body_str, section_start)
 
         if section_end == -1:
             break
@@ -293,7 +364,7 @@ def prepare_chunks(body: str, max_len_chunk: int) -> List[str]:
                 chunk_start = chunk_end
 
         sections.extend(chunks)
-        start = section_end + len('</section>')
+        start = section_close_end
 
     if not sections:
         # Fallback: split entire body
@@ -303,17 +374,46 @@ def prepare_chunks(body: str, max_len_chunk: int) -> List[str]:
 
 
 def _ensure_balanced_tags(chunk: str) -> str:
-    """Ensure chunk has balanced XML tags."""
-    # Simple balancing - add closing tags if needed
-    open_tags = len(re.findall(r'<(?!/)([^>/]+?)(?:\s[^>]*)?>', chunk))
-    close_tags = len(re.findall(r'</[^>]+>', chunk))
-    
-    # Add missing closing tags
-    while open_tags > close_tags:
-        chunk += '</section>'
-        close_tags += 1
-    
-    return chunk
+    """Ensure chunk has balanced XML tags (stack-based).
+
+    Handles:
+    - unclosed tags at chunk end (appends closers),
+    - orphan closing tags at chunk start (prepends openers),
+    - cross-nesting mismatches (explicitly closes intermediate tags).
+    """
+    VOID_ELEMENTS = {'br', 'hr', 'img', 'image', 'empty-line', 'input', 'meta', 'link'}
+    open_stack: list[str] = []
+    orphan_closers: list[str] = []
+    pieces: list[str] = []
+    last_end = 0
+    for m in re.finditer(r'<(/?)(\w[\w-]*)([^>]*?)(/?)>', chunk):
+        closing, tag, attrs, selfclose = m.groups()
+        tag_lower = tag.lower()
+        if selfclose or tag_lower in VOID_ELEMENTS:
+            continue
+        if closing:
+            if open_stack and open_stack[-1] == tag_lower:
+                open_stack.pop()
+            elif tag_lower in open_stack:
+                # Cross-nesting: explicitly close intermediate tags before this closer
+                intermediate: list[str] = []
+                while open_stack and open_stack[-1] != tag_lower:
+                    intermediate.append(open_stack.pop())
+                if open_stack:
+                    open_stack.pop()
+                if intermediate:
+                    pieces.append(chunk[last_end:m.start()])
+                    pieces.append(''.join(f'</{t}>' for t in intermediate))
+                    last_end = m.start()
+            else:
+                # Orphan closer: no matching opener in this chunk
+                orphan_closers.append(tag_lower)
+        else:
+            open_stack.append(tag_lower)
+    rebuilt = (''.join(pieces) + chunk[last_end:]) if pieces else chunk
+    prefix = ''.join(f'<{t}>' for t in reversed(orphan_closers))
+    suffix = ''.join(f'</{t}>' for t in reversed(open_stack))
+    return prefix + rebuilt + suffix
 
 
 def _find_chunk_boundary(text: str, start: int, end: int) -> int:
@@ -330,7 +430,21 @@ def _find_chunk_boundary(text: str, start: int, end: int) -> int:
     last_open = text.rfind('<', start, end)
     if last_open != -1 and last_open > start + 100:  # Minimum chunk size
         return last_open
-    
+
+    # Guard: never split inside a tag (between '<' and its '>')
+    lt = text.rfind('<', start, end)
+    if lt != -1 and lt > start:
+        gt = text.find('>', lt, end)
+        if gt == -1:
+            # Tag opened but not closed within window — cut before it
+            return lt
+        if text.startswith('</', lt):
+            # Closing tag — cut after it
+            return gt + 1
+        # Opening tag without closing pair — cut before it
+        if text.find('</', lt, end) == -1:
+            return lt
+
     return end
 
 
@@ -349,23 +463,16 @@ def prepare_chunks_with_sections(body: str, max_len_chunk: int) -> List[List[str
     """
     body_str = body
     sections = []
-    start_tags = {'<section>', '<SECTION>'}
-    end_tags = {'</section>', '</SECTION>'}
     
     start = 0
     while start < len(body_str):
-        # Find the start of the next section
-        found_start_tag = None
-        for tag in start_tags:
-            pos = body_str.find(tag, start)
-            if pos != -1 and (found_start_tag is None or pos < found_start_tag[1]):
-                found_start_tag = (tag, pos)
-
-        if not found_start_tag:
+        # Find the start of the next section (any attributes, any case)
+        m = _SECTION_OPEN_RE.search(body_str, start)
+        if not m:
             break
 
-        section_start = found_start_tag[1] + len(found_start_tag[0])
-        section_end = body_str.find('</section>', section_start)
+        section_start = m.end()
+        section_end, section_close_end = _find_matching_section_end(body_str, section_start)
 
         if section_end == -1:
             break
@@ -392,7 +499,7 @@ def prepare_chunks_with_sections(body: str, max_len_chunk: int) -> List[List[str
                 chunk_start = chunk_end
 
         sections.append(chunks)
-        start = section_end + len('</section>')
+        start = section_close_end
 
     if not sections:
         # Fallback: split entire body as one section

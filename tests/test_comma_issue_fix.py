@@ -10,6 +10,7 @@ import os
 import sys
 import csv
 import tempfile
+from io import StringIO
 from pathlib import Path
 
 # Add src to path
@@ -32,14 +33,17 @@ def test_comma_issue_fix():
             ["Paris, France", "Париж, Франция", "LOC", "", "European capital"]
         ]
         
-        # Write using proper CSV formatting
+        # Write using the REAL dictionary format (docs/DICTIONARY_FORMAT.md):
+        #   source = target, category, gender, notes
+        # Fields after '=' are CSV-quoted, so commas inside values survive.
         with open(dict_file, 'w', encoding='utf-8') as f:
             f.write("# Test for comma issue\n")
-            f.write("# source,target,category,gender,notes\n\n")
+            f.write("# Format: source = target, category, gender, notes\n\n")
             
-            writer = csv.writer(f, quoting=csv.QUOTE_MINIMAL)
             for row in test_data:
-                writer.writerow(row)
+                buf = StringIO()
+                csv.writer(buf, quoting=csv.QUOTE_MINIMAL).writerow(row[1:])
+                f.write(f"{row[0]} = {buf.getvalue().rstrip()}\n")
         
         # Verify file content
         with open(dict_file, 'r', encoding='utf-8') as f:
@@ -62,11 +66,11 @@ def test_comma_issue_fix():
         # The critical test: should NOT be 0 records
         if len(vocab) == 0:
             print("❌ FAIL: Still getting 0 records with commas!")
-            return False
+            assert False
         
         if len(vocab) != len(test_data):
             print(f"❌ FAIL: Expected {len(test_data)} entries, got {len(vocab)}")
-            return False
+            assert False
         
         # Verify specific entries with commas
         expected_sources = {"New York, NY", "Dr. Smith, PhD", "Paris, France"}
@@ -76,24 +80,23 @@ def test_comma_issue_fix():
             print(f"❌ FAIL: Source mismatch!")
             print(f"Expected: {expected_sources}")
             print(f"Actual:   {actual_sources}")
-            return False
+            assert False
         
         print("✅ PASS: Comma handling issue is FIXED!")
         print(f"   - Successfully loaded {len(vocab)} entries with commas")
         print(f"   - All source terms with commas preserved correctly")
-        return True
 
 
 def main():
-    success = test_comma_issue_fix()
-    
-    if success:
-        print("\n🎉 SUCCESS: The 0-record issue with commas has been resolved!")
-        print("The vocabulary manager now correctly handles CSV format with commas in any field.")
-    else:
+    try:
+        test_comma_issue_fix()
+    except AssertionError:
         print("\n❌ FAILURE: The comma issue is NOT resolved.")
+        return False
     
-    return success
+    print("\n🎉 SUCCESS: The 0-record issue with commas has been resolved!")
+    print("The vocabulary manager now correctly handles the dictionary format with commas in any field.")
+    return True
 
 
 if __name__ == "__main__":
