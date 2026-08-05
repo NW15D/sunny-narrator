@@ -681,6 +681,9 @@ def _save_vocabulary_formatted(translated_text: str, dict_file: str, original_te
             else:
                 cat = 'OTHER' if cat else 'TERM'  # Default to TERM if empty
 
+        # First guard ('OTHER'/'TERM') handles empty or unrecognized NER tags.
+        # Second guard catches any non-standard category string (e.g. free-form
+        # output from LLM) that is not a key in the categories dict. Both are needed.
         if cat not in categories:
             cat = 'OTHER'
         categories[cat].append((source, target, cat))
