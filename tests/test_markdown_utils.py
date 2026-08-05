@@ -85,7 +85,7 @@ def test_add_toc_to_html():
     assert 'Section 1.1' in toc_html
 
 
-def test_validate_translation_length():
+def test_validate_translation_length_rejects_too_long():
     """Test length validation function from src.utils."""
     from src.utils import validate_translation_length
     
@@ -105,7 +105,7 @@ def test_validate_translation_length():
     assert should_split == True
 
 
-def test_validate_translation_length():
+def test_validate_translation_length_accepts_ok_and_rejects_small_chunk():
     """Test length validation function from src.utils."""
     # Test chunk with 50% diff (source_len >= 2000 required for split)
     is_valid, percent_diff, should_split = validate_translation_length(
