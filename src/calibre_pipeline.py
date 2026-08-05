@@ -624,7 +624,7 @@ def translate_chunks(
     total_target_len = 0
     if checkpoint_mgr is not None:
         saved = checkpoint_mgr.load()
-        if saved is not None and saved.get("book_path") == (book_path or ""):
+        if saved is not None and os.path.realpath(saved.get("book_path", "")) == os.path.realpath(book_path or ""):
             start_idx = saved.get("last_chunk", -1) + 1
             extra = saved.get("extra", {}) or {}
             translated_parts = list(extra.get("translated_parts", []))
@@ -719,6 +719,9 @@ def translate_chunks(
         total_target_len += len(translation)
 
         # Save checkpoint after each chunk (D5)
+        # On failure (empty translation or all retries exhausted): the original chunk text
+        # is used as the translation and still gets appended to translated_parts +
+        # persisted in checkpoint. This ensures a resumed run can retry the same chunk.
         if checkpoint_mgr is not None:
             checkpoint_mgr.save(
                 chunk_id=i,
