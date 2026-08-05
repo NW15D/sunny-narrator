@@ -1,9 +1,16 @@
 """Markdown utilities for processing and generating markdown content."""
 import os
 import re
-import shutil
 from typing import List, Union
 from bs4 import BeautifulSoup
+
+# Precompiled patterns for Calibre-specific cleanup (narrowed to avoid removing valid Pandoc attributes)
+_RE_CALIBRE_COMMENT = re.compile(r'<!--\s*\d+\s*-->')
+_RE_CALIBRE_ANCHOR = re.compile(r'\{#calibre[^}]*\}')  # Only calibre-specific anchors
+_RE_CALIBRE_CLASS = re.compile(r'\{\.calibre\d*\}')  # Only calibre-specific classes
+
+# Precompiled heading extraction pattern
+_RE_HEADING = re.compile(r'^(#{1,6})\s+(.+)$')
 
 
 def split_markdown_by_size(text: str, target_size: int = 4000) -> List[str]:
@@ -71,10 +78,8 @@ def extract_headings(content: Union[str, BeautifulSoup]) -> List[dict]:
         return headings
     
     # Handle markdown text input
-    pattern = r'^(#{1,6})\s+(.+)$'
-    
     for line in content.split('\n'):
-        match = re.match(pattern, line)
+        match = _RE_HEADING.match(line)
         if match:
             level = len(match.group(1))
             text = match.group(2).strip()
@@ -202,7 +207,9 @@ def clean_calibre_markers(text: str) -> str:
     Removes:
     - HTML comments like <!-- 1 -->
     - Calibre anchors like {#calibre_link-1 .calibre1}
-    - Calibre classes
+    - Calibre classes like {.calibre1}
+    
+    Preserves user-defined anchors {#my-anchor}, classes {.custom}, key-values.
     
     Args:
         text: Text containing Calibre markers
@@ -211,12 +218,12 @@ def clean_calibre_markers(text: str) -> str:
         Cleaned text
     """
     # Remove HTML comments with numbers
-    text = re.sub(r'<!--\s*\d+\s*-->', '', text)
+    text = _RE_CALIBRE_COMMENT.sub('', text)
     
-    # Remove Calibre anchors {#...}
-    text = re.sub(r'\{#[^}]+\}', '', text)
+    # Remove Calibre anchors {#calibre...} only (preserves user-defined anchors)
+    text = _RE_CALIBRE_ANCHOR.sub('', text)
     
-    # Remove Calibre classes {.calibre1}
-    text = re.sub(r'\s*\{\.[^\}]+\}', '', text)
+    # Remove Calibre classes {.calibre} and {.calibreN} only (preserves user-defined classes)
+    text = _RE_CALIBRE_CLASS.sub('', text)
     
     return text

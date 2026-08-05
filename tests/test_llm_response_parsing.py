@@ -51,12 +51,12 @@ def test_json_array_parsing():
         
         if count != 3:
             print(f"❌ FAIL: Expected 3 entries, got {count}")
-            return False
+            assert False
         
         # Verify the output file was created with CSV format
         if not os.path.exists(manager.dict_file):
             print("❌ FAIL: Output file not created")
-            return False
+            assert False
         
         with open(manager.dict_file, 'r', encoding='utf-8') as f:
             content = f.read()
@@ -67,7 +67,7 @@ def test_json_array_parsing():
         loaded_vocab = manager._load_from_file()
         if len(loaded_vocab) != 3:
             print(f"❌ FAIL: Reload failed - expected 3, got {len(loaded_vocab)}")
-            return False
+            assert False
         
         expected_sources = {"New York, NY", "Dr. John Smith", "Artificial Intelligence"}
         actual_sources = {entry.source for entry in loaded_vocab.values()}
@@ -76,10 +76,9 @@ def test_json_array_parsing():
             print(f"❌ FAIL: Sources don't match after roundtrip")
             print(f"Expected: {expected_sources}")
             print(f"Actual:   {actual_sources}")
-            return False
+            assert False
         
         print("✅ PASS: JSON array parsing works correctly!")
-        return True
 
 
 def main():

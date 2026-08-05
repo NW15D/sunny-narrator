@@ -23,16 +23,16 @@ import base64
 import httpx
 import time
 import dataclasses
+import threading
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, field
 from enum import Enum
 from PIL import Image
 
-import openai
 import tiktoken
 
 from src.config import Config
-from src.llm_logger import init_llm_logger, get_llm_logger, log_llm_call
+from src.llm_logger import log_llm_call
 from src.p_tags_processor import post_process_p_tags
 
 # LLMService, TranslationPipeline, translate_chunk are defined in this module
@@ -55,6 +55,7 @@ class TranslationMetrics:
     """
     
     def __init__(self):
+        self._lock = threading.Lock()
         self.total_tokens = 0
         self.retry_tokens = 0
         self.rechunk_count = 0
@@ -65,34 +66,40 @@ class TranslationMetrics:
         
     def log_retry(self, tokens: int, reason: str):
         """Log retry event (ERROR level)."""
-        self.retry_tokens += tokens
+        with self._lock:
+            self.retry_tokens += tokens
         logger.error(f"RETRY: {reason} (tokens: {tokens:,})")
         
     def log_rechunk(self, depth: int, percent_diff: float):
         """Log rechunk event (ERROR level)."""
-        self.rechunk_count += 1
+        with self._lock:
+            self.rechunk_count += 1
         logger.error(f"RECHUNK #{self.rechunk_count} at depth {depth}: {percent_diff:.1f}% length difference")
         
     def log_xml_repair(self, issue: str):
         """Log XML repair event (ERROR level)."""
-        self.xml_repair_count += 1
+        with self._lock:
+            self.xml_repair_count += 1
         logger.error(f"XML REPAIR #{self.xml_repair_count}: {issue}")
         
     def log_language_mismatch(self, tokens: int):
         """Log language mismatch retry (ERROR level)."""
-        self.language_mismatch_retries += 1
-        self.retry_tokens += tokens
+        with self._lock:
+            self.language_mismatch_retries += 1
+            self.retry_tokens += tokens
         logger.error(f"LANGUAGE MISMATCH RETRY #{self.language_mismatch_retries} (tokens: {tokens:,})")
         
     def log_success(self, tokens: int):
         """Log successful translation (INFO level)."""
-        self.successful_translations += 1
-        self.total_tokens += tokens
+        with self._lock:
+            self.successful_translations += 1
+            self.total_tokens += tokens
         logger.info(f"Translation successful (tokens: {tokens:,}, total: {self.total_tokens:,})")
         
     def log_failure(self, reason: str):
         """Log failed translation (ERROR level)."""
-        self.failed_translations += 1
+        with self._lock:
+            self.failed_translations += 1
         logger.error(f"TRANSLATION FAILED: {reason}")
         
     def get_report(self) -> dict:
@@ -126,76 +133,8 @@ class TranslationMetrics:
         logger.info("=" * 60)
 
 
-def replace_vocab_in_text(
-    source_text: str, 
-    vocab_dict: Dict[str, str],
-    source_lang: str = None
-) -> str:
-    """
-    Replace dictionary words in source_text with their translations.
-    Uses word boundary matching for exact matches only.
-    
-    Args:
-        source_text: Original text to translate
-        vocab_dict: Dictionary mapping source words → target translations
-        source_lang: Source language (reserved for future tokenizer use)
-    
-    Returns:
-        Text with dictionary words replaced (e.g., "everytime dragon fly" → "everytime драккар fly")
-    """
-    if not vocab_dict or not source_text:
-        return source_text
-    
-    # Sort by length desc to replace longer matches first (avoids partial replacements)
-    sorted_keys = sorted(vocab_dict.keys(), key=len, reverse=True)
-    escaped_keys = [re.escape(k) for k in sorted_keys]
-    pattern = r'\b(' + '|'.join(escaped_keys) + r')\b'
-    
-    def replace_func(match):
-        word = match.group(1)
-        return vocab_dict.get(word, word)
-    
-    return re.sub(pattern, replace_func, source_text)
-
-
 # Global metrics instance
 metrics = TranslationMetrics()
-
-
-# =============================================================================
-# Global Statistics Counters (for metrics reporting)
-# =============================================================================
-
-class TranslationStats:
-    """Global counters for translation statistics."""
-    
-    def __init__(self):
-        self.rechunk_events = 0
-        self.language_mismatch_retries = 0
-    
-    def reset(self):
-        self.rechunk_events = 0
-        self.language_mismatch_retries = 0
-    
-    def get_stats(self) -> dict:
-        return {
-            'rechunk_events': self.rechunk_events,
-            'language_mismatch_retries': self.language_mismatch_retries,
-        }
-
-
-# Global statistics instance
-translation_stats = TranslationStats()
-
-
-def get_translation_stats() -> dict:
-    """Get global translation statistics."""
-    return translation_stats.get_stats()
-
-
-def reset_translation_stats():
-    """Reset global translation statistics."""
-    translation_stats.reset()
 
 
 # =============================================================================
@@ -338,84 +277,6 @@ def replace_vocab_in_text(
         return vocab_dict.get(word, word)
     
     return re.sub(pattern, replace_func, source_text)
-
-
-def reset_translation_stats():
-    """Reset global translation statistics."""
-    translation_stats.reset()
-
-
-# =============================================================================
-# Unit Tests for replace_vocab_in_text()
-# =============================================================================
-
-def _test_replace_vocab_in_text():
-    """Run tests for replace_vocab_in_text() function."""
-    import sys
-    
-    tests_passed = 0
-    tests_failed = 0
-    
-    # Test 1: Basic replacement
-    try:
-        result = replace_vocab_in_text("dragon fly dragon", {"dragon": "драккар"})
-        assert result == "драккар fly драккар", f"Expected 'драккар fly драккар', got '{result}'"
-        print("✓ Test 1 passed: Basic replacement")
-        tests_passed += 1
-    except AssertionError as e:
-        print(f"✗ Test 1 failed: {e}")
-        tests_failed += 1
-    
-    # Test 2: Word boundary matching
-    try:
-        result = replace_vocab_in_text("dragonfly is dragon", {"dragon": "драккар"})
-        assert result == "dragonfly is драккар", f"Expected 'dragonfly is драккар', got '{result}'"
-        print("✓ Test 2 passed: Word boundary matching")
-        tests_passed += 1
-    except AssertionError as e:
-        print(f"✗ Test 2 failed: {e}")
-        tests_failed += 1
-    
-    # Test 3: Empty inputs
-    try:
-        assert replace_vocab_in_text("", {}) == ""
-        assert replace_vocab_in_text("text", {}) == "text"
-        assert replace_vocab_in_text("dragon", {}) == "dragon"
-        print("✓ Test 3 passed: Empty inputs")
-        tests_passed += 1
-    except AssertionError as e:
-        print(f"✗ Test 3 failed: {e}")
-        tests_failed += 1
-    
-    # Test 4: Multiple words with length ordering
-    try:
-        result = replace_vocab_in_text("dragon fly dragonfly", {"dragon": "драккар", "dragonfly": "драккарий"})
-        # Longer matches first, so dragonfly → драккарий, then dragon → драккар
-        expected = "драккар fly драккарий"
-        assert result == expected, f"Expected '{expected}', got '{result}'"
-        print("✓ Test 4 passed: Multiple words with length ordering")
-        tests_passed += 1
-    except AssertionError as e:
-        print(f"✗ Test 4 failed: {e}")
-        tests_failed += 1
-    
-    # Test 5: Special regex characters in dictionary keys
-    try:
-        result = replace_vocab_in_text("a.b c*d e?f", {"a.b": "X", "c*d": "Y", "e?f": "Z"})
-        assert result == "X Y Z", f"Expected 'X Y Z', got '{result}'"
-        print("✓ Test 5 passed: Special regex characters escaped")
-        tests_passed += 1
-    except AssertionError as e:
-        print(f"✗ Test 5 failed: {e}")
-        tests_failed += 1
-    
-    print(f"\nResults: {tests_passed} passed, {tests_failed} failed")
-    return tests_failed == 0
-
-
-if __name__ == "__main__":
-    success = _test_replace_vocab_in_text()
-    sys.exit(0 if success else 1)
 
 
 # =============================================================================
@@ -784,7 +645,18 @@ class LLMService:
         log_system_prompt = system_prompt if not use_sys_not_promt else ""
         log_user_prompt = user_prompt if not use_sys_not_promt else (f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt)
         
-        response = client.chat.completions.create(**comp_kwargs)
+        # Exponential backoff for API errors (network, rate limits, etc.)
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = client.chat.completions.create(**comp_kwargs)
+                break
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    raise
+                wait = min(2 ** attempt * 2, 30)
+                logger.warning(f"API error (attempt {attempt+1}/{max_retries}): {e}. Retrying in {wait}s")
+                time.sleep(wait)
         
         # Debug: log full response structure
         if config.debug:
@@ -810,7 +682,14 @@ class LLMService:
             except Exception as e:
                 logger.debug(f"Error logging response: {e}")
         
-        result = response.choices[0].message.content
+        _choice = response.choices[0]
+        # C12: truncated response must fail loudly, not produce partial translation
+        if getattr(_choice, 'finish_reason', None) == 'length':
+            raise ValueError(
+                "LLM response was truncated (finish_reason='length'). "
+                "Increase max_tokens or shorten the input."
+            )
+        result = _choice.message.content
         
         # Extract token usage from response
         tokens_used = 0
@@ -1369,7 +1248,7 @@ class TranslationPipeline:
             state.add_result(final_result)
             
             # Even in fast mode, generate synopsis from final translation
-            synopsis_result = self.generate_synopsis(context, initial_result.text)
+            synopsis_result = self.generate_synopsis(context, final_result.text)
             state.add_result(synopsis_result)
         else:
             # Stage 2: Reflection (Secondary LLM) - NO vocab_dict
@@ -1387,7 +1266,7 @@ class TranslationPipeline:
             state.add_result(final_edit_result)
             
             # Stage 5: Synopsis (Primary LLM) - from final translation
-            synopsis_result = self.generate_synopsis(context, initial_result.text)
+            synopsis_result = self.generate_synopsis(context, final_edit_result.text)
             state.add_result(synopsis_result)
             
             final_result = TranslationResult(
@@ -1411,6 +1290,7 @@ _pipeline = TranslationPipeline()
 
 MIN_CHUNK_SIZE = 2000  # Minimum chunk size for rechunking
 MAX_DEPTH = 3  # Maximum recursion depth
+MAX_LLM_CALLS_PER_CHUNK = 15  # Cap total LLM calls per chunk (prevents exponential blowup)
 
 
 def validate_translation_length(source_text: str, translated_text: str, 
@@ -1451,7 +1331,7 @@ def validate_translation_length(source_text: str, translated_text: str,
 def translate_chunk(source_lang: str, target_lang: str, source_text: str,
                     outline_text: str, vocab_dict: dict, vocab_entries: list = None,
                     country: str = "", style: str = "text", fast_mode: bool = False,
-                    depth: int = 0) -> tuple:
+                    depth: int = 0, _llm_call_count: list = None) -> tuple:
     """
     Translate a single chunk using the dual-LLM pipeline.
     
@@ -1472,6 +1352,17 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
     Returns:
         Tuple of (final_translation, synopsis)
     """
+    # Initialize LLM call counter (mutable list to share across recursive calls)
+    if _llm_call_count is None:
+        _llm_call_count = [0]
+    
+    # Check cap BEFORE making the call (prevents cap + batch_size actual calls)
+    if _llm_call_count[0] >= MAX_LLM_CALLS_PER_CHUNK:
+        logger.warning(f"LLM call cap ({MAX_LLM_CALLS_PER_CHUNK}) reached, stopping recursion")
+        return "", ""
+    
+    _llm_call_count[0] += 1  # Count this invocation
+    
     # Debug: Log vocabulary status
     if config.debug:
         vocab_count = len(vocab_dict) if vocab_dict else 0
@@ -1501,16 +1392,22 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
         metrics.log_failure("Empty translation from LLM")
         logger.error(f"EMPTY TRANSLATION at depth {depth}: LLM returned empty result")
         # Don't rechunk - retry with same chunk
-        if depth < MAX_DEPTH:
+        if depth < MAX_DEPTH and _llm_call_count[0] < MAX_LLM_CALLS_PER_CHUNK:
             logger.error(f"Retrying translation at depth {depth}...")
             return translate_chunk(
                 source_lang, target_lang, source_text, outline_text,
-                vocab_dict, vocab_entries, country, style, fast_mode, depth + 1
+                vocab_dict, vocab_entries, country, style, fast_mode, depth + 1,
+                _llm_call_count=_llm_call_count
             )
+        if _llm_call_count[0] >= MAX_LLM_CALLS_PER_CHUNK:
+            logger.warning(f"LLM call cap ({MAX_LLM_CALLS_PER_CHUNK}) reached, stopping recursion")
         return "", ""
     
     # Rechunking if needed (ERROR logging)
     if should_split and depth < MAX_DEPTH:
+        if _llm_call_count[0] >= MAX_LLM_CALLS_PER_CHUNK:
+            logger.warning(f"LLM call cap ({MAX_LLM_CALLS_PER_CHUNK}) reached before split, stopping recursion")
+            return state.final_translation, state.synopsis
         metrics.log_rechunk(depth, percent_diff)  # ERROR level
         
         # Split source text
@@ -1519,21 +1416,31 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
         # Translate parts recursively
         result1, syn1 = translate_chunk(
             source_lang, target_lang, part1, outline_text,
-            vocab_dict, vocab_entries, country, style, fast_mode, depth + 1
+            vocab_dict, vocab_entries, country, style, fast_mode, depth + 1,
+            _llm_call_count=_llm_call_count
         )
         result2, syn2 = translate_chunk(
             source_lang, target_lang, part2, outline_text,
-            vocab_dict, vocab_entries, country, style, fast_mode, depth + 1
+            vocab_dict, vocab_entries, country, style, fast_mode, depth + 1,
+            _llm_call_count=_llm_call_count
         )
         
-        # Combine results
-        combined_translation = (result1 or "") + "\n\n" + (result2 or "")
+        # Combine results (C4: fail-fast — an empty half means lost content)
+        if not (result1 or "").strip() or not (result2 or "").strip():
+            metrics.log_failure("Rechunk half returned empty translation")
+            logger.error(
+                f"RECHUNK FAIL-FAST at depth {depth}: a half returned empty "
+                "translation — refusing to combine partial results"
+            )
+            return "", ""
+        combined_translation = result1 + "\n\n" + result2
         combined_synopsis = (syn1 or "") + " " + (syn2 or "")
         
         return combined_translation, combined_synopsis
     
-    # Success - log tokens
-    tokens = state.final_result.tokens_used if hasattr(state, 'final_result') and hasattr(state.final_result, 'tokens_used') else 0
+    # Success - log tokens (F6: state.total_tokens is accumulated in
+    # PipelineState.add_result; state.final_result does not exist)
+    tokens = state.total_tokens
     metrics.log_success(tokens)  # INFO level
     
     return state.final_translation, state.synopsis
@@ -1769,6 +1676,26 @@ def parse_json_response(text: str) -> tuple:
 # Core Functions (used by app.py)
 # =============================================================================
 
+# Precompiled regex patterns for remove_tags (module-level for efficiency)
+_JSON_TRANSLATION_RE = re.compile(
+    r'\{[\s]*["\']translation["\'][\s]*:[\s]*["\']([\s\S]*?)["\'][\s]*\}'
+)
+
+# Wrapper tags in priority order (as asked in LLM prompts)
+_WRAPPER_TAGS = (
+    'ttext',                 # Primary wrapper tag (used in most prompts)
+    'translated',            # Alternative wrapper
+    'TRANSLATION',           # Fallback wrapper
+    'TRANS',                 # Short form
+    'target',                # From older prompts
+    'IMPROVED_TRANSLATION',  # From reflection pipeline
+    'source',                # From initial_translation prompt (contains lang attribute)
+)
+_WRAPPER_TAG_RES = tuple(
+    (tag, re.compile(rf'<{tag}[^>]*>([\s\S]*?)</{tag}>', re.IGNORECASE))
+    for tag in _WRAPPER_TAGS
+)
+
 @log_entry
 def remove_tags(text: str) -> str:
     """
@@ -1806,25 +1733,14 @@ def remove_tags(text: str) -> str:
             pass  # Fall through to regex fallback
     
     # Regex fallback for simple JSON cases
-    json_match = re.search(r'\{[\s]*["\']translation["\'][\s]*:[\s]*["\']([\s\S]*?)["\'][\s]*\}', text)
+    json_match = _JSON_TRANSLATION_RE.search(text)
     if json_match:
         logger.debug("Extracted translation from JSON format (regex fallback)")
         return json_match.group(1).strip()
     
-    # STEP 2: Try wrapper tags in priority order
-    # These are the tags we explicitly ask LLM to use in prompts
-    wrapper_tags = [
-        'ttext',           # Primary wrapper tag (used in most prompts)
-        'translated',      # Alternative wrapper
-        'TRANSLATION',     # Fallback wrapper
-        'TRANS',           # Short form
-        'target',          # From older prompts
-        'IMPROVED_TRANSLATION',  # From reflection pipeline
-        'source'           # From initial_translation prompt (contains lang attribute)
-    ]
-    
-    for tag in wrapper_tags:
-        match = re.search(rf'<{tag}[^>]*>([\s\S]*?)</{tag}>', text, re.IGNORECASE)
+    # STEP 2: Try wrapper tags in priority order (precompiled patterns)
+    for tag, tag_re in _WRAPPER_TAG_RES:
+        match = tag_re.search(text)
         if match and match.group(1).strip():
             logger.debug(f"Extracted content from <{tag}> wrapper")
             return match.group(1).strip()
@@ -2196,10 +2112,19 @@ def process_image_request(image_data: str, source_lang: str, target_lang: str,
 # Utility Functions
 # =============================================================================
 
+_tiktoken_encoding = None
+
+def _get_tiktoken_encoding(encoding_name: str = "cl100k_base"):
+    """Get cached tiktoken encoding (avoids reloading on every call)."""
+    global _tiktoken_encoding
+    if _tiktoken_encoding is None or _tiktoken_encoding.name != encoding_name:
+        _tiktoken_encoding = tiktoken.get_encoding(encoding_name)
+    return _tiktoken_encoding
+
 def num_tokens_in_string(input_str: str, encoding_name: str = "cl100k_base") -> int:
     """Calculate number of tokens in string."""
     try:
-        encoding = tiktoken.get_encoding(encoding_name)
+        encoding = _get_tiktoken_encoding(encoding_name)
     except Exception:
         encoding = tiktoken.get_encoding("cl100k_base")
     return len(encoding.encode(input_str))
@@ -2212,71 +2137,3 @@ def num_tokens_in_string(input_str: str, encoding_name: str = "cl100k_base") -> 
 def print_translation_report():
     """Print translation metrics summary at end of translation."""
     metrics.print_report()
-
-
-# =============================================================================
-# Unit Tests for replace_vocab_in_text
-# =============================================================================
-
-if __name__ == "__main__":
-    import sys
-    
-    def test_replace_vocab_in_text():
-        """Test the replace_vocab_in_text function."""
-        
-        # Test 1: Basic word replacement
-        vocab = {"hello": "привет", "world": "мир"}
-        result = replace_vocab_in_text("hello world", vocab)
-        assert result == "привет мир", f"Test 1 failed: {result}"
-        print("✓ Test 1: Basic word replacement")
-        
-        # Test 2: Partial word should NOT be replaced
-        vocab = {"cat": "кошка"}
-        result = replace_vocab_in_text("catastrophe", vocab)
-        assert result == "catastrophe", f"Test 2 failed: {result}"
-        print("✓ Test 2: Partial word NOT replaced")
-        
-        # Test 3: Multiple occurrences
-        vocab = {"dragon": "дракон"}
-        result = replace_vocab_in_text("the dragon saw another dragon", vocab)
-        assert result == "the дракон saw another дракон", f"Test 3 failed: {result}"
-        print("✓ Test 3: Multiple occurrences")
-        
-        # Test 4: Longer match takes priority (avoids partial matches)
-        vocab = {"catastrophe": "катастрофа", "cat": "кошка"}
-        result = replace_vocab_in_text("catastrophe has cat", vocab)
-        # Longest match takes priority - cat in catastrophe should NOT be replaced
-        assert result == "катастрофа has кошка", f"Test 4 failed: {result}"
-        print("✓ Test 4: Longer match priority (avoids partial matches)")
-        
-        # Test 5: Empty vocab
-        result = replace_vocab_in_text("hello world", {})
-        assert result == "hello world", f"Test 5 failed: {result}"
-        print("✓ Test 5: Empty vocab returns original")
-        
-        # Test 6: Empty text
-        result = replace_vocab_in_text("", {"hello": "привет"})
-        assert result == "", f"Test 6 failed: {result}"
-        print("✓ Test 6: Empty text returns empty")
-        
-        # Test 7: Example from spec
-        vocab = {"everytime": "everytime", "dragon": "драккар"}
-        result = replace_vocab_in_text("everytime dragon fly", vocab)
-        assert result == "everytime драккар fly", f"Test 7 failed: {result}"
-        print("✓ Test 7: Spec example")
-        
-        # Test 8: Special regex characters in vocab (escaped via re.escape)
-        vocab = {"it's": "это", "don't": "не"}
-        result = replace_vocab_in_text("it's a test don't worry", vocab)
-        assert result == "это a test не worry", f"Test 8 failed: {result}"
-        print("✓ Test 8: Special regex characters escaped")
-        
-        # Test 9: None vocab returns original
-        result = replace_vocab_in_text("hello", None)
-        assert result == "hello", f"Test 9 failed: {result}"
-        print("✓ Test 9: None vocab returns original")
-        
-        print("\n✅ All tests passed!")
-        sys.exit(0)
-    
-    test_replace_vocab_in_text()

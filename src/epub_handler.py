@@ -5,28 +5,18 @@ Handles parsing and conversion of EPUB files to FB2 format.
 Uses fb2_handler for common XML operations.
 """
 
-import re
-import base64
-from pathlib import Path
+from xml.sax.saxutils import escape as _xml_escape, quoteattr as _xml_quoteattr
 from datetime import datetime
 from bs4 import BeautifulSoup
 import ebooklib
 from ebooklib import epub
 
 from src.config import Config
-from src.fb2_handler import (
-    extract_metadata,
-    update_header_with_metadata,
-    get_cover_image,
-    replace_cover_image,
-    prepare_chunks
-)
 
 config = Config()
 
 __all__ = [
     'parse_epub',
-    'convert_epub_to_fb2_structure',
     'extract_epub_metadata',
     'extract_epub_body'
 ]
@@ -155,9 +145,9 @@ def build_fb2_header_from_metadata(metadata: dict) -> str:
     for author in metadata.get('author', []):
         authors_xml += "<author>"
         if author.get('first-name'):
-            authors_xml += f"<first-name>{author['first-name']}</first-name>"
+            authors_xml += f"<first-name>{_xml_escape(str(author['first-name']))}</first-name>"
         if author.get('last-name'):
-            authors_xml += f"<last-name>{author['last-name']}</last-name>"
+            authors_xml += f"<last-name>{_xml_escape(str(author['last-name']))}</last-name>"
         authors_xml += "</author>"
     
     # Build annotation
@@ -165,13 +155,13 @@ def build_fb2_header_from_metadata(metadata: dict) -> str:
     if metadata.get('annotation'):
         annotation_xml = "<annotation>"
         for para in metadata['annotation']:
-            annotation_xml += f"<p>{para}</p>"
+            annotation_xml += f"<p>{_xml_escape(str(para))}</p>"
         annotation_xml += "</annotation>"
     
     # Build genres
     genres_xml = ""
     for genre in metadata.get('genre', []):
-        genres_xml += f"<genre>{genre}</genre>"
+        genres_xml += f"<genre>{_xml_escape(str(genre))}</genre>"
     
     # Build languages
     lang_xml = ""
@@ -179,20 +169,20 @@ def build_fb2_header_from_metadata(metadata: dict) -> str:
         lang_xml += f"<lang>{lang}</lang>"
     
     # Build date
-    date_xml = f"<date>{metadata.get('date', '')}</date>" if metadata.get('date') else ""
+    date_xml = f"<date>{_xml_escape(str(metadata.get('date', '')))}</date>" if metadata.get('date') else ""
     
     # Build sequence
     sequence_xml = ""
     for seq in metadata.get('sequence', []):
-        sequence_xml += f'<sequence name="{seq.get("name", "")}" number="{seq.get("number", "")}" />'
+        sequence_xml += f'<sequence name={_xml_quoteattr(str(seq.get("name", "")))} number={_xml_quoteattr(str(seq.get("number", "")))} />'
     
     header = f"""<?xml version="1.0" encoding="UTF-8"?>
 <FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:xlink="http://www.w3.org/1999/xlink">
 <description>
 <title-info>
 {genres_xml}
-<author>{authors_xml}</author>
-<book-title>{metadata.get('book-title', '')}</book-title>
+{authors_xml}
+<book-title>{_xml_escape(str(metadata.get('book-title', '')))}</book-title>
 {annotation_xml}
 {date_xml}
 {lang_xml}
@@ -217,7 +207,7 @@ def extract_epub_body(book) -> str:
     body_content = []
     
     # Get all documents (chapters)
-    items = list(book.get_items_of_kind('content'))
+    items = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
     
     for item in items:
         if item.get_type() == ebooklib.ITEM_DOCUMENT:

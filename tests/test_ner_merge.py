@@ -30,7 +30,6 @@ def test_merge_overlapping_entities_substring():
     assert result[0][0].lower() == "centurions"
 
 if __name__ == "__main__":
-    import pytest
     import sys
     # Simple runner for local testing if needed
     try:

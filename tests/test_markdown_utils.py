@@ -1,5 +1,4 @@
 """Tests for markdown_utils module."""
-import pytest
 import os
 import sys
 import tempfile
@@ -9,7 +8,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from bs4 import BeautifulSoup
 from src.markdown_utils import (
     split_markdown_by_size,
-    generate_toc_html,
     clean_calibre_markers,
     extract_headings,
     copy_images_to_output,
@@ -87,7 +85,7 @@ def test_add_toc_to_html():
     assert 'Section 1.1' in toc_html
 
 
-def test_validate_translation_length():
+def test_validate_translation_length_rejects_too_long():
     """Test length validation function from src.utils."""
     from src.utils import validate_translation_length
     
@@ -107,7 +105,7 @@ def test_validate_translation_length():
     assert should_split == True
 
 
-def test_validate_translation_length():
+def test_validate_translation_length_accepts_ok_and_rejects_small_chunk():
     """Test length validation function from src.utils."""
     # Test chunk with 50% diff (source_len >= 2000 required for split)
     is_valid, percent_diff, should_split = validate_translation_length(

@@ -6,16 +6,16 @@ Converts internal FB2 representation back to EPUB format.
 """
 
 import base64
+import logging
 import re
 from datetime import datetime
 from bs4 import BeautifulSoup
-import ebooklib
 from ebooklib import epub
 
 from src.config import Config
-from .epub_repair import validate_and_repair_epub
 
 config = Config()
+logger = logging.getLogger(__name__)
 
 
 def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) -> str:
@@ -91,7 +91,7 @@ def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) 
         if series_name:
             book.add_metadata('OPF', 'calibre:series', series_name)
             if series_number:
-                book.add_metadata('OPF', 'calibre:series_index', series_number)
+                book.add_metadata('OPF', 'calibre:series_index', str(series_number))
     
     # Publisher
     publish_info = soup.find('publish-info')
@@ -102,7 +102,7 @@ def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) 
     
     # --- Extract Images from Footer ---
     images = {}
-    binary_pattern = r'<binary[^>]*id="([^"]+)"[^>]*content-type="([^"]+)"[^>]*>([^<]+)</binary>'
+    binary_pattern = r'<binary(?=[^>]*?id="([^"]+)")(?=[^>]*?content-type="([^"]+)")[^>]*?>([^<]+)</binary>'
     
     for match in re.finditer(binary_pattern, footer):
         image_id = match.group(1)
@@ -162,7 +162,6 @@ def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) 
     
     # Check if body looks like it hasn't been translated (still mostly English for Russian target)
     if config.target_lang.lower() != 'english':
-        import re
         ascii_chars = len(re.findall(r'[a-zA-Z]', body))
         total_chars = len(body)
         ascii_ratio = ascii_chars / total_chars if total_chars > 0 else 0
@@ -267,8 +266,8 @@ def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) 
         from .epub_repair import validate_epub
         errors = validate_epub(epub_path)
         if errors:
-            import logging
-            logger = logging.getLogger(__name__)
+            # Use the module-level logger; a late local assignment here made
+            # `logger` function-local and tripped F823 on the earlier use.
             logger.warning(f"EPUB validation warnings: {len(errors)}")
             for error in errors[:3]:
                 logger.warning(f"  {error}")
@@ -282,57 +281,53 @@ def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) 
 
 def _fb2_to_html(fb2_content: str) -> str:
     """
-    Convert FB2 XML tags to HTML tags.
-    
-    FB2 → HTML mapping:
-    <p> → <p>
-    <strong> → <strong>
-    <emphasis> → <em>
-    <subtitle> → <h2>
-    <cite> → <blockquote>
-    <poem> → <div class="poem">
-    <stanza> → <div class="stanza">
-    <v> → <p class="verse">
-    <empty-line/> → <br/>
+    Convert FB2 XML fragment to HTML using a DOM parser (no regex on tags).
+
+    Preserves element attributes; maps FB2 semantics to HTML equivalents.
     """
-    html = fb2_content
-    
-    # Simple tag replacements
-    replacements = [
-        (r'<emphasis>', '<em>'),
-        (r'</emphasis>', '</em>'),
-        (r'<subtitle>', '<h2>'),
-        (r'</subtitle>', '</h2>'),
-        (r'<cite>', '<blockquote>'),
-        (r'</cite>', '</blockquote>'),
-        (r'<poem>', '<div class="poem">'),
-        (r'</poem>', '</div>'),
-        (r'<stanza>', '<div class="stanza">'),
-        (r'</stanza>', '</div>'),
-        (r'<v>', '<p class="verse">'),
-        (r'</v>', '</p>'),
-        (r'<empty-line\s*/?>', '<br/>'),
-        (r'<title>', '<h1>'),
-        (r'</title>', '</h1>'),
-        # Remove section tags (we handle them separately)
-        (r'</?section[^>]*>', ''),
-    ]
-    
-    for pattern, replacement in replacements:
-        html = re.sub(pattern, replacement, html, flags=re.IGNORECASE)
-    
-    # Handle image tags
-    # <image l:href="#id"/> → <img src="images/id"/>
-    def replace_image(match):
-        href = match.group(1)
+    soup = BeautifulSoup(f"<root>{fb2_content}</root>", 'xml')
+
+    for old, new in (('emphasis', 'em'), ('subtitle', 'h2'), ('cite', 'blockquote'), ('title', 'h1')):
+        for tag in soup.find_all(old):
+            tag.name = new
+
+    for tag in soup.find_all('epigraph'):
+        tag.name = 'blockquote'
+        tag['class'] = 'epigraph'
+
+    for tag in soup.find_all('poem'):
+        tag.name = 'div'
+        tag['class'] = 'poem'
+
+    for tag in soup.find_all('stanza'):
+        tag.name = 'div'
+        tag['class'] = 'stanza'
+
+    for tag in soup.find_all('v'):
+        tag.name = 'p'
+        tag['class'] = 'verse'
+
+    for tag in soup.find_all('text-author'):
+        tag.name = 'p'
+        tag['class'] = 'text-author'
+
+    for tag in soup.find_all('empty-line'):
+        tag.replace_with(soup.new_tag('br'))
+
+    for img in soup.find_all('image'):
+        href = img.get('l:href') or img.get('href') or ''
+        new_img = soup.new_tag('img')
         if href.startswith('#'):
-            img_id = href[1:]
-            return f'<img src="images/{img_id}"/>'
-        return match.group(0)
-    
-    html = re.sub(r'<image[^>]*l:href=["\']([^"\']+)["\'][^>]*/>', replace_image, html)
-    
-    return html
+            new_img['src'] = f"images/{href[1:]}"
+        elif href:
+            new_img['src'] = href
+        img.replace_with(new_img)
+
+    for section in soup.find_all('section'):
+        section.unwrap()
+
+    root = soup.find('root')
+    return root.decode_contents() if root else ''
 
 
 def fb2_to_epub(fb2_path: str, output_path: str = None) -> str:

@@ -10,21 +10,27 @@ Covers:
 
 import os
 import sys
-import tempfile
 import zipfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import pytest
 
 # ---------------------------------------------------------------------------
 # Path setup — ensure src/ is importable
 # ---------------------------------------------------------------------------
-sys.path.insert(0, "/home/neo/prj/sunny-narrator")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-# Mock heavy third-party modules before importing calibre_pipeline
-sys.modules.setdefault('pypandoc', MagicMock())
-sys.modules.setdefault('bs4', MagicMock())
+# Mock heavy third-party modules ONLY if they are missing. Both pypandoc and
+# bs4 are real installed dependencies; mocking them unconditionally pollutes
+# sys.modules for every later test module (B4 incident).
+try:
+    import pypandoc  # noqa: F401
+except ImportError:
+    sys.modules.setdefault('pypandoc', MagicMock())
+try:
+    import bs4  # noqa: F401
+except ImportError:
+    sys.modules.setdefault('bs4', MagicMock())
 
 from src.calibre_pipeline import (
     ValidationIssue,

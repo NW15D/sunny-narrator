@@ -74,19 +74,18 @@ def test_rechunking_logic():
         else:
             print(f"  ❌ Extreme expansion: Should rechunk (> {config.length_check_threshold}%)\n")
         
-        return should_split3
+        assert should_split3
         
     except Exception as e:
         print(f"❌ Test failed with error: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        assert False
 
 
 def test_combine_results_no_separator():
     """Test that combined results after rechunking don't lose separators."""
     try:
-        import src.utils as ta
         from src.config import Config
         
         config = Config()
@@ -109,7 +108,7 @@ def test_combine_results_no_separator():
         # Check if parts need joining with space
         if not combined_translation.startswith(part1):
             print("  ❌ Parts not properly joined")
-            return False
+            assert False
         
         print("  ⚠️  Parts are concatenated without separator - may need fix")
         
@@ -119,11 +118,9 @@ def test_combine_results_no_separator():
         print(f"  Combined: '{recommended_combined}'")
         print(f"  Note: Added '\\n\\n' separator between parts")
         
-        return True
-        
     except Exception as e:
         print(f"❌ Test failed with error: {e}")
-        return False
+        assert False
 
 
 if __name__ == "__main__":
