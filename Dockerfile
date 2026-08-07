@@ -1,6 +1,5 @@
-# Sunny Narrator - CPU-only Dockerfile (DEFAULT)
-# Lightweight image for systems without NVIDIA GPU
-# For GPU support, see docs/GPU_DOCKER.md
+# Sunny Narrator - AI-powered book translation (CUDA/GPU)
+# Requires NVIDIA GPU + nvidia-container-toolkit on host
 
 FROM python:3.11-slim-bookworm
 
@@ -9,30 +8,29 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONPATH=/app
-ENV GPU=false
+ENV GPU=true
 ENV NER=true
 
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies (build tools for compiling C extensions like cupy)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libxml2-dev \
     libxslt1-dev \
     git \
     curl \
+    wget \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
 # Upgrade pip
 RUN pip install --upgrade pip setuptools wheel
 
-# Copy requirements first for better layer caching
-COPY requirements.txt .
-
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install project (from pyproject.toml) - includes CUDA packages
+COPY pyproject.toml .
+RUN pip install --no-cache-dir .
 
 # Download spaCy models (multi-language support)
 RUN python3 -m spacy download en_core_web_lg && \
@@ -40,20 +38,19 @@ RUN python3 -m spacy download en_core_web_lg && \
 
 # Copy application code
 COPY app.py .
-COPY setup.py .
 COPY src/ ./src/
 
 # Create directories for volumes
 RUN mkdir -p /app/books /app/output /app/logs
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD python3 -c "import src.utils; print('OK')" || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python3 -c "import torch; print('CUDA:', torch.cuda.is_available())" || exit 1
 
 # Default entrypoint
 ENTRYPOINT ["python3", "app.py"]
 
-# Labels for documentation
-LABEL version="1.14"
-LABEL description="Sunny Narrator - AI-powered book translation (CPU-only)"
-LABEL gpu="false"
+# Labels
+LABEL version="2.0"
+LABEL description="Sunny Narrator - AI-powered book translation (GPU/CUDA)"
+LABEL gpu="true"

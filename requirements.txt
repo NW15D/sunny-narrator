@@ -16,26 +16,15 @@ EbookLib==0.20
 Pillow==12.3.0
 pypandoc==1.17
 
-# spaCy for NER (CPU version - stable)
-# For GPU support, install: pip install "spacy[cuda12x]" instead
-spacy==3.8.13
-# spacy-transformers  # Optional: only for transformer-based NER models
-
-# PyTorch (CPU version - stable)
-# For GPU support with CUDA 12.1, install:
-# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-torch==2.11.0
-# torchvision
-# torchaudio
-
-# CuPy for GPU acceleration (optional)
-# Only needed if using GPU for NER/cosine similarity
-# May cause NVRTC errors on some CUDA 12 setups
-# If you get "nvrtc: error: invalid value for --gpu-architecture", remove cupy and use CPU
-# cupy-cuda12x
-
-# Thinc (required by spaCy)
+# spaCy for NER with CUDA 12.x support
+spacy[cuda12x]==3.8.13
 thinc==8.3.13
+
+# PyTorch + CUDA 12.1 (CPU version: use torch==2.11.0 instead)
+torch @ https://download.pytorch.org/whl/cu121/torch-2.5.1%2Bcu121-cp311-cp311-linux_x86_64.whl
+
+# CuPy for GPU acceleration (NER, cosine similarity)
+cupy-cuda12x==14.1.1
 
 # Encoding detection for TXT files
 charset-normalizer==3.4.6

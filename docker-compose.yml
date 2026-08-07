@@ -15,10 +15,18 @@ services:
       - ./logs:/app/logs
       - ./src/prompts.json:/app/src/prompts.json
     environment:
-      - GPU=false
+      - GPU=true
       - NER=true
     stdin_open: true
     tty: true
     restart: unless-stopped
+    # NVIDIA GPU support
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     # Uncomment for debugging
     # command: ["bash"]

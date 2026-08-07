@@ -1,6 +1,6 @@
 # FAST_TRANS Mode — Fast Translation
 
-**Version:** 1.16  
+**Version:** 2.0  
 **Date:** 2026-03-30
 
 ---
@@ -176,5 +176,5 @@ python app.py
 
 ---
 
-**Version:** 1.16  
+**Version:** 2.0  
 **Updated:** 2026-03-30

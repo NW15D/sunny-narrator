@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sunny-narrator"
+version = "2.0"
+description = "AI-powered book translation tool (FB2/EPUB/TXT)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    # Core
+    "nltk==3.9.4",
+    "icecream==2.1.10",
+    "python-dotenv==1.2.2",
+    "openai==2.30.0",
+    "numpy==2.2.6",
+    "tiktoken==0.12.0",
+    "langchain-text-splitters==1.1.1",
+    "pydantic==2.12.5",
+    "beautifulsoup4==4.14.3",
+    "scikit-learn==1.7.2",
+    "lxml==4.8.0",
+    "more-itertools==8.10.0",
+    "joblib==1.5.3",
+    "EbookLib==0.20",
+    "Pillow==12.3.0",
+    "pypandoc==1.17",
+    # NER / spaCy + CUDA 12.x
+    "spacy[cuda12x]==3.8.13",
+    "thinc==8.3.13",
+    # Encoding detection
+    "charset-normalizer==3.4.6",
+    "chardet==4.0.0",
+    # GPU acceleration
+    "cupy-cuda12x==14.1.1",
+    # PyTorch 2.5.1 + CUDA 12.1 (PEP 610 direct reference to .whl)
+    "torch @ https://download.pytorch.org/whl/cu121/torch-2.5.1%2Bcu121-cp311-cp311-linux_x86_64.whl",
+]
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+[project.scripts]
+sunny-narrator = "app:main"
