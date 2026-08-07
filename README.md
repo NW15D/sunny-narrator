@@ -1,6 +1,6 @@
 # Sunny Narrator
 
-**Version:** 1.5  
+**Version:** 2.0  
 **Glossary-Driven AI Book Translator** for FB2/EPUB formats. Dual-LLM translation system with 5-stage quality control.
 
 **Designed for:**
@@ -205,6 +205,7 @@ python app.py --pipeline new --output-format fb2
 
 ## 📝 Versions
 
+- **v2.0** — Migrated from pip requirements.txt to pyproject.toml; PyTorch CUDA 12.1 + cuPy
 - **v1.4** — Added general workflow diagram and step-by-step instructions to README
 - **v1.3** — Initial English README
 - **v1.11** — Checkpoint/resume, empty response fallback, CPU Docker
