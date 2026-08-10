@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import datetime
 from xml.sax.saxutils import escape as xml_escape
@@ -8,6 +9,8 @@ except ImportError:
     detect_encoding = None
 
 import src.fb2_handler as fb2
+
+logger = logging.getLogger(__name__)
 
 
 def _read_with_fallback(file_path):
@@ -22,7 +25,7 @@ def _read_with_fallback(file_path):
     try:
         return raw.decode('utf-8-sig').lstrip('\ufeff')
     except UnicodeDecodeError:
-        pass
+        logger.debug("UTF-8 decode failed for %s, trying fallbacks", file_path)
 
     # 2. Try charset-normalizer if available
     if detect_encoding is not None:
@@ -34,7 +37,7 @@ def _read_with_fallback(file_path):
     try:
         return raw.decode('cp1251')
     except UnicodeDecodeError:
-        pass
+        logger.debug("cp1251 decode failed for %s, falling back to latin-1", file_path)
 
     # 4. Last resort: latin-1 never raises (maps all 256 byte values)
     return raw.decode('latin-1', errors='replace')

@@ -45,7 +45,7 @@ def _read_file_with_encoding_fallback(file_path):
         with open(file_path, 'r', encoding='utf-8-sig') as f:
             return f.read().lstrip('\ufeff')
     except UnicodeDecodeError:
-        pass
+        logger.debug("UTF-8 decode failed for %s, falling back to encoding detection", file_path)
 
     with open(file_path, 'rb') as f:
         raw = f.read()
