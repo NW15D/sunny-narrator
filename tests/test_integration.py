@@ -6,13 +6,14 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
-# Mock third party modules
-sys.modules['openai'] = MagicMock()
-sys.modules['tiktoken'] = MagicMock()
-sys.modules['PIL'] = MagicMock()
-sys.modules['PIL.Image'] = MagicMock()
-sys.modules['dotenv'] = MagicMock()
-sys.modules['httpx'] = MagicMock()
+# Mock third party modules — only when the real package is unavailable,
+# to avoid poisoning sys.modules for other tests in the same pytest session.
+for _mod in ('openai', 'tiktoken', 'PIL', 'PIL.Image', 'dotenv', 'httpx'):
+    if _mod not in sys.modules:
+        try:
+            __import__(_mod)
+        except ImportError:
+            sys.modules[_mod] = MagicMock()
 
 # Add project root to sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
