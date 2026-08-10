@@ -190,7 +190,7 @@ class VocabularyManager:
             with os.fdopen(tmp_fd, 'w', encoding='utf-8') as f:
                 f.write(content)
             os.replace(tmp_path, self.dict_file)
-        except:
+        except Exception:
             os.unlink(tmp_path)
             raise
 
