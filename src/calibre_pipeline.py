@@ -47,6 +47,7 @@ except ImportError:
 from src.utils import split_text_smartly, config, validate_translation_length, _pipeline
 from src.checkpoint_manager import CheckpointManager
 from src import markdown_utils
+from src.markdown_utils import split_markdown_by_size, sanitize_surrogates
 
 # Precompiled Calibre-specific cleanup patterns (narrowed to avoid removing valid Pandoc attributes)
 _RE_CALIBRE_COMMENT = re.compile(r'<!--\s*\d+\s*-->')
@@ -373,11 +374,15 @@ def convert_to_markdown(input_path: str) -> tuple[str, dict]:
                     format='html',
                     extra_args=['--wrap=auto']
                 )
+                # Remove surrogate code points produced by broken EPUB
+                markdown_text = markdown_utils.sanitize_surrogates(markdown_text)
             except Exception as e:
                 raise ValueError(f"Pandoc conversion failed: {e}")
             
             # Step 5: Clean Calibre markers
             markdown_text = _clean_calibre_markers(markdown_text)
+            # Second sanitize pass after marker cleaning
+            markdown_text = markdown_utils.sanitize_surrogates(markdown_text)
             
             logger.info(f"Conversion complete: {len(markdown_text)} chars, title='{metadata.get('title', 'N/A')}'")
             
@@ -662,6 +667,9 @@ def translate_chunks(
         if i < start_idx:
             continue  # already translated before the checkpoint
 
+        # Sanitize surrogates before translation
+        chunk = sanitize_surrogates(chunk)
+
         # Show progress
         progress = ((i + 1) / total_chunks) * 100
         print(f"\rProgress: {i + 1}/{total_chunks} ({progress:.1f}%)", end="", flush=True)
@@ -713,6 +721,8 @@ def translate_chunks(
             translation = chunk
             failed_chunks += 1
         
+        # Sanitize surrogates before storing
+        translation = sanitize_surrogates(translation)
         translated_parts.append(translation)
 
         total_source_len += len(chunk)
@@ -761,6 +771,9 @@ def translate_chunks(
 
     # Reassemble translated text
     translated_text = '\n\n'.join(translated_parts)
+    
+    # Final sanitize pass before return
+    translated_text = sanitize_surrogates(translated_text)
     
     if logger:
         logger.info(f"Translation complete: {len(translated_text)} chars")
@@ -900,6 +913,8 @@ def build_output(
                     format='markdown',
                     extra_args=['--wrap=none']
                 )
+                # Remove surrogate code points from pandoc output
+                html_content = markdown_utils.sanitize_surrogates(html_content)
             except Exception as e:
                 raise ValueError(f"Pandoc HTML conversion failed: {e}")
             
@@ -907,6 +922,8 @@ def build_output(
             # This ensures no Calibre artifacts remain in the output
             logger.info("Cleaning Calibre markers from HTML...")
             html_content = _clean_calibre_markers(html_content)
+            # Sanitize surrogates after marker cleaning
+            html_content = markdown_utils.sanitize_surrogates(html_content)
             with open(html_path, 'w', encoding='utf-8') as f:
                 f.write(html_content)
             
