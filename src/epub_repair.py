@@ -8,6 +8,7 @@ Validates and repairs EPUB files:
 - OPF manifest consistency
 """
 
+import logging
 import os
 import re
 import shutil
@@ -16,6 +17,8 @@ from typing import List, Tuple, Optional
 from lxml import etree
 
 from src.xml_utils import get_safe_xml_parser
+
+logger = logging.getLogger(__name__)
 
 
 def validate_epub(epub_path: str) -> List[str]:
@@ -130,7 +133,6 @@ def repair_epub(epub_path: str, output_path: Optional[str] = None, max_iteration
                 
                 # Repair 3: Process and fix XHTML files
                 opf_path = _find_opf_path(zf_in)
-                xhtml_files = _get_xhtml_files_from_opf(zf_in, opf_path) if opf_path else []
                 
                 for file_name in file_list:
                     if file_name in ['mimetype', 'META-INF/container.xml']:
@@ -177,7 +179,7 @@ def _find_opf_path(zf: zipfile.ZipFile) -> Optional[str]:
             if rootfile is not None:
                 return rootfile.get('full-path')
     except Exception:
-        pass
+        logger.debug("Failed to read container.xml, falling back to .opf search", exc_info=True)
     
     # Fallback: search for .opf files
     opf_files = [f for f in zf.namelist() if f.endswith('.opf')]
@@ -255,7 +257,7 @@ def _repair_xhtml(content: bytes, file_name: str) -> Tuple[bytes, List[str]]:
                 repairs.append(f"Fixed unclosed tags in {file_name}")
                 content_str = repaired_content
     except Exception:
-        pass  # If repair fails, keep original
+        logger.debug("XHTML repair failed for %s, keeping original", file_name, exc_info=True)  # If repair fails, keep original
     
     # Repair 2: Ensure proper XHTML namespace
     if '<html' in content_str and 'xmlns=' not in content_str.split('<html')[1].split('>')[0]:
