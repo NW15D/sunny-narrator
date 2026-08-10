@@ -10,3 +10,8 @@ jobs:
           version: 0.4.4
           args: check
           src: "./src"
+      - uses: chartboost/ruff-action@v1
+        with:
+          version: 0.4.4
+          args: check
+          src: "./tests"

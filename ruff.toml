@@ -15,7 +15,3 @@ exclude = [".venv", "build", "dist"]
 [lint]
 select = ["E9", "F"]
 ignore = ["F541", "F841"]
-
-[lint.per-file-ignores]
-# Pre-existing unused `pytest` import (committed, tests/ must stay ruff-clean).
-"tests/test_llm_logger.py" = ["F401"]

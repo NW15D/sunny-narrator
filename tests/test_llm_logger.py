@@ -2,11 +2,9 @@
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-
-import pytest
 
 from llm_logger import LLMLogger, LLMCallLog, init_llm_logger, get_llm_logger, log_llm_call
 
@@ -124,30 +122,38 @@ class TestLLMLogger:
 
     def test_get_recent_logs_filters_by_days(self, tmp_path):
         logger = LLMLogger(log_dir=str(tmp_path))
-        (tmp_path / "llm_calls_2026-08-09.log").write_text("{}\n")
-        (tmp_path / "llm_calls_2026-08-01.log").write_text("{}\n")
+        # Dates relative to now so the test never goes stale:
+        now = datetime.now()
+        inside = (now - timedelta(days=3)).strftime("%Y-%m-%d")
+        outside = (now - timedelta(days=30)).strftime("%Y-%m-%d")
+        (tmp_path / f"llm_calls_{inside}.log").write_text("{}\n")
+        (tmp_path / f"llm_calls_{outside}.log").write_text("{}\n")
         # non-matching filename — should be skipped
         (tmp_path / "llm_calls_notadate.log").write_text("{}\n")
         # unrelated file — should be ignored by glob
         (tmp_path / "other.log").write_text("{}\n")
         recent = logger.get_recent_logs(days=7)
         names = [f.name for f in recent]
-        assert "llm_calls_2026-08-09.log" in names
-        assert "llm_calls_2026-08-01.log" not in names
+        assert f"llm_calls_{inside}.log" in names
+        assert f"llm_calls_{outside}.log" not in names
         assert "llm_calls_notadate.log" not in names
 
     def test_get_recent_logs_sorted_desc(self, tmp_path):
         logger = LLMLogger(log_dir=str(tmp_path))
-        for d in ["2026-08-05", "2026-08-09", "2026-08-07"]:
+        # Dates relative to now so the test never goes stale:
+        now = datetime.now()
+        offsets = [5, 1, 3]  # days ago, deliberately unsorted
+        dates = [(now - timedelta(days=n)).strftime("%Y-%m-%d") for n in offsets]
+        for d in dates:
             (tmp_path / f"llm_calls_{d}.log").write_text("{}\n")
         recent = logger.get_recent_logs(days=365)
-        assert [f.name for f in recent] == [
-            "llm_calls_2026-08-09.log",
-            "llm_calls_2026-08-07.log",
-            "llm_calls_2026-08-05.log",
+        expected = [
+            f"llm_calls_{(now - timedelta(days=n)).strftime('%Y-%m-%d')}.log"
+            for n in sorted(offsets)
         ]
+        assert [f.name for f in recent] == expected
 
-    def test_write_error_does_not_raise(self, tmp_path, caplog):
+    def test_write_error_does_not_raise(self, tmp_path):
         """Logging failure must not break the application."""
         logger = LLMLogger(log_dir=str(tmp_path))
         # Make the target path a directory so open() fails
