@@ -89,7 +89,7 @@ def broken_epub(make_epub):
     broken_xhtml = '<html><body><p>Unclosed paragraph'
     return make_epub({
         'mimetype': 'application/epub+zip',
-        'content.opf': OPF.replace('href="chapter1.xhtml"', 'href="chapter1.xhtml"'),
+        'content.opf': OPF,
         'chapter1.xhtml': broken_xhtml,
     }, store_mimetype=False)
 
