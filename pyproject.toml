@@ -39,6 +39,21 @@ dependencies = [
     "torch @ https://download.pytorch.org/whl/cu121/torch-2.5.1%2Bcu121-cp311-cp311-linux_x86_64.whl",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-timeout",
+    "pytest-cov",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+timeout = 120
+# test_calibre_cleanup.py contains zero test functions; it is a manual-check
+# script that runs an `ebook-convert` conversion at module import time
+# (pytest collection). Ignored so the suite runs without a calibre install.
+addopts = "--ignore=tests/test_calibre_cleanup.py"
+
 [tool.setuptools.packages.find]
 include = ["src*"]
 
