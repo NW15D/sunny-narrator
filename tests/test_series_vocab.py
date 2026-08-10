@@ -35,8 +35,8 @@ def test_create_series_vocab_finds_files():
             min_count_word=1
         )
         
-        # Function should complete without error (output file may not exist if LLM fails)
-        assert result is not None or True
+        # Function should complete without error and return the output path
+        assert result == output
 
 
 @pytest.mark.skip(reason="Requires NER model and LLM integration")

@@ -542,7 +542,8 @@ def find_matching_words_with_cosine_similarity(text, vocab, lng, threshold=0.8, 
     except Exception as e:
         if config.debug:
             print(f"Error loading spaCy model: {e}")
-        return []
+        # Fall back to Stage 1 (exact text search) results instead of losing them
+        return list(matched_words_set)
 
     orig_values = [entry[lng] for entry in unmatched_vocab.values() if lng in entry]
 
