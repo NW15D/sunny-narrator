@@ -8,11 +8,14 @@ Automatically fixes common FB2 XML validation errors:
 - Missing required structure
 """
 
+import logging
 import re
 from lxml import etree
 from typing import List, Tuple
 
 from src.xml_utils import get_safe_xml_parser
+
+logger = logging.getLogger(__name__)
 
 
 def repair_fb2(xml_string: str, max_iterations: int = 3) -> Tuple[str, List[str]]:
@@ -27,7 +30,6 @@ def repair_fb2(xml_string: str, max_iterations: int = 3) -> Tuple[str, List[str]
         Tuple of (repaired_xml, list_of_repairs_made)
     """
     repairs = []
-    original = xml_string
     
     # Step 1: Remove BOM if present
     if xml_string.startswith('\ufeff'):
@@ -107,7 +109,7 @@ def _fix_unclosed_tags(xml_string: str) -> Tuple[str, str]:
             if repaired != xml_string:
                 return repaired, "Fixed unclosed/broken tags using XML recovery"
     except Exception:
-        pass
+        logger.debug("XML recovery parse failed, keeping original XML", exc_info=True)
     
     return xml_string, ""
 
