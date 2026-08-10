@@ -150,6 +150,24 @@ def generate_toc_html(headings: List[dict], min_level: int = 1) -> str:
     return '\n'.join(html)
 
 
+def sanitize_surrogates(text: str) -> str:
+    """
+    Remove surrogate code points (U+D800-U+DFFF) from a string.
+
+    Surrogates can appear when pypandoc/calibre processes broken EPUBs
+    with invalid UTF-8 bytes. They cause UnicodeEncodeError on encoding.
+
+    Args:
+        text: Input string potentially containing surrogates
+
+    Returns:
+        String with all surrogate code points replaced by U+FFFD (replacement char)
+    """
+    if not text:  # handles None, empty string quickly
+        return text
+    return re.sub(r'[\ud800-\udfff]', '\ufffd', text)
+
+
 def clean_markdown_content(text: str) -> str:
     """
     Clean markdown content by removing extra whitespace and normalizing.
@@ -167,6 +185,9 @@ def clean_markdown_content(text: str) -> str:
     text = '\n'.join(lines)
     text = re.sub(r'\n{4,}', '\n\n\n', text)
     
+
+    # Remove surrogate code points that may leak from broken EPUB parsing
+    text = sanitize_surrogates(text)
     return text.strip()
 
 
