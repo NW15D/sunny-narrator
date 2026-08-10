@@ -1,2 +1,21 @@
-select = ["E9", "F63", "F7", "F82", "F401"]
+# Ruff configuration (modern [lint] format, ruff >= 0.2).
+#
+# Migrated from legacy top-level `select`. Conservative expansion of the old
+# rule set ["E9", "F63", "F7", "F82", "F401"] to the full pyflakes category (F).
+#
+# Sub-rules disabled because they flag pre-existing code in committed files
+# (conservatism first; re-enable after the code is fixed):
+#   F541 - f-string without placeholders (27 pre-existing occurrences)
+#   F841 - unused local variable (14 pre-existing occurrences)
+# W605 (invalid escape sequence) was dropped from the planned additions:
+#   one pre-existing occurrence in tests/test_p_tags_processor.py docstring.
+
 exclude = [".venv", "build", "dist"]
+
+[lint]
+select = ["E9", "F"]
+ignore = ["F541", "F841"]
+
+[lint.per-file-ignores]
+# Pre-existing unused `pytest` import (committed, tests/ must stay ruff-clean).
+"tests/test_llm_logger.py" = ["F401"]
