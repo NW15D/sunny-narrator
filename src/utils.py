@@ -1120,7 +1120,8 @@ class TranslationPipeline:
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 max_tokens=MAX_TOKENS_PER_CHUNK,
-                stage=TranslationStage.IMPROVE
+                stage=TranslationStage.IMPROVE,
+                json_mode=json_mode
             )
             text = remove_tags_with_check(retry_text, "improve_translation_retry", LLMRole.SECONDARY)
             tokens_used += retry_tokens
@@ -1191,7 +1192,8 @@ class TranslationPipeline:
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 max_tokens=MAX_TOKENS_PER_CHUNK,
-                stage=TranslationStage.FINAL
+                stage=TranslationStage.FINAL,
+                json_mode=json_mode
             )
             text = remove_tags_with_check(retry_text, "final_edit_retry", LLMRole.SECONDARY)
             tokens_used += retry_tokens
@@ -1434,7 +1436,7 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
             )
             return "", ""
         combined_translation = result1 + "\n\n" + result2
-        combined_synopsis = (syn1 or "") + " " + (syn2 or "")
+        combined_synopsis = " ".join(s for s in (syn1, syn2) if s)
         
         return combined_translation, combined_synopsis
     
@@ -1577,7 +1579,7 @@ def _strip_markdown_fences(text: str) -> str:
     if not text:
         return text
     # Match ```json\n...\n``` or ```\n...\n```
-    stripped = re.sub(r'```(?:json)?\s*\n([\s\S]*?)\n```', r'\1', text)
+    stripped = re.sub(r'```(?:json)?\s*\n([\s\S]*?)\s*```', r'\1', text)
     return stripped
 
 
@@ -2084,7 +2086,7 @@ def process_image_request(image_data: str, source_lang: str, target_lang: str,
             img_bytes = base64.b64decode(generated.b64_json)
         elif hasattr(generated, 'url') and generated.url:
             logger.info(f"Downloading image from URL: {generated.url}")
-            with httpx.Client() as client:
+            with httpx.Client(timeout=30.0) as client:
                 r = client.get(generated.url)
                 if r.status_code != 200:
                     logger.error(f"Failed to download image: {r.status_code}")

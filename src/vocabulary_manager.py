@@ -85,9 +85,21 @@ def validate_dictionary(dict_file: str) -> List[str]:
             if not csv_pattern.match(line):
                 errors.append(f"Line {line_num}: does not match 'source = target' format: {line[:80]}")
                 continue
-            
+
             # Parse source for duplicate check
             source = line.split('=', 1)[0].strip()
+
+            # Reject empty source/target after CSV parsing (consistent with loader)
+            rest = line.split('=', 1)[1].strip()
+            try:
+                row = next(csv.reader([rest]))
+                target = row[0].strip() if row else ""
+            except (StopIteration, csv.Error):
+                target = ""
+            if not source or not target:
+                errors.append(f"Line {line_num}: empty source or target: {line[:80]}")
+                continue
+
             if source:
                 sources_seen.append(source.lower())
         
@@ -255,11 +267,12 @@ class VocabularyManager:
                 
                 from src import utils as ta
                 
-                # Write header once
-                with open(self.dict_file, 'w', encoding='utf-8') as f:
-                    f.write(f"# Vocabulary for {self.book_name}\n")
-                    f.write(f"# Format: source = target, category, gender, notes\n")
-                    f.write(f"# Generated automatically by NER\n\n")
+                # Write header once (atomic, consistent with the rest of the writer)
+                self._atomic_write(
+                    f"# Vocabulary for {self.book_name}\n"
+                    f"# Format: source = target, category, gender, notes\n"
+                    f"# Generated automatically by NER\n\n"
+                )
                 
                 # Clear existing vocab to avoid duplicates
                 self.vocab.clear()
@@ -644,7 +657,9 @@ class VocabularyManager:
                     )
                     
                 except Exception as e:
-                    logger.warning(f"Error parsing line {line_num}: {row} - {e}")
+                    # Note: 'row' may be unbound if the error happened before
+                    # csv parsing, so log the raw line instead.
+                    logger.warning(f"Error parsing line {line_num}: {line[:80]} - {e}")
         
         logger.info(f"Loaded {len(vocab)} entries from CSV format")
         return vocab

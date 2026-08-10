@@ -763,9 +763,21 @@ def assemble_resume_content(new_content: str, resume_from_chunk: int, output_tfi
 
 def main():
     """Main translation workflow."""
-    # Graceful shutdown handler
+    # Graceful shutdown handler. Engine/checkpoint refs are filled later;
+    # if a signal arrives before that, there is nothing to save yet.
+    _shutdown_state = {"engine": None, "checkpoint_file": None}
+
     def _handle_shutdown(signum, frame):
-        logger.warning(f"Received signal {signum}, saving checkpoint...")
+        engine = _shutdown_state.get("engine")
+        checkpoint_file = _shutdown_state.get("checkpoint_file")
+        if engine is not None and checkpoint_file:
+            logger.warning(f"Received signal {signum}, saving checkpoint...")
+            try:
+                engine.save_checkpoint(checkpoint_file)
+            except Exception as e:
+                logger.error(f"Failed to save checkpoint on signal {signum}: {e}")
+        else:
+            logger.warning(f"Received signal {signum}, exiting (checkpoint not available yet)...")
         sys.exit(1)
 
     signal.signal(signal.SIGINT, _handle_shutdown)
@@ -792,6 +804,7 @@ def main():
     output_file = _paths["output_file"]
     output_tfile = _paths["output_tfile"]
     checkpoint_file = _paths["checkpoint_file"]
+    _shutdown_state["checkpoint_file"] = checkpoint_file
     output_base = os.path.splitext(output_file)[0]  # used by EPUB writer/fallback
 
     # 1. Parse Input
@@ -858,6 +871,7 @@ def main():
 
     # 4. Translate
     engine = TranslationEngine(output_tfile, book_path=myfile)
+    _shutdown_state["engine"] = engine
 
     # Initialize content variable - will be populated during translation or loaded from temp file
     content = ""
