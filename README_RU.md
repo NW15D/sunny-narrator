@@ -1,7 +1,7 @@
 # Sunny Narrator
 
-**Version:** 2.0  
-**Переводчик книг с управлением глоссарием** для форматов FB2/EPUB. Система AI-перевода с 5-стадийным контролем качества.
+**Version:** 2.1  
+**Переводчик книг с управлением глоссарием** для форматов FB2/EPUB/DOCX/PDF. Система AI-перевода с 5-стадийным контролем качества.
 
 **Предназначен для:**
 - 📚 Glossary-driven перевод серий книг (последовательная терминология во всех томах)
@@ -10,6 +10,15 @@
 - ☁️ Онлайн-сервисы перевода
 
 ## 🔄 Общий workflow
+
+### Поддерживаемые форматы
+
+| Входной формат | Пайплайн |
+|----------------|----------|
+| **FB2, TXT** | Классический пайплайн (прямая работа с XML — сохраняет структуру poem/stanza/v) |
+| **DOCX, EPUB, PDF** | Calibre пайплайн (через промежуточный HTMLZ) |
+
+Выбор пайплайна автоматический по расширению файла — флаг `--pipeline` больше не нужен.
 
 ```mermaid
 flowchart LR
@@ -193,17 +202,18 @@ docker-compose -f docker-compose.gpu.yml up -d
 
 ---
 
-## 🔄 Calibre Pipeline (Новое!)
+## 🔄 Calibre Pipeline (DOCX/EPUB/PDF)
 
-Принимайте **EPUB/FB2** напрямую — без ручной конвертации.
+Принимает **DOCX/EPUB/PDF** напрямую — без ручной конвертации.
+Пайплайн выбирается автоматически при указании файла с расширением `.docx`, `.epub` или `.pdf`.
 
 ```bash
 # Установить системные зависимости
 sudo apt install pandoc calibre
 pip install -r requirements.txt
 
-# Перевести EPUB/FB2 напрямую
-python app.py --pipeline new --output-format fb2
+# Перевести DOCX/EPUB/PDF (автоопределение по расширению)
+python app.py
 ```
 
 **Пайплайн:** EPUB/FB2 → Calibre → HTML → Markdown → Перевод → HTML → Calibre → FB2/EPUB
@@ -234,6 +244,7 @@ python app.py --pipeline new --output-format fb2
 
 ## 📝 Версии
 
+- **v2.1** — Автоопределение пайплайна по формату (.docx/.epub/.pdf → Calibre; .fb2/.txt → классический); удалён флаг --pipeline
 - **v1.4** — Добавлен общий workflow диаграмма и пошаговые инструкции в README
 - **v1.3** — Начальный английский README
 - **v1.11** — Checkpoint/resume, fallback для пустого ответа, CPU Docker
