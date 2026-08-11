@@ -1027,9 +1027,9 @@ if __name__ == '__main__':
                        help='Output format for DOCX/EPUB/PDF input: docx, epub or pdf (default: from config)')
     parser.add_argument('--max-chunk-size', type=int, default=None,
                        help='Max chunk size in chars for DOCX/EPUB/PDF translation (default: MAX_LEN_CHUNK=8192 from config)')
-    # Fast mode — shared across both pipelines
+    # Fast mode — Calibre pipeline only (classic uses config.fast_trans)
     parser.add_argument('--fast-mode', action='store_true',
-                       help='Skip reflection/improve stages'),
+                        help='Skip reflection/improve stages in Calibre pipeline')
 
     args, unknown = parser.parse_known_args()
 
@@ -1131,7 +1131,11 @@ if __name__ == '__main__':
 
     if input_ext in CALIBRE_INPUT_FORMATS:
         # ---- Calibre-based pipeline ----
-        output_format = args.output_format or config.output_format or 'epub'
+        # Default output: same as input (when config has classic-only 'fb2')
+        _cfg_fmt = config.output_format
+        if _cfg_fmt not in ('docx', 'epub', 'pdf'):
+            _cfg_fmt = 'epub'
+        output_format = args.output_format or _cfg_fmt
         output_format = output_format.lower()
         if output_format not in ('docx', 'epub', 'pdf'):
             print(f"Error: Unsupported output format: {output_format}. Use docx, epub or pdf.")
@@ -1140,7 +1144,8 @@ if __name__ == '__main__':
         print(f"Pipeline: Calibre-based (auto-detected)")
         print(f"Input: {input_file}")
         print(f"Output format: {output_format}")
-        print(f"Chunk size: {args.max_chunk_size}")
+        chunk_label = args.max_chunk_size or 'default'
+        print(f"Chunk size: {chunk_label}")
 
         if not cp.check_calibre_installed():
             print("Error: Calibre (ebook-convert) is not installed.")
@@ -1166,9 +1171,17 @@ if __name__ == '__main__':
         sys.exit(0)
 
     elif input_ext in CLASSIC_INPUT_FORMATS:
-        # ---- Classic FB2/EPUB/TXT pipeline ----
+        # ---- Classic FB2/TXT pipeline ----
+        if args.fast_mode:
+            config.fast_trans = True
         main()
     else:
         print(f"Error: Unsupported input format: {input_ext}")
         print(f"Supported formats: DOCX, EPUB, PDF (Calibre pipeline), FB2, TXT (Classic pipeline)")
         sys.exit(1)
+
+    # Warn on unknown --pipeline flag (backward compat)
+    for i, arg in enumerate(unknown):
+        if arg == '--pipeline' and i + 1 < len(unknown):
+            print(f"⚠️  Warning: --pipeline flag is removed in v2.1. Pipeline auto-detected by file extension.")
+            break
