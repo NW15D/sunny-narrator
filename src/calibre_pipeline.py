@@ -44,7 +44,7 @@ except ImportError:
     pypandoc = None
 
 # Import existing utilities
-from src.utils import split_text_smartly, config, validate_translation_length, _pipeline
+from src.utils import split_text_smartly, config, validate_translation_length, _pipeline, translate_chunk
 from src.checkpoint_manager import CheckpointManager
 from src import markdown_utils
 from src.markdown_utils import split_markdown_by_size, sanitize_surrogates
@@ -54,13 +54,16 @@ _RE_CALIBRE_COMMENT = re.compile(r'<!--\s*\d+\s*-->')
 _RE_CALIBRE_SECTION_FULL = re.compile(r'<[^>]*>:::\s*\{#calibre_link-\d+\s+\.calibre\d+\}\s*:::</[^>]*>', re.DOTALL)
 _RE_CALIBRE_SECTION_CLASS = re.compile(r'<[^>]*>:::\s*\{\.calibre\d+\}\s*:::</[^>]*>', re.DOTALL)
 _RE_CALIBRE_SECTION_BARE = re.compile(r'<[^>]*>:::</[^>]*>', re.DOTALL)
-_RE_CALIBRE_TRIPLE_COLON = re.compile(r':::')
+# Only match standalone ::: not part of fenced div syntax (e.g. ::: {.class})
+_RE_CALIBRE_TRIPLE_COLON = re.compile(r':::(?!\s*\{)')
 _RE_CALIBRE_PARA = re.compile(r'<p>\s*\{#calibre[^}]*\}\s*</p>', re.DOTALL)
 _RE_CALIBRE_ANCHOR = re.compile(r'\{#calibre[^}]*\}')  # Only calibre-specific anchors
 _RE_CALIBRE_CLASS = re.compile(r'\{\.calibre\d*\}')  # Only calibre-specific classes
 _RE_CALIBRE_ID_ATTR = re.compile(r'\s+id\s*=\s*["\'][^"\']*calibre_link[^"\']*["\']', re.IGNORECASE)
 _RE_CALIBRE_CLASS_ATTR = re.compile(r'\s+class\s*=\s*["\'][^"\']*calibre[^"\']*["\']', re.IGNORECASE)
-_RE_HR_MARKERS = re.compile(r'\n*---\s*\n*')
+# Only match --- that is a standalone line (not setext H2 underline, not pipe table separator)
+# Must be preceded by \n\n (blank line) to avoid destroying headings and tables
+_RE_HR_MARKERS = re.compile(r'(?<=\n\n)---\s*\n')
 _RE_MULTI_BLANK = re.compile(r'\n{3,}')
 
 @dataclass
@@ -219,10 +222,20 @@ def extract_metadata_from_opf(opf_content: str) -> dict:
     if pub_match:
         metadata["publisher"] = pub_match.group(1).strip()
     
-    # Extract ISBN
+    # Extract ISBN (M10: validate format — only accept ISBN-10 or ISBN-13 patterns)
     isbn_match = re.search(r'<dc:identifier[^>]*>([^<]+)</dc:identifier>', opf_content, re.IGNORECASE)
     if isbn_match:
-        metadata["isbn"] = isbn_match.group(1).strip()
+        raw_isbn = isbn_match.group(1).strip()
+        # Strip common prefixes and hyphens
+        isbn_clean = re.sub(r'^urn:isbn:', '', raw_isbn, flags=re.IGNORECASE).replace('-', '').strip()
+        if re.match(r'^(?:\d{9}[\dXx]|\d{13})$', isbn_clean):
+            metadata["isbn"] = raw_isbn
+    
+    # M11: decode HTML entities in all metadata fields
+    import html as _html_dec
+    for key in metadata:
+        if isinstance(metadata[key], str):
+            metadata[key] = _html_dec.unescape(metadata[key])
     
     # Extract description
     desc_match = re.search(r'<dc:description[^>]*>([^<]+)</dc:description>', opf_content, re.IGNORECASE)
@@ -674,24 +687,34 @@ def translate_chunks(
         progress = ((i + 1) / total_chunks) * 100
         print(f"\rProgress: {i + 1}/{total_chunks} ({progress:.1f}%)", end="", flush=True)
         
-        # Translate chunk using 5-stage translation pipeline with retry
+        # Translate chunk via utils.translate_chunk() (H2) — this routes through
+        # the same _pipeline.execute but adds retry-on-empty, rechunking and the
+        # MAX_LLM_CALLS_PER_CHUNK guard. The outer retry loop below additionally
+        # catches exceptions that propagate out of translate_chunk.
+        # M4: filter vocabulary to only terms appearing in current chunk
+        chunk_vocab_dict = {}
+        chunk_vocab_entries = []
+        chunk_lower = chunk.lower()
+        if vocab_dict:
+            chunk_vocab_dict = {k: v for k, v in vocab_dict.items() if k.lower() in chunk_lower}
+        if vocab_entries:
+            chunk_vocab_entries = [e for e in vocab_entries if e.get('source', '').lower() in chunk_lower]
         translation = None
         for attempt in range(3):  # Up to 3 attempts
             try:
-                state = _pipeline.execute(
+                translation, synopsis = translate_chunk(
                     source_lang=source_lang,
                     target_lang=target_lang,
                     source_text=chunk,
                     outline_text=outline_text,
-                    vocab_dict=vocab_dict,
-                    vocab_entries=vocab_entries,
+                    vocab_dict=chunk_vocab_dict,
+                    vocab_entries=chunk_vocab_entries,
                     country=country,
                     style=style,
                     fast_mode=fast_mode
                 )
                 
-                translation = state.final_translation
-                outline_text = state.synopsis or ""
+                outline_text = synopsis or ""
                 break  # Success
                 
             except Exception as e:
@@ -701,6 +724,7 @@ def translate_chunks(
                     logger.info(f"Retrying chunk {i + 1} in {backoff}s...")
                     time.sleep(backoff)
         
+        chunk_failed = False  # H3: failed chunks must not advance the checkpoint
         if translation is not None:
             # Validate translation length
             is_valid, percent_diff, should_split = validate_translation_length(
@@ -710,16 +734,25 @@ def translate_chunks(
             if not is_valid:
                 logger.warning(f"Chunk {i+1} length validation failed ({percent_diff:.1f}% diff)")
             
+            # M7: warn when translation is abnormally large and should be rechunked
+            if should_split:
+                logger.warning(
+                    f"Chunk {i+1} translation is {percent_diff:.1f}% larger than source "
+                    f"— consider reducing --max-chunk-size for better quality"
+                )
+            
             # Fallback: if translation is empty, keep original
             if not translation or not translation.strip():
                 print(f"Empty translation for chunk {i + 1}, keeping original")
                 translation = chunk
                 failed_chunks += 1
+                chunk_failed = True
         else:
             # All retries exhausted
             logger.error(f"All retries exhausted for chunk {i + 1}, keeping original")
             translation = chunk
             failed_chunks += 1
+            chunk_failed = True
         
         # Sanitize surrogates before storing
         translation = sanitize_surrogates(translation)
@@ -729,10 +762,16 @@ def translate_chunks(
         total_target_len += len(translation)
 
         # Save checkpoint after each chunk (D5)
-        # On failure (empty translation or all retries exhausted): the original chunk text
-        # is used as the translation and still gets appended to translated_parts +
-        # persisted in checkpoint. This ensures a resumed run can retry the same chunk.
-        if checkpoint_mgr is not None:
+        # M9/TODO: checkpoint saves the full translated_parts list each time,
+        # leading to O(n²) I/O. For long books, consider append-only incremental
+        # writes (e.g. one file per chunk + manifest) instead of full rewrite.
+        # H3: failed chunks (empty translation or all retries exhausted) are written
+        # to translated_parts as the original text so the current run can finish,
+        # but they are NOT persisted to the checkpoint. Skipping the save keeps
+        # last_chunk at the last successfully translated chunk, so a resumed run
+        # starts at the failed chunk and retries it through the real LLM pipeline
+        # instead of silently shipping the untranslated original text.
+        if checkpoint_mgr is not None and not chunk_failed:
             checkpoint_mgr.save(
                 chunk_id=i,
                 section_idx=0,
@@ -867,13 +906,17 @@ def build_output(
         raise ValueError("Translated markdown is empty or whitespace")
     
     # Check if markdown looks like it hasn't been translated (still mostly English)
-    # Simple heuristic: if more than 95% of content is English-like ASCII, might not be translated
+    # Simple heuristic: if more than 85% of letters are ASCII (Latin), the text
+    # likely wasn't translated into Cyrillic/other non-Latin target languages.
+    # NOTE: compare ASCII letters against total Latin+Cyrillic letters only,
+    # so punctuation/digits/markup don't skew the ratio.
     import re
-    ascii_chars = len(re.findall(r'[a-zA-Z0-9]', translated_md))
-    total_chars = len(translated_md)
-    ascii_ratio = ascii_chars / total_chars if total_chars > 0 else 0
+    ascii_letters = len(re.findall(r'[a-zA-Z]', translated_md))
+    cyrillic_letters = len(re.findall(r'[\u0400-\u04FF]', translated_md))
+    total_letters = ascii_letters + cyrillic_letters
+    ascii_ratio = ascii_letters / total_letters if total_letters > 0 else 0
     
-    if ascii_ratio > 0.95 and config.target_lang.lower() != 'english':
+    if ascii_ratio > 0.85 and config.target_lang.lower() != 'english':
         logger.warning(f"High ASCII ratio ({ascii_ratio:.1%}) in translated markdown. "
                       f"May indicate translation failed or output not replaced properly.")
     
@@ -939,6 +982,14 @@ def build_output(
                     src_img = os.path.join(images_dir, img_name)
                     if os.path.isfile(src_img):
                         shutil.copy2(src_img, os.path.join(temp_dir, img_name))
+                # C3 fix: update img src attributes to bare filenames (no subdirectory)
+                # Calibre HTMLZ uses paths like 'images/foo.jpg', but we copy to temp_dir root
+                import re as _re
+                _img_pattern = _re.compile(
+                    r'(<img[^>]*\bsrc=["\'])(?:images/)?([^/"\'\s>]+)(["\'])',
+                    _re.IGNORECASE
+                )
+                html_content = _img_pattern.sub(r'\1\2\3', html_content)
 
             # Step 3: Convert HTML to output format using Calibre
             logger.info(f"Converting HTML to {output_format.upper()}...")
@@ -985,11 +1036,14 @@ def _generate_title_page(metadata: dict) -> str:
     Returns:
         HTML string for title page
     """
-    title = metadata.get('title', 'Untitled')
-    author = metadata.get('author', '')
-    publisher = metadata.get('publisher', '')
-    language = metadata.get('language', '')
-    description = metadata.get('description', '')
+    import html as _html
+    # C2 fix: escape all metadata values to prevent HTML injection
+    _e = lambda s: _html.escape(str(s), quote=True)
+    title = _e(metadata.get('title', 'Untitled'))
+    author = _e(metadata.get('author', ''))
+    publisher = _e(metadata.get('publisher', ''))
+    language = _e(metadata.get('language', ''))
+    description = _e(metadata.get('description', ''))
     
     # C9 fix: title page must be an HTML fragment, not a full document
     html = f"""<div class="titlepage">
@@ -1088,7 +1142,8 @@ def validate_epub(output_path: str) -> ValidationReport:
                         opf_content = f.read().decode('utf-8', errors='replace')
                     if '<dc:title>' not in opf_content:
                         report.add_issue("error", f"Missing <dc:title> in {opf_name}")
-                    if '<dc:creator>' not in opf_content:
+                    # M3: use regex (same as metadata extraction) to match dc:creator with attributes
+                    if not re.search(r'<dc:creator[^>]*>', opf_content, re.IGNORECASE):
                         report.add_issue("warning", f"Missing <dc:creator> in {opf_name}")
 
             # TOC (NCX or NAV / XHTML with 'toc' in name)
@@ -1646,8 +1701,30 @@ def run_pipeline(
     # C8: convert_to_markdown persisted images next to the input file
     images_dir = os.path.splitext(input_path)[0] + '_images'
     
-    # Step 2: Translate
-    logger.info("Step 2/5: Translating...")
+    # Step 2: Build dictionary if .dic doesn't exist (M6: build BEFORE translation
+    # so the first run has vocabulary terms available)
+    dic_path = Path(input_path).with_suffix('.dic')
+    if not dic_path.exists():
+        logger.info("Step 2/5: Building dictionary from source markdown...")
+        try:
+            dictionary = extract_dictionary_from_md(
+                markdown_text,
+                source_lang=source_lang,
+                target_lang=target_lang,
+                country=country
+            )
+            if dictionary:
+                save_dictionary(dictionary, str(dic_path))
+                logger.info(f"  Dictionary created: {dic_path} ({len(dictionary)} entries)")
+            else:
+                logger.info("  No dictionary terms extracted")
+        except Exception as e:
+            logger.warning(f"  Dictionary building failed (non-fatal): {e}")
+    else:
+        logger.info(f"Step 2/5: Dictionary already exists: {dic_path} (skipped)")
+    
+    # Step 3: Translate
+    logger.info("Step 3/5: Translating...")
     
     # Use MAX_LEN_CHUNK from config if max_chunk_size not specified
     if max_chunk_size is None:
@@ -1669,27 +1746,6 @@ def run_pipeline(
         fast_mode=fast_mode,
         book_path=input_path  # Enable vocabulary loading
     )
-    
-    # Step 3: Build dictionary if .dic doesn't exist
-    dic_path = Path(input_path).with_suffix('.dic')
-    if not dic_path.exists():
-        logger.info("Step 3/5: Building dictionary from source markdown...")
-        try:
-            dictionary = extract_dictionary_from_md(
-                markdown_text,
-                source_lang=source_lang,
-                target_lang=target_lang,
-                country=country
-            )
-            if dictionary:
-                save_dictionary(dictionary, str(dic_path))
-                logger.info(f"  Dictionary created: {dic_path} ({len(dictionary)} entries)")
-            else:
-                logger.info("  No dictionary terms extracted")
-        except Exception as e:
-            logger.warning(f"  Dictionary building failed (non-fatal): {e}")
-    else:
-        logger.info(f"Step 3/5: Dictionary already exists: {dic_path} (skipped)")
     
     # Step 4: Build output
     logger.info(f"Step 4/5: Building {output_format.upper()} output...")

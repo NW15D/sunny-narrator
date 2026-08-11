@@ -11,7 +11,8 @@ def test_title_page_is_fragment():
     html = _generate_title_page({'title': 'T & T', 'author': 'A'})
     assert '<html' not in html
     assert '<body' not in html
-    assert '<h1>T & T</h1>' in html
+    # C2 fix: & is now escaped to &amp; for HTML safety
+    assert '<h1>T &amp; T</h1>' in html
     assert 'by A' in html
 
 

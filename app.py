@@ -788,7 +788,7 @@ def main():
     myfile = config.myfile
     if not os.path.exists(myfile):
         print(f"File not found: {myfile}")
-        return
+        sys.exit(1)  # H8: error path must exit non-zero
 
     # Prepare paths
     file_name, file_ext = os.path.splitext(os.path.basename(myfile))
@@ -797,7 +797,8 @@ def main():
     timestamp = datetime.now().strftime("%H%M-%d%m")
 
     if file_ext.lower() not in ['.fb2', '.epub', '.txt']:
-        raise ValueError(f"Unsupported format: {file_ext}")
+        print(f"Error: Unsupported format: {file_ext}")
+        sys.exit(1)  # H8: error path must exit non-zero
 
     # Output paths
     _paths = build_resume_paths(myfile, config.target_lang)
@@ -1033,6 +1034,15 @@ if __name__ == '__main__':
 
     args, unknown = parser.parse_known_args()
 
+    # M12: validate --max-chunk-size (must be positive)
+    if args.max_chunk_size is not None and args.max_chunk_size <= 0:
+        print("Error: --max-chunk-size must be a positive integer", file=sys.stderr)
+        sys.exit(1)
+
+    # Supported input formats (used by --build-dict validation and pipeline auto-detection)
+    CALIBRE_INPUT_FORMATS = {'.docx', '.epub', '.pdf'}
+    CLASSIC_INPUT_FORMATS = {'.fb2', '.txt'}
+
     # Handle series dictionary build
     if args.build_series_dict:
         from src.ner import create_series_vocab
@@ -1072,12 +1082,22 @@ if __name__ == '__main__':
         print(f"Output dictionary: {dict_path}")
         # Parse book body (reuse same logic as main)
         _, file_ext = os.path.splitext(book_path)
-        if file_ext.lower() == '.fb2':
+        file_ext = file_ext.lower()
+        # H1: reject unknown extensions instead of silently falling back to TXT
+        if file_ext not in (CALIBRE_INPUT_FORMATS | CLASSIC_INPUT_FORMATS):
+            print(f"Error: Unsupported input format: {file_ext}")
+            print("Supported formats: FB2, TXT (classic), DOCX, EPUB, PDF (Calibre)")
+            sys.exit(1)
+        if file_ext == '.fb2':
             body, _, _ = fb2.parse_xml(book_path)
-        elif file_ext.lower() == '.epub':
+        elif file_ext == '.epub':
             body, _, _ = epub.parse_epub(book_path)
-        else:
+        elif file_ext == '.txt':
             body, _, _ = txt.parse_txt(book_path)
+        else:
+            # DOCX/PDF are Calibre-pipeline formats with no body parser here
+            print(f"Error: --build-dict does not support {file_ext}. Use FB2, EPUB or TXT.")
+            sys.exit(1)
         # Generate unverified NER terms first
         vb = make_vocab(body, min_count_ner=args.min_count_ner, min_count_word=args.min_count_word)
         # Write initial untranslated dictionary
@@ -1112,11 +1132,8 @@ if __name__ == '__main__':
         print(f"Dictionary updated with translations: {dict_path}")
         sys.exit(0)
     
-    # Auto-detect pipeline by input file extension
+    # Auto-detect pipeline by input file extension (format sets defined above)
     import src.calibre_pipeline as cp
-
-    CALIBRE_INPUT_FORMATS = {'.docx', '.epub', '.pdf'}
-    CLASSIC_INPUT_FORMATS = {'.fb2', '.txt'}
 
     # Determine input file
     input_file = config.myfile

@@ -132,9 +132,13 @@ def test_clean_calibre_markers():
     """Test Calibre marker removal."""
     from src.calibre_pipeline import _clean_calibre_markers
     
+    # C1/C4 fix: standalone --- (with blank line before) is removed;
+    # setext-style --- (preceded by text, not a blank line) is preserved
     text = """Some text<!-- 1 -->
 More text
+
 ---
+
 Even more text
 
 
@@ -143,7 +147,8 @@ Final text."""
     cleaned = _clean_calibre_markers(text)
     
     assert "<!--" not in cleaned
-    assert "---" not in cleaned  # Should be replaced with newlines
+    # Standalone --- (surrounded by blank lines) should be removed
+    assert "---" not in cleaned
     assert "Final text" in cleaned
 
 

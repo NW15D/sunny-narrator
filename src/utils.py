@@ -1442,7 +1442,7 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
     
     # Success - log tokens (F6: state.total_tokens is accumulated in
     # PipelineState.add_result; state.final_result does not exist)
-    tokens = state.total_tokens
+    tokens = state.total_tokens if isinstance(state.total_tokens, (int, float)) else 0
     metrics.log_success(tokens)  # INFO level
     
     return state.final_translation, state.synopsis
