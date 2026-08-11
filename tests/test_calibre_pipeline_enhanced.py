@@ -138,6 +138,30 @@ def _make_fb2(tmp_dir: str, *, valid: bool = True, with_calibre_artifact: bool =
     return path
 
 
+def _make_docx(tmp_dir: str, *, valid: bool = True) -> str:
+    """Create a minimal DOCX (OOXML ZIP) for testing."""
+    path = os.path.join(tmp_dir, "test.docx")
+    with zipfile.ZipFile(path, 'w') as zf:
+        if valid:
+            zf.writestr("[Content_Types].xml", '<?xml version="1.0"?><Types/>')
+            zf.writestr("word/document.xml", '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Hello</w:t></w:r></w:p></w:body></w:document>')
+        else:
+            zf.writestr("random.txt", "not a docx")
+    return path
+
+
+def _make_pdf(tmp_dir: str, *, valid: bool = True) -> str:
+    """Create a minimal PDF for testing."""
+    path = os.path.join(tmp_dir, "test.pdf")
+    if valid:
+        with open(path, 'wb') as f:
+            f.write(b"%PDF-1.4\n...content...\n%%EOF\n")
+    else:
+        with open(path, 'wb') as f:
+            f.write(b"not a pdf at all")
+    return path
+
+
 # ===========================================================================
 # TestValidation — dataclass unit tests
 # ===========================================================================
@@ -402,12 +426,27 @@ class TestValidateOutput:
         assert report.format == "epub"
         assert report.is_valid is True
 
-    def test_dispatch_fb2(self, tmp_path):
-        """validate_output('fb2') should call validate_fb2."""
+    def test_dispatch_docx(self, tmp_path):
+        """validate_output('docx') should call validate_docx."""
+        docx_path = _make_docx(str(tmp_path), valid=True)
+        report = validate_output(docx_path, "docx")
+        assert report.format == "docx"
+        assert report.is_valid is True
+
+    def test_dispatch_pdf(self, tmp_path):
+        """validate_output('pdf') should call validate_pdf."""
+        pdf_path = _make_pdf(str(tmp_path), valid=True)
+        report = validate_output(pdf_path, "pdf")
+        assert report.format == "pdf"
+        assert report.is_valid is True
+
+    def test_dispatch_fb2_rejected(self, tmp_path):
+        """validate_output('fb2') must report error — FB2 belongs to classic pipeline."""
         fb2_path = _make_fb2(str(tmp_path), valid=True)
         report = validate_output(fb2_path, "fb2")
         assert report.format == "fb2"
-        assert report.is_valid is True
+        assert report.has_errors() is True
+        assert "FB2" in " ".join(i.message for i in report.issues)
 
     def test_case_insensitive_format(self, tmp_path):
         """Format should be case-insensitive (EPUB, Epub, epub all work)."""

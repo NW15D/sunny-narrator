@@ -261,17 +261,24 @@ python3 -c "import pypandoc; print('pypandoc OK')"
 # Basic usage (uses .env config)
 python3 app.py --pipeline new
 
-# Specify output format
+# Specify output format (docx, epub or pdf)
 python3 app.py --pipeline new --output-format epub
 
 # Custom chunk size + fast mode
-python3 app.py --pipeline new --output-format fb2 --max-chunk-size 4000 --fast-mode
+python3 app.py --pipeline new --output-format pdf --max-chunk-size 4000 --fast-mode
 ```
+
+> ⚠️ **FB2 is NOT supported by the Calibre pipeline.** The Calibre pipeline
+> accepts DOCX/EPUB/PDF input and produces DOCX/EPUB/PDF output. For FB2 use
+> the **classic pipeline** (default, without `--pipeline new`), which preserves
+> poem/stanza/v structure via direct XML manipulation. Calibre's HTMLZ
+> intermediate flattens FB2 structure into plain paragraphs — irreversible
+> translation quality loss.
 
 ### .env Configuration for Calibre Pipeline
 
 ```bash
-# Input file (EPUB or FB2)
+# Input file (DOCX, EPUB or PDF)
 myfile=/path/to/book.epub
 
 # Translation settings
