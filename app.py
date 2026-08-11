@@ -1023,15 +1023,13 @@ if __name__ == '__main__':
                        help='Minimum occurrences for NER entities')
     parser.add_argument('--min-count-word', type=int, default=5,
                        help='Minimum occurrences for common words')
-    # Calibre pipeline mode
-    parser.add_argument('--pipeline', choices=['classic', 'new'], default='classic',
-                       help='Translation pipeline: classic (FB2/EPUB parser) or new (Calibre-based)')
     parser.add_argument('--output-format', type=str, default=None,
-                       help='Output format for --pipeline new: docx, epub or pdf (default: from config)')
+                       help='Output format for DOCX/EPUB/PDF input: docx, epub or pdf (default: from config)')
     parser.add_argument('--max-chunk-size', type=int, default=None,
-                       help='Max chunk size in chars for --pipeline new translation (default: MAX_LEN_CHUNK=8192 from config)')
+                       help='Max chunk size in chars for DOCX/EPUB/PDF translation (default: MAX_LEN_CHUNK=8192 from config)')
+    # Fast mode — shared across both pipelines
     parser.add_argument('--fast-mode', action='store_true',
-                       help='Skip reflection/improve stages in --pipeline new')
+                       help='Skip reflection/improve stages'),
 
     args, unknown = parser.parse_known_args()
 
@@ -1114,35 +1112,32 @@ if __name__ == '__main__':
         print(f"Dictionary updated with translations: {dict_path}")
         sys.exit(0)
     
-    # Handle new Calibre pipeline
-    if args.pipeline == 'new':
-        import src.calibre_pipeline as cp
+    # Auto-detect pipeline by input file extension
+    import src.calibre_pipeline as cp
 
-        # Determine input file
-        input_file = config.myfile
-        if input_file and not os.path.exists(input_file):
-            print(f"Error: Input file not found: {input_file}")
-            sys.exit(1)
-        if not input_file:
-            print("Error: No input file specified. Set myfile in .env or pass via --input")
-            sys.exit(1)
+    CALIBRE_INPUT_FORMATS = {'.docx', '.epub', '.pdf'}
+    CLASSIC_INPUT_FORMATS = {'.fb2', '.txt'}
 
+    # Determine input file
+    input_file = config.myfile
+    if input_file and not os.path.exists(input_file):
+        print(f"Error: Input file not found: {input_file}")
+        sys.exit(1)
+    if not input_file:
+        print("Error: No input file specified. Set myfile in .env or pass via --input")
+        sys.exit(1)
+
+    input_ext = os.path.splitext(input_file)[1].lower()
+
+    if input_ext in CALIBRE_INPUT_FORMATS:
+        # ---- Calibre-based pipeline ----
         output_format = args.output_format or config.output_format or 'epub'
         output_format = output_format.lower()
         if output_format not in ('docx', 'epub', 'pdf'):
             print(f"Error: Unsupported output format: {output_format}. Use docx, epub or pdf.")
             sys.exit(1)
 
-        # Calibre pipeline is for DOCX/EPUB/PDF only; FB2 belongs to the
-        # classic pipeline (direct XML) which preserves poem/stanza/v structure.
-        input_ext = os.path.splitext(input_file)[1].lower()
-        if input_ext not in ('.docx', '.epub', '.pdf'):
-            print(f"Error: Unsupported input format for Calibre pipeline: {input_ext}")
-            print("  Calibre pipeline supports DOCX/EPUB/PDF input.")
-            print("  For FB2 use the classic pipeline (default, without --pipeline new).")
-            sys.exit(1)
-
-        print(f"Pipeline: new (Calibre-based)")
+        print(f"Pipeline: Calibre-based (auto-detected)")
         print(f"Input: {input_file}")
         print(f"Output format: {output_format}")
         print(f"Chunk size: {args.max_chunk_size}")
@@ -1170,4 +1165,10 @@ if __name__ == '__main__':
             sys.exit(1)
         sys.exit(0)
 
-    main()
+    elif input_ext in CLASSIC_INPUT_FORMATS:
+        # ---- Classic FB2/EPUB/TXT pipeline ----
+        main()
+    else:
+        print(f"Error: Unsupported input format: {input_ext}")
+        print(f"Supported formats: DOCX, EPUB, PDF (Calibre pipeline), FB2, TXT (Classic pipeline)")
+        sys.exit(1)

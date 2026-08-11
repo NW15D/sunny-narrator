@@ -213,9 +213,12 @@ python -m spacy download en_core_web_lg
 
 ---
 
-## 🔄 Calibre Pipeline (New Feature)
+## 🔄 Calibre Pipeline (Auto-detected)
 
-Sunny Narrator now supports an alternative pipeline that accepts **EPUB/FB2** input directly, converts via Calibre to Markdown, translates, and outputs back to **FB2/EPUB**.
+Sunny Narrator now supports an alternative pipeline that accepts **DOCX/EPUB/PDF** input directly, converts via Calibre to Markdown, translates, and outputs back to **DOCX/EPUB/PDF**.
+
+> The pipeline is selected automatically based on the input file extension:
+> `.docx`, `.epub`, `.pdf` → Calibre pipeline. `.fb2`, `.txt` → Classic pipeline.
 
 ### Prerequisites
 
@@ -258,19 +261,19 @@ python3 -c "import pypandoc; print('pypandoc OK')"
 ### Usage
 
 ```bash
-# Basic usage (uses .env config)
-python3 app.py --pipeline new
+# Basic usage (auto-detected by file extension)
+python3 app.py
 
 # Specify output format (docx, epub or pdf)
-python3 app.py --pipeline new --output-format epub
+python3 app.py --output-format epub
 
 # Custom chunk size + fast mode
-python3 app.py --pipeline new --output-format pdf --max-chunk-size 4000 --fast-mode
+python3 app.py --max-chunk-size 4000 --fast-mode
 ```
 
 > ⚠️ **FB2 is NOT supported by the Calibre pipeline.** The Calibre pipeline
 > accepts DOCX/EPUB/PDF input and produces DOCX/EPUB/PDF output. For FB2 use
-> the **classic pipeline** (default, without `--pipeline new`), which preserves
+> the **classic pipeline** (default for `.fb2` and `.txt` files), which preserves
 > poem/stanza/v structure via direct XML manipulation. Calibre's HTMLZ
 > intermediate flattens FB2 structure into plain paragraphs — irreversible
 > translation quality loss.
@@ -286,8 +289,8 @@ source_lang=en
 target_lang=ru
 country=Россия
 
-# Output format (fb2 or epub)
-output_format=fb2
+# Output format (docx, epub, or pdf)
+output_format=epub
 ```
 
 ### Pipeline Flow
