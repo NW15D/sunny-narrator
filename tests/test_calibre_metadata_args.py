@@ -24,12 +24,12 @@ def test_build_output_passes_metadata_to_calibre(tmp_path):
                 f.write('OK')
         return MagicMock(returncode=0)
 
-    out = str(tmp_path / 'out.fb2')
+    out = str(tmp_path / 'out.docx')
     with patch('src.calibre_pipeline.check_calibre_installed', return_value=True), \
          patch('pypandoc.convert_text', return_value='<p>x</p>'), \
          patch('subprocess.run') as mock_run:
         mock_run.side_effect = _fake_ebook_convert
-        build_output("# Ch\n\ntext", "fb2",
+        build_output("# Ch\n\ntext", "docx",
                      {"title": "My Title", "author": "My Author", "language": "ru"},
                      output_path=out)
     cmd_args = mock_run.call_args[0][0]
