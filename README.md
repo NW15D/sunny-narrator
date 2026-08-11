@@ -165,18 +165,24 @@ docker-compose -f docker-compose.gpu.yml up -d
 
 ## 🔄 Calibre Pipeline (New! as https://github.com/deusyu/translate-book) still developing 
 
-Accept **EPUB/FB2** directly — no manual conversion needed.
+Accepts **DOCX/EPUB/PDF** directly — no manual conversion needed.
 
 ```bash
 # Install system dependencies
 sudo apt install pandoc calibre
 pip install -r requirements.txt
 
-# Translate EPUB/FB2 directly
-python app.py --pipeline new --output-format fb2
+# Translate DOCX/EPUB/PDF
+python app.py --pipeline new --output-format epub
 ```
 
-**Pipeline:** EPUB/FB2 → Calibre → HTML → Markdown → Translate → HTML → Calibre → FB2/EPUB
+**Pipeline:** DOCX/EPUB/PDF → Calibre → HTML → Markdown → Translate → HTML → Calibre → DOCX/EPUB/PDF
+
+> ⚠️ **FB2 is NOT supported by the Calibre pipeline.** FB2 has rich structure
+> (poem/stanza/v) that Calibre's HTMLZ intermediate flattens into plain
+> paragraphs — an irreversible quality loss. Use the **classic pipeline**
+> (default, without `--pipeline new`) for FB2: it manipulates the XML directly
+> and preserves all book structure.
 
 **Full guide:** [docs/INSTALLATION.md](docs/INSTALLATION.md#-calibre-pipeline-new-feature)
 

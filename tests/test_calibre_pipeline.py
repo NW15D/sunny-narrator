@@ -236,7 +236,7 @@ def test_build_output_not_installed():
     
     with patch('src.calibre_pipeline.check_calibre_installed', return_value=False):
         try:
-            build_output("text", "fb2", {})
+            build_output("text", "docx", {})
             assert False, "Should have raised FileNotFoundError"
         except FileNotFoundError as e:
             assert "Calibre" in str(e)
@@ -475,8 +475,8 @@ def test_build_output_epub():
         assert '--wrap=none' in str(call_args)
 
 
-def test_build_output_fb2():
-    """Test FB2 output generation with mocked dependencies."""
+def test_build_output_docx():
+    """Test DOCX output generation with mocked dependencies."""
     from src.calibre_pipeline import build_output
     
     metadata = {
@@ -488,7 +488,7 @@ def test_build_output_fb2():
     def _fake_ebook_convert(cmd, *args, **kwargs):
         if len(cmd) >= 3:
             with open(cmd[2], 'w', encoding='utf-8') as f:
-                f.write('<?xml version="1.0" encoding="UTF-8"?><FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0"><description><title-info><book-title>T</book-title><lang>en</lang></title-info></description><body><p>Тест</p></body></FictionBook>')
+                f.write('DOCX content')
         return MagicMock(returncode=0)
 
     with patch('src.calibre_pipeline.check_calibre_installed', return_value=True), \
@@ -500,15 +500,15 @@ def test_build_output_fb2():
         
         output_path = build_output(
             "# Переведённая глава\n\nПривет мир",
-            "fb2",
+            "docx",
             metadata,
-            output_path="/tmp/test_output.fb2"
+            output_path="/tmp/test_output.docx"
         )
         
-        assert output_path == "/tmp/test_output.fb2"
-        # Verify Calibre was called with fb2 output file
+        assert output_path == "/tmp/test_output.docx"
+        # Verify Calibre was called with docx output file
         cmd_args = mock_run.call_args[0][0]
-        assert "/tmp/test_output.fb2" in cmd_args
+        assert "/tmp/test_output.docx" in cmd_args
         assert "ebook-convert" in cmd_args
 
 
@@ -530,37 +530,41 @@ def test_full_pipeline_integration():
     mock_state.final_translation = "Переведённый текст"
     mock_state.synopsis = "synopsis"
     
-    htmlz_buffer = BytesIO()
-    with zipfile.ZipFile(htmlz_buffer, 'w') as zf:
-        zf.writestr('index.html', html_content)
-        zf.writestr('metadata.opf', opf_content)
+    # NOTE: we do NOT patch zipfile.ZipFile globally: convert_to_markdown
+    # reads the HTMLZ produced by the fake ebook-convert, and validate_docx
+    # reads the DOCX produced by the second fake call — both use the REAL
+    # zipfile against REAL files on disk.
     
     with patch('src.calibre_pipeline.check_calibre_installed', return_value=True), \
          patch('subprocess.run') as mock_subprocess, \
          patch('os.path.exists', return_value=True), \
-         patch('zipfile.ZipFile') as mock_zipfile, \
          patch('pypandoc.convert_text') as mock_pandoc, \
          patch('src.utils._pipeline.execute', return_value=mock_state) as mock_execute, \
          patch('src.calibre_pipeline.split_text_smartly', return_value=("Test content", "")):
         
+        _fake_calls = {"n": 0}
+
         def _fake_ebook_convert(cmd, *args, **kwargs):
-            if len(cmd) >= 3:
-                with open(cmd[2], 'w', encoding='utf-8') as f:
-                    f.write('<?xml version="1.0" encoding="UTF-8"?><FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0"><description><title-info><book-title>T</book-title><lang>en</lang></title-info></description><body><p>Тест</p></body></FictionBook>')
+            _fake_calls["n"] += 1
+            out_path = cmd[2]
+            if _fake_calls["n"] == 1:
+                # Call 1: convert input -> HTMLZ (zip with index.html + opf)
+                with zipfile.ZipFile(out_path, 'w') as zf:
+                    zf.writestr('index.html', html_content)
+                    zf.writestr('metadata.opf', opf_content)
+            else:
+                # Call 2+: HTML -> DOCX (real OOXML zip)
+                with zipfile.ZipFile(out_path, 'w') as zf:
+                    zf.writestr("[Content_Types].xml", '<?xml version="1.0"?><Types/>')
+                    zf.writestr("word/document.xml", '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>DOCX output content</w:t></w:r></w:p></w:body></w:document>')
             return MagicMock(returncode=0)
 
         mock_subprocess.side_effect = _fake_ebook_convert
         mock_pandoc.return_value = "# Глава\n\nПереведённый текст"
         
-        mock_zf_instance = MagicMock()
-        mock_zf_instance.namelist.return_value = ['index.html', 'metadata.opf']
-        mock_zf_instance.read.side_effect = lambda name: html_content if name == 'index.html' else opf_content
-        mock_zipfile.return_value.__enter__ = MagicMock(return_value=mock_zf_instance)
-        mock_zipfile.return_value.__exit__ = MagicMock(return_value=False)
-        
         output = run_pipeline(
             input_path="/fake/book.epub",
-            output_format="fb2",
+            output_format="docx",
             max_chunk_size=6000
         )
         
@@ -569,21 +573,21 @@ def test_full_pipeline_integration():
         assert mock_subprocess.call_count >= 2  # At least convert + output
         assert mock_execute.call_count >= 1
 
-    # run_pipeline creates Pipeline_Test.fb2 in cwd; clean it up
-    if os.path.exists("Pipeline_Test.fb2"):
-        os.remove("Pipeline_Test.fb2")
+    # run_pipeline creates Pipeline_Test.docx in cwd; clean it up
+    if os.path.exists("Pipeline_Test.docx"):
+        os.remove("Pipeline_Test.docx")
 
 
 def test_error_handling():
     """Test error handling for various failure scenarios."""
     from src.calibre_pipeline import convert_to_markdown
     
-    # Test 1: Unsupported input format
+    # Test 1: Unsupported input format (FB2 is out of Calibre scope)
     with patch('src.calibre_pipeline.check_calibre_installed', return_value=True), \
          patch('os.path.exists', return_value=True):
         try:
-            convert_to_markdown("test.pdf")
-            assert False, "Should raise ValueError for PDF"
+            convert_to_markdown("test.fb2")
+            assert False, "Should raise ValueError for FB2"
         except ValueError as e:
             assert "Unsupported input format" in str(e)
     

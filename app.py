@@ -1027,7 +1027,7 @@ if __name__ == '__main__':
     parser.add_argument('--pipeline', choices=['classic', 'new'], default='classic',
                        help='Translation pipeline: classic (FB2/EPUB parser) or new (Calibre-based)')
     parser.add_argument('--output-format', type=str, default=None,
-                       help='Output format for --pipeline new: fb2 or epub (default: from config)')
+                       help='Output format for --pipeline new: docx, epub or pdf (default: from config)')
     parser.add_argument('--max-chunk-size', type=int, default=None,
                        help='Max chunk size in chars for --pipeline new translation (default: MAX_LEN_CHUNK=8192 from config)')
     parser.add_argument('--fast-mode', action='store_true',
@@ -1127,10 +1127,19 @@ if __name__ == '__main__':
             print("Error: No input file specified. Set myfile in .env or pass via --input")
             sys.exit(1)
 
-        output_format = args.output_format or config.output_format or 'fb2'
+        output_format = args.output_format or config.output_format or 'epub'
         output_format = output_format.lower()
-        if output_format not in ('fb2', 'epub'):
-            print(f"Error: Unsupported output format: {output_format}. Use fb2 or epub.")
+        if output_format not in ('docx', 'epub', 'pdf'):
+            print(f"Error: Unsupported output format: {output_format}. Use docx, epub or pdf.")
+            sys.exit(1)
+
+        # Calibre pipeline is for DOCX/EPUB/PDF only; FB2 belongs to the
+        # classic pipeline (direct XML) which preserves poem/stanza/v structure.
+        input_ext = os.path.splitext(input_file)[1].lower()
+        if input_ext not in ('.docx', '.epub', '.pdf'):
+            print(f"Error: Unsupported input format for Calibre pipeline: {input_ext}")
+            print("  Calibre pipeline supports DOCX/EPUB/PDF input.")
+            print("  For FB2 use the classic pipeline (default, without --pipeline new).")
             sys.exit(1)
 
         print(f"Pipeline: new (Calibre-based)")

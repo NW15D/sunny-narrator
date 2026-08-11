@@ -270,7 +270,7 @@ def convert_to_markdown(input_path: str) -> tuple[str, dict]:
     
     # Determine input format
     input_ext = Path(input_path).suffix.lower()
-    if input_ext not in ['.epub', '.fb2', '.fbz']:
+    if input_ext not in ['.docx', '.epub', '.pdf']:
         raise ValueError(f"Unsupported input format: {input_ext}")
     
     with TempDir(prefix="calibre_conv_") as temp_dir:
@@ -784,8 +784,13 @@ def translate_chunks(
 
 
 def _split_into_chunks_md(text: str, max_chunk_size: int) -> list[str]:
-    """Wrapper for markdown_utils.split_markdown_by_size."""
-    return markdown_utils.split_markdown_by_size(text, target_size=max_chunk_size)
+    """Split markdown into chunks, never breaking structural syntax.
+
+    Uses structural-block-aware chunking (split_markdown_structured) so that
+    fences, list markers, table rows and blockquote prefixes stay intact
+    within a chunk — prevents LLM context fragmentation.
+    """
+    return markdown_utils.split_markdown_structured(text, target_size=max_chunk_size)
 
 
 def _split_into_chunks(text: str, max_chunk_size: int) -> list[str]:
@@ -844,7 +849,7 @@ def build_output(
     
     Args:
         translated_md: Translated Markdown content
-        output_format: Output format - "fb2" or "epub"
+        output_format: Output format - "docx", "epub" or "pdf"
         metadata: Book metadata dictionary
         output_path: Optional output path (auto-generated if not provided)
         
@@ -873,7 +878,7 @@ def build_output(
                       f"May indicate translation failed or output not replaced properly.")
     
     output_format = output_format.lower()
-    valid_formats = {'fb2', 'epub'}
+    valid_formats = {'docx', 'epub', 'pdf'}
     if output_format not in valid_formats:
         raise ValueError(f"Unsupported output format: {output_format}. Valid: {', '.join(sorted(valid_formats))}")
     
@@ -961,15 +966,6 @@ def build_output(
             
             if not os.path.exists(output_path):
                 raise ValueError(f"Output file was not created: {output_path}")
-            
-            # Step 4: Clean Calibre markers from output FB2 if output_format is fb2
-            if output_format == 'fb2':
-                logger.info("Cleaning Calibre markers from output FB2...")
-                with open(output_path, 'r', encoding='utf-8') as f:
-                    fb2_content = f.read()
-                fb2_content = _clean_calibre_markers(fb2_content)
-                with open(output_path, 'w', encoding='utf-8') as f:
-                    f.write(fb2_content)
             
             logger.info(f"Output created: {output_path}")
             return output_path
@@ -1192,6 +1188,104 @@ def validate_fb2(output_path: str) -> ValidationReport:
     return report
 
 
+def validate_docx(output_path: str) -> ValidationReport:
+    """
+    Validate DOCX file structure and content.
+
+    Checks:
+    - File exists and size > 0
+    - Valid ZIP (OOXML) structure
+    - word/document.xml present
+    - [Content_Types].xml present
+
+    Args:
+        output_path: Path to DOCX file
+
+    Returns:
+        ValidationReport with results
+    """
+    _init_logger()
+    report = ValidationReport(is_valid=False, file_path=output_path, format="docx")
+
+    if not os.path.exists(output_path):
+        report.add_issue("error", "File does not exist")
+        return report
+
+    file_size = os.path.getsize(output_path)
+    if file_size == 0:
+        report.add_issue("error", "File is empty")
+        return report
+    report.file_size = file_size
+
+    try:
+        with zipfile.ZipFile(output_path, 'r') as zf:
+            names = set(zf.namelist())
+            if 'word/document.xml' not in names:
+                report.add_issue("error", "Missing word/document.xml")
+            if '[Content_Types].xml' not in names:
+                report.add_issue("error", "Missing [Content_Types].xml")
+            # Ensure document.xml parses as XML
+            if 'word/document.xml' in names:
+                try:
+                    zf.read('word/document.xml')
+                except Exception as e:
+                    report.add_issue("error", f"Cannot read word/document.xml: {e}")
+    except zipfile.BadZipFile:
+        report.add_issue("error", "Invalid ZIP structure (not a valid DOCX)")
+        return report
+
+    report.is_valid = not report.has_errors()
+    logger.info(f"DOCX validation: {report.summary()}")
+    return report
+
+
+def validate_pdf(output_path: str) -> ValidationReport:
+    """
+    Validate PDF file structure and content.
+
+    Checks:
+    - File exists and size > 0
+    - Starts with %PDF-
+    - Contains EOF marker (%%EOF)
+
+    Args:
+        output_path: Path to PDF file
+
+    Returns:
+        ValidationReport with results
+    """
+    _init_logger()
+    report = ValidationReport(is_valid=False, file_path=output_path, format="pdf")
+
+    if not os.path.exists(output_path):
+        report.add_issue("error", "File does not exist")
+        return report
+
+    file_size = os.path.getsize(output_path)
+    if file_size == 0:
+        report.add_issue("error", "File is empty")
+        return report
+    report.file_size = file_size
+
+    with open(output_path, 'rb') as f:
+        header = f.read(1024)
+    if not header.startswith(b'%PDF-'):
+        report.add_issue("error", "Invalid PDF header (missing %PDF-)")
+
+    with open(output_path, 'rb') as f:
+        # Read trailing bytes (handle files smaller than 1024 bytes)
+        f.seek(0, 2)
+        size = f.tell()
+        f.seek(max(0, size - 1024), 0)
+        tail = f.read()
+    if b'%%EOF' not in tail:
+        report.add_issue("warning", "Missing %%EOF marker")
+
+    report.is_valid = not report.has_errors()
+    logger.info(f"PDF validation: {report.summary()}")
+    return report
+
+
 def validate_output(output_path: str, output_format: str) -> ValidationReport:
     """
     Validate output file based on format.
@@ -1200,7 +1294,7 @@ def validate_output(output_path: str, output_format: str) -> ValidationReport:
 
     Args:
         output_path: Path to output file
-        output_format: "epub" or "fb2"
+        output_format: "docx", "epub" or "pdf"
 
     Returns:
         ValidationReport with results
@@ -1209,8 +1303,18 @@ def validate_output(output_path: str, output_format: str) -> ValidationReport:
     fmt = output_format.lower()
     if fmt == "epub":
         return validate_epub(output_path)
+    elif fmt == "docx":
+        return validate_docx(output_path)
+    elif fmt == "pdf":
+        return validate_pdf(output_path)
     elif fmt == "fb2":
-        return validate_fb2(output_path)
+        report = ValidationReport(is_valid=False, file_path=output_path, format=fmt)
+        report.add_issue(
+            "error",
+            f"FB2 output is not supported by the Calibre pipeline. "
+            f"Use the classic pipeline for FB2.",
+        )
+        return report
     else:
         report = ValidationReport(is_valid=False, file_path=output_path, format=fmt)
         report.add_issue("error", f"Unsupported output format: {output_format}")
@@ -1490,7 +1594,7 @@ def _enforce_validation(validation, allow_invalid: bool) -> None:
 # Convenience function for full pipeline
 def run_pipeline(
     input_path: str,
-    output_format: str = "fb2",
+    output_format: str = "epub",
     max_chunk_size: int = None,  # None = use MAX_LEN_CHUNK from config
     source_lang: str = "en",
     target_lang: str = "ru",
@@ -1503,8 +1607,8 @@ def run_pipeline(
     Run the complete Calibre pipeline: convert -> translate -> build output -> validate.
     
     Args:
-        input_path: Path to input EPUB/FB2 file
-        output_format: Output format - "fb2" or "epub"
+        input_path: Path to input DOCX/EPUB/PDF file
+        output_format: Output format - "docx", "epub" or "pdf"
         max_chunk_size: Maximum chunk size for translation
         source_lang: Source language code
         target_lang: Target language code
@@ -1516,7 +1620,26 @@ def run_pipeline(
         Path to the generated output file
     """
     _init_logger()
-    
+
+    # Validate input/output format scope: Calibre pipeline is for
+    # DOCX/EPUB/PDF only. FB2 stays with the classic pipeline (direct XML
+    # manipulation) because Calibre's HTMLZ intermediate loses FB2 structure
+    # (poem/stanza/v etc.) and flattens it into <p>/<empty-line/>.
+    from pathlib import Path as _Path
+    input_ext = _Path(input_path).suffix.lower()
+    if input_ext not in ('.docx', '.epub', '.pdf'):
+        raise ValueError(
+            f"Unsupported input format for Calibre pipeline: {input_ext}. "
+            f"Calibre pipeline supports DOCX/EPUB/PDF. "
+            f"For FB2 use the classic pipeline (without --pipeline new)."
+        )
+    output_format = (output_format or 'epub').lower()
+    if output_format not in ('docx', 'epub', 'pdf'):
+        raise ValueError(
+            f"Unsupported output format for Calibre pipeline: {output_format}. "
+            f"Valid: docx, epub, pdf. For FB2 use the classic pipeline."
+        )
+
     # Step 1: Convert to Markdown
     logger.info(f"Step 1/5: Converting {input_path} to Markdown...")
     markdown_text, metadata = convert_to_markdown(input_path)
