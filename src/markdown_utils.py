@@ -132,7 +132,7 @@ def merge_blocks_to_chunks(blocks: List[tuple], target_size: int = 6000) -> List
     Merge structural blocks into chunks respecting target_size.
 
     Prefers to split at heading boundaries. Never splits within a single
-    structural block unless the block itself exceeds target_size * 2.
+    structural block unless the block itself exceeds target_size * 1.5.
     """
     chunks = []
     current_parts = []
@@ -149,7 +149,7 @@ def merge_blocks_to_chunks(blocks: List[tuple], target_size: int = 6000) -> List
         block_size = len(text)
 
         # If a single block is oversized, handle degradation
-        if block_size > target_size * 2:
+        if block_size > target_size * 1.5:
             flush()
             sub_chunks = _force_split_block(text, target_size)
             chunks.extend(sub_chunks)
@@ -346,12 +346,19 @@ def generate_heading_id(text: str, existing_headings: List[dict] = None) -> str:
     Returns:
         URL-safe heading ID
     """
-    # Convert to lowercase, replace spaces with hyphens
-    heading_id = text.lower()
-    heading_id = re.sub(r'[^\w\s-]', '', heading_id)
+    # Convert to lowercase, replace spaces with hyphens.
+    # Use Unicode-aware case folding (locale-agnostic) so non-English
+    # headings (Cyrillic, German umlauts, etc.) get stable URL-safe IDs
+    # instead of being stripped to empty strings by ASCII \w matching.
+    heading_id = text.casefold()
+    heading_id = re.sub(r'[^\w\s-]', '', heading_id, flags=re.UNICODE)
     heading_id = re.sub(r'\s+', '-', heading_id)
     heading_id = re.sub(r'-+', '-', heading_id)
     heading_id = heading_id.strip('-')
+    
+    # Fallback for headings that produced no safe characters (e.g. emoji-only)
+    if not heading_id:
+        heading_id = 'heading'
     
     # Ensure uniqueness
     if existing_headings:
