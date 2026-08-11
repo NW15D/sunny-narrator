@@ -191,10 +191,10 @@ python app.py
 > ⚠️ **FB2 is NOT supported by the Calibre pipeline.** FB2 has rich structure
 > (poem/stanza/v) that Calibre's HTMLZ intermediate flattens into plain
 > paragraphs — an irreversible quality loss. Use the **classic pipeline**
-> (default, without `--pipeline new`) for FB2: it manipulates the XML directly
+> (default for `.fb2` and `.txt` files) for FB2: it manipulates the XML directly
 > and preserves all book structure.
 
-**Full guide:** [docs/INSTALLATION.md](docs/INSTALLATION.md#-calibre-pipeline-new-feature)
+**Full guide:** [docs/INSTALLATION.md](docs/INSTALLATION.md#-calibre-pipeline-auto-detected)
 
 ---
 

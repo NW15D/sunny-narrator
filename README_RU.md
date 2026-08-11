@@ -216,9 +216,9 @@ pip install -r requirements.txt
 python app.py
 ```
 
-**Пайплайн:** EPUB/FB2 → Calibre → HTML → Markdown → Перевод → HTML → Calibre → FB2/EPUB
+**Пайплайн:** DOCX/EPUB/PDF → Calibre → HTML → Markdown → Перевод → HTML → Calibre → DOCX/EPUB/PDF
 
-**Полное руководство:** [docs/INSTALLATION.md](docs/INSTALLATION.md#-calibre-pipeline-new-feature)
+**Полное руководство:** [docs/INSTALLATION.md](docs/INSTALLATION.md#-calibre-pipeline-auto-detected)
 
 ---
 
