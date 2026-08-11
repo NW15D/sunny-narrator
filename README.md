@@ -1,7 +1,7 @@
 # Sunny Narrator
 
-**Version:** 2.0  
-**Glossary-Driven AI Book Translator** for FB2/EPUB formats. Dual-LLM translation system with 5-stage quality control.
+**Version:** 2.1  
+**Glossary-Driven AI Book Translator** for FB2/EPUB/DOCX/PDF formats. Dual-LLM translation system with 5-stage quality control.
 
 **Designed for:**
 - 📚 Glossary-driven translation of book series (consistent terminology across volumes)
@@ -10,6 +10,15 @@
 - ☁️ Online translation services via API
 
 ## 🔄 General Workflow
+
+### Supported Formats
+
+| Input Format | Pipeline |
+|--------------|----------|
+| **FB2, TXT** | Classic pipeline (direct XML — preserves poem/stanza/v structure) |
+| **DOCX, EPUB, PDF** | Calibre pipeline (via HTMLZ intermediate) |
+
+Pipeline selection is automatic based on file extension — no `--pipeline` flag needed.
 
 
 **Step-by-step workflow:**
@@ -163,17 +172,18 @@ docker-compose -f docker-compose.gpu.yml up -d
 
 ---
 
-## 🔄 Calibre Pipeline (New! as https://github.com/deusyu/translate-book) still developing 
+## 🔄 Calibre Pipeline (DOCX/EPUB/PDF)
 
 Accepts **DOCX/EPUB/PDF** directly — no manual conversion needed.
+The pipeline is auto-selected when you provide a file with `.docx`, `.epub`, or `.pdf` extension.
 
 ```bash
 # Install system dependencies
 sudo apt install pandoc calibre
 pip install -r requirements.txt
 
-# Translate DOCX/EPUB/PDF
-python app.py --pipeline new --output-format epub
+# Translate DOCX/EPUB/PDF (auto-detected by extension)
+python app.py
 ```
 
 **Pipeline:** DOCX/EPUB/PDF → Calibre → HTML → Markdown → Translate → HTML → Calibre → DOCX/EPUB/PDF
@@ -211,6 +221,7 @@ python app.py --pipeline new --output-format epub
 
 ## 📝 Versions
 
+- **v2.1** — Auto-detect pipeline by file extension (.docx/.epub/.pdf → Calibre; .fb2/.txt → classic); removed `--pipeline` flag
 - **v2.0** — Migrated from pip requirements.txt to pyproject.toml; PyTorch CUDA 12.1 + cuPy
 - **v1.4** — Added general workflow diagram and step-by-step instructions to README
 - **v1.3** — Initial English README
