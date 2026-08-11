@@ -1027,9 +1027,9 @@ if __name__ == '__main__':
                        help='Output format for DOCX/EPUB/PDF input: docx, epub or pdf (default: from config)')
     parser.add_argument('--max-chunk-size', type=int, default=None,
                        help='Max chunk size in chars for DOCX/EPUB/PDF translation (default: MAX_LEN_CHUNK=8192 from config)')
-    # Fast mode — Calibre pipeline only (classic uses config.fast_trans)
+    # Fast mode — shared across both pipelines
     parser.add_argument('--fast-mode', action='store_true',
-                        help='Skip reflection/improve stages in Calibre pipeline')
+                        help='Skip reflection/improve stages (both pipelines)')
 
     args, unknown = parser.parse_known_args()
 
