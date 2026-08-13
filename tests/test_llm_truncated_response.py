@@ -26,4 +26,4 @@ def test_complete_raises_on_truncated_response(monkeypatch):
     monkeypatch.setattr(svc, 'get_client', lambda role: (fake_client, 'test-model', 0.1))
 
     with pytest.raises(ValueError, match='truncated'):
-        svc.complete(u.LLMRole.PRIMARY, 'sys', 'user', max_tokens=16, track_tokens=False)
+        svc.complete(u.LLMRole.TRANSLATE, 'sys', 'user', max_tokens=16, track_tokens=False)

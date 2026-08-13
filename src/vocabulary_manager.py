@@ -286,7 +286,7 @@ class VocabularyManager:
                         config.target_lang,
                         chunk,
                         config.country,
-                        "Translate"
+                        "translate"
                     )
                     
                     # Parse JSON response and write immediately

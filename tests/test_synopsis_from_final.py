@@ -13,7 +13,7 @@ def test_synopsis_uses_final_translation(monkeypatch):
     def mk(text):
         return u.TranslationResult(
             stage=u.TranslationStage.FINAL,
-            llm_role=u.LLMRole.PRIMARY,
+            llm_role=u.LLMRole.TRANSLATE,
             text=text,
             metadata={}
         )
@@ -29,7 +29,7 @@ def test_synopsis_uses_final_translation(monkeypatch):
         seen['text'] = text
         return u.TranslationResult(
             stage=u.TranslationStage.SYNOPSIS,
-            llm_role=u.LLMRole.PRIMARY,
+            llm_role=u.LLMRole.TRANSLATE,
             text='SYNOPSIS',
             metadata={}
         )
@@ -52,7 +52,7 @@ def test_synopsis_works_in_fast_mode(monkeypatch):
     def mk(text):
         return u.TranslationResult(
             stage=u.TranslationStage.FINAL,
-            llm_role=u.LLMRole.PRIMARY,
+            llm_role=u.LLMRole.TRANSLATE,
             text=text,
             metadata={}
         )
@@ -65,7 +65,7 @@ def test_synopsis_works_in_fast_mode(monkeypatch):
         seen['text'] = text
         return u.TranslationResult(
             stage=u.TranslationStage.SYNOPSIS,
-            llm_role=u.LLMRole.PRIMARY,
+            llm_role=u.LLMRole.TRANSLATE,
             text='SYNOPSIS',
             metadata={}
         )
