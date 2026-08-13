@@ -29,7 +29,7 @@ class Config:
             config_dir = Path(__file__).resolve().parent.parent
             load_dotenv(config_dir / ".env")
 
-        # Translation API (Primary/Big model)
+        # Translation API (translate model)
         self.api_key_translate = os.getenv('API_KEY_TRANSLATE', os.getenv('API_KEY', ''))
         self.base_url_translate = os.getenv('API_BASE_TRANSLATE', os.getenv('API_BASE', 'http://192.168.0.55:6150/v1'))
         self.sys_not_promt_translate = os.getenv('S_PROMT_TRANSLATE', os.getenv('S_PROMT', '')).lower() in ('true', '1', 'on')
@@ -64,7 +64,7 @@ class Config:
         # Stage 5: SYNOPSIS
         self.temp_synopsis = _parse_numeric_env('TEMP_SYNOPSIS', 0.15)
 
-        # Proofread API (Secondary/Small model)
+        # Proofread API (proofread model)
         self.api_key_proofread = os.getenv('API_KEY_PROOFREAD', os.getenv('API_KEY2', ''))
         self.base_url_proofread = os.getenv('API_BASE_PROOFREAD', os.getenv('API_BASE2', 'https://api.openai.com/v1'))
         self.sys_not_promt_proofread = os.getenv('S_PROMT_PROOFREAD', os.getenv('S_PROMT2', '')).lower() in ('true', '1', 'on')

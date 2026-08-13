@@ -105,5 +105,5 @@ def test_remove_tags_with_check_json_priority():
     
     # JSON with translation should be extracted
     text = '{"translation": "тестовый перевод"}'
-    result = remove_tags_with_check(text, "test", LLMRole.PRIMARY)
+    result = remove_tags_with_check(text, "test", LLMRole.TRANSLATE)
     assert result == "тестовый перевод"

@@ -213,7 +213,7 @@ print(f"Secondary sys_not_promt: {config.sys_not_promt_proofread}")
 
 # Тестовый вызов
 result = llm_service.complete(
-    role=LLMRole.PRIMARY,
+    role=LLMRole.TRANSLATE,
     system_prompt="You are a translator",
     user_prompt="Translate: Hello",
     max_tokens=100
