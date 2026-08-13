@@ -26,15 +26,15 @@ FAST_TRANS=false   # Standard mode (5 stages)
 ### Standard (5 stages)
 
 ```
-Stage 1: INITIAL (Primary LLM)       → Translation
-Stage 2: REFLECTION (Secondary LLM)  → Quality review
-Stage 3: IMPROVE (Secondary LLM)     → Apply suggestions
-Stage 4: FINAL_EDIT (Secondary LLM)  → Proofreading
-Stage 5: SYNOPSIS (Secondary LLM)    → Summary
+Stage 1: INITIAL (Translate LLM)    → Translation
+Stage 2: REFLECTION (Proofread LLM) → Quality review
+Stage 3: IMPROVE (Proofread LLM)    → Apply suggestions
+Stage 4: FINAL_EDIT (Proofread LLM) → Proofreading
+Stage 5: SYNOPSIS (Translate LLM)   → Summary
 ```
 
 **Characteristics:**
-- **LLM calls:** 5 (1 Primary + 4 Secondary)
+- **LLM calls:** 5 (2 Translate + 3 Proofread)
 - **Speed:** 1.0x (baseline)
 - **Quality:** High
 
@@ -43,13 +43,13 @@ Stage 5: SYNOPSIS (Secondary LLM)    → Summary
 ### FAST_TRANS (2 stages)
 
 ```
-Stage 1: INITIAL (Primary LLM)       → Translation
-Stage 5: SYNOPSIS (Secondary LLM)    → Summary
+Stage 1: INITIAL (Translate LLM)    → Translation
+Stage 5: SYNOPSIS (Translate LLM)   → Summary
 (Stages 2-4 skipped)
 ```
 
 **Characteristics:**
-- **LLM calls:** 2 (1 Primary + 1 Secondary)
+- **LLM calls:** 2 (2 Translate + 0 Proofread)
 - **Speed:** ~2.5x faster
 - **Quality:** Medium
 

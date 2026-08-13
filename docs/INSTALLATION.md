@@ -375,7 +375,7 @@ print('NER result:', result[:100] if result else 'No terms')
 ### .env File
 
 ```bash
-# Primary LLM
+# Translate LLM
 MODEL_TRANSLATE=Hunyuan
 API_BASE_TRANSLATE=http://localhost:11434/v1
 API_KEY_TRANSLATE=your-key

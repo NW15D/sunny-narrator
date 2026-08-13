@@ -108,8 +108,8 @@ def _validate_stage_length(self, source: str, result: str,
 
 ### Current Implementation
 
-- **Primary LLM (Translation):** `config.temp_translate` (default: 0.01)
-- **Secondary LLM (Editing):** `config.temp_proofread` (default: 0.7)
+- **Translate LLM (Translation):** `config.temp_translate` (default: 0.01)
+- **Proofread LLM (Editing):** `config.temp_proofread` (default: 0.7)
 
 ### Recommended Approach
 

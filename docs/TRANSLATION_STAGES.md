@@ -4,31 +4,31 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ Stage 1: INITIAL (Primary LLM)                                  │
+│ Stage 1: INITIAL (Translate LLM)                               │
 │ Input: source_text, outline_text, vocab_dict                    │
 │ Output: initial_translation (draft)                             │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ Stage 2: REFLECTION (Secondary LLM)                             │
+│ Stage 2: REFLECTION (Proofread LLM)                            │
 │ Input: source_text, initial_translation                         │
 │ Output: suggestions (feedback list)                             │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ Stage 3: IMPROVE (Secondary LLM)                                │
+│ Stage 3: IMPROVE (Proofread LLM)                               │
 │ Input: initial_translation, suggestions, vocab_dict             │
 │ Output: improved_translation (corrected translation)            │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ Stage 4: FINAL_EDIT (Secondary LLM)                             │
+│ Stage 4: FINAL_EDIT (Proofread LLM)                            │
 │ Input: improved_translation, source_text, vocab_dict            │
 │ Output: final_translation                                       │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ Stage 5: SYNOPSIS (Secondary LLM)                                 │
+│ Stage 5: SYNOPSIS (Translate LLM)                                │
 │ Input: final_translation                                        │
 │ Output: synopsis (context for next chunk)                       │
 └─────────────────────────────────────────────────────────────────┘
@@ -53,7 +53,7 @@ See [JSON Mode Analysis](../JSON_MODE_ANALYSIS.md) for complete input/output spe
 
 ## 🎯 Stage 1: INITIAL (Initial Translation)
 
-**LLM:** Primary (Hunyuan/Gemma/etc.)  
+**LLM:** Translate (Hunyuan/Gemma/etc.)  
 **Temperature:** 0.01 (consistency)  
 **Output:** Draft translation
 
@@ -100,7 +100,7 @@ Requirements:
 
 ## 🔍 Stage 2: REFLECTION (Quality Review)
 
-**LLM:** Secondary (Mistral/Qwen/etc.)  
+**LLM:** Proofread (Mistral/Qwen/etc.)  
 **Temperature:** 0.4 (creativity)  
 **Output:** Feedback ONLY (list)
 
@@ -180,7 +180,7 @@ If output is not a feedback list, check:
 
 ## ✏️ Stage 3: IMPROVE (Apply Feedback)
 
-**LLM:** Secondary (Mistral/Qwen/etc.)  
+**LLM:** Proofread (Mistral/Qwen/etc.)  
 **Temperature:** 0.4 (flexibility)  
 **Output:** Corrected translation
 
@@ -249,7 +249,7 @@ Output the final translation ONLY, wrapped in <ttext>...</ttext>.
 
 ## 📝 Stage 4: FINAL_EDIT (Final Proofreading)
 
-**LLM:** Secondary (Mistral/Qwen/etc.)  
+**LLM:** Proofread (Mistral/Qwen/etc.)  
 **Temperature:** 0.15 (precision)  
 **Output:** Final translation
 
@@ -308,7 +308,7 @@ Return ONLY the corrected translation.
 
 ## 📖 Stage 5: SYNOPSIS (Synopsis)
 
-**LLM:** Secondary (Mistral/Qwen/etc.)  
+**LLM:** Proofread (Mistral/Qwen/etc.)  
 **Temperature:** 0.15 (precision)  
 **Output:** Short synopsis (~80 words)
 
@@ -381,11 +381,11 @@ Court hearing in Texas. Court secretary Rolando Ortellia questions witness Henry
 
 | Stage | LLM | Temperature | Input | Output | Prompt |
 |-------|-----|-------------|-------|--------|--------|
-| **1. INITIAL** | Primary | 0.01 | source_text, vocab | initial_translation | initial_translation |
-| **2. REFLECTION** | Secondary | 0.4 | source, translation | suggestions (list) | reflection |
-| **3. IMPROVE** | Secondary | 0.4 | translation, suggestions | improved_translation | improve |
-| **4. FINAL_EDIT** | Secondary | 0.15 | improved_translation, source | final_translation | editor |
-| **5. SYNOPSIS** | **Secondary** | 0.15 | final_translation | synopsis | synopsis |
+| **1. INITIAL** | Translate | 0.01 | source_text, vocab | initial_translation | initial_translation |
+| **2. REFLECTION** | Proofread | 0.4 | source, translation | suggestions (list) | reflection |
+| **3. IMPROVE** | Proofread | 0.4 | translation, suggestions | improved_translation | improve |
+| **4. FINAL_EDIT** | Proofread | 0.15 | improved_translation, source | final_translation | editor |
+| **5. SYNOPSIS** | **Translate** | 0.15 | final_translation | synopsis | synopsis |
 
 ---
 

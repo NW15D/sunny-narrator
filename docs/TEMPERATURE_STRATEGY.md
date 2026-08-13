@@ -10,11 +10,11 @@ Sunny Narrator implements **stage-specific temperature control** for optimal tra
 
 | Stage | LLM | Default Temp | Purpose |
 |-------|-----|--------------|---------|
-| **1. INITIAL** | Primary | 0.01 | Consistent translation |
-| **2. REFLECTION** | Secondary | 0.4 | Creative analysis |
-| **3. IMPROVE** | Secondary | 0.4 | Flexible editing |
-| **4. FINAL_EDIT** | Secondary | 0.15 | Precise proofreading |
-| **5. SYNOPSIS** | Primary | 0.15 | Accurate summary |
+| **1. INITIAL** | Translate | 0.01 | Consistent translation |
+| **2. REFLECTION** | Proofread | 0.4 | Creative analysis |
+| **3. IMPROVE** | Proofread | 0.4 | Flexible editing |
+| **4. FINAL_EDIT** | Proofread | 0.15 | Precise proofreading |
+| **5. SYNOPSIS** | Translate | 0.15 | Accurate summary |
 
 ## ⚙️ Configuration
 
@@ -22,8 +22,8 @@ Sunny Narrator implements **stage-specific temperature control** for optimal tra
 
 ```bash
 # Base temperatures (fallback)
-TEMP_TRANSLATE=0.01      # Primary LLM default
-TEMP_PROOFREAD=0.7       # Secondary LLM default
+TEMP_TRANSLATE=0.01      # Translate LLM default
+TEMP_PROOFREAD=0.7       # Proofread LLM default
 
 # Stage-specific temperatures (override base)
 TEMP_INITIAL=0.01        # Stage 1: Translation consistency
@@ -35,7 +35,7 @@ TEMP_SYNOPSIS=0.15       # Stage 5: Summary accuracy
 
 ### Recommended Values by Model
 
-#### Primary LLM (Translation)
+#### Translate LLM (Translation)
 
 | Model | TEMP_INITIAL | TEMP_SYNOPSIS | Notes |
 |-------|--------------|---------------|-------|
@@ -45,7 +45,7 @@ TEMP_SYNOPSIS=0.15       # Stage 5: Summary accuracy
 | Llama-3 | 0.01 | 0.15 | Very consistent |
 | Qwen | 0.01 | 0.15 | Very consistent |
 
-#### Secondary LLM (Editing)
+#### Proofread LLM (Editing)
 
 | Model | TEMP_REFLECTION | TEMP_IMPROVE | TEMP_FINAL_EDIT | Notes |
 |-------|-----------------|--------------|-----------------|-------|

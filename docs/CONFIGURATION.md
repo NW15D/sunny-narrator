@@ -23,11 +23,11 @@ TARGET_LANG=russian
 
 ## 🔧 API Settings
 
-### Primary LLM (Translation)
+### Translate LLM (Translation)
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `API_KEY_TRANSLATE` | — | API key for Primary LLM |
+| `API_KEY_TRANSLATE` | — | API key for Translate LLM |
 | `API_BASE_TRANSLATE` | `http://localhost:11434/v1` | Base URL for API |
 | `MODEL_TRANSLATE` | `Mistral` | Model for translation |
 | `S_PROMT_TRANSLATE` | `false` | `true` for Gemma 2/3 (do not support system prompts) |
@@ -36,11 +36,11 @@ TARGET_LANG=russian
 | `DISABLE_JSON_MODE_TRANSLATE` | `true` | ~~Disable JSON mode~~ **DEPRECATED** — use `JSON_MODE` |
 | `JSON_MODE` | `false` | Enable structured JSON for all stages (**recommended**) |
 
-### Secondary LLM (Proofreading)
+### Proofread LLM (Proofreading)
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `API_KEY_PROOFREAD` | — | API key for Secondary LLM |
+| `API_KEY_PROOFREAD` | — | API key for Proofread LLM |
 | `API_BASE_PROOFREAD` | `https://api.openai.com/v1` | Base URL for API |
 | `MODEL_PROOFREAD` | `tencent/Hunyuan-MT-7B` | Model for proofreading |
 | `S_PROMT_PROOFREAD` | `false` | `true` for Gemma 2/3 |
