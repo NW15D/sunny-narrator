@@ -2,8 +2,8 @@
 Sunny Narrator - AI-powered book translation tool.
 
 Translates FB2/EPUB/TXT books using dual-LLM architecture:
-- Primary LLM (Hunyuan): Translation + Synopsis generation
-- Secondary LLM: Quality reflection + Style improvement
+- Translate LLM (Hunyuan): Translation + Synopsis generation
+- Proofread LLM: Quality reflection + Style improvement
 
 Usage:
     python app.py  # Uses config from .env
@@ -76,7 +76,7 @@ class TranslationEngine:
     Main translation engine with context management and recursive processing.
 
     Features:
-    - Dual-LLM pipeline (Primary for translation, Secondary for quality)
+    - Dual-LLM pipeline (translate for translation, proofread for quality)
     - Synopsis management for chunk context
     - Vocabulary management for terminology consistency
     - Character tracking for gender-aware translation
@@ -116,28 +116,49 @@ class TranslationEngine:
         if book_path:
             self.vocab_manager = get_vocabulary_manager(book_path)
 
+        # Per-chunk vocabulary cache: compute once per chunk, reuse for
+        # entries/dict/formatted (previously rebuilt 3-4x per chunk)
+        self._vocab_cache_key = None
+        self._vocab_cache_entries = None
+        self._vocab_cache_formatted = None
+
     def get_vocab_entries_for_chunk(self, chunk: str, s_idx: int, c_idx: int) -> List:
         """
         Get vocabulary entries for chunk (full VocabEntry objects).
         
         Returns List[VocabEntry] with source, target, category, gender, notes.
+        The underlying get_vocab_for_chunk() is computed ONCE per chunk and
+        cached; dict and formatted variants reuse the same result.
         """
         if not self.vocab_manager:
             logger.warning("vocab_manager not initialized - returning empty entries")
             return []
 
-        entries = self.vocab_manager.get_vocab_for_chunk(chunk, s_idx, c_idx)
+        return self._load_vocab_for_chunk(chunk, s_idx, c_idx)
 
-        if not entries:
-            logger.info(f"Chunk {s_idx}-{c_idx}: No matching vocabulary terms")
-            return []
+    def _load_vocab_for_chunk(self, chunk: str, s_idx: int, c_idx: int) -> List:
+        """
+        Compute vocabulary for chunk once and cache it.
+        
+        Key includes chunk text so any chunk changes self-invalidate.
+        Logs a single line per chunk (previously one per accessor call).
+        """
+        key = (s_idx, c_idx, chunk)
+        if key != self._vocab_cache_key:
+            entries = self.vocab_manager.get_vocab_for_chunk(chunk, s_idx, c_idx)
+            self._vocab_cache_key = key
+            self._vocab_cache_entries = entries
+            self._vocab_cache_formatted = None  # invalidate formatted cache
 
-        if config.debug:
-            logger.debug(f"Vocab entries for chunk {s_idx}-{c_idx}: {len(entries)} terms")
-        elif entries:
-            logger.info(f"Vocabulary: {len(entries)} terms for chunk {s_idx}-{c_idx}")
+            # Single log line per chunk
+            if not entries:
+                logger.info(f"Chunk {s_idx}-{c_idx}: No matching vocabulary terms")
+            elif config.debug:
+                logger.debug(f"Vocab entries for chunk {s_idx}-{c_idx}: {len(entries)} terms")
+            else:
+                logger.info(f"Vocabulary: {len(entries)} terms for chunk {s_idx}-{c_idx}")
 
-        return entries
+        return self._vocab_cache_entries
 
     def get_vocab_dict_for_chunk(self, chunk: str, s_idx: int, c_idx: int) -> Dict[str, str]:
         """
@@ -167,21 +188,17 @@ class TranslationEngine:
             logger.warning("vocab_manager not initialized - returning empty vocabulary")
             return ""
         
-        entries = self.vocab_manager.get_vocab_for_chunk(chunk, s_idx, c_idx)
+        entries = self._load_vocab_for_chunk(chunk, s_idx, c_idx)
         
         if not entries:
             # Empty vocab is valid for chunks without dictionary terms
             return ""
         
-        # Format for specific model
-        formatted = self.vocab_manager.format_for_model(entries, config.model_translate)
+        # Format once per chunk (cache reuses it across loop + translate_chunk)
+        if self._vocab_cache_formatted is None:
+            self._vocab_cache_formatted = self.vocab_manager.format_for_model(entries, config.model_translate)
         
-        if config.debug:
-            logger.debug(f"Vocab for chunk {s_idx}-{c_idx}: {len(entries)} terms, formatted_len={len(formatted) if formatted else 0}")
-        elif formatted:
-            logger.info(f"Vocabulary: {len(entries)} terms for chunk {s_idx}-{c_idx}")
-        
-        return formatted
+        return self._vocab_cache_formatted
 
     def translate_chunk(self, source_text: str, context: str, s_idx: int = 0, c_idx: int = 0) -> tuple:
         """
@@ -549,7 +566,7 @@ def load_vocab_from_file(file_path: str) -> dict:
 
 def _translate_vocabulary_batch(terms_text: str, source_lang: str, target_lang: str, country: str) -> str:
     """
-    Translate vocabulary terms in batch using Primary LLM.
+    Translate vocabulary terms in batch using translate LLM.
     DEPRECATED: Use ta.vocabulary() with prompts.json instead.
     """
     # This function is deprecated - use ta.vocabulary() with proper prompts
@@ -836,9 +853,9 @@ def main():
                 print("Please edit the dictionary and restart.")
                 sys.exit(0)
 
-            # Translate vocabulary using Secondary LLM with proper prompts
-            print(f"Translating {len(vb.strip().split(chr(10)))} terms using Secondary LLM...")
-            vocab_raw = ta.vocabulary(config.source_lang, config.target_lang, vb, config.country, "Proofread")
+            # Translate vocabulary using proofread LLM with proper prompts
+            print(f"Translating {len(vb.strip().split(chr(10)))} terms using proofread LLM...")
+            vocab_raw = ta.vocabulary(config.source_lang, config.target_lang, vb, config.country, "proofread")
 
             # Parse and save in proper format
             _save_vocabulary_formatted(vocab_raw, dict_file, vb)
@@ -1113,9 +1130,9 @@ if __name__ == '__main__':
 
         # Now translate and update dictionary
         num_terms = len(vb.strip().splitlines())
-        print(f"Translating {num_terms} terms using secondary LLM...")
+        print(f"Translating {num_terms} terms using proofread LLM...")
         # Get translation results
-        vocab_raw = ta.vocabulary(config.source_lang, config.target_lang, vb, config.country, "Proofread")
+        vocab_raw = ta.vocabulary(config.source_lang, config.target_lang, vb, config.country, "proofread")
         # Update dictionary with translations
         updated_lines = []
         for line in vocab_raw.split('\n'):
