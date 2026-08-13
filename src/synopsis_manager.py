@@ -264,11 +264,11 @@ Synopsis:"""
             
             user_prompt = self.USER_TEMPLATE.format(text=truncated)
             
-            # Use proofread LLM for synopsis (faster, cheaper)
+            # Use translate LLM for synopsis (consistent with pipeline spec)
             from src.utils import llm_service_compat, LLMRole
             
             result = llm_service_compat.complete(
-                role=LLMRole.PROOFREAD,
+                role=LLMRole.TRANSLATE,
                 system_prompt=self.SYSTEM_PROMPT,
                 user_prompt=user_prompt,
                 max_tokens=150

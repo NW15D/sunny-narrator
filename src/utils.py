@@ -939,7 +939,7 @@ class TranslationPipeline:
     
     @log_entry
     def generate_synopsis(self, context: TranslationContext, translation: str) -> TranslationResult:
-        """Stage 5: Generate synopsis from FINAL translation using proofread LLM.
+        """Stage 5: Generate synopsis from FINAL translation using translate LLM.
         
         If translation is too short (< 200 chars), skip LLM call and return empty synopsis.
         """
@@ -949,7 +949,7 @@ class TranslationPipeline:
             logger.debug(f"[synopsis] Skipping: translation too short ({len(translation)} < {MIN_SYNOPSIS_LENGTH} chars)")
             return TranslationResult(
                 stage=TranslationStage.SYNOPSIS,
-                llm_role=LLMRole.PROOFREAD,
+                llm_role=LLMRole.TRANSLATE,
                 text="",
                 tokens_used=0
             )
@@ -969,7 +969,7 @@ class TranslationPipeline:
         system_prompt = config.get_prompt("synopsis", "system")
         
         text, tokens_used = llm_service.complete(
-            role=LLMRole.PROOFREAD,
+            role=LLMRole.TRANSLATE,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             max_tokens=MAX_TOKENS_PER_CHUNK,
@@ -977,7 +977,7 @@ class TranslationPipeline:
             allow_empty=True  # Synopsis can be empty - no retry needed
         )
         
-        text = remove_tags_with_check(text, "generate_synopsis", LLMRole.PROOFREAD)
+        text = remove_tags_with_check(text, "generate_synopsis", LLMRole.TRANSLATE)
         
         # Synopsis can be empty - pipeline continues without it
         if not text or len(text.strip()) == 0:
@@ -986,7 +986,7 @@ class TranslationPipeline:
         
         return TranslationResult(
             stage=TranslationStage.SYNOPSIS,
-            llm_role=LLMRole.PROOFREAD,
+            llm_role=LLMRole.TRANSLATE,
             text=text,
             tokens_used=tokens_used
         )
