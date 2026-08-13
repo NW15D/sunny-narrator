@@ -4,11 +4,11 @@
 
 Все промпты хранятся в `src/prompts.json` и разделены по категориям:
 
-### Primary LLM (Translation)
+### Translate LLM (Translation)
 - `initial_translation` — Первичный перевод текста
 - `synopsis` — Создание синопсиса для контекста
 
-### Secondary LLM (Quality/Editing)
+### Proofread LLM (Quality/Editing)
 - `reflection` — Анализ качества перевода
 - `improve` — Применение замечаний
 - `editor` — Финальная вычитка (Stage 5)
@@ -46,14 +46,14 @@
 
 ### Настройка
 
-В `.env` файле укажите флаги для Primary и Secondary LLM:
+В `.env` файле укажите флаги для Translate и Proofread LLM:
 
 ```bash
-# Primary LLM (Translation)
+# Translate LLM (Translation)
 MODEL_TRANSLATE=google/gemma-2-27b-it
 S_PROMT_TRANSLATE=true    # true = объединять system+user
 
-# Secondary LLM (Proofreading)
+# Proofread LLM (Proofreading)
 MODEL_PROOFREAD=Mistral
 S_PROMT_PROOFREAD=false   # false = раздельные сообщения
 ```
@@ -62,15 +62,15 @@ S_PROMT_PROOFREAD=false   # false = раздельные сообщения
 
 | Переменная | Описание | Значения |
 |------------|----------|----------|
-| `S_PROMT_TRANSLATE` | Режим для Primary LLM | `true` / `false` |
-| `S_PROMT_PROOFREAD` | Режим для Secondary LLM | `true` / `false` |
+| `S_PROMT_TRANSLATE` | Режим для Translate LLM | `true` / `false` |
+| `S_PROMT_PROOFREAD` | Режим для Proofread LLM | `true` / `false` |
 | `S_PROMT_IMAGES` | Режим для Image Generation | `true` / `false` |
 
 ---
 
 ## 📊 Рекомендации по моделям
 
-### Primary LLM (Translation)
+### Translate LLM (Translation)
 
 | Модель | S_PROMT_TRANSLATE | Примечания |
 |--------|-------------------|------------|
@@ -84,7 +84,7 @@ S_PROMT_PROOFREAD=false   # false = раздельные сообщения
 | `tencent/Hunyuan` | false | Поддерживает system |
 | `Qwen/Qwen-2.5` | false | Поддерживает system |
 
-### Secondary LLM (Proofreading/Editing)
+### Proofread LLM (Proofreading/Editing)
 
 | Модель | S_PROMT_PROOFREAD | Примечания |
 |--------|-------------------|------------|
@@ -97,7 +97,7 @@ S_PROMT_PROOFREAD=false   # false = раздельные сообщения
 
 ## 🎯 Структура prompts.json
 
-### Пример для Primary LLM (Hunyuan)
+### Пример для Translate LLM (Hunyuan)
 
 ```json
 {
@@ -115,7 +115,7 @@ S_PROMT_PROOFREAD=false   # false = раздельные сообщения
 }
 ```
 
-### Пример для Secondary LLM
+### Пример для Proofread LLM
 
 ```json
 {
@@ -144,27 +144,27 @@ S_PROMT_PROOFREAD=false   # false = раздельные сообщения
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ ЭТАП 1: INITIAL (Primary LLM)                                   │
+│ ЭТАП 1: INITIAL (Translate LLM)                                │
 │ Промпт: initial_translation (system + user_hunyuan/user_xml)    │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ ЭТАП 2: REFLECTION (Secondary LLM)                              │
+│ ЭТАП 2: REFLECTION (Proofread LLM)                             │
 │ Промпт: reflection (system + user_xml/user_text)                │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ ЭТАП 3: IMPROVE (Secondary LLM)                                 │
+│ ЭТАП 3: IMPROVE (Proofread LLM)                                │
 │ Промпт: improve (system + user_xml/user_text)                   │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ ЭТАП 4: FINAL_EDIT (Secondary LLM) 🆕                            │
+│ ЭТАП 4: FINAL_EDIT (Proofread LLM) 🆕                           │
 │ Промпт: editor (system + user_xml/user_text/user_hunyuan)       │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ ЭТАП 5: SYNOPSIS (Primary LLM) ← из финального перевода         │
+│ ЭТАП 5: SYNOPSIS (Translate LLM) ← из финального перевода      │
 │ Промпт: synopsis (system + user/user_hunyuan)                   │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -176,14 +176,14 @@ S_PROMT_PROOFREAD=false   # false = раздельные сообщения
 ### .env файл
 
 ```bash
-# Primary LLM
+# Translate LLM
 MODEL_TRANSLATE=google/gemma-2-27b-it
 API_BASE_TRANSLATE=http://localhost:11434/v1
 API_KEY_TRANSLATE=your-key
 S_PROMT_TRANSLATE=true          # ⚠️ true для Gemma!
 TEMP_TRANSLATE=0.01
 
-# Secondary LLM
+# Proofread LLM
 MODEL_PROOFREAD=Mistral
 API_BASE_PROOFREAD=http://localhost:11434/v1
 API_KEY_PROOFREAD=your-key
@@ -208,8 +208,8 @@ from src.utils import llm_service, LLMRole
 
 config = Config()
 
-print(f"Primary sys_not_promt: {config.sys_not_promt_translate}")
-print(f"Secondary sys_not_promt: {config.sys_not_promt_proofread}")
+print(f"Translate sys_not_promt: {config.sys_not_promt_translate}")
+print(f"Proofread sys_not_promt: {config.sys_not_promt_proofread}")
 
 # Тестовый вызов
 result = llm_service.complete(
@@ -225,7 +225,7 @@ result = llm_service.complete(
 ## 📝 Changelog
 
 - **2026-03-29**: Добавлен режим sys_not_promt для Gemma 2/3
-- **2026-03-29**: Разделение промптов на Primary/Secondary LLM
+- **2026-03-29**: Разделение промптов на Translate/Proofread LLM
 - **2026-03-29**: Добавлен Stage 5 (FINAL_EDIT) с промптом editor
 
 ---
