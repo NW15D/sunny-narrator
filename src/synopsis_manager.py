@@ -264,11 +264,11 @@ Synopsis:"""
             
             user_prompt = self.USER_TEMPLATE.format(text=truncated)
             
-            # Use secondary LLM for synopsis (faster, cheaper)
+            # Use proofread LLM for synopsis (faster, cheaper)
             from src.utils import llm_service_compat, LLMRole
             
             result = llm_service_compat.complete(
-                role=LLMRole.SECONDARY,
+                role=LLMRole.PROOFREAD,
                 system_prompt=self.SYSTEM_PROMPT,
                 user_prompt=user_prompt,
                 max_tokens=150

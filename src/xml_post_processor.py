@@ -76,11 +76,11 @@ class XmlPostProcessor:
                 # Safe getattr: avoid eager evaluation of default arg
                 client = getattr(ta.llm_service, 'clientProofread', None)
                 if client is None:
-                    client = getattr(ta.llm_service, '_secondary_client', None)
+                    client = getattr(ta.llm_service, '_proofread_client', None)
                 if client is None:
                     client = getattr(ta.llm_service, 'clientTranslate', None)
                 if client is None:
-                    client = getattr(ta.llm_service, '_primary_client', None)
+                    client = getattr(ta.llm_service, '_translate_client', None)
                 if client is None:
                     raise AttributeError("LLMService has no usable client attribute")
                 response = client.chat.completions.create(

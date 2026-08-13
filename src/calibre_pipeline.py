@@ -1466,7 +1466,7 @@ def extract_dictionary_from_md(
         logger.info(f"Translating dictionary chunk {idx + 1}/{len(chunks)} ({len(chunk)} chars)...")
         try:
             vocab_translated = ta.vocabulary(
-                source_lang, target_lang, chunk, country, "Translate"
+                source_lang, target_lang, chunk, country, "translate"
             )
             # Parse translations from LLM response
             chunk_translations = _parse_dictionary_llm_response(vocab_translated)

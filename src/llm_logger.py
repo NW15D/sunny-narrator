@@ -6,7 +6,7 @@ Logs to: logs/llm_calls_YYYY-MM-DD.log
 Each log entry contains:
 - timestamp: ISO format
 - stage: TranslationStage name
-- role: LLMRole (PRIMARY/SECONDARY)
+- role: LLMRole (TRANSLATE/PROOFREAD)
 - model: Model name
 - temperature: Temperature used
 - duration_ms: Execution time in milliseconds
@@ -104,7 +104,7 @@ class LLMLogger:
         
         Args:
             stage: Translation stage name (INITIAL, REFLECTION, etc.)
-            role: LLM role (PRIMARY, SECONDARY)
+            role: LLM role (TRANSLATE, PROOFREAD)
             model: Model name used
             temperature: Temperature setting
             duration_ms: Execution duration in milliseconds

@@ -126,7 +126,7 @@ Each stage has different requirements:
 ```python
 # LLMService.complete() receives stage parameter
 text = llm_service.complete(
-    role=LLMRole.SECONDARY,
+    role=LLMRole.PROOFREAD,
     system_prompt=system_prompt,
     user_prompt=user_prompt,
     max_tokens=config.max_len_chunk,

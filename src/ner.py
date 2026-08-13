@@ -1241,7 +1241,7 @@ def create_series_vocab(
             config.target_lang,
             chunk,
             config.country,
-            "Translate"
+            "translate"
         )
 
         if config.debug:

@@ -11,7 +11,7 @@ from llm_logger import LLMLogger, LLMCallLog, init_llm_logger, get_llm_logger, l
 
 CALL_KWARGS = dict(
     stage="INITIAL",
-    role="PRIMARY",
+    role="translate",
     model="test-model",
     temperature=0.7,
     duration_ms=123,
@@ -62,7 +62,7 @@ class TestLLMLogger:
         assert len(lines) == 1
         entry = json.loads(lines[0])
         assert entry["stage"] == "INITIAL"
-        assert entry["role"] == "PRIMARY"
+        assert entry["role"] == "translate"
         assert entry["model"] == "test-model"
         assert entry["prompt_user"] == "Translate this."
         assert entry["response"] == "Перевод."

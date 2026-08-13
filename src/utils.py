@@ -294,8 +294,8 @@ class TranslationStage(Enum):
 
 class LLMRole(Enum):
     """LLM roles in the translation workflow."""
-    PRIMARY = "primary"      # Hunyuan: translation + dictionary
-    SECONDARY = "secondary"  # Instruction-based: quality + style
+    TRANSLATE = "translate"  # Hunyuan: translation + dictionary
+    PROOFREAD = "proofread"  # Instruction-based: quality + style
 
 
 @dataclass
@@ -374,31 +374,31 @@ class PipelineState:
 TRANSLATION_WORKFLOW = [
     {
         "stage": TranslationStage.INITIAL,
-        "llm_role": LLMRole.PRIMARY,
+        "llm_role": LLMRole.TRANSLATE,
         "function": "initial_translation",
-        "description": "Primary translation with dictionary and synopsis context"
+        "description": "Translate with dictionary and synopsis context"
     },
     {
         "stage": TranslationStage.REFLECTION,
-        "llm_role": LLMRole.SECONDARY,
+        "llm_role": LLMRole.PROOFREAD,
         "function": "reflection",
         "description": "Quality review + suggestions (country-aware)"
     },
     {
         "stage": TranslationStage.IMPROVE,
-        "llm_role": LLMRole.SECONDARY,
+        "llm_role": LLMRole.PROOFREAD,
         "function": "improve_translation",
         "description": "Apply reflection suggestions"
     },
     {
         "stage": TranslationStage.FINAL,
-        "llm_role": LLMRole.SECONDARY,
+        "llm_role": LLMRole.PROOFREAD,
         "function": "final_edit",
         "description": "Final proofreading against original (XML tag restoration)"
     },
     {
         "stage": TranslationStage.SYNOPSIS,
-        "llm_role": LLMRole.PRIMARY,
+        "llm_role": LLMRole.TRANSLATE,
         "function": "generate_synopsis",
         "description": "Summary from final translation (for next chunk context)"
     },
@@ -451,15 +451,15 @@ class LLMService:
     def __init__(self):
         import openai
         
-        # Primary LLM client (Hunyuan for translation)
-        self._primary_client = openai.OpenAI(
+        # Translate LLM client (Hunyuan for translation)
+        self._translate_client = openai.OpenAI(
             api_key=config.api_key_translate,
             base_url=config.base_url_translate,
             timeout=config.timeout_translate
         )
         
-        # Secondary LLM client (Instruction-based for quality/style)
-        self._secondary_client = openai.OpenAI(
+        # Proofread LLM client (Instruction-based for quality/style)
+        self._proofread_client = openai.OpenAI(
             api_key=config.api_key_proofread,
             base_url=config.base_url_proofread,
             timeout=config.timeout_proofread
@@ -474,10 +474,10 @@ class LLMService:
     
     def get_client(self, role: LLMRole):
         """Get appropriate client based on LLM role."""
-        if role == LLMRole.PRIMARY:
-            return self._primary_client, config.model_translate, config.temp_translate
+        if role == LLMRole.TRANSLATE:
+            return self._translate_client, config.model_translate, config.temp_translate
         else:
-            return self._secondary_client, config.model_proofread, config.temp_proofread
+            return self._proofread_client, config.model_proofread, config.temp_proofread
     
     def get_temperature_for_stage(self, stage: TranslationStage, role: LLMRole) -> float:
         """
@@ -492,7 +492,7 @@ class LLMService:
         
         Args:
             stage: TranslationStage enum
-            role: LLMRole (PRIMARY or SECONDARY)
+            role: LLMRole (TRANSLATE or PROOFREAD)
             
         Returns:
             Temperature value for the stage
@@ -509,7 +509,7 @@ class LLMService:
             return config.temp_synopsis
         else:
             # Fallback to role-based default
-            if role == LLMRole.PRIMARY:
+            if role == LLMRole.TRANSLATE:
                 return config.temp_translate
             else:
                 return config.temp_proofread
@@ -543,7 +543,7 @@ class LLMService:
         NEW: reasoning_budget and chat_template_kwargs for vocabulary requests.
         
         Args:
-            role: LLMRole.PRIMARY or LLMRole.SECONDARY
+            role: LLMRole.TRANSLATE or LLMRole.PROOFREAD
             system_prompt: System instruction (may be merged with user_prompt)
             user_prompt: User message content
             max_tokens: Maximum tokens to generate
@@ -576,7 +576,7 @@ class LLMService:
         # Config flags: config.sys_not_promt_translate / config.sys_not_promt_proofread
         use_sys_not_promt = False
         
-        if role == LLMRole.PRIMARY:
+        if role == LLMRole.TRANSLATE:
             use_sys_not_promt = config.sys_not_promt_translate
         else:
             use_sys_not_promt = config.sys_not_promt_proofread
@@ -584,7 +584,7 @@ class LLMService:
         # Check if JSON mode should be disabled for this role (for local LLMs)
         # But allow force_json_mode to override (for vocabulary translation)
         disable_json = False
-        if role == LLMRole.PRIMARY:
+        if role == LLMRole.TRANSLATE:
             disable_json = config.disable_json_mode_translate
         else:
             disable_json = config.disable_json_mode_proofread
@@ -625,9 +625,9 @@ class LLMService:
         # chat_template_kwargs is a llama.cpp-specific parameter, NOT a standard OpenAI API param.
         # The OpenAI Python SDK rejects unknown kwargs, so we must pass it via extra_body.
         nothink_enabled = False
-        if role == LLMRole.PRIMARY and config.nothink_translate:
+        if role == LLMRole.TRANSLATE and config.nothink_translate:
             nothink_enabled = True
-        elif role == LLMRole.SECONDARY and config.nothink_proofread:
+        elif role == LLMRole.PROOFREAD and config.nothink_proofread:
             nothink_enabled = True
         
         # If explicit chat_template_kwargs was passed, use it
@@ -791,7 +791,7 @@ class TranslationPipeline:
     
     @log_entry
     def initial_translation(self, context: TranslationContext) -> TranslationResult:
-        """Stage 1: Primary LLM translation."""
+        """Stage 1: Translate LLM."""
         # Replace dictionary words in source_text BEFORE translation
         # This ensures LLM sees translated terms in context
         # Stages 2-4 will see original source_text (no substitution) for quality verification
@@ -809,7 +809,7 @@ class TranslationPipeline:
         if not context.source_text or len(context.source_text.strip()) < 2:
             return TranslationResult(
                 stage=TranslationStage.INITIAL,
-                llm_role=LLMRole.PRIMARY,
+                llm_role=LLMRole.TRANSLATE,
                 text="",
                 metadata={"prompt_style": context.style, "skipped": "empty_input"}
             )
@@ -888,7 +888,7 @@ class TranslationPipeline:
         system_prompt = config.get_prompt(prompt_category, "system")
         
         text, tokens_used = llm_service.complete(
-            role=LLMRole.PRIMARY,
+            role=LLMRole.TRANSLATE,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             max_tokens=MAX_TOKENS_PER_CHUNK,
@@ -896,19 +896,19 @@ class TranslationPipeline:
             json_mode=json_mode
         )
         
-        text = remove_tags_with_check(text, "initial_translation", LLMRole.PRIMARY)
+        text = remove_tags_with_check(text, "initial_translation", LLMRole.TRANSLATE)
         
         # Retry if text became empty after remove_tags
         if not text or len(text.strip()) == 0:
             logger.error(f"Text became empty after remove_tags, retrying...")
             retry_text, retry_tokens = llm_service.complete(
-                role=LLMRole.PRIMARY,
+                role=LLMRole.TRANSLATE,
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 max_tokens=MAX_TOKENS_PER_CHUNK,
                 stage=TranslationStage.INITIAL
             )
-            text = remove_tags_with_check(retry_text, "initial_translation_retry", LLMRole.PRIMARY)
+            text = remove_tags_with_check(retry_text, "initial_translation_retry", LLMRole.TRANSLATE)
             tokens_used += retry_tokens
             if retry_tokens > 0:
                 metrics.log_retry(retry_tokens, "Empty after remove_tags retry [initial]")
@@ -919,19 +919,19 @@ class TranslationPipeline:
             # Retry once with stronger instruction
             user_prompt = f"TRANSLATE to {context.target_lang} ONLY. DO NOT output English/source text.\n\n{user_prompt}"
             retry_text, retry_tokens = llm_service.complete(
-                role=LLMRole.PRIMARY,
+                role=LLMRole.TRANSLATE,
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 max_tokens=MAX_TOKENS_PER_CHUNK,
                 stage=TranslationStage.INITIAL
             )
-            text = remove_tags_with_check(retry_text, "initial_translation_retry", LLMRole.PRIMARY)
+            text = remove_tags_with_check(retry_text, "initial_translation_retry", LLMRole.TRANSLATE)
             tokens_used += retry_tokens
             metrics.log_language_mismatch(retry_tokens)
         
         return TranslationResult(
             stage=TranslationStage.INITIAL,
-            llm_role=LLMRole.PRIMARY,
+            llm_role=LLMRole.TRANSLATE,
             text=text,
             metadata={"prompt_style": context.style},
             tokens_used=tokens_used
@@ -939,7 +939,7 @@ class TranslationPipeline:
     
     @log_entry
     def generate_synopsis(self, context: TranslationContext, translation: str) -> TranslationResult:
-        """Stage 5: Generate synopsis from FINAL translation using Secondary LLM.
+        """Stage 5: Generate synopsis from FINAL translation using proofread LLM.
         
         If translation is too short (< 200 chars), skip LLM call and return empty synopsis.
         """
@@ -949,7 +949,7 @@ class TranslationPipeline:
             logger.debug(f"[synopsis] Skipping: translation too short ({len(translation)} < {MIN_SYNOPSIS_LENGTH} chars)")
             return TranslationResult(
                 stage=TranslationStage.SYNOPSIS,
-                llm_role=LLMRole.SECONDARY,
+                llm_role=LLMRole.PROOFREAD,
                 text="",
                 tokens_used=0
             )
@@ -969,7 +969,7 @@ class TranslationPipeline:
         system_prompt = config.get_prompt("synopsis", "system")
         
         text, tokens_used = llm_service.complete(
-            role=LLMRole.SECONDARY,
+            role=LLMRole.PROOFREAD,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             max_tokens=MAX_TOKENS_PER_CHUNK,
@@ -977,7 +977,7 @@ class TranslationPipeline:
             allow_empty=True  # Synopsis can be empty - no retry needed
         )
         
-        text = remove_tags_with_check(text, "generate_synopsis", LLMRole.SECONDARY)
+        text = remove_tags_with_check(text, "generate_synopsis", LLMRole.PROOFREAD)
         
         # Synopsis can be empty - pipeline continues without it
         if not text or len(text.strip()) == 0:
@@ -986,7 +986,7 @@ class TranslationPipeline:
         
         return TranslationResult(
             stage=TranslationStage.SYNOPSIS,
-            llm_role=LLMRole.SECONDARY,
+            llm_role=LLMRole.PROOFREAD,
             text=text,
             tokens_used=tokens_used
         )
@@ -994,7 +994,7 @@ class TranslationPipeline:
     @log_entry
     def reflection(self, context: TranslationContext, translation: str) -> TranslationResult:
         """
-        Stage 2: Secondary LLM reflection.
+        Stage 2: proofread LLM reflection.
         Returns ONLY numbered suggestions/improvements (not translation).
         
         Note: Uses vocab_dict to verify terminology consistency.
@@ -1041,7 +1041,7 @@ class TranslationPipeline:
             )
         
         text, tokens_used = llm_service.complete(
-            role=LLMRole.SECONDARY,
+            role=LLMRole.PROOFREAD,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             max_tokens=MAX_TOKENS_PER_CHUNK,
@@ -1051,7 +1051,7 @@ class TranslationPipeline:
         
         return TranslationResult(
             stage=TranslationStage.REFLECTION,
-            llm_role=LLMRole.SECONDARY,
+            llm_role=LLMRole.PROOFREAD,
             text=text,
             metadata={"stage": "reflection", "output_type": "suggestions_only", "vocabulary_checked": True},
             tokens_used=tokens_used
@@ -1102,7 +1102,7 @@ class TranslationPipeline:
             )
         
         text, tokens_used = llm_service.complete(
-            role=LLMRole.SECONDARY,
+            role=LLMRole.PROOFREAD,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             max_tokens=MAX_TOKENS_PER_CHUNK,
@@ -1110,27 +1110,27 @@ class TranslationPipeline:
             json_mode=json_mode
         )
         
-        text = remove_tags_with_check(text, "improve_translation", LLMRole.SECONDARY)
+        text = remove_tags_with_check(text, "improve_translation", LLMRole.PROOFREAD)
         
         # Retry if text became empty after remove_tags
         if (not text or len(text.strip()) == 0) and tokens_used > 0:
             logger.error(f"Text became empty after remove_tags (used {tokens_used} tokens), retrying...")
             retry_text, retry_tokens = llm_service.complete(
-                role=LLMRole.SECONDARY,
+                role=LLMRole.PROOFREAD,
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 max_tokens=MAX_TOKENS_PER_CHUNK,
                 stage=TranslationStage.IMPROVE,
                 json_mode=json_mode
             )
-            text = remove_tags_with_check(retry_text, "improve_translation_retry", LLMRole.SECONDARY)
+            text = remove_tags_with_check(retry_text, "improve_translation_retry", LLMRole.PROOFREAD)
             tokens_used += retry_tokens
             if retry_tokens > 0:
                 metrics.log_retry(retry_tokens, "Empty after remove_tags retry [improve]")
         
         return TranslationResult(
             stage=TranslationStage.IMPROVE,
-            llm_role=LLMRole.SECONDARY,
+            llm_role=LLMRole.PROOFREAD,
             text=text,
             tokens_used=tokens_used
         )
@@ -1171,7 +1171,7 @@ class TranslationPipeline:
             )
         
         text, tokens_used = llm_service.complete(
-            role=LLMRole.SECONDARY,
+            role=LLMRole.PROOFREAD,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             max_tokens=MAX_TOKENS_PER_CHUNK,
@@ -1179,7 +1179,7 @@ class TranslationPipeline:
             json_mode=json_mode
         )
         
-        text = remove_tags_with_check(text, "final_edit", LLMRole.SECONDARY)
+        text = remove_tags_with_check(text, "final_edit", LLMRole.PROOFREAD)
         
         # NEW: Post-process <p> tags (validate balance or auto-structure)
         text = post_process_p_tags(text)
@@ -1188,21 +1188,21 @@ class TranslationPipeline:
         if (not text or len(text.strip()) == 0) and tokens_used > 0:
             logger.error(f"Text became empty after remove_tags (used {tokens_used} tokens), retrying...")
             retry_text, retry_tokens = llm_service.complete(
-                role=LLMRole.SECONDARY,
+                role=LLMRole.PROOFREAD,
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 max_tokens=MAX_TOKENS_PER_CHUNK,
                 stage=TranslationStage.FINAL,
                 json_mode=json_mode
             )
-            text = remove_tags_with_check(retry_text, "final_edit_retry", LLMRole.SECONDARY)
+            text = remove_tags_with_check(retry_text, "final_edit_retry", LLMRole.PROOFREAD)
             tokens_used += retry_tokens
             if retry_tokens > 0:
                 metrics.log_retry(retry_tokens, "Empty after remove_tags retry [final]")
         
         return TranslationResult(
             stage=TranslationStage.FINAL,
-            llm_role=LLMRole.SECONDARY,
+            llm_role=LLMRole.PROOFREAD,
             text=text,
             metadata={"stage": "final_edit", "compared_with_original": True, "vocabulary_used": True},
             tokens_used=tokens_used
@@ -1215,8 +1215,8 @@ class TranslationPipeline:
         Execute the complete translation pipeline.
         
         UPDATED ORDER (5 stages):
-        1. INITIAL - Primary LLM translation
-        2. REFLECTION - Secondary LLM quality review (NO vocab_dict)
+        1. INITIAL - translate LLM
+        2. REFLECTION - proofread LLM quality review (NO vocab_dict)
         3. IMPROVE - Apply reflection suggestions
         4. FINAL_EDIT - Final proofreading WITH vocabulary (UPDATED)
         5. SYNOPSIS - Create summary from final translation
@@ -1235,7 +1235,7 @@ class TranslationPipeline:
         state = PipelineState(context=context)
         state.start_time = time.time()
         
-        # Stage 1: Initial Translation (Primary LLM)
+        # Stage 1: Initial Translation (translate LLM)
         initial_result = self.initial_translation(context)
         state.add_result(initial_result)
         
@@ -1243,7 +1243,7 @@ class TranslationPipeline:
             # Fast path: skip reflection/improve/final_edit, return initial translation
             final_result = TranslationResult(
                 stage=TranslationStage.FINAL,
-                llm_role=LLMRole.PRIMARY,
+                llm_role=LLMRole.TRANSLATE,
                 text=initial_result.text,
                 metadata={"fast_mode": True, "applied_reflection": False}
             )
@@ -1253,27 +1253,27 @@ class TranslationPipeline:
             synopsis_result = self.generate_synopsis(context, final_result.text)
             state.add_result(synopsis_result)
         else:
-            # Stage 2: Reflection (Secondary LLM) - NO vocab_dict
+            # Stage 2: Reflection (proofread LLM) - NO vocab_dict
             reflection_result = self.reflection(context, initial_result.text)
             state.add_result(reflection_result)
             
-            # Stage 3: Improve (Secondary LLM)
+            # Stage 3: Improve (proofread LLM)
             improve_result = self.improve_translation(
                 context, initial_result.text, reflection_result.text
             )
             state.add_result(improve_result)
             
-            # Stage 4: Final Edit (Secondary LLM) - WITH vocab_dict
+            # Stage 4: Final Edit (proofread LLM) - WITH vocab_dict
             final_edit_result = self.final_edit(context, improve_result.text)
             state.add_result(final_edit_result)
             
-            # Stage 5: Synopsis (Primary LLM) - from final translation
+            # Stage 5: Synopsis (translate LLM) - from final translation
             synopsis_result = self.generate_synopsis(context, final_edit_result.text)
             state.add_result(synopsis_result)
             
             final_result = TranslationResult(
                 stage=TranslationStage.FINAL,
-                llm_role=LLMRole.SECONDARY,
+                llm_role=LLMRole.PROOFREAD,
                 text=final_edit_result.text,
                 metadata={"fast_mode": False, "applied_reflection": True, "final_edit": True}
             )
@@ -1463,13 +1463,13 @@ class LLMServiceCompat:
     
     @property
     def clientTranslate(self):
-        """Primary LLM client (Hunyuan)."""
-        return self._new_service._primary_client
+        """Translate LLM client (Hunyuan)."""
+        return self._new_service._translate_client
     
     @property
     def clientProofread(self):
-        """Secondary LLM client."""
-        return self._new_service._secondary_client
+        """Proofread LLM client."""
+        return self._new_service._proofread_client
     
     @property
     def clientImages(self):
@@ -1484,7 +1484,7 @@ class LLMServiceCompat:
         Used by synopsis_manager.py and other modules.
         
         Args:
-            role: LLM role (PRIMARY or SECONDARY)
+            role: LLM role (TRANSLATE or PROOFREAD)
             system_prompt: System message
             user_prompt: User message
             max_tokens: Maximum tokens to generate
@@ -1514,7 +1514,7 @@ class LLMServiceCompat:
         Compatibility wrapper for old-style calls.
         
         Args:
-            role: LLM role ("Translate" or "Proofread")
+            role: LLM role ("translate" or "proofread")
             prompt_category: Category in prompts.json (e.g., "vocabulary")
             prompt_key: Key in category (e.g., "user", "user_hunyuan")
             temperature: Override temperature (optional)
@@ -1544,7 +1544,7 @@ class LLMServiceCompat:
             user_prompt = prompt_template
         
         # Determine LLM role
-        llm_role = LLMRole.PRIMARY if role == "Translate" else LLMRole.SECONDARY
+        llm_role = LLMRole.TRANSLATE if role == "translate" else LLMRole.PROOFREAD
         
         # Get completion (discard tokens for compatibility)
         # Pass force_json_mode to override config disable_json flags
@@ -1929,7 +1929,7 @@ def vocabulary(source_lang: str, target_lang: str, source_text: str,
         target_lang: Target language
         source_text: Text with terms to translate (from NER)
         country: Target country
-        role: LLM role ("Translate" or "Proofread")
+        role: LLM role ("translate" or "proofread")
         
     Returns:
         Translated vocabulary terms
@@ -1940,7 +1940,7 @@ def vocabulary(source_lang: str, target_lang: str, source_text: str,
         return ""
     
     # Use standard prompt for vocabulary translation (not Hunyuan-specific)
-    # Vocabulary translation uses Secondary LLM with standard prompt
+    # Vocabulary translation uses proofread LLM with standard prompt
     prompt_key = "user"
     
     # Translate a single chunk (chunking is done by the caller)
@@ -1976,7 +1976,7 @@ def translate_metadata(metadata: dict, source_lang: str, target_lang: str,
         prompt_key = "user_hunyuan" if config.model_translate == "Hunyuan" else "user"
         
         response = llm_service_compat.get_completion(
-            role="Proofread",
+            role="proofread",
             prompt_category="metadata_translation",
             prompt_key=prompt_key,
             json_mode=True,

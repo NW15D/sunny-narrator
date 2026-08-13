@@ -57,7 +57,7 @@ class TestCompleteRetries:
              patch("src.utils.config", self._mock_config()):
 
             result = svc.complete(
-                role=LLMRole.PRIMARY,
+                role=LLMRole.TRANSLATE,
                 system_prompt="You are a translator.",
                 user_prompt="Translate: Hello",
                 track_tokens=False,
@@ -80,7 +80,7 @@ class TestCompleteRetries:
 
             with pytest.raises(Exception, match="Server error 500"):
                 svc.complete(
-                    role=LLMRole.PRIMARY,
+                    role=LLMRole.TRANSLATE,
                     system_prompt="You are a translator.",
                     user_prompt="Translate: Hello",
                     track_tokens=False,
