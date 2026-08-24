@@ -17,10 +17,13 @@ from src.epub_repair import (
     _validate_xml,
 )
 
-# NOTE: known module bug (documented, not fixed — src/ is off-limits):
-# _validate_xml sets `parser.recover = False`, but lxml XMLParser has no
-# `recover` attribute. Every OPF/XHTML validation therefore yields an
-# AttributeError-based error. Tests below filter these with _structural_errors.
+# NOTE: _validate_xml used to set `parser.recover = False` on the parser
+# returned by get_safe_xml_parser(), but lxml's XMLParser has no settable
+# `recover` attribute post-construction, so every OPF/XHTML validation used
+# to yield a spurious AttributeError-based error regardless of the input's
+# actual validity. Fixed by constructing a strict (recover=False) parser
+# directly. RECOVER_BUG_MARKER/_structural_errors are kept as a defensive
+# filter (a no-op now) in case the marker ever reappears.
 RECOVER_BUG_MARKER = "no attribute 'recover'"
 
 
@@ -98,24 +101,28 @@ def broken_epub(make_epub):
 # validate_epub
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(reason="bug: _validate_xml sets parser.recover (missing attr on lxml XMLParser)", strict=False)
 def test_validate_valid_epub_no_errors(valid_epub):
     assert validate_epub(valid_epub) == []
 
 
-def test_validate_valid_epub_only_recover_bug_errors(valid_epub):
-    """Pin actual behavior: only the recover-attribute bug errors appear."""
+def test_validate_valid_epub_no_recover_bug_errors(valid_epub):
+    """A valid EPUB produces no errors at all (recover-attribute bug fixed)."""
     errors = validate_epub(valid_epub)
-    assert errors  # bug produces errors even for a valid EPUB
-    assert _structural_errors(errors) == []
-    assert all(RECOVER_BUG_MARKER in e for e in errors)
+    assert errors == []
+    assert not any(RECOVER_BUG_MARKER in e for e in errors)
 
 
-def test_validate_xml_bug_documented():
-    """_validate_xml reports an AttributeError instead of validating."""
+def test_validate_xml_valid_content_no_errors():
+    """_validate_xml returns no errors for well-formed XML."""
     errors = _validate_xml(b'<root/>', 'test')
+    assert errors == []
+
+
+def test_validate_xml_reports_real_syntax_errors():
+    """_validate_xml still reports genuine XML syntax errors."""
+    errors = _validate_xml(b'<root><unclosed></root>', 'test')
     assert len(errors) == 1
-    assert RECOVER_BUG_MARKER in errors[0]
+    assert RECOVER_BUG_MARKER not in errors[0]
 
 
 def test_validate_missing_file(tmp_path):
@@ -412,7 +419,6 @@ def test_find_opf_none_when_absent(make_epub):
 # validate_and_repair_epub
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(reason="recover-attribute bug makes validation never pass", strict=False)
 def test_validate_and_repair_valid_epub_ideal(valid_epub):
     path, repairs, errors = validate_and_repair_epub(valid_epub)
     assert errors == []
@@ -420,15 +426,14 @@ def test_validate_and_repair_valid_epub_ideal(valid_epub):
 
 
 def test_validate_and_repair_valid_epub_actual(valid_epub):
-    """Pin actual behavior: recover bug keeps validation failing, the repair
-    loop runs, and the container-drop bug (see test_repair_drops_existing_
-    container) leaves the final file without META-INF/container.xml."""
+    """A valid EPUB round-trips through validate_and_repair_epub cleanly:
+    no repairs needed, no errors, and container.xml is untouched."""
     path, repairs, errors = validate_and_repair_epub(valid_epub)
     assert path == valid_epub
-    assert repairs
-    assert any('container.xml' in e for e in errors)
+    assert repairs == ['EPUB is valid']
+    assert errors == []
     with zipfile.ZipFile(valid_epub) as zf:
-        assert 'META-INF/container.xml' not in zf.namelist()
+        assert 'META-INF/container.xml' in zf.namelist()
 
 
 def test_validate_and_repair_fixes_broken(broken_epub, tmp_path):
@@ -436,8 +441,7 @@ def test_validate_and_repair_fixes_broken(broken_epub, tmp_path):
     path, repairs, errors = validate_and_repair_epub(broken_epub, out)
     assert path == out
     assert repairs
-    # Recover bug leaves attribute errors, but structural problems are gone:
-    assert _structural_errors(errors) == []
+    assert errors == []
     with zipfile.ZipFile(out) as zf:
         assert zf.getinfo('mimetype').compress_type == zipfile.ZIP_STORED
         assert 'META-INF/container.xml' in zf.namelist()
@@ -445,10 +449,10 @@ def test_validate_and_repair_fixes_broken(broken_epub, tmp_path):
     assert '</p>' in fixed
 
 
-def test_repair_drops_existing_container(make_epub, tmp_path):
-    """BUG (pinned): the copy loop skips container.xml, and it is only
-    (re)written when missing — so an EXISTING container.xml is silently
-    dropped from the repaired output."""
+def test_repair_preserves_existing_container(make_epub, tmp_path):
+    """An EXISTING container.xml must survive repair_epub unchanged (it used
+    to be silently dropped: the copy loop skipped it assuming it was
+    "already handled", but it was only actually (re)written when missing)."""
     epub = make_epub({
         'mimetype': 'application/epub+zip',
         'META-INF/container.xml': CONTAINER_XML,
@@ -458,7 +462,8 @@ def test_repair_drops_existing_container(make_epub, tmp_path):
     out = str(tmp_path / 'repaired.epub')
     repair_epub(epub, out)
     with zipfile.ZipFile(out) as zf:
-        assert 'META-INF/container.xml' not in zf.namelist()
+        assert 'META-INF/container.xml' in zf.namelist()
+        assert zf.read('META-INF/container.xml').decode('utf-8') == CONTAINER_XML
 
 
 def test_validate_and_repair_missing_container_end_to_end(make_epub, tmp_path):

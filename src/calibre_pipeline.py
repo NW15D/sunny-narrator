@@ -972,9 +972,7 @@ def build_output(
             html_content = _clean_calibre_markers(html_content)
             # Sanitize surrogates after marker cleaning
             html_content = markdown_utils.sanitize_surrogates(html_content)
-            with open(html_path, 'w', encoding='utf-8') as f:
-                f.write(html_content)
-            
+
             # C8 fix: put book images next to the HTML so ebook-convert embeds them
             if images_dir and os.path.isdir(images_dir):
                 import shutil
@@ -990,6 +988,12 @@ def build_output(
                     _re.IGNORECASE
                 )
                 html_content = _img_pattern.sub(r'\1\2\3', html_content)
+
+            # Write the HTML file only after all content mutations (marker
+            # cleanup, surrogate sanitization, image src rewrite) are applied,
+            # since this is the exact file handed to ebook-convert below.
+            with open(html_path, 'w', encoding='utf-8') as f:
+                f.write(html_content)
 
             # Step 3: Convert HTML to output format using Calibre
             logger.info(f"Converting HTML to {output_format.upper()}...")

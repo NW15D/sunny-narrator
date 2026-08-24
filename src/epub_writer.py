@@ -119,12 +119,37 @@ def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) 
             if config.debug:
                 print(f"Warning: Failed to decode image {image_id}: {e}")
     
+    # Find cover image (determined before adding items so the cover image
+    # can be added exactly once, via book.set_cover(), instead of twice).
+    coverpage_tag = title_info.find('coverpage') if title_info else None
+    cover_image_id = None
+    if coverpage_tag:
+        image_tag = coverpage_tag.find('image')
+        if image_tag:
+            href = (
+                image_tag.get('l:href', '')
+                or image_tag.get('xlink:href', '')
+                or image_tag.get('href', '')
+            )
+            if href.startswith('#'):
+                cover_image_id = href[1:]
+
     # Add images to book
     for image_id, img_info in images.items():
         # Clean up image_id for EPUB (remove special chars)
         safe_id = re.sub(r'[^\w\-_.]', '_', image_id)
         file_name = f"images/{safe_id}"
-        
+
+        # Store mapping for body references
+        images[image_id]['file_name'] = file_name
+
+        # The cover image is added below via book.set_cover(), which creates
+        # its own EpubCover item. Adding it here too would create a second
+        # manifest item with the same href (duplicate href is invalid EPUB
+        # and writes the same bytes twice into the zip).
+        if image_id == cover_image_id:
+            continue
+
         img_item = epub.EpubItem(
             uid=image_id,
             file_name=file_name,
@@ -132,20 +157,7 @@ def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) 
             content=img_info['data']
         )
         book.add_item(img_item)
-        
-        # Store mapping for body references
-        images[image_id]['file_name'] = file_name
-    
-    # Find cover image
-    coverpage_tag = title_info.find('coverpage') if title_info else None
-    cover_image_id = None
-    if coverpage_tag:
-        image_tag = coverpage_tag.find('image')
-        if image_tag:
-            href = image_tag.get('l:href', '') or image_tag.get('href', '')
-            if href.startswith('#'):
-                cover_image_id = href[1:]
-    
+
     # Set cover if found
     if cover_image_id and cover_image_id in images:
         cover_data = images[cover_image_id]['data']
@@ -185,12 +197,13 @@ def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) 
         safe_title = re.sub(r'\s+', '_', safe_title.strip())
         file_name = f"chapter_{chapter_count}_{safe_title}.xhtml"
         
-        # Process section content
-        section_content = str(section)
-        
         # Update image references
         for img in section.find_all('image'):
-            href = img.get('l:href', '') or img.get('href', '')
+            href = (
+                img.get('l:href', '')
+                or img.get('xlink:href', '')
+                or img.get('href', '')
+            )
             if href.startswith('#'):
                 img_id = href[1:]
                 if img_id in images:
@@ -315,7 +328,7 @@ def _fb2_to_html(fb2_content: str) -> str:
         tag.replace_with(soup.new_tag('br'))
 
     for img in soup.find_all('image'):
-        href = img.get('l:href') or img.get('href') or ''
+        href = img.get('l:href') or img.get('xlink:href') or img.get('href') or ''
         new_img = soup.new_tag('img')
         if href.startswith('#'):
             new_img['src'] = f"images/{href[1:]}"

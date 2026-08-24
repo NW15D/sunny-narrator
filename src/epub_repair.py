@@ -114,14 +114,20 @@ def repair_epub(epub_path: str, output_path: Optional[str] = None, max_iteration
                     repairs.append("Added missing mimetype file")
                 
                 # Repair 2: Ensure META-INF/container.xml exists
-                if 'META-INF/container.xml' not in file_list:
+                if 'META-INF/container.xml' in file_list:
+                    # Already present — copy it through unchanged. The loop
+                    # below skips this file (it's "already handled" here), so
+                    # it must actually be written in this branch too, or it
+                    # would be silently dropped from the repaired output.
+                    zf_out.writestr('META-INF/container.xml', zf_in.read('META-INF/container.xml'))
+                else:
                     # Find OPF file
                     opf_candidates = [f for f in file_list if f.endswith('.opf')]
                     if opf_candidates:
                         opf_path = opf_candidates[0]
                     else:
                         opf_path = 'content.opf'
-                    
+
                     container_xml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
     <rootfiles>
@@ -213,8 +219,17 @@ def _validate_xml(content: bytes, context: str) -> List[str]:
     """Validate XML content."""
     errors = []
     try:
-        parser = get_safe_xml_parser()
-        parser.recover = False  # strict mode for validation
+        # lxml's XMLParser has no settable `recover` attribute after
+        # construction (it's constructor-only and raises AttributeError on
+        # assignment), so build a strict (non-recovering) parser directly
+        # instead of mutating the one from get_safe_xml_parser().
+        parser = etree.XMLParser(
+            resolve_entities=False,
+            no_network=True,
+            dtd_validation=False,
+            huge_tree=False,
+            recover=False,  # strict mode for validation
+        )
         etree.fromstring(content, parser)
     except etree.XMLSyntaxError as e:
         for error in e.error_log:
