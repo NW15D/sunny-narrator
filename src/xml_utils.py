@@ -129,7 +129,15 @@ def extract_metadata(header: str) -> Dict[str, Any]:
     if cover_tag:
         cover_image = cover_tag.find('image')
         if cover_image:
-            metadata['cover-image'] = cover_image.get('xlink:href', '')
+            # FB2 files in the wild predominantly declare the xlink namespace
+            # with the "l" prefix (xmlns:l=...); some tools use "xlink:" or
+            # omit the prefix. Check all conventions so real-world files parse.
+            metadata['cover-image'] = (
+                cover_image.get('l:href')
+                or cover_image.get('xlink:href')
+                or cover_image.get('href')
+                or ''
+            )
     
     return metadata
 
@@ -210,7 +218,14 @@ def get_cover_image(header: str, footer: str) -> Tuple[str, str]:
     if not image_tag:
         return None, None
     
-    image_href = image_tag.get('xlink:href', '')
+    # Check all namespace-prefix conventions seen in real FB2 files and
+    # across this codebase's writers (l:href is the dominant convention).
+    image_href = (
+        image_tag.get('l:href')
+        or image_tag.get('xlink:href')
+        or image_tag.get('href')
+        or ''
+    )
     if not image_href:
         return None, None
     
@@ -256,7 +271,10 @@ def replace_cover_image(header: str, footer: str, body: str, new_content: str) -
         if title_info:
             cover_tag = soup.new_tag('coverpage')
             image_tag = soup.new_tag('image')
-            image_tag['xlink:href'] = image_href
+            # Use the "l:" prefix consistently with the rest of the codebase
+            # (epub_writer.py, txt_handler.py, fb2_repair.py) so downstream
+            # readers (e.g. the EPUB writer's coverpage lookup) find it.
+            image_tag['l:href'] = image_href
             cover_tag.append(image_tag)
             title_info.append(cover_tag)
         # Return serialized result, but strip </FictionBook> if BS4 added it
