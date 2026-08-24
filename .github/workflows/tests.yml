@@ -1,0 +1,41 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # Dummy API keys: src.utils.LLMService instantiates openai clients at
+    # __init__ and the openai SDK rejects empty keys. No real calls are made
+    # (all LLM traffic is mocked in the unit tests).
+    env:
+      API_KEY_TRANSLATE: ci-dummy-key
+      API_KEY_PROOFREAD: ci-dummy-key
+      API_KEY_IMAGES: ci-dummy-key
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # CPU-only PyTorch (src.ner imports torch at module level; no CUDA needed)
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          # spaCy without CUDA extras (src.ner imports spacy at module level)
+          python -m pip install spacy
+          # Test runner + everything tests import transitively.
+          # NOTE: the pandoc *binary* is preinstalled on GitHub ubuntu runners
+          # (tests/test_toc_feature.py calls pypandoc.convert_text for real).
+          python -m pip install \
+            pytest pytest-timeout \
+            numpy lxml beautifulsoup4 EbookLib chardet python-dotenv \
+            tiktoken httpx Pillow openai pypandoc
+
+      - name: Run tests
+        run: python -m pytest tests/ -q

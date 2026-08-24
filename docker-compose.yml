@@ -1,0 +1,32 @@
+version: "3.8"
+
+services:
+  sunny-narrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sunny-narrator:latest
+    container_name: sunny-narrator
+    env_file:
+      - .env
+    volumes:
+      - ./books:/app/books:ro
+      - ./output:/app/output
+      - ./logs:/app/logs
+      - ./src/prompts.json:/app/src/prompts.json
+    environment:
+      - GPU=true
+      - NER=true
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+    # NVIDIA GPU support
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    # Uncomment for debugging
+    # command: ["bash"]

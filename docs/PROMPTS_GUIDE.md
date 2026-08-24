@@ -1,0 +1,317 @@
+# Prompts Guide — Sunny Narrator
+
+## 📋 Структура промптов
+
+Все промпты хранятся в `src/prompts.json` и разделены по категориям:
+
+### Translate LLM (Translation)
+- `initial_translation` — Первичный перевод текста
+- `synopsis` — Создание синопсиса для контекста
+
+### Proofread LLM (Quality/Editing)
+- `reflection` — Анализ качества перевода
+- `improve` — Применение замечаний
+- `editor` — Финальная вычитка (Stage 5)
+
+### Utilities
+- `vocabulary` — Генерация словаря терминов
+- `metadata_translation` — Перевод метаданных
+- `image_generation` — Генерация обложек
+
+---
+
+## 🔧 Режим sys_not_promt (System Prompt Merging)
+
+### Проблема
+
+Некоторые LLM модели **не поддерживают** отдельный системный промпт (role: "system"):
+
+| Модель | Системный промпт | Примечания |
+|--------|------------------|------------|
+| **Gemma 2** | ❌ НЕ поддерживает | Требует объединения с user prompt |
+| **Gemma 3** | ❌ НЕ поддерживает | Требует объединения с user prompt |
+| **Mistral 7B** | ✅ Поддерживает | Стандартный режим |
+| **Mistral Large** | ✅ Поддерживает | Стандартный режим |
+| **Llama 3.2** | ✅ Поддерживает | Стандартный режим |
+| **Llama 3.3** | ✅ Поддерживает | Стандартный режим |
+| **Hunyuan** | ✅ Поддерживает | Стандартный режим |
+| **Qwen** | ✅ Поддерживает | Стандартный режим |
+
+### Решение
+
+Для моделей без поддержки системного промпта используется режим `sys_not_promt`:
+- Системный промпт **объединяется** с пользовательским
+- Формат: `"{system_prompt}\n\n{user_prompt}"`
+- Отправляется как одно сообщение с role: "user"
+
+### Настройка
+
+В `.env` файле укажите флаги для Translate и Proofread LLM:
+
+```bash
+# Translate LLM (Translation)
+MODEL_TRANSLATE=google/gemma-2-27b-it
+S_PROMT_TRANSLATE=true    # true = объединять system+user
+
+# Proofread LLM (Proofreading)
+MODEL_PROOFREAD=Mistral
+S_PROMT_PROOFREAD=false   # false = раздельные сообщения
+```
+
+### Переменные окружения
+
+| Переменная | Описание | Значения |
+|------------|----------|----------|
+| `S_PROMT_TRANSLATE` | Режим для Translate LLM | `true` / `false` |
+| `S_PROMT_PROOFREAD` | Режим для Proofread LLM | `true` / `false` |
+| `S_PROMT_IMAGES` | Режим для Image Generation | `true` / `false` |
+
+---
+
+## 📊 Рекомендации по моделям
+
+### Translate LLM (Translation)
+
+| Модель | S_PROMT_TRANSLATE | Примечания |
+|--------|-------------------|------------|
+| `google/gemma-2-9b-it` | **true** | Gemma 2 не поддерживает system |
+| `google/gemma-2-27b-it` | **true** | Gemma 2 не поддерживает system |
+| `google/gemma-3-12b-it` | **true** | Gemma 3 не поддерживает system |
+| `mistralai/Mistral-7B` | false | Поддерживает system |
+| `mistralai/Mistral-Large` | false | Поддерживает system |
+| `meta-llama/Llama-3.2` | false | Поддерживает system |
+| `meta-llama/Llama-3.3` | false | Поддерживает system |
+| `tencent/Hunyuan` | false | Поддерживает system |
+| `Qwen/Qwen-2.5` | false | Поддерживает system |
+
+### Proofread LLM (Proofreading/Editing)
+
+| Модель | S_PROMT_PROOFREAD | Примечания |
+|--------|-------------------|------------|
+| `google/gemma-2-9b-it` | **true** | Gemma 2 не поддерживает system |
+| `Mistral-7B-Instruct` | false | Поддерживает system |
+| `Ministral-8B` | false | Поддерживает system |
+| `Qwen-2.5-7B` | false | Поддерживает system |
+
+---
+
+## 🎯 Структура prompts.json
+
+### Пример для Translate LLM (Hunyuan)
+
+```json
+{
+    "initial_translation": {
+        "system": "You are a professional literary translator...",
+        "user_xml": "<context>...</context>...",
+        "user_text": "...",
+        "user_hunyuan": "{outline_text}\n\n参考上面的信息..."
+    },
+    "synopsis": {
+        "system": "You are an expert summarizer...",
+        "user": "<text>...</text>...",
+        "user_hunyuan": "<text>...</text>\n\n请用{target_lang}..."
+    }
+}
+```
+
+### Пример для Proofread LLM
+
+```json
+{
+    "reflection": {
+        "system": "You are a literary translation quality reviewer...",
+        "user_xml": "<task>Target language: {target_lang}...</task>...",
+        "user_text": "..."
+    },
+    "improve": {
+        "system": "You are a literary translation editor...",
+        "user_xml": "<task>Target language: {target_lang}...</task>...",
+        "user_text": "..."
+    },
+    "editor": {
+        "system": "Ты профессиональный редактор-переводчик...",
+        "user_xml": "<original>...</original>...",
+        "user_text": "...",
+        "user_hunyuan": "..."
+    }
+}
+```
+
+---
+
+## 🔄 Workflow (5 этапов)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ ЭТАП 1: INITIAL (Translate LLM)                                │
+│ Промпт: initial_translation (system + user_hunyuan/user_xml)    │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ ЭТАП 2: REFLECTION (Proofread LLM)                             │
+│ Промпт: reflection (system + user_xml/user_text)                │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ ЭТАП 3: IMPROVE (Proofread LLM)                                │
+│ Промпт: improve (system + user_xml/user_text)                   │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ ЭТАП 4: FINAL_EDIT (Proofread LLM) 🆕                           │
+│ Промпт: editor (system + user_xml/user_text/user_hunyuan)       │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ ЭТАП 5: SYNOPSIS (Translate LLM) ← из финального перевода      │
+│ Промпт: synopsis (system + user/user_hunyuan)                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## ⚙️ Конфигурация
+
+### .env файл
+
+```bash
+# Translate LLM
+MODEL_TRANSLATE=google/gemma-2-27b-it
+API_BASE_TRANSLATE=http://localhost:11434/v1
+API_KEY_TRANSLATE=your-key
+S_PROMT_TRANSLATE=true          # ⚠️ true для Gemma!
+TEMP_TRANSLATE=0.01
+
+# Proofread LLM
+MODEL_PROOFREAD=Mistral
+API_BASE_PROOFREAD=http://localhost:11434/v1
+API_KEY_PROOFREAD=your-key
+S_PROMT_PROOFREAD=false         # false для Mistral
+TEMP_PROOFREAD=0.7
+
+# Общие
+SOURCE_LANG=english
+TARGET_LANG=russian
+COUNTRY=Россия
+```
+
+---
+
+## 🧪 Тестирование
+
+Проверка режима sys_not_promt:
+
+```python
+from src.config import Config
+from src.utils import llm_service, LLMRole
+
+config = Config()
+
+print(f"Translate sys_not_promt: {config.sys_not_promt_translate}")
+print(f"Proofread sys_not_promt: {config.sys_not_promt_proofread}")
+
+# Тестовый вызов
+result = llm_service.complete(
+    role=LLMRole.TRANSLATE,
+    system_prompt="You are a translator",
+    user_prompt="Translate: Hello",
+    max_tokens=100
+)
+```
+
+---
+
+## 📝 Changelog
+
+- **2026-03-29**: Добавлен режим sys_not_promt для Gemma 2/3
+- **2026-03-29**: Разделение промптов на Translate/Proofread LLM
+- **2026-03-29**: Добавлен Stage 5 (FINAL_EDIT) с промптом editor
+
+---
+
+## 📦 JSON Mode
+
+Set `JSON_MODE=true` in `.env` to use structured JSON for LLM input/output across all 4 translation stages.
+
+### Benefits
+- More reliable parsing (no XML tag conflicts)
+- Structured input with vocabulary, synopsis, context
+- Consistent output format across all stages
+- Better control over LLM response structure
+
+### Configuration
+```bash
+# .env
+JSON_MODE=true
+```
+
+### Prompt Categories
+JSON prompts use `*_json` suffix in `prompts.json`. The system looks up the category by stage:
+
+| Stage | JSON Prompt Category |
+|-------|---------------------|
+| **INITIAL** | `initial_translation_json` |
+| **REFLECTION** | `reflection_json` |
+| **IMPROVE** | `improve_json` |
+| **FINAL_EDIT** | `editor_json` |
+
+> ⚠️ **Important:** Use the `*_json` category (not `system_json`/`user_text_json` keys inside). The JSON prompt has its own system/user messages with escaped braces.
+
+### Escaped Curly Braces
+JSON prompts use double curly braces `{{ }}` to escape template variables. This prevents Python f-string interpolation of the JSON structure itself — only the `{variable}` placeholders are substituted.
+
+Example from `prompts.json`:
+```json
+{
+    "initial_translation_json": {
+        "system": "You are a professional literary translator...",
+        "user": "{{\"source\": \"{source_text}\", \"target_lang\": \"{target_lang}\"}}"
+    }
+}
+```
+
+The `{{` and `}}` become `{` and `}` in the actual prompt sent to the LLM.
+
+### Input Format (all stages)
+All JSON prompts receive a structured input object:
+
+```json
+{
+  "source": "текст для перевода",
+  "source_lang": "english",
+  "target_lang": "russian",
+  "country": "Russia",
+  "vocabulary": {"термин": "перевод"},
+  "synopsis": "краткое содержание"
+}
+```
+
+**Field descriptions:**
+- `source` — text to translate
+- `source_lang` / `target_lang` — language codes
+- `country` — localization country for regional variants
+- `vocabulary` — term dictionary (key = source term, value = target translation)
+- `synopsis` — context summary from previous chunk
+
+### Output Format (by stage)
+
+**INITIAL, IMPROVE, FINAL_EDIT:**
+```json
+{"translation": "переведенный текст"}
+```
+
+**REFLECTION:**
+```json
+{"suggestions": ["suggestion 1", "suggestion 2"]}
+```
+
+### Fallback
+If JSON parsing fails, the system falls back to XML tag extraction (`<ttext>...</ttext>`).
+
+### Related Documentation
+- [JSON_MODE_ANALYSIS.md](../JSON_MODE_ANALYSIS.md) — Detailed analysis of JSON mode implementation, input/output formats for all stages
+
+---
+
+*Updated: 2026-04-28 — Expanded with escaped braces, prompt categories, and structured input details*
