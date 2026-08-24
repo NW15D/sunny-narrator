@@ -242,10 +242,10 @@ def convert_html_to_fb2_section(soup) -> str:
     # Process paragraphs
     for element in soup.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']):
         tag_name = element.name
-        
+
         if tag_name.startswith('h'):
             # Convert heading to subtitle
-            section_parts.append(f"<subtitle>{element.get_text()}</subtitle>")
+            section_parts.append(f"<subtitle>{_xml_escape(element.get_text())}</subtitle>")
         elif tag_name == 'p':
             # Convert paragraph, preserving inline formatting
             para_content = convert_inline_html(element)
@@ -266,12 +266,12 @@ def convert_inline_html(element) -> str:
         String with FB2 inline tags
     """
     content = ""
-    
+
     for child in element.children:
         if hasattr(child, 'name') and child.name:
             tag_name = child.name
-            tag_content = child.get_text()
-            
+            tag_content = _xml_escape(child.get_text())
+
             # Map HTML tags to FB2 tags
             if tag_name in ['b', 'strong']:
                 content += f"<strong>{tag_content}</strong>"
@@ -279,11 +279,11 @@ def convert_inline_html(element) -> str:
                 content += f"<emphasis>{tag_content}</emphasis>"
             elif tag_name == 'a':
                 href = child.get('href', '')
-                content += f'<a href="{href}">{tag_content}</a>'
+                content += f'<a href={_xml_quoteattr(href)}>{tag_content}</a>'
             else:
                 content += tag_content
         else:
             # Text node
-            content += str(child)
-    
+            content += _xml_escape(str(child))
+
     return content
