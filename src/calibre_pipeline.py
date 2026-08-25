@@ -65,6 +65,9 @@ _RE_CALIBRE_CLASS_ATTR = re.compile(r'\s+class\s*=\s*["\'][^"\']*calibre[^"\']*[
 # Must be preceded by \n\n (blank line) to avoid destroying headings and tables
 _RE_HR_MARKERS = re.compile(r'(?<=\n\n)---\s*\n')
 _RE_MULTI_BLANK = re.compile(r'\n{3,}')
+# Markdown image syntax: ![alt](path "optional title")
+_RE_MD_IMAGE = re.compile(r'!\[[^\]]*\]\([^)]+\)')
+_IMG_PLACEHOLDER_FMT = '⁣IMGREF{}⁣'  # invisible-separator wrapper the LLM has no reason to translate
 
 @dataclass
 class ValidationIssue:
@@ -557,6 +560,34 @@ def _load_vocab_entries(book_path: str) -> list:
     return entries
 
 
+def _protect_markdown_images(markdown_text: str) -> tuple[str, list[str]]:
+    """Replace markdown image references with placeholder tokens before the
+    text is sent to the translation LLM.
+
+    Image markup (``![alt](images/foo.jpg)``) is not prose, and asking the
+    LLM to translate a chunk containing it commonly drops or mangles the
+    reference, silently losing the image from the final output. Swapping
+    each occurrence for a short opaque token the LLM has no reason to touch
+    keeps the reference intact through translation; _restore_markdown_images
+    puts the original markup back afterwards.
+    """
+    images: list[str] = []
+
+    def _replace(match: "re.Match[str]") -> str:
+        images.append(match.group(0))
+        return _IMG_PLACEHOLDER_FMT.format(len(images) - 1)
+
+    protected = _RE_MD_IMAGE.sub(_replace, markdown_text)
+    return protected, images
+
+
+def _restore_markdown_images(text: str, images: list[str]) -> str:
+    """Undo _protect_markdown_images after translation."""
+    for idx, original in enumerate(images):
+        text = text.replace(_IMG_PLACEHOLDER_FMT.format(idx), original)
+    return text
+
+
 def translate_chunks(
     markdown_text: str,
     max_chunk_size: int = 6000,
@@ -876,25 +907,32 @@ def build_output(
     output_format: str,
     metadata: dict,
     output_path: Optional[str] = None,
-    images_dir: Optional[str] = None
+    images_dir: Optional[str] = None,
+    input_path: Optional[str] = None,
+    target_lang: Optional[str] = None
 ) -> str:
     """
     Build final output (FB2/EPUB) from translated Markdown.
-    
+
     This function:
     1. Converts Markdown to HTML (with TOC) using pandoc
     2. Converts HTML to desired output format using Calibre
     3. Cleans up temporary files
-    
+
     Args:
         translated_md: Translated Markdown content
         output_format: Output format - "docx", "epub" or "pdf"
         metadata: Book metadata dictionary
         output_path: Optional output path (auto-generated if not provided)
-        
+        input_path: Source file path. When output_path is not given, the
+            output is placed next to this file instead of the CWD.
+        target_lang: Target language, used to append a language marker
+            (e.g. "_ru") to the auto-generated filename. Falls back to
+            config.target_lang when not given.
+
     Returns:
         Path to the generated output file
-        
+
     Raises:
         ValueError: If output format is invalid
         FileNotFoundError: If Calibre is not installed
@@ -937,7 +975,15 @@ def build_output(
         title = metadata.get('title', 'output')
         # Sanitize filename: remove special chars and spaces
         safe_title = re.sub(r'[^\w\-]', '_', title).strip()[:50]
-        output_path = f"{safe_title}.{output_format}"
+        # Language marker (e.g. "_ru") so translations of the same book
+        # into different languages don't overwrite each other.
+        lang = (target_lang or config.target_lang or '').lower()
+        lang_marker = config.lang_code_map.get(lang, lang)
+        # Save next to the source file instead of the CWD.
+        out_dir = os.path.dirname(input_path) if input_path else ''
+        out_dir = out_dir or '.'
+        filename = f"{safe_title}_{lang_marker}.{output_format}" if lang_marker else f"{safe_title}.{output_format}"
+        output_path = os.path.join(out_dir, filename)
     
     with TempDir(prefix="calibre_output_") as temp_dir:
         try:
@@ -1741,8 +1787,12 @@ def run_pipeline(
             logger.warning(f"Failed to get MAX_LEN_CHUNK from config, using default 6000: {e}")
             max_chunk_size = 6000
     
+    # Protect image references so the translation LLM can't drop/mangle
+    # them; restored once translation is done (see _protect_markdown_images).
+    protected_md, image_refs = _protect_markdown_images(markdown_text)
+
     translated_md = translate_chunks(
-        markdown_text,
+        protected_md,
         max_chunk_size=max_chunk_size,
         source_lang=source_lang,
         target_lang=target_lang,
@@ -1750,14 +1800,17 @@ def run_pipeline(
         fast_mode=fast_mode,
         book_path=input_path  # Enable vocabulary loading
     )
-    
+    translated_md = _restore_markdown_images(translated_md, image_refs)
+
     # Step 4: Build output
     logger.info(f"Step 4/5: Building {output_format.upper()} output...")
     output_path = build_output(
         translated_md,
         output_format,
         metadata,
-        images_dir=images_dir
+        images_dir=images_dir,
+        input_path=input_path,
+        target_lang=target_lang
     )
     
     # Step 5: Validate output
