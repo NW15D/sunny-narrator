@@ -986,35 +986,31 @@ def main():
     # Write output
     if config.output_format == 'epub':
         try:
-            epub_path = create_epub_from_fb2(header, content, footer, output_base)
-            print(f"\n✓ EPUB created: {epub_path}")
+            final_output_path = create_epub_from_fb2(header, content, footer, output_base)
+            print(f"\n✓ EPUB created: {final_output_path}")
         except Exception as e:
             logger.error(f"EPUB creation failed: {e}")
-            write_to_file(xml_str, f"{output_base}.fb2", auto_repair_fb2=config.fb2_auto_repair)
-            print(f"\n✓ FB2 created (fallback): {output_base}.fb2")
+            final_output_path = f"{output_base}.fb2"
+            write_to_file(xml_str, final_output_path, auto_repair_fb2=config.fb2_auto_repair)
+            print(f"\n✓ FB2 created (fallback): {final_output_path}")
     else:
-        write_to_file(xml_str, output_file, auto_repair_fb2=config.fb2_auto_repair)
-        print(f"\n✓ FB2 created: {output_file}")
+        final_output_path = output_file
+        write_to_file(xml_str, final_output_path, auto_repair_fb2=config.fb2_auto_repair)
+        print(f"\n✓ FB2 created: {final_output_path}")
         if config.fb2_auto_repair:
             print(f"  (Auto-repair check enabled - fixed version may be created alongside)")
 
-
-    # Calculate retry token percentage
-    retry_pct = (engine.stats['retry_tokens'] / engine.stats['total_tokens'] * 100) if engine.stats['total_tokens'] > 0 else 0
-
-    # Statistics
-    print("\n--- Statistics ---")
-    print(f"Source: {engine.total_source_len:,} chars")
-    print(f"Target: {engine.total_target_len:,} chars")
-    if engine.total_source_len > 0:
-        diff = (engine.total_target_len - engine.total_source_len) / engine.total_source_len * 100
-        print(f"Length diff: {diff:+.1f}%")
-    print("------------------\n")
-
-    # Translation Metrics Report
+    # Statistics + translation metrics report (shared with the Calibre
+    # pipeline via src.utils.print_translation_report so both branches
+    # print the same format instead of drifting apart).
     try:
-        from src.utils import print_translation_report
-        print_translation_report()
+        elapsed = (datetime.now() - engine.start_time).total_seconds()
+        ta.print_translation_report(
+            source_len=engine.total_source_len,
+            target_len=engine.total_target_len,
+            elapsed=elapsed,
+            output_path=final_output_path,
+        )
     except Exception as e:
         logger.error(f"Failed to print translation report: {e}")
 
@@ -1048,6 +1044,10 @@ if __name__ == '__main__':
     # Fast mode — shared across both pipelines
     parser.add_argument('--fast-mode', action='store_true',
                         help='Skip reflection/improve stages (both pipelines)')
+    # Calibre pipeline resume control (see src/calibre_pipeline.py:run_pipeline)
+    parser.add_argument('--fresh', action='store_true',
+                        help='DOCX/EPUB/PDF only: ignore any existing translation '
+                             'checkpoint/dump and translate from scratch')
 
     args, unknown = parser.parse_known_args()
 
@@ -1186,6 +1186,8 @@ if __name__ == '__main__':
             print("Install it: https://calibre-ebook.com/download")
             sys.exit(1)
 
+        run_start = datetime.now()
+        stats = cp.TranslationStats()
         try:
             output_path = cp.run_pipeline(
                 input_path=input_file,
@@ -1194,9 +1196,23 @@ if __name__ == '__main__':
                 source_lang=config.source_lang,
                 target_lang=config.target_lang,
                 country=config.country,
-                fast_mode=args.fast_mode
+                fast_mode=args.fast_mode,
+                fresh=args.fresh,
+                stats_out=stats,
             )
             print(f"\n✓ Pipeline complete: {output_path}")
+
+            # Statistics + translation metrics report — same function and
+            # format the classic FB2/TXT pipeline prints (src.utils.
+            # print_translation_report), so both branches produce a
+            # comparable report instead of the Calibre branch staying silent.
+            elapsed = (datetime.now() - run_start).total_seconds()
+            ta.print_translation_report(
+                source_len=stats.total_source_len,
+                target_len=stats.total_target_len,
+                elapsed=elapsed,
+                output_path=output_path,
+            )
         except Exception as e:
             print(f"\n✗ Pipeline failed: {e}")
             import traceback

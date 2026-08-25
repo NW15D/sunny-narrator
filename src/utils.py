@@ -414,6 +414,16 @@ if config.debug:
 else:
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+# DEBUG=on floods the log with httpx/httpcore/openai wire-level traces and
+# duplicate pypandoc lines (pypandoc attaches its own handler AND propagates
+# to root, so every message is printed twice: "[DEBUG] ..." from its own
+# handler, then "... - DEBUG - ..." from ours). Keep those quiet unless the
+# user explicitly asks for the full trace via DEBUG_HTTP=on.
+if not getattr(config, 'debug_http', False):
+    logging.getLogger('pypandoc').propagate = False
+    for _noisy_logger in ('httpx', 'httpcore', 'openai'):
+        logging.getLogger(_noisy_logger).setLevel(logging.WARNING)
+
 
 def log_entry(func):
     """Decorator to log function entry for key functions."""
@@ -2136,6 +2146,39 @@ def num_tokens_in_string(input_str: str, encoding_name: str = "cl100k_base") -> 
 # Translation Report
 # =============================================================================
 
-def print_translation_report():
-    """Print translation metrics summary at end of translation."""
+def print_translation_report(
+    source_len: int = 0,
+    target_len: int = 0,
+    elapsed: Optional[float] = None,
+    output_path: Optional[str] = None,
+) -> None:
+    """Print translation metrics summary at end of translation.
+
+    Shared by both pipelines (classic FB2/TXT and Calibre DOCX/EPUB/PDF) so
+    their end-of-run reports can't drift out of format with each other —
+    both go through the same "--- Statistics ---" block plus the same
+    metrics.print_report(). The classic pipeline used to print its own
+    inline copy of the Statistics block (app.py); it now calls this
+    function too.
+
+    Args:
+        source_len: Total source characters translated (0 to skip the block).
+        target_len: Total target characters produced.
+        elapsed: Wall-clock seconds since the run started, if known.
+        output_path: Path to the final output file, if known.
+    """
+    if source_len or target_len:
+        print("\n--- Statistics ---")
+        print(f"Source: {source_len:,} chars")
+        print(f"Target: {target_len:,} chars")
+        if source_len > 0:
+            diff = (target_len - source_len) / source_len * 100
+            print(f"Length diff: {diff:+.1f}%")
+        print("------------------\n")
+
     metrics.print_report()
+
+    if elapsed is not None:
+        logger.info(f"Elapsed time: {elapsed:.1f}s")
+    if output_path:
+        logger.info(f"Output file: {output_path}")
