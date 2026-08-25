@@ -15,18 +15,26 @@ def test_build_output_copies_images_next_to_html(tmp_path):
 
     seen = {}
 
-    def _fake_ebook_convert(cmd, *args, **kwargs):
+    # build_output's Markdown->HTML step shells out to pandoc via
+    # subprocess.run too now (not pypandoc.convert_text — see
+    # _markdown_to_html_file's docstring), so the fake side_effect must
+    # branch on cmd[0] rather than assume every call is "ebook-convert cmd[1]
+    # cmd[2]" (a pandoc call's cmd[2] is a flag like "-f", not a path).
+    def _fake_run(cmd, *args, **kwargs):
         seen['html_dir_files'] = os.listdir(os.path.dirname(cmd[1]))
-        if len(cmd) >= 3:
+        if cmd[0] == "ebook-convert":
             with open(cmd[2], 'w', encoding='utf-8') as f:
                 f.write('OK')
+        else:
+            out_path = cmd[cmd.index('-o') + 1]
+            with open(out_path, 'w', encoding='utf-8') as f:
+                f.write('<p>x</p>')
         return MagicMock(returncode=0)
 
     out = str(tmp_path / 'out.epub')
     with patch('src.calibre_pipeline.check_calibre_installed', return_value=True), \
-         patch('pypandoc.convert_text', return_value='<p>x</p>'), \
          patch('subprocess.run') as mock_run:
-        mock_run.side_effect = _fake_ebook_convert
+        mock_run.side_effect = _fake_run
         build_output("# Ch\n\ntext", "epub", {"title": "T"},
                      output_path=out, images_dir=str(images_dir))
 

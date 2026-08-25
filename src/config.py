@@ -147,6 +147,26 @@ class Config:
         # FB2 auto-repair: write _fixed version alongside original (default: false)
         self.fb2_auto_repair = os.getenv('FB2_AUTO_REPAIR', 'false').lower() in ['true', '1', 't', 'on', 'yes']
 
+        # Calibre pipeline: pandoc/ebook-convert are run on a whole book, so
+        # large books need batching + timeouts instead of one unbounded
+        # in-memory conversion (see src/calibre_pipeline.py:build_output).
+        # PANDOC_BATCH_CHARS: split markdown into pandoc-sized batches instead
+        # of converting the whole book in a single pypandoc.convert_text call.
+        self.pandoc_batch_chars = _parse_numeric_env('PANDOC_BATCH_CHARS', 200000, cast=int)
+        # PANDOC_TIMEOUT/CALIBRE_TIMEOUT: seconds before the corresponding
+        # subprocess is killed instead of hanging forever.
+        self.pandoc_timeout = _parse_numeric_env('PANDOC_TIMEOUT', 900, cast=int)
+        self.calibre_timeout = _parse_numeric_env('CALIBRE_TIMEOUT', 1800, cast=int)
+        # MAX_FAILED_CHUNK_RATIO: fraction of chunks allowed to fail translation
+        # before translate_chunks aborts (Calibre pipeline). Referenced via
+        # getattr(config, 'max_failed_chunk_ratio', 0.0) in calibre_pipeline.py;
+        # declared here so it is actually configurable instead of always 0.0.
+        self.max_failed_chunk_ratio = _parse_numeric_env('MAX_FAILED_CHUNK_RATIO', 0.0, cast=float)
+        # DEBUG_HTTP: when off (default), suppresses noisy DEBUG logging from
+        # pypandoc/httpx/httpcore/openai even when DEBUG=on, and stops pypandoc
+        # from double-logging (it attaches its own handler and propagates).
+        self.debug_http = os.getenv('DEBUG_HTTP', 'off').lower() in ['true', '1', 't', 'on', 'yes']
+
         # Language code mapping for metadata
         self.lang_code_map = {
             'russian': 'ru', 'english': 'en', 'french': 'fr', 'german': 'de',

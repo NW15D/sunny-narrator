@@ -20,6 +20,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # convert_to_markdown: input format scope
 # ---------------------------------------------------------------------------
 
+def _fake_pandoc_run(cmd, *args, **kwargs):
+    """Shared subprocess.run side_effect for tests that mock zipfile.ZipFile
+    (so the ebook-convert HTMLZ output doesn't need to be a real file) but
+    still need the pandoc HTML->Markdown call (now a real subprocess.run
+    invocation — see _markdown_to_html_file's docstring in
+    src/calibre_pipeline.py) to actually produce its "-o" output file, since
+    the code reads that file back for real (only zipfile.ZipFile is mocked,
+    not builtins.open)."""
+    if cmd[0] != "ebook-convert" and '-o' in cmd:
+        out_path = cmd[cmd.index('-o') + 1]
+        with open(out_path, 'w', encoding='utf-8') as f:
+            f.write("markdown")
+    return MagicMock(returncode=0)
+
+
 def test_convert_to_markdown_accepts_docx():
     """convert_to_markdown must accept .docx input."""
     from src.calibre_pipeline import convert_to_markdown
@@ -28,10 +43,9 @@ def test_convert_to_markdown_accepts_docx():
          patch('src.calibre_pipeline.TempDir') as mock_td, \
          patch('zipfile.ZipFile') as mock_zf, \
          patch('subprocess.run') as mock_run, \
-         patch('pypandoc.convert_text', return_value="markdown"), \
          patch('src.calibre_pipeline.extract_metadata_from_opf', return_value={}), \
          patch('os.path.exists', return_value=True):
-        mock_run.return_value = MagicMock(returncode=0)
+        mock_run.side_effect = _fake_pandoc_run
         # TempDir context manager pointing at a REAL temp dir
         import tempfile as _tf
         _real = _tf.mkdtemp(prefix="calibre_conv_")
@@ -54,10 +68,9 @@ def test_convert_to_markdown_accepts_pdf():
          patch('src.calibre_pipeline.TempDir') as mock_td, \
          patch('zipfile.ZipFile') as mock_zf, \
          patch('subprocess.run') as mock_run, \
-         patch('pypandoc.convert_text', return_value="markdown"), \
          patch('src.calibre_pipeline.extract_metadata_from_opf', return_value={}), \
          patch('os.path.exists', return_value=True):
-        mock_run.return_value = MagicMock(returncode=0)
+        mock_run.side_effect = _fake_pandoc_run
         import tempfile as _tf
         _real = _tf.mkdtemp(prefix="calibre_conv_")
         mock_td.return_value.__enter__.return_value = _real
@@ -100,50 +113,64 @@ def test_convert_to_markdown_rejects_fbz():
 # build_output: output format scope
 # ---------------------------------------------------------------------------
 
-def test_build_output_accepts_docx():
+def _fake_build_output_run(cmd, *args, **kwargs):
+    """subprocess.run side_effect for build_output tests: writes real output
+    for both the pandoc Markdown->HTML batch call(s) and the final
+    ebook-convert call, so real os.path.exists()/open() checks downstream
+    see genuine files instead of relying on a global os.path.exists mock."""
+    if cmd[0] == "ebook-convert":
+        with open(cmd[2], 'w', encoding='utf-8') as f:
+            f.write('OK')
+    else:
+        out_path = cmd[cmd.index('-o') + 1]
+        with open(out_path, 'w', encoding='utf-8') as f:
+            f.write("<html><body>Test</body></html>")
+    return MagicMock(returncode=0)
+
+
+def test_build_output_accepts_docx(tmp_path):
     """build_output must support .docx output."""
     from src.calibre_pipeline import build_output
 
     metadata = {"title": "T", "author": "A", "language": "en"}
+    out_path = str(tmp_path / "out.docx")
 
     with patch('src.calibre_pipeline.check_calibre_installed', return_value=True), \
-         patch('pypandoc.convert_text', return_value="<html><body>Test</body></html>"), \
-         patch('subprocess.run') as mock_run, \
-         patch('os.path.exists', return_value=True):
-        mock_run.return_value = MagicMock(returncode=0)
-        out = build_output("# Ch\n\nText", "docx", metadata, output_path="/tmp/out.docx")
-        assert out == "/tmp/out.docx"
-        cmd_args = mock_run.call_args[0][0]
-        assert "/tmp/out.docx" in cmd_args
+         patch('subprocess.run') as mock_run:
+        mock_run.side_effect = _fake_build_output_run
+        out = build_output("# Ch\n\nText", "docx", metadata, output_path=out_path)
+        assert out == out_path
+        ebook_calls = [c.args[0] for c in mock_run.call_args_list if c.args[0][0] == "ebook-convert"]
+        assert len(ebook_calls) == 1
+        assert out_path in ebook_calls[0]
 
 
-def test_build_output_accepts_pdf():
+def test_build_output_accepts_pdf(tmp_path):
     """build_output must support .pdf output."""
     from src.calibre_pipeline import build_output
 
     metadata = {"title": "T", "author": "A", "language": "en"}
+    out_path = str(tmp_path / "out.pdf")
 
     with patch('src.calibre_pipeline.check_calibre_installed', return_value=True), \
-         patch('pypandoc.convert_text', return_value="<html><body>Test</body></html>"), \
-         patch('subprocess.run') as mock_run, \
-         patch('os.path.exists', return_value=True):
-        mock_run.return_value = MagicMock(returncode=0)
-        out = build_output("# Ch\n\nText", "pdf", metadata, output_path="/tmp/out.pdf")
-        assert out == "/tmp/out.pdf"
-        cmd_args = mock_run.call_args[0][0]
-        assert "/tmp/out.pdf" in cmd_args
+         patch('subprocess.run') as mock_run:
+        mock_run.side_effect = _fake_build_output_run
+        out = build_output("# Ch\n\nText", "pdf", metadata, output_path=out_path)
+        assert out == out_path
+        ebook_calls = [c.args[0] for c in mock_run.call_args_list if c.args[0][0] == "ebook-convert"]
+        assert len(ebook_calls) == 1
+        assert out_path in ebook_calls[0]
 
 
-def test_build_output_rejects_fb2():
+def test_build_output_rejects_fb2(tmp_path):
     """build_output must REJECT fb2 — FB2 output belongs to classic pipeline."""
     from src.calibre_pipeline import build_output
 
     metadata = {"title": "T", "author": "A", "language": "en"}
 
-    with patch('src.calibre_pipeline.check_calibre_installed', return_value=True), \
-         patch('pypandoc.convert_text', return_value="<html><body>Test</body></html>"):
+    with patch('src.calibre_pipeline.check_calibre_installed', return_value=True):
         try:
-            build_output("# Ch\n\nText", "fb2", metadata, output_path="/tmp/out.fb2")
+            build_output("# Ch\n\nText", "fb2", metadata, output_path=str(tmp_path / "out.fb2"))
             assert False, "Expected ValueError for FB2 output in Calibre pipeline"
         except ValueError as e:
             assert 'unsupported' in str(e).lower() or 'fb2' in str(e).lower()

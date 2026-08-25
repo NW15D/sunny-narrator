@@ -305,52 +305,53 @@ if __name__ == "__main__":
 # ===========================================================================
 
 
-def test_convert_to_markdown_mocked():
-    """Test full convert_to_markdown pipeline with mocked Calibre and pypandoc."""
+def test_convert_to_markdown_mocked(tmp_path):
+    """Test full convert_to_markdown pipeline with mocked Calibre and pandoc.
+
+    convert_to_markdown's HTML->Markdown step no longer calls
+    pypandoc.convert_text() (that in-memory, timeout-less call is what
+    stalled/OOM'd on a large real book — see _markdown_to_html_file's
+    docstring in src/calibre_pipeline.py). It now shells out to the pandoc
+    binary file-to-file via subprocess.run, same as the ebook-convert
+    calls, so both are exercised through one subprocess.run side_effect
+    that branches on cmd[0] — real files on disk, not mocked open()/exists.
+    """
     import zipfile
-    from io import BytesIO
     from src.calibre_pipeline import convert_to_markdown
-    
+
     opf_content = b"""<?xml version="1.0"?>
 <package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
     <dc:title>Mock Book</dc:title>
     <dc:creator>Mock Author</dc:creator>
     <dc:language>en</dc:language>
 </metadata></package>"""
-    
+
     html_content = b"<html><body><h1>Chapter 1</h1><p>Hello world</p></body></html>"
-    
-    # Create mock HTMLZ (zip) file
-    htmlz_buffer = BytesIO()
-    with zipfile.ZipFile(htmlz_buffer, 'w') as zf:
-        zf.writestr('index.html', html_content)
-        zf.writestr('metadata.opf', opf_content)
-    htmlz_bytes = htmlz_buffer.getvalue()
-    
+
+    input_file = tmp_path / "test.epub"
+    input_file.write_bytes(b"fake epub content")
+
+    def _fake_run(cmd, *args, **kwargs):
+        if cmd[0] == "ebook-convert":
+            # input -> HTMLZ (real zip on disk)
+            with zipfile.ZipFile(cmd[2], 'w') as zf:
+                zf.writestr('index.html', html_content)
+                zf.writestr('metadata.opf', opf_content)
+        else:
+            # pandoc HTML -> Markdown (file-to-file, "-o <path>")
+            out_path = cmd[cmd.index('-o') + 1]
+            with open(out_path, 'w', encoding='utf-8') as f:
+                f.write("# Chapter 1\n\nHello world")
+        return MagicMock(returncode=0)
+
     with patch('src.calibre_pipeline.check_calibre_installed', return_value=True), \
-         patch('subprocess.run') as mock_subprocess, \
-         patch('builtins.open', create=True), \
-         patch('os.path.exists', return_value=True), \
-         patch('zipfile.ZipFile') as mock_zipfile:
-        
-        # Mock subprocess for Calibre conversion
-        mock_subprocess.return_value = MagicMock(returncode=0)
-        
-        # Mock ZipFile to return our test content
-        mock_zf_instance = MagicMock()
-        mock_zf_instance.namelist.return_value = ['index.html', 'metadata.opf']
-        mock_zf_instance.read.side_effect = lambda name: html_content if name == 'index.html' else opf_content
-        mock_zipfile.return_value.__enter__ = MagicMock(return_value=mock_zf_instance)
-        mock_zipfile.return_value.__exit__ = MagicMock(return_value=False)
-        
-        # Mock pypandoc
-        with patch('pypandoc.convert_text', return_value="# Chapter 1\n\nHello world"):
-            md, metadata = convert_to_markdown("test.epub")
-            
-            assert md == "# Chapter 1\n\nHello world"
-            assert metadata["title"] == "Mock Book"
-            assert metadata["author"] == "Mock Author"
-            assert metadata["language"] == "en"
+         patch('subprocess.run', side_effect=_fake_run):
+        md, metadata = convert_to_markdown(str(input_file))
+
+        assert md == "# Chapter 1\n\nHello world"
+        assert metadata["title"] == "Mock Book"
+        assert metadata["author"] == "Mock Author"
+        assert metadata["language"] == "en"
 
 
 def test_translate_chunks_unit():
@@ -448,127 +449,161 @@ One day, a knight named Arthur came to visit the dragon."""
             assert "дракон" in result
 
 
-def test_build_output_epub():
-    """Test EPUB output generation with mocked dependencies."""
+def test_build_output_epub(tmp_path):
+    """Test EPUB output generation with mocked dependencies.
+
+    build_output's Markdown->HTML step no longer calls pypandoc.convert_text
+    (see _markdown_to_html_file's docstring for why) — it shells out to the
+    pandoc binary file-to-file via subprocess.run, same channel as the
+    ebook-convert call, so a single side_effect branching on cmd[0] covers
+    both real subprocess invocations.
+    """
     from src.calibre_pipeline import build_output
-    
+
     metadata = {
         "title": "Test Book",
         "author": "Test Author",
         "language": "en"
     }
-    
+
+    output_path = str(tmp_path / "test_output.epub")
+    calls = []
+
+    def _fake_run(cmd, *args, **kwargs):
+        calls.append(cmd)
+        if cmd[0] == "ebook-convert":
+            with open(cmd[2], 'w', encoding='utf-8') as f:
+                f.write('EPUB content')
+        else:
+            out_path = cmd[cmd.index('-o') + 1]
+            with open(out_path, 'w', encoding='utf-8') as f:
+                f.write("<html><body>Test</body></html>")
+        return MagicMock(returncode=0)
+
     with patch('src.calibre_pipeline.check_calibre_installed', return_value=True), \
-         patch('pypandoc.convert_text', return_value="<html><body>Test</body></html>") as mock_pandoc, \
-         patch('subprocess.run') as mock_run, \
-         patch('os.path.exists', return_value=True):
-        
-        mock_run.return_value = MagicMock(returncode=0)
-        
-        output_path = build_output(
+         patch('subprocess.run', side_effect=_fake_run):
+
+        result = build_output(
             "# Translated Chapter\n\nHello world",
             "epub",
             metadata,
-            output_path="/tmp/test_output.epub"
+            output_path=output_path
         )
-        
-        assert output_path == "/tmp/test_output.epub"
-        # Verify pypandoc was called with TOC args
-        assert mock_pandoc.call_count == 1
-        call_args = mock_pandoc.call_args
-        assert 'html' in str(call_args)
-        assert '--wrap=none' in str(call_args)
+
+        assert result == output_path
+        # One pandoc batch (Markdown -> HTML) + one ebook-convert call
+        pandoc_calls = [c for c in calls if c[0] != "ebook-convert"]
+        assert len(pandoc_calls) == 1
+        assert '--wrap=none' in pandoc_calls[0]
+        assert '-t' in pandoc_calls[0]
+        assert 'html' in pandoc_calls[0]
 
 
-def test_build_output_docx():
+def test_build_output_docx(tmp_path):
     """Test DOCX output generation with mocked dependencies."""
     from src.calibre_pipeline import build_output
-    
+
     metadata = {
         "title": "Тестовая книга",
         "author": "Тестовый автор",
         "language": "ru"
     }
-    
-    def _fake_ebook_convert(cmd, *args, **kwargs):
-        if len(cmd) >= 3:
+
+    output_path = str(tmp_path / "test_output.docx")
+
+    def _fake_run(cmd, *args, **kwargs):
+        if cmd[0] == "ebook-convert":
             with open(cmd[2], 'w', encoding='utf-8') as f:
                 f.write('DOCX content')
+        else:
+            out_path = cmd[cmd.index('-o') + 1]
+            with open(out_path, 'w', encoding='utf-8') as f:
+                f.write("<html><body>Тест</body></html>")
         return MagicMock(returncode=0)
 
     with patch('src.calibre_pipeline.check_calibre_installed', return_value=True), \
-         patch('pypandoc.convert_text', return_value="<html><body>Тест</body></html>"), \
-         patch('subprocess.run') as mock_run, \
-         patch('os.path.exists', return_value=True):
-        
-        mock_run.side_effect = _fake_ebook_convert
-        
-        output_path = build_output(
+         patch('subprocess.run', side_effect=_fake_run) as mock_run:
+
+        result = build_output(
             "# Переведённая глава\n\nПривет мир",
             "docx",
             metadata,
-            output_path="/tmp/test_output.docx"
+            output_path=output_path
         )
-        
-        assert output_path == "/tmp/test_output.docx"
+
+        assert result == output_path
         # Verify Calibre was called with docx output file
-        cmd_args = mock_run.call_args[0][0]
-        assert "/tmp/test_output.docx" in cmd_args
-        assert "ebook-convert" in cmd_args
+        ebook_calls = [c.args[0] for c in mock_run.call_args_list if c.args[0][0] == "ebook-convert"]
+        assert len(ebook_calls) == 1
+        assert output_path in ebook_calls[0]
+        assert "ebook-convert" in ebook_calls[0]
 
 
 def test_full_pipeline_integration(tmp_path):
-    """End-to-end mocked pipeline test: convert → translate → build."""
+    """End-to-end mocked pipeline test: convert → translate → build.
+
+    Only check_calibre_installed and subprocess.run are mocked — everything
+    else (zipfile, file I/O, os.path.exists) runs for real against real
+    files in tmp_path. That now includes the two pandoc invocations
+    (HTML<->Markdown), which moved from pypandoc.convert_text calls to
+    subprocess.run just like the two ebook-convert calls, so the fake
+    subprocess.run side_effect branches on cmd[0] instead of call count.
+    """
     from src.calibre_pipeline import run_pipeline
-    
+
     import zipfile
-    from io import BytesIO
-    
+
     opf_content = b"""<?xml version="1.0"?>
 <package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
     <dc:title>Pipeline Test</dc:title>
 </metadata></package>"""
     html_content = b"<html><body><p>Test content</p></body></html>"
-    
+
     # Mock _pipeline.execute to return a PipelineState-like object
     mock_state = MagicMock()
     mock_state.final_translation = "Переведённый текст"
     mock_state.synopsis = "synopsis"
-    
-    # NOTE: we do NOT patch zipfile.ZipFile globally: convert_to_markdown
-    # reads the HTMLZ produced by the fake ebook-convert, and validate_docx
-    # reads the DOCX produced by the second fake call — both use the REAL
-    # zipfile against REAL files on disk.
-    
+
     with patch('src.calibre_pipeline.check_calibre_installed', return_value=True), \
          patch('subprocess.run') as mock_subprocess, \
-         patch('os.path.exists', return_value=True), \
-         patch('pypandoc.convert_text') as mock_pandoc, \
-         patch('src.utils._pipeline.execute', return_value=mock_state) as mock_execute, \
-         patch('src.calibre_pipeline.split_text_smartly', return_value=("Test content", "")):
-        
-        _fake_calls = {"n": 0}
+         patch('src.utils._pipeline.execute', return_value=mock_state) as mock_execute:
 
-        def _fake_ebook_convert(cmd, *args, **kwargs):
-            _fake_calls["n"] += 1
-            out_path = cmd[2]
-            if _fake_calls["n"] == 1:
-                # Call 1: convert input -> HTMLZ (zip with index.html + opf)
-                with zipfile.ZipFile(out_path, 'w') as zf:
-                    zf.writestr('index.html', html_content)
-                    zf.writestr('metadata.opf', opf_content)
+        _fake_calls = {"ebook_convert": 0}
+
+        def _fake_run(cmd, *args, **kwargs):
+            if cmd[0] == "ebook-convert":
+                _fake_calls["ebook_convert"] += 1
+                out_path = cmd[2]
+                if _fake_calls["ebook_convert"] == 1:
+                    # Step 1 (convert_to_markdown): input -> HTMLZ
+                    with zipfile.ZipFile(out_path, 'w') as zf:
+                        zf.writestr('index.html', html_content)
+                        zf.writestr('metadata.opf', opf_content)
+                else:
+                    # Step 4 (build_output): HTML/Markdown -> DOCX (real OOXML zip)
+                    with zipfile.ZipFile(out_path, 'w') as zf:
+                        zf.writestr("[Content_Types].xml", '<?xml version="1.0"?><Types/>')
+                        zf.writestr("word/document.xml", '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>DOCX output content</w:t></w:r></w:p></w:body></w:document>')
             else:
-                # Call 2+: HTML -> DOCX (real OOXML zip)
-                with zipfile.ZipFile(out_path, 'w') as zf:
-                    zf.writestr("[Content_Types].xml", '<?xml version="1.0"?><Types/>')
-                    zf.writestr("word/document.xml", '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>DOCX output content</w:t></w:r></w:p></w:body></w:document>')
+                # A pandoc call: HTML->Markdown (convert_to_markdown) or
+                # Markdown->HTML (build_output) — tell them apart via -t.
+                out_path = cmd[cmd.index('-o') + 1]
+                to_fmt = cmd[cmd.index('-t') + 1] if '-t' in cmd else ''
+                content = ("# Глава\n\nПереведённый текст" if to_fmt == 'markdown'
+                           else "<html><body>Переведённый текст</body></html>")
+                with open(out_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
             return MagicMock(returncode=0)
 
-        mock_subprocess.side_effect = _fake_ebook_convert
-        mock_pandoc.return_value = "# Глава\n\nПереведённый текст"
-        
+        mock_subprocess.side_effect = _fake_run
+
+        # convert_to_markdown checks os.path.exists(input_path) for real now
+        # (no global os.path.exists patch) — needs an actual file on disk.
+        input_path = tmp_path / "book.epub"
+        input_path.write_bytes(b"fake epub content")
+
         output = run_pipeline(
-            input_path=str(tmp_path / "book.epub"),
+            input_path=str(input_path),
             output_format="docx",
             max_chunk_size=6000,
             target_lang="russian"
@@ -578,9 +613,16 @@ def test_full_pipeline_integration(tmp_path):
         # Output is written next to the source file, with a language marker.
         assert os.path.dirname(output) == str(tmp_path)
         assert os.path.basename(output) == "Pipeline_Test_ru.docx"
-        # Verify full pipeline was called
-        assert mock_subprocess.call_count >= 2  # At least convert + output
+        # Verify full pipeline was called: 2x ebook-convert + 2x pandoc
+        assert mock_subprocess.call_count >= 4
         assert mock_execute.call_count >= 1
+
+        # A successful run cleans up its checkpoint and translated-Markdown
+        # dump (see run_pipeline's resume logic) — nothing should be left
+        # over for the next run to (mis)interpret as a crash recovery.
+        assert not (tmp_path / "book_ru.checkpoint.json").exists()
+        assert not (tmp_path / "book_ru.translated.md").exists()
+        assert not (tmp_path / "book_ru.meta.json").exists()
 
     # run_pipeline creates Pipeline_Test.docx in cwd; clean it up
     if os.path.exists("Pipeline_Test.docx"):

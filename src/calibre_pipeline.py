@@ -14,6 +14,7 @@ __all__ = [
     'run_pipeline',
     'check_calibre_installed',
     'TempDir',
+    'TranslationStats',
     'ValidationIssue',
     'ValidationReport',
     'validate_epub',
@@ -23,6 +24,7 @@ __all__ = [
     'save_dictionary',
 ]
 
+import json
 import os
 import re
 import shutil
@@ -68,6 +70,30 @@ _RE_MULTI_BLANK = re.compile(r'\n{3,}')
 # Markdown image syntax: ![alt](path "optional title")
 _RE_MD_IMAGE = re.compile(r'!\[[^\]]*\]\([^)]+\)')
 _IMG_PLACEHOLDER_FMT = '⁣IMGREF{}⁣'  # invisible-separator wrapper the LLM has no reason to translate
+# C3 fix: <img src="images/foo.jpg"> -> <img src="foo.jpg"> — book images are
+# copied to the HTML's own temp dir (root), not into an images/ subdirectory,
+# so ebook-convert needs the bare filename to find them.
+_RE_IMG_SRC = re.compile(
+    r'(<img[^>]*\bsrc=["\'])(?:images/)?([^/"\'\s>]+)(["\'])',
+    re.IGNORECASE
+)
+
+@dataclass
+class TranslationStats:
+    """Aggregate counters from a translate_chunks() run.
+
+    translate_chunks previously computed total_source_len/total_target_len/
+    failed_chunks locally and threw them away once translation finished
+    (they were only persisted inside checkpoint payloads, which vanish once
+    checkpoint_mgr.remove() runs). Passing a TranslationStats instance via
+    stats_out lets run_pipeline() surface the same numbers the classic FB2
+    pipeline already prints via print_translation_report().
+    """
+    total_source_len: int = 0
+    total_target_len: int = 0
+    total_chunks: int = 0
+    failed_chunks: int = 0
+
 
 @dataclass
 class ValidationIssue:
@@ -302,15 +328,16 @@ def convert_to_markdown(input_path: str) -> tuple[str, dict]:
                 htmlz_path,
             ]
             
+            calibre_timeout = int(getattr(config, 'calibre_timeout', 1800))
             try:
-                _run_command(cmd, timeout=300)
+                _run_command(cmd, timeout=calibre_timeout)
             except subprocess.CalledProcessError as e:
                 stderr = e.stderr if e.stderr else "Unknown error"
                 stderr = stderr[:500]  # Limit for readability
                 raise ValueError(f"Calibre conversion failed: {stderr}")
             except subprocess.TimeoutExpired:
-                raise ValueError("Calibre conversion timed out")
-            
+                raise ValueError(f"Calibre conversion timed out (>{calibre_timeout}s)")
+
             if not os.path.exists(htmlz_path):
                 raise ValueError("HTMLZ file was not created")
             
@@ -381,19 +408,38 @@ def convert_to_markdown(input_path: str) -> tuple[str, dict]:
                     "pypandoc is not installed. "
                     "Install it: pip install pypandoc (requires pandoc: https://pandoc.org/installing.html)"
                 )
+            # File-to-file via the real pandoc binary (not pypandoc.convert_text,
+            # which offers no timeout) — mirrors the fix in _markdown_to_html_file
+            # for the same reason: an in-memory, unbounded, timeout-less pandoc
+            # call on a whole book can stall/OOM with no traceback.
             try:
-                # Use --wrap=auto to prevent extremely long lines
-                # This ensures better chunking behavior later
-                markdown_text = pypandoc.convert_text(
-                    html_content,
-                    'markdown',
-                    format='html',
-                    extra_args=['--wrap=auto']
-                )
-                # Remove surrogate code points produced by broken EPUB
-                markdown_text = markdown_utils.sanitize_surrogates(markdown_text)
-            except Exception as e:
-                raise ValueError(f"Pandoc conversion failed: {e}")
+                pandoc_exe = pypandoc.get_pandoc_path()
+            except Exception:
+                pandoc_exe = "pandoc"
+            html_input_path = os.path.join(temp_dir, "input.html")
+            with open(html_input_path, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+            markdown_output_path = os.path.join(temp_dir, "output.md")
+            pandoc_timeout = int(getattr(config, 'pandoc_timeout', 900))
+            # Use --wrap=auto to prevent extremely long lines
+            # This ensures better chunking behavior later
+            cmd = [pandoc_exe, html_input_path, '-f', 'html', '-t', 'markdown',
+                   '--wrap=auto', '-o', markdown_output_path]
+            try:
+                _run_command(cmd, timeout=pandoc_timeout)
+            except subprocess.CalledProcessError as e:
+                stderr = (e.stderr or "Unknown error")[:500]
+                raise ValueError(f"Pandoc conversion failed: {stderr}")
+            except subprocess.TimeoutExpired:
+                raise ValueError(f"Pandoc conversion timed out (>{pandoc_timeout}s)")
+
+            if not os.path.exists(markdown_output_path):
+                raise ValueError("Pandoc did not produce Markdown output")
+
+            with open(markdown_output_path, 'r', encoding='utf-8') as f:
+                markdown_text = f.read()
+            # Remove surrogate code points produced by broken EPUB
+            markdown_text = markdown_utils.sanitize_surrogates(markdown_text)
             
             # Step 5: Clean Calibre markers
             markdown_text = _clean_calibre_markers(markdown_text)
@@ -598,17 +644,19 @@ def translate_chunks(
     fast_mode: bool = False,
     vocab_dict: Optional[dict] = None,
     book_path: Optional[str] = None,
-    checkpoint_file: Optional[str] = None
+    checkpoint_file: Optional[str] = None,
+    remove_on_success: bool = True,
+    stats_out: Optional['TranslationStats'] = None
 ) -> str:
     """
     Translate Markdown text in chunks using existing translate_chunk.
-    
+
     This function:
     1. Splits text into chunks (respecting max_chunk_size)
     2. Translates each chunk using translate_chunk
     3. Reassembles the translated chunks
     4. Displays progress during translation
-    
+
     Args:
         markdown_text: Markdown content to translate
         max_chunk_size: Maximum chunk size in characters (default 6000)
@@ -620,7 +668,17 @@ def translate_chunks(
         vocab_dict: Optional vocabulary dictionary. If None and book_path is provided,
                     will be loaded from book's .dic file
         book_path: Optional path to the book file (used to load vocabulary)
-        
+        checkpoint_file: Optional path to a checkpoint JSON for resume support
+        remove_on_success: If True (default), delete the checkpoint once all
+            chunks are translated. run_pipeline() passes False so the
+            checkpoint survives a crash during build_output — it deletes the
+            checkpoint itself only after the output file is built and
+            validated, so a build failure doesn't discard the translation.
+        stats_out: Optional TranslationStats instance to fill in-place with
+            aggregate counters (source/target chars, chunk counts). Lets
+            callers print a statistics report even though this function
+            itself only returns the translated text.
+
     Returns:
         Translated markdown text
     """
@@ -835,16 +893,25 @@ def translate_chunks(
                 f"Threshold: {max_failed_ratio:.0%}. Fix LLM output or raise max_failed_chunk_ratio."
             )
     
-    # All chunks done: drop the checkpoint so the next run starts fresh
-    if checkpoint_mgr is not None:
+    # All chunks done: drop the checkpoint so the next run starts fresh,
+    # unless the caller wants to keep it around until some later step (e.g.
+    # run_pipeline keeps it until build_output/validate_output succeed, so a
+    # crash during EPUB assembly doesn't throw away a finished translation).
+    if checkpoint_mgr is not None and remove_on_success:
         checkpoint_mgr.remove()
+
+    if stats_out is not None:
+        stats_out.total_source_len = total_source_len
+        stats_out.total_target_len = total_target_len
+        stats_out.total_chunks = total_chunks
+        stats_out.failed_chunks = failed_chunks
 
     # Reassemble translated text
     translated_text = '\n\n'.join(translated_parts)
-    
+
     # Final sanitize pass before return
     translated_text = sanitize_surrogates(translated_text)
-    
+
     if logger:
         logger.info(f"Translation complete: {len(translated_text)} chars")
     else:
@@ -900,6 +967,100 @@ def _split_into_chunks(text: str, max_chunk_size: int) -> list[str]:
         chunks.append(current_chunk)
     
     return chunks
+
+
+def _markdown_to_html_file(
+    markdown_text: str,
+    html_path: str,
+    temp_dir: str,
+    batch_chars: int = 200000,
+    timeout: int = 900,
+) -> None:
+    """Convert markdown to an HTML file on disk, batch by batch.
+
+    This used to be a single pypandoc.convert_text() call on the whole
+    book's markdown held as one Python string, with no timeout. On a
+    ~920KB book that call stalled inside pandoc's own internals with no
+    traceback: the log simply stopped after pypandoc's "Running pandoc..."
+    debug line, and since nohup batched.sh runs books sequentially with
+    `wait $app_pid`, the hang silently blocked every remaining book in the
+    batch too.
+
+    Splitting the markdown into batch_chars-sized batches (at structural
+    block boundaries via markdown_utils.split_markdown_structured, so
+    headings/tables/fences are never cut mid-block) and shelling out to the
+    real `pandoc` binary file-to-file via _run_command bounds peak memory to
+    one batch and gives every conversion call a real, enforced timeout —
+    a stuck or oversized batch now raises ValueError instead of hanging.
+
+    Raises:
+        FileNotFoundError: pypandoc/pandoc is not installed.
+        ValueError: a batch failed, timed out, or produced no output.
+            Callers (build_output) are expected to catch this and fall back
+            to feeding markdown directly to ebook-convert rather than leave
+            a partially-written html_path in place.
+    """
+    if not PANDOC_AVAILABLE:
+        raise FileNotFoundError(
+            "pypandoc is not installed. "
+            "Install it: pip install pypandoc (requires pandoc: https://pandoc.org/installing.html)"
+        )
+
+    try:
+        pandoc_exe = pypandoc.get_pandoc_path()
+    except Exception:
+        pandoc_exe = "pandoc"
+
+    if len(markdown_text) > batch_chars:
+        batches = markdown_utils.split_markdown_structured(markdown_text, target_size=batch_chars)
+    else:
+        batches = [markdown_text]
+
+    # Truncate/create html_path up front so callers see a real (if empty)
+    # file rather than none at all if batches turns out to be empty.
+    open(html_path, 'w', encoding='utf-8').close()
+
+    for i, batch in enumerate(batches):
+        batch_md_path = os.path.join(temp_dir, f"pandoc_batch_{i}.md")
+        batch_html_path = os.path.join(temp_dir, f"pandoc_batch_{i}.html")
+        with open(batch_md_path, 'w', encoding='utf-8') as f:
+            f.write(batch)
+
+        logger.info(
+            f"Converting Markdown to HTML: batch {i + 1}/{len(batches)} "
+            f"({len(batch):,} chars)..."
+        )
+        cmd = [pandoc_exe, batch_md_path, '-f', 'markdown', '-t', 'html', '--wrap=none', '-o', batch_html_path]
+        try:
+            _run_command(cmd, timeout=timeout)
+        except subprocess.CalledProcessError as e:
+            stderr = (e.stderr or "Unknown error")[:500]
+            raise ValueError(f"Pandoc HTML conversion failed on batch {i + 1}/{len(batches)}: {stderr}")
+        except subprocess.TimeoutExpired:
+            raise ValueError(
+                f"Pandoc HTML conversion timed out on batch {i + 1}/{len(batches)} "
+                f"(>{timeout}s, {len(batch):,} chars). "
+                f"Increase PANDOC_TIMEOUT or lower PANDOC_BATCH_CHARS."
+            )
+
+        if not os.path.exists(batch_html_path):
+            raise ValueError(f"Pandoc did not produce output for batch {i + 1}/{len(batches)}")
+
+        with open(batch_html_path, 'r', encoding='utf-8') as f:
+            batch_html = f.read()
+
+        # Same mutations the old single-shot conversion applied to the whole
+        # document, now applied per batch, so html_path only ever accumulates
+        # post-mutation content (mirrors the write-after-mutation invariant
+        # the original code relied on).
+        batch_html = markdown_utils.sanitize_surrogates(batch_html)
+        batch_html = _clean_calibre_markers(batch_html)
+        batch_html = markdown_utils.sanitize_surrogates(batch_html)
+        batch_html = _RE_IMG_SRC.sub(r'\1\2\3', batch_html)
+
+        with open(html_path, 'a', encoding='utf-8') as f:
+            f.write(batch_html)
+            f.write('\n')
 
 
 def build_output(
@@ -987,65 +1148,67 @@ def build_output(
     
     with TempDir(prefix="calibre_output_") as temp_dir:
         try:
-            # Step 1: Convert Markdown to HTML with TOC
-            logger.info("Converting Markdown to HTML...")
-            html_path = os.path.join(temp_dir, "output.html")
-            
-            # Add metadata as title page
-            title_html = _generate_title_page(metadata)
-            full_html = f"{title_html}\n\n{translated_md}"
-            
-            if not PANDOC_AVAILABLE:
-                raise FileNotFoundError(
-                    "pypandoc is not installed. "
-                    "Install it: pip install pypandoc (requires pandoc: https://pandoc.org/installing.html)"
-                )
-            try:
-                html_content = pypandoc.convert_text(
-                    full_html,
-                    'html',
-                    format='markdown',
-                    extra_args=['--wrap=none']
-                )
-                # Remove surrogate code points from pandoc output
-                html_content = markdown_utils.sanitize_surrogates(html_content)
-            except Exception as e:
-                raise ValueError(f"Pandoc HTML conversion failed: {e}")
-            
-            # Step 2b: Clean Calibre markers from HTML before conversion
-            # This ensures no Calibre artifacts remain in the output
-            logger.info("Cleaning Calibre markers from HTML...")
-            html_content = _clean_calibre_markers(html_content)
-            # Sanitize surrogates after marker cleaning
-            html_content = markdown_utils.sanitize_surrogates(html_content)
-
-            # C8 fix: put book images next to the HTML so ebook-convert embeds them
+            # C8 fix: put book images next to the temp dir so ebook-convert
+            # embeds them, whichever conversion path below is taken. Mirrored
+            # under images/ too (not just the root) so the markdown-fallback
+            # path — which still references "images/foo.jpg" verbatim,
+            # unlike the HTML path where _RE_IMG_SRC strips the prefix below
+            # — resolves without needing a second rewrite regex.
             if images_dir and os.path.isdir(images_dir):
                 import shutil
+                images_subdir = os.path.join(temp_dir, "images")
+                os.makedirs(images_subdir, exist_ok=True)
                 for img_name in os.listdir(images_dir):
                     src_img = os.path.join(images_dir, img_name)
                     if os.path.isfile(src_img):
                         shutil.copy2(src_img, os.path.join(temp_dir, img_name))
-                # C3 fix: update img src attributes to bare filenames (no subdirectory)
-                # Calibre HTMLZ uses paths like 'images/foo.jpg', but we copy to temp_dir root
-                import re as _re
-                _img_pattern = _re.compile(
-                    r'(<img[^>]*\bsrc=["\'])(?:images/)?([^/"\'\s>]+)(["\'])',
-                    _re.IGNORECASE
+                        shutil.copy2(src_img, os.path.join(images_subdir, img_name))
+
+            # Add metadata as title page
+            title_html = _generate_title_page(metadata)
+            full_markdown = f"{title_html}\n\n{translated_md}"
+
+            # Step 1: Convert Markdown to HTML (batched, file-to-file, with a
+            # real timeout — see _markdown_to_html_file for why the old
+            # single-shot pypandoc.convert_text() call was replaced).
+            html_path = os.path.join(temp_dir, "output.html")
+            conversion_input_path = html_path
+            using_markdown_fallback = False
+
+            try:
+                logger.info("Converting Markdown to HTML...")
+                _markdown_to_html_file(
+                    full_markdown,
+                    html_path,
+                    temp_dir=temp_dir,
+                    batch_chars=int(getattr(config, 'pandoc_batch_chars', 200000)),
+                    timeout=int(getattr(config, 'pandoc_timeout', 900)),
                 )
-                html_content = _img_pattern.sub(r'\1\2\3', html_content)
+            except Exception as e:
+                # pandoc missing, or every batch failed/timed out: Calibre
+                # understands markdown input natively, so feed it the raw
+                # markdown instead of failing the whole build over a pandoc
+                # hiccup. Formatting/TOC may differ slightly from the
+                # pandoc-HTML path — this is a safety net, not the norm.
+                logger.warning(
+                    f"Markdown→HTML conversion via pandoc failed ({e}); "
+                    f"falling back to feeding markdown directly to Calibre. "
+                    f"Output formatting/TOC may differ."
+                )
+                md_fallback_path = os.path.join(temp_dir, "book.md")
+                with open(md_fallback_path, 'w', encoding='utf-8') as f:
+                    f.write(full_markdown)
+                conversion_input_path = md_fallback_path
+                using_markdown_fallback = True
 
-            # Write the HTML file only after all content mutations (marker
-            # cleanup, surrogate sanitization, image src rewrite) are applied,
-            # since this is the exact file handed to ebook-convert below.
-            with open(html_path, 'w', encoding='utf-8') as f:
-                f.write(html_content)
-
-            # Step 3: Convert HTML to output format using Calibre
-            logger.info(f"Converting HTML to {output_format.upper()}...")
+            # Step 3: Convert HTML (or markdown fallback) to output format using Calibre
+            logger.info(
+                f"Converting {'Markdown' if using_markdown_fallback else 'HTML'} "
+                f"to {output_format.upper()}..."
+            )
             cmd = [
                 "ebook-convert",
-                html_path,
+                conversion_input_path,
                 output_path,
             ]
             # C9 fix: pass metadata to Calibre so it lands in the output file
@@ -1055,22 +1218,23 @@ def build_output(
                 cmd += ["--authors", str(metadata['author'])]
             if metadata.get('language'):
                 cmd += ["--language", str(metadata['language'])]
-            
+
+            calibre_timeout = int(getattr(config, 'calibre_timeout', 1800))
             try:
-                _run_command(cmd, timeout=300)
+                _run_command(cmd, timeout=calibre_timeout)
             except subprocess.CalledProcessError as e:
                 stderr = e.stderr if e.stderr else "Unknown error"
                 stderr = stderr[:500]  # Limit for readability
                 raise ValueError(f"Calibre output conversion failed: {stderr}")
             except subprocess.TimeoutExpired:
-                raise ValueError("Calibre output conversion timed out")
-            
+                raise ValueError(f"Calibre output conversion timed out (>{calibre_timeout}s)")
+
             if not os.path.exists(output_path):
                 raise ValueError(f"Output file was not created: {output_path}")
-            
+
             logger.info(f"Output created: {output_path}")
             return output_path
-            
+
         except Exception as e:
             logger.error(f"Output build failed: {e}")
             raise
@@ -1696,6 +1860,47 @@ def _enforce_validation(validation, allow_invalid: bool) -> None:
     )
 
 
+def _atomic_write_text(path: str, content: str) -> None:
+    """Write text to `path` atomically (temp file + os.replace).
+
+    Same pattern as CheckpointManager.save() — a crash mid-write leaves the
+    original file (or nothing) rather than a half-written one.
+    """
+    tmp_path = path + ".tmp"
+    with open(tmp_path, 'w', encoding='utf-8') as f:
+        f.write(content)
+    os.replace(tmp_path, path)
+
+
+def _dump_translation(
+    translated_dump_path: str,
+    meta_dump_path: str,
+    translated_md: str,
+    metadata: dict,
+    stats: 'TranslationStats',
+) -> None:
+    """Persist a finished translation to disk before build_output runs.
+
+    Without this, a crash/hang during build_output (pandoc/ebook-convert)
+    throws away the entire translation — nothing in the Calibre pipeline
+    wrote the translated Markdown anywhere, only a temporary output.html
+    inside a TempDir that gets rmtree'd. run_pipeline reads these files back
+    on the next run (see its resume logic) and skips straight to Step 4,
+    so a build failure costs zero additional LLM calls to recover from.
+    """
+    _atomic_write_text(translated_dump_path, translated_md)
+    payload = {
+        'metadata': metadata,
+        'translation_stats': {
+            'total_source_len': stats.total_source_len,
+            'total_target_len': stats.total_target_len,
+            'total_chunks': stats.total_chunks,
+            'failed_chunks': stats.failed_chunks,
+        },
+    }
+    _atomic_write_text(meta_dump_path, json.dumps(payload, ensure_ascii=False, indent=2))
+
+
 # Convenience function for full pipeline
 def run_pipeline(
     input_path: str,
@@ -1706,11 +1911,14 @@ def run_pipeline(
     country: str = "Russia",
     fast_mode: bool = False,
     skip_validation: bool = False,
-    allow_invalid: bool = False
+    allow_invalid: bool = False,
+    checkpoint_file: Optional[str] = None,
+    fresh: bool = False,
+    stats_out: Optional['TranslationStats'] = None
 ) -> str:
     """
     Run the complete Calibre pipeline: convert -> translate -> build output -> validate.
-    
+
     Args:
         input_path: Path to input DOCX/EPUB/PDF file
         output_format: Output format - "docx", "epub" or "pdf"
@@ -1720,7 +1928,18 @@ def run_pipeline(
         country: Target country for cultural context
         fast_mode: Skip reflection/improve stages
         skip_validation: Skip output validation step (for testing)
-        
+        checkpoint_file: Optional path to a translation checkpoint JSON. If
+            not given, one is derived from input_path + target_lang next to
+            the source file (deterministic, no timestamp — same naming
+            convention as app.py:build_resume_paths for the classic
+            pipeline; see CLAUDE.md's output-file-naming section).
+        fresh: If True, ignore any existing checkpoint and translated-Markdown
+            dump and translate the book from scratch.
+        stats_out: Optional TranslationStats instance filled in-place with
+            aggregate counters (source/target chars, chunk counts), so
+            callers can print the same statistics report the classic FB2
+            pipeline prints via src.utils.print_translation_report().
+
     Returns:
         Path to the generated output file
     """
@@ -1745,62 +1964,137 @@ def run_pipeline(
             f"Valid: docx, epub, pdf. For FB2 use the classic pipeline."
         )
 
-    # Step 1: Convert to Markdown
-    logger.info(f"Step 1/5: Converting {input_path} to Markdown...")
-    markdown_text, metadata = convert_to_markdown(input_path)
-    # C8: convert_to_markdown persisted images next to the input file
-    images_dir = os.path.splitext(input_path)[0] + '_images'
-    
-    # Step 2: Build dictionary if .dic doesn't exist (M6: build BEFORE translation
-    # so the first run has vocabulary terms available)
-    dic_path = Path(input_path).with_suffix('.dic')
-    if not dic_path.exists():
-        logger.info("Step 2/5: Building dictionary from source markdown...")
-        try:
-            dictionary = extract_dictionary_from_md(
-                markdown_text,
-                source_lang=source_lang,
-                target_lang=target_lang,
-                country=country
-            )
-            if dictionary:
-                save_dictionary(dictionary, str(dic_path))
-                logger.info(f"  Dictionary created: {dic_path} ({len(dictionary)} entries)")
-            else:
-                logger.info("  No dictionary terms extracted")
-        except Exception as e:
-            logger.warning(f"  Dictionary building failed (non-fatal): {e}")
-    else:
-        logger.info(f"Step 2/5: Dictionary already exists: {dic_path} (skipped)")
-    
-    # Step 3: Translate
-    logger.info("Step 3/5: Translating...")
-    
-    # Use MAX_LEN_CHUNK from config if max_chunk_size not specified
-    if max_chunk_size is None:
-        try:
-            from src.config import Config
-            config = Config()
-            max_chunk_size = config.max_len_chunk
-            logger.info(f"Using MAX_LEN_CHUNK from config: {max_chunk_size}")
-        except Exception as e:
-            logger.warning(f"Failed to get MAX_LEN_CHUNK from config, using default 6000: {e}")
-            max_chunk_size = 6000
-    
-    # Protect image references so the translation LLM can't drop/mangle
-    # them; restored once translation is done (see _protect_markdown_images).
-    protected_md, image_refs = _protect_markdown_images(markdown_text)
+    # Deterministic (no timestamp) paths next to the source file, so a
+    # second run on the same book finds what the first run left behind.
+    stem = os.path.splitext(input_path)[0]
+    lang_marker = config.lang_code_map.get((target_lang or '').lower(), (target_lang or '').lower())
+    suffix = f"_{lang_marker}" if lang_marker else ""
+    if checkpoint_file is None:
+        checkpoint_file = f"{stem}{suffix}.checkpoint.json"
+    translated_dump_path = f"{stem}{suffix}.translated.md"
+    meta_dump_path = f"{stem}{suffix}.meta.json"
 
-    translated_md = translate_chunks(
-        protected_md,
-        max_chunk_size=max_chunk_size,
-        source_lang=source_lang,
-        target_lang=target_lang,
-        country=country,
-        fast_mode=fast_mode,
-        book_path=input_path  # Enable vocabulary loading
-    )
-    translated_md = _restore_markdown_images(translated_md, image_refs)
+    # Resume fast path: a previous run that got all the way through
+    # translation but crashed/hung during build_output (pandoc/ebook-convert
+    # — see _markdown_to_html_file's docstring for the incident this
+    # closes) left the finished translation on disk. Reuse it instead of
+    # re-translating the whole book through the LLM again.
+    translated_md = None
+    metadata = None
+    if not fresh and os.path.exists(translated_dump_path) and os.path.exists(meta_dump_path):
+        try:
+            if os.path.getmtime(translated_dump_path) >= os.path.getmtime(input_path):
+                with open(translated_dump_path, 'r', encoding='utf-8') as f:
+                    translated_md = f.read()
+                with open(meta_dump_path, 'r', encoding='utf-8') as f:
+                    dump_payload = json.load(f)
+                metadata = dump_payload.get('metadata', {}) or {}
+                dumped_stats = dump_payload.get('translation_stats') or {}
+                if stats_out is not None:
+                    stats_out.total_source_len = dumped_stats.get('total_source_len', 0)
+                    stats_out.total_target_len = dumped_stats.get('total_target_len', 0)
+                    stats_out.total_chunks = dumped_stats.get('total_chunks', 0)
+                    stats_out.failed_chunks = dumped_stats.get('failed_chunks', 0)
+                logger.info(
+                    f"Steps 1-3 skipped: reusing translated Markdown from "
+                    f"{translated_dump_path} (newer than {input_path}). "
+                    f"Pass fresh=True (--fresh) to force a full re-translation."
+                )
+            else:
+                logger.info(
+                    f"Translated dump {translated_dump_path} is older than "
+                    f"{input_path}; translating from scratch."
+                )
+        except Exception as e:
+            logger.warning(f"Failed to reuse translated dump ({e}); translating from scratch")
+            translated_md = None
+            metadata = None
+
+    # C8: convert_to_markdown persists images next to the input file — true
+    # whether or not Steps 1-3 run on this call.
+    images_dir = os.path.splitext(input_path)[0] + '_images'
+
+    if translated_md is None:
+        # Step 1: Convert to Markdown
+        logger.info(f"Step 1/5: Converting {input_path} to Markdown...")
+        markdown_text, metadata = convert_to_markdown(input_path)
+
+        # Step 2: Build dictionary if .dic doesn't exist (M6: build BEFORE translation
+        # so the first run has vocabulary terms available)
+        dic_path = Path(input_path).with_suffix('.dic')
+        if not dic_path.exists():
+            logger.info("Step 2/5: Building dictionary from source markdown...")
+            try:
+                dictionary = extract_dictionary_from_md(
+                    markdown_text,
+                    source_lang=source_lang,
+                    target_lang=target_lang,
+                    country=country
+                )
+                if dictionary:
+                    save_dictionary(dictionary, str(dic_path))
+                    logger.info(f"  Dictionary created: {dic_path} ({len(dictionary)} entries)")
+                else:
+                    logger.info("  No dictionary terms extracted")
+            except Exception as e:
+                logger.warning(f"  Dictionary building failed (non-fatal): {e}")
+        else:
+            logger.info(f"Step 2/5: Dictionary already exists: {dic_path} (skipped)")
+
+        # Step 3: Translate
+        logger.info("Step 3/5: Translating...")
+
+        # Use MAX_LEN_CHUNK from config if max_chunk_size not specified.
+        # NOTE: local var is named `cfg`, not `config` — assigning to
+        # `config` here would make it a function-local name for the *whole*
+        # function (Python scoping), shadowing the module-level `config`
+        # used above (lang_code_map) and below (build_output/translate_chunks
+        # indirectly), which would raise UnboundLocalError.
+        if max_chunk_size is None:
+            try:
+                from src.config import Config
+                cfg = Config()
+                max_chunk_size = cfg.max_len_chunk
+                logger.info(f"Using MAX_LEN_CHUNK from config: {max_chunk_size}")
+            except Exception as e:
+                logger.warning(f"Failed to get MAX_LEN_CHUNK from config, using default 6000: {e}")
+                max_chunk_size = 6000
+
+        # Protect image references so the translation LLM can't drop/mangle
+        # them; restored once translation is done (see _protect_markdown_images).
+        protected_md, image_refs = _protect_markdown_images(markdown_text)
+
+        translate_stats = TranslationStats()
+        translated_md = translate_chunks(
+            protected_md,
+            max_chunk_size=max_chunk_size,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            country=country,
+            fast_mode=fast_mode,
+            book_path=input_path,  # Enable vocabulary loading
+            checkpoint_file=checkpoint_file,
+            # Keep the checkpoint until build_output/validate_output below
+            # actually succeed — a crash during EPUB assembly must not
+            # discard a finished translation.
+            remove_on_success=False,
+            stats_out=translate_stats,
+        )
+        translated_md = _restore_markdown_images(translated_md, image_refs)
+
+        if stats_out is not None:
+            stats_out.total_source_len = translate_stats.total_source_len
+            stats_out.total_target_len = translate_stats.total_target_len
+            stats_out.total_chunks = translate_stats.total_chunks
+            stats_out.failed_chunks = translate_stats.failed_chunks
+
+        # Persist the finished translation before attempting to build the
+        # output file — see _dump_translation's docstring.
+        try:
+            _dump_translation(translated_dump_path, meta_dump_path, translated_md,
+                             metadata, translate_stats)
+        except Exception as e:
+            logger.warning(f"Failed to write translated-Markdown dump (non-fatal): {e}")
 
     # Step 4: Build output
     logger.info(f"Step 4/5: Building {output_format.upper()} output...")
@@ -1812,12 +2106,12 @@ def run_pipeline(
         input_path=input_path,
         target_lang=target_lang
     )
-    
+
     # Step 5: Validate output
     if not skip_validation:
         logger.info("Step 5/5: Validating output file...")
         validation = validate_output(output_path, output_format)
-        
+
         if validation.is_valid:
             logger.info(f"  ✓ {validation.summary()}")
         else:
@@ -1826,7 +2120,22 @@ def run_pipeline(
                 logger.error(f"    [{issue.severity.upper()}] {issue.message}")
             _enforce_validation(validation, allow_invalid)
     else:
-        logger.info("Step 4/4: Validation skipped (skip_validation=True)")
-    
+        logger.info("Step 5/5: Validation skipped (skip_validation=True)")
+
+    # Output built (and validated, unless skipped) — the recovery artifacts
+    # have done their job. If build_output or validation above raised, this
+    # is never reached and both are left in place for the next run.
+    if os.path.exists(checkpoint_file):
+        try:
+            os.remove(checkpoint_file)
+        except OSError as e:
+            logger.warning(f"Failed to remove checkpoint {checkpoint_file}: {e}")
+    for dump_path in (translated_dump_path, meta_dump_path):
+        if os.path.exists(dump_path):
+            try:
+                os.remove(dump_path)
+            except OSError as e:
+                logger.warning(f"Failed to remove {dump_path}: {e}")
+
     logger.info(f"Pipeline complete: {output_path}")
     return output_path

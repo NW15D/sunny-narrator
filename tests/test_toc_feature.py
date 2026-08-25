@@ -42,29 +42,33 @@ def test_toc_pandoc_flag():
 
 
 def test_build_output_toc_integration():
-    """Test that build_output uses TOC flag."""
-    try:
-        from src.calibre_pipeline import build_output
-        import inspect
-        
-        source = inspect.getsource(build_output)
-        
-        has_toc_arg = '--toc' in source
-        has_wrap_none = '--wrap=none' in source
-        
-        print(f"build_output uses --toc flag: {has_toc_arg}")
-        print(f"build_output uses --wrap=none: {has_wrap_none}")
-        
-        if has_wrap_none and not has_toc_arg:
-            print("⚠️  build_output missing --toc flag (needs implementation)")
-            assert False
-        elif has_toc_arg and has_wrap_none:
-            print("✅ build_output includes TOC flag")
-        else:
-            print("⚠️  build_output configuration unexpected")
-            
-    except Exception as e:
-        print(f"❌ Error checking build_output: {e}")
+    """build_output does not currently generate a TOC.
+
+    This used to introspect only inspect.getsource(build_output) for
+    '--toc'/'--wrap=none' and assert False when the (permanently absent)
+    --toc flag was missing — but the whole body was wrapped in
+    `except Exception`, which silently swallowed that AssertionError on
+    every run for years (see CLAUDE.md's Calibre pipeline notes). The
+    pandoc invocation also moved out of build_output and into
+    _markdown_to_html_file (batched Markdown->HTML conversion; see that
+    function's docstring), so a source check scoped to build_output alone
+    would no longer even see '--wrap=none'.
+
+    This documents the real, current behavior instead: no TOC is
+    requested. _add_toc_to_html exists but is dead code — never called
+    from build_output or run_pipeline. If TOC generation is implemented
+    later, this test should fail loudly and get updated, not silently pass.
+    """
+    import inspect
+    from src.calibre_pipeline import build_output, _markdown_to_html_file
+
+    source = inspect.getsource(build_output) + inspect.getsource(_markdown_to_html_file)
+
+    assert '--wrap=none' in source
+    assert '--toc' not in source, (
+        "build_output/_markdown_to_html_file now request a TOC from pandoc; "
+        "update this test's expectations if that was intentional."
+    )
 
 
 if __name__ == "__main__":
