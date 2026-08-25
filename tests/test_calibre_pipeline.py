@@ -517,7 +517,7 @@ def test_build_output_docx():
         assert "ebook-convert" in cmd_args
 
 
-def test_full_pipeline_integration():
+def test_full_pipeline_integration(tmp_path):
     """End-to-end mocked pipeline test: convert → translate → build."""
     from src.calibre_pipeline import run_pipeline
     
@@ -568,12 +568,16 @@ def test_full_pipeline_integration():
         mock_pandoc.return_value = "# Глава\n\nПереведённый текст"
         
         output = run_pipeline(
-            input_path="/fake/book.epub",
+            input_path=str(tmp_path / "book.epub"),
             output_format="docx",
-            max_chunk_size=6000
+            max_chunk_size=6000,
+            target_lang="russian"
         )
-        
+
         assert isinstance(output, str)
+        # Output is written next to the source file, with a language marker.
+        assert os.path.dirname(output) == str(tmp_path)
+        assert os.path.basename(output) == "Pipeline_Test_ru.docx"
         # Verify full pipeline was called
         assert mock_subprocess.call_count >= 2  # At least convert + output
         assert mock_execute.call_count >= 1
