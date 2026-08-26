@@ -46,7 +46,7 @@ except ImportError:
     pypandoc = None
 
 # Import existing utilities
-from src.utils import split_text_smartly, config, validate_translation_length, _pipeline, translate_chunk
+from src.utils import split_text_smartly, config, validate_translation_length, _pipeline, translate_chunk, translate_metadata
 from src.checkpoint_manager import CheckpointManager
 from src import markdown_utils
 from src.markdown_utils import split_markdown_by_size, sanitize_surrogates
@@ -67,9 +67,24 @@ _RE_CALIBRE_CLASS_ATTR = re.compile(r'\s+class\s*=\s*["\'][^"\']*calibre[^"\']*[
 # Must be preceded by \n\n (blank line) to avoid destroying headings and tables
 _RE_HR_MARKERS = re.compile(r'(?<=\n\n)---\s*\n')
 _RE_MULTI_BLANK = re.compile(r'\n{3,}')
-# Markdown image syntax: ![alt](path "optional title")
-_RE_MD_IMAGE = re.compile(r'!\[[^\]]*\]\([^)]+\)')
-_IMG_PLACEHOLDER_FMT = '⁣IMGREF{}⁣'  # invisible-separator wrapper the LLM has no reason to translate
+# Markdown image syntax: ![alt](path "optional title"). Alt text may itself
+# contain a bracketed footnote-style ref (e.g. "![alt [1]](x.jpg)"), so the
+# alt group allows nested [...] one level deep instead of stopping at the
+# first "]".
+_RE_MD_IMAGE = re.compile(r'!\[(?:[^\[\]]|\[[^\[\]]*\])*\]\([^)]+\)')
+# Raw HTML <img> tags pandoc sometimes emits verbatim instead of markdown
+# syntax — these bypass _RE_MD_IMAGE entirely unless protected separately.
+_RE_HTML_IMG_TAG = re.compile(r'<img\b[^>]*>', re.IGNORECASE)
+# Placeholder is itself valid markdown image syntax (not an opaque token)
+# so markdown_utils.parse_structural_blocks still recognizes the line as an
+# image block while chunking, and it renders as an actual link target the
+# translation LLM has no prose reason to alter.
+_IMG_PLACEHOLDER_FMT = '![](sn-imgref-{})'
+# Legacy placeholder form (kept only to restore old .translated.md dumps
+# written before this format changed): invisible-separator wrapper.
+_IMG_PLACEHOLDER_LEGACY_FMT = '⁣IMGREF{}⁣'
+_RE_IMG_PLACEHOLDER = re.compile(r'!\[\]\(sn-imgref-(\d+)\)', re.IGNORECASE)
+_RE_IMG_PLACEHOLDER_LEGACY = re.compile(r'⁣?IMGREF(\d+)⁣?', re.IGNORECASE)
 # C3 fix: <img src="images/foo.jpg"> -> <img src="foo.jpg"> — book images are
 # copied to the HTML's own temp dir (root), not into an images/ subdirectory,
 # so ebook-convert needs the bare filename to find them.
@@ -77,6 +92,13 @@ _RE_IMG_SRC = re.compile(
     r'(<img[^>]*\bsrc=["\'])(?:images/)?([^/"\'\s>]+)(["\'])',
     re.IGNORECASE
 )
+
+# Same credit the classic FB2 pipeline injects via
+# src.fb2_handler.add_translator_info() (kept as a literal here rather than
+# imported, since that module's version lives inline in a function body,
+# not as a reusable constant) — keeps the "translated by" credit consistent
+# across both pipelines' output formats.
+_TRANSLATOR_CREDIT = "Sunny narrator opensource AI translator"
 
 @dataclass
 class TranslationStats:
@@ -362,7 +384,32 @@ def convert_to_markdown(input_path: str) -> tuple[str, dict]:
                     if name.endswith('.opf'):
                         metadata_opf = zf.read(name).decode('utf-8')
                         break
-                
+
+                # Determine the cover image's filename from the OPF, so the
+                # extraction loop below can flag it as `metadata['cover']`.
+                # index.html never references the cover (Calibre stores it
+                # as a standalone manifest item), so nothing else in this
+                # pipeline can find it — without this, build_output has no
+                # way to pass --cover to ebook-convert.
+                cover_href = None
+                if metadata_opf:
+                    cover_meta_match = re.search(
+                        r'<meta[^>]*\bname=["\']cover["\'][^>]*\bcontent=["\']([^"\']+)["\']',
+                        metadata_opf, re.IGNORECASE
+                    )
+                    if cover_meta_match:
+                        cover_id = re.escape(cover_meta_match.group(1))
+                        # Attribute order in <item> isn't guaranteed (id before
+                        # href, or href before id) — try both.
+                        item_match = (
+                            re.search(rf'<item[^>]*\bid=["\']{cover_id}["\'][^>]*\bhref=["\']([^"\']+)["\']',
+                                      metadata_opf, re.IGNORECASE)
+                            or re.search(rf'<item[^>]*\bhref=["\']([^"\']+)["\'][^>]*\bid=["\']{cover_id}["\']',
+                                         metadata_opf, re.IGNORECASE)
+                        )
+                        if item_match:
+                            cover_href = os.path.basename(item_match.group(1))
+
                 # Extract images from HTMLZ
                 image_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp')
                 # C8 fix: keep images in a persistent dir next to the input file;
@@ -373,6 +420,7 @@ def convert_to_markdown(input_path: str) -> tuple[str, dict]:
                 except OSError as e:
                     logger.warning(f"Cannot create persistent images dir {persistent_images_dir}: {e}")
                     persistent_images_dir = None
+                cover_image_name = None
                 for name in zf.namelist():
                     if name.lower().endswith(image_extensions):
                         try:
@@ -385,6 +433,15 @@ def convert_to_markdown(input_path: str) -> tuple[str, dict]:
                                 persistent_img_path = os.path.join(persistent_images_dir, img_name)
                                 with open(persistent_img_path, 'wb') as img_file:
                                     img_file.write(img_data)
+                            # Prefer the OPF-declared cover; fall back to a
+                            # root-level file stemmed "cover" (Calibre's own
+                            # convention) for archives without a <meta
+                            # name="cover"> entry.
+                            if cover_href and img_name.lower() == cover_href.lower():
+                                cover_image_name = img_name
+                            elif (cover_image_name is None and '/' not in name
+                                  and os.path.splitext(img_name)[0].lower() == 'cover'):
+                                cover_image_name = img_name
                         except Exception as e:
                             logger.warning(f"Failed to extract image {name}: {e}")
             
@@ -400,6 +457,10 @@ def convert_to_markdown(input_path: str) -> tuple[str, dict]:
             metadata = {}
             if metadata_opf:
                 metadata = extract_metadata_from_opf(metadata_opf)
+            # Basename only (not an absolute temp path) so this survives
+            # round-tripping through _dump_translation's JSON on resume.
+            if cover_image_name:
+                metadata['cover'] = cover_image_name
             
             # Step 4: Convert HTML to Markdown using pypandoc
             logger.info("Converting HTML to Markdown...")
@@ -613,9 +674,21 @@ def _protect_markdown_images(markdown_text: str) -> tuple[str, list[str]]:
     Image markup (``![alt](images/foo.jpg)``) is not prose, and asking the
     LLM to translate a chunk containing it commonly drops or mangles the
     reference, silently losing the image from the final output. Swapping
-    each occurrence for a short opaque token the LLM has no reason to touch
-    keeps the reference intact through translation; _restore_markdown_images
-    puts the original markup back afterwards.
+    each occurrence for a placeholder keeps the reference intact through
+    translation; _restore_markdown_images puts the original markup back
+    afterwards.
+
+    The placeholder (``![](sn-imgref-N)``) is itself valid markdown image
+    syntax rather than an opaque token, for two reasons: it keeps
+    markdown_utils.parse_structural_blocks recognizing the line as a
+    standalone 'image' block during chunking (an opaque token falls through
+    to the generic paragraph branch and can be split mid-sentence), and it
+    gives the LLM an unremarkable link target instead of a token that
+    invisible-separator characters used to make prone to silent stripping.
+
+    Raw ``<img ...>`` tags (pandoc occasionally emits these instead of
+    markdown syntax) are protected the same way so they don't reach the LLM
+    unguarded.
     """
     images: list[str] = []
 
@@ -624,13 +697,40 @@ def _protect_markdown_images(markdown_text: str) -> tuple[str, list[str]]:
         return _IMG_PLACEHOLDER_FMT.format(len(images) - 1)
 
     protected = _RE_MD_IMAGE.sub(_replace, markdown_text)
+    protected = _RE_HTML_IMG_TAG.sub(_replace, protected)
     return protected, images
 
 
 def _restore_markdown_images(text: str, images: list[str]) -> str:
-    """Undo _protect_markdown_images after translation."""
-    for idx, original in enumerate(images):
-        text = text.replace(_IMG_PLACEHOLDER_FMT.format(idx), original)
+    """Undo _protect_markdown_images after translation.
+
+    Restores both the current placeholder form and the legacy
+    invisible-separator form (``⁣IMGREFn⁣``), so a ``.translated.md`` dump
+    written before the placeholder format changed still restores correctly.
+    Any placeholder that survives restoration (index out of range, or the
+    LLM mangled it beyond either regex) is left in place and counted, so
+    callers can log a mismatch instead of silently shipping a book with
+    fewer images than were extracted.
+    """
+    restored = 0
+
+    def _sub(match: "re.Match[str]") -> str:
+        nonlocal restored
+        idx = int(match.group(1))
+        if 0 <= idx < len(images):
+            restored += 1
+            return images[idx]
+        return match.group(0)
+
+    text = _RE_IMG_PLACEHOLDER.sub(_sub, text)
+    text = _RE_IMG_PLACEHOLDER_LEGACY.sub(_sub, text)
+
+    if images and restored != len(images):
+        logger.warning(
+            f"Image reference restoration mismatch: {len(images)} protected, "
+            f"{restored} restored ({len(images) - restored} lost during translation)."
+        )
+
     return text
 
 
@@ -1131,21 +1231,38 @@ def build_output(
             "Please install Calibre: https://calibre-ebook.com/download"
     )
     
+    # Language marker (e.g. "ru") for the auto-generated filename AND for
+    # the --language flag below — computed once, unconditionally, so it's
+    # in scope regardless of whether output_path was supplied by the caller.
+    # Previously this lived only inside the `if not output_path:` branch,
+    # so ebook-convert's --language always got metadata['language'] (the
+    # *source* book's OPF language) instead of the translation target.
+    lang = (target_lang or config.target_lang or '').lower()
+    lang_marker = config.lang_code_map.get(lang, lang)
+
+    # Work on a copy: build_output must not mutate the caller's metadata
+    # dict (run_pipeline may still reference/dump it after this call).
+    metadata = dict(metadata)
+    if lang_marker:
+        metadata['language'] = lang_marker
+
     # Generate output filename if not provided
     if not output_path:
-        title = metadata.get('title', 'output')
+        # Use the untranslated title for the filename, even when metadata
+        # has been translated to the target language: keeps the existing
+        # ASCII-safe naming scheme (re.sub(r'[^\w\-]', ...) treats Cyrillic
+        # as a normal \w character, so a translated title would otherwise
+        # start producing Cyrillic filenames inconsistent with books
+        # already on disk from before metadata translation existed).
+        title = metadata.get('title_original') or metadata.get('title', 'output')
         # Sanitize filename: remove special chars and spaces
         safe_title = re.sub(r'[^\w\-]', '_', title).strip()[:50]
-        # Language marker (e.g. "_ru") so translations of the same book
-        # into different languages don't overwrite each other.
-        lang = (target_lang or config.target_lang or '').lower()
-        lang_marker = config.lang_code_map.get(lang, lang)
         # Save next to the source file instead of the CWD.
         out_dir = os.path.dirname(input_path) if input_path else ''
         out_dir = out_dir or '.'
         filename = f"{safe_title}_{lang_marker}.{output_format}" if lang_marker else f"{safe_title}.{output_format}"
         output_path = os.path.join(out_dir, filename)
-    
+
     with TempDir(prefix="calibre_output_") as temp_dir:
         try:
             # C8 fix: put book images next to the temp dir so ebook-convert
@@ -1154,6 +1271,8 @@ def build_output(
             # path — which still references "images/foo.jpg" verbatim,
             # unlike the HTML path where _RE_IMG_SRC strips the prefix below
             # — resolves without needing a second rewrite regex.
+            copied_image_count = 0
+            cover_tmp_path = None
             if images_dir and os.path.isdir(images_dir):
                 import shutil
                 images_subdir = os.path.join(temp_dir, "images")
@@ -1161,8 +1280,29 @@ def build_output(
                 for img_name in os.listdir(images_dir):
                     src_img = os.path.join(images_dir, img_name)
                     if os.path.isfile(src_img):
-                        shutil.copy2(src_img, os.path.join(temp_dir, img_name))
+                        dest_img = os.path.join(temp_dir, img_name)
+                        shutil.copy2(src_img, dest_img)
                         shutil.copy2(src_img, os.path.join(images_subdir, img_name))
+                        copied_image_count += 1
+                # Cover: prefer the name convert_to_markdown recorded from
+                # the source OPF; fall back to a stem-"cover" file in
+                # images_dir for books whose metadata dump predates that
+                # (metadata['cover'] didn't exist yet).
+                cover_name = metadata.get('cover')
+                if not cover_name:
+                    for img_name in os.listdir(images_dir):
+                        if os.path.splitext(img_name)[0].lower() == 'cover':
+                            cover_name = img_name
+                            break
+                if cover_name:
+                    candidate = os.path.join(temp_dir, cover_name)
+                    if os.path.isfile(candidate):
+                        cover_tmp_path = candidate
+
+            logger.info(
+                f"Embedding {copied_image_count} image(s), "
+                f"cover: {'yes' if cover_tmp_path else 'no'}"
+            )
 
             # Add metadata as title page
             title_html = _generate_title_page(metadata)
@@ -1218,6 +1358,11 @@ def build_output(
                 cmd += ["--authors", str(metadata['author'])]
             if metadata.get('language'):
                 cmd += ["--language", str(metadata['language'])]
+            if cover_tmp_path:
+                cmd += ["--cover", cover_tmp_path]
+            # Credit the AI translator (same text the classic FB2 pipeline
+            # writes into <translator> — see _TRANSLATOR_CREDIT above).
+            cmd += ["--book-producer", _TRANSLATOR_CREDIT]
 
             calibre_timeout = int(getattr(config, 'calibre_timeout', 1800))
             try:
@@ -1231,6 +1376,28 @@ def build_output(
 
             if not os.path.exists(output_path):
                 raise ValueError(f"Output file was not created: {output_path}")
+
+            # Sanity check: if source images existed, confirm at least one
+            # made it into the EPUB manifest. validate_epub() (Step 5) never
+            # checks this, so an image-less book otherwise passes validation
+            # silently — this is what let the original bug ship unnoticed.
+            if output_format == 'epub' and copied_image_count > 0:
+                try:
+                    with zipfile.ZipFile(output_path, 'r') as zf:
+                        embedded = sum(
+                            1 for n in zf.namelist()
+                            if n.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'))
+                        )
+                    if embedded == 0:
+                        logger.warning(
+                            f"{copied_image_count} image(s) were available but 0 "
+                            f"ended up in {output_path} — check translation/markdown "
+                            f"image references."
+                        )
+                    else:
+                        logger.info(f"Verified {embedded} image(s) embedded in output.")
+                except Exception as e:
+                    logger.warning(f"Could not verify embedded images in {output_path}: {e}")
 
             logger.info(f"Output created: {output_path}")
             return output_path
@@ -1272,10 +1439,14 @@ def _generate_title_page(metadata: dict) -> str:
     
     if language:
         html += f"<p>Language: {language}</p>\n"
-    
+
     if description:
         html += f"<p>{description}</p>\n"
-    
+
+    # Same credit the classic FB2 pipeline adds via
+    # fb2_handler.add_translator_info() — see _TRANSLATOR_CREDIT.
+    html += f"<p><em>{_e(_TRANSLATOR_CREDIT)}</em></p>\n"
+
     html += "</div>"
     
     return html
@@ -1901,6 +2072,49 @@ def _dump_translation(
     _atomic_write_text(meta_dump_path, json.dumps(payload, ensure_ascii=False, indent=2))
 
 
+def _translate_output_metadata(metadata: dict, source_lang: str, target_lang: str, country: str) -> None:
+    """Translate title/author/publisher/description into the target
+    language, in place.
+
+    The Calibre pipeline previously left OPF-extracted metadata in the
+    *source* language (extract_metadata_from_opf reads it straight from
+    the input book), unlike the classic FB2/TXT pipeline, which already
+    calls this exact function before writing its output header (see
+    app.py's "5. Metadata & Cover" step, ta.translate_metadata(...)).
+    Reusing it here keeps both pipelines' metadata-translation behavior
+    identical instead of maintaining two implementations.
+
+    isbn/language/cover are intentionally excluded from the LLM call:
+    isbn is a fixed identifier that must not be paraphrased, language is
+    set from config/lang_code_map elsewhere (see build_output), and cover
+    is a filename, not translatable text.
+    """
+    translatable = {
+        key: metadata[key]
+        for key in ('title', 'author', 'publisher', 'description')
+        if metadata.get(key)
+    }
+    if not translatable:
+        return
+    try:
+        translated = translate_metadata(translatable, source_lang, target_lang, country)
+    except Exception as e:
+        logger.warning(f"Metadata translation failed (non-fatal, keeping source values): {e}")
+        return
+    if not isinstance(translated, dict) or not translated:
+        logger.warning("Metadata translation returned no usable data; keeping source values")
+        return
+    for key, original_value in translatable.items():
+        new_value = translated.get(key)
+        if isinstance(new_value, str) and new_value.strip():
+            metadata[f"{key}_original"] = original_value
+            metadata[key] = new_value.strip()
+    logger.info(
+        f"Metadata translated: title {translatable.get('title', '')!r} -> "
+        f"{metadata.get('title', '')!r}"
+    )
+
+
 # Convenience function for full pipeline
 def run_pipeline(
     input_path: str,
@@ -2018,6 +2232,12 @@ def run_pipeline(
         # Step 1: Convert to Markdown
         logger.info(f"Step 1/5: Converting {input_path} to Markdown...")
         markdown_text, metadata = convert_to_markdown(input_path)
+
+        # Translate title/author/publisher/description so the output
+        # file's own metadata (and title page) match the target language
+        # instead of staying in the source language — mirrors app.py's
+        # classic-pipeline call to the same translate_metadata().
+        _translate_output_metadata(metadata, source_lang, target_lang, country)
 
         # Step 2: Build dictionary if .dic doesn't exist (M6: build BEFORE translation
         # so the first run has vocabulary terms available)
