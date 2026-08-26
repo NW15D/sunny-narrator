@@ -386,7 +386,7 @@ TRANSLATION_WORKFLOW = [
     },
     {
         "stage": TranslationStage.IMPROVE,
-        "llm_role": LLMRole.PROOFREAD,
+        "llm_role": LLMRole.TRANSLATE,
         "function": "improve_translation",
         "description": "Apply reflection suggestions"
     },
