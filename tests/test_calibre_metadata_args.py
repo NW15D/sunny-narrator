@@ -16,14 +16,10 @@ def test_title_page_is_fragment():
     assert 'by A' in html
 
 
-def test_build_output_passes_metadata_to_calibre(tmp_path):
-    from src.calibre_pipeline import build_output
-
-    # build_output's Markdown->HTML step shells out to pandoc via
-    # subprocess.run too now (not pypandoc.convert_text — see
-    # _markdown_to_html_file's docstring), so the fake side_effect must
-    # branch on cmd[0] rather than assume every call is "ebook-convert cmd[1]
-    # cmd[2]" (a pandoc call's cmd[2] is a flag like "-f", not a path).
+def _fake_run_factory():
+    """Shared fake subprocess.run: pandoc calls write to the -o path,
+    ebook-convert calls write to cmd[2] — see other Calibre tests for why
+    the branch is needed (pandoc's cmd[2] is a flag, not a path)."""
     def _fake_run(cmd, *args, **kwargs):
         if cmd[0] == "ebook-convert":
             with open(cmd[2], 'w', encoding='utf-8') as f:
@@ -33,11 +29,16 @@ def test_build_output_passes_metadata_to_calibre(tmp_path):
             with open(out_path, 'w', encoding='utf-8') as f:
                 f.write('<p>x</p>')
         return MagicMock(returncode=0)
+    return _fake_run
+
+
+def test_build_output_passes_metadata_to_calibre(tmp_path):
+    from src.calibre_pipeline import build_output
 
     out = str(tmp_path / 'out.docx')
     with patch('src.calibre_pipeline.check_calibre_installed', return_value=True), \
          patch('subprocess.run') as mock_run:
-        mock_run.side_effect = _fake_run
+        mock_run.side_effect = _fake_run_factory()
         build_output("# Ch\n\ntext", "docx",
                      {"title": "My Title", "author": "My Author", "language": "ru"},
                      output_path=out)
@@ -50,3 +51,48 @@ def test_build_output_passes_metadata_to_calibre(tmp_path):
     assert "My Author" in cmd_args
     assert "--language" in cmd_args
     assert "ru" in cmd_args
+
+
+def test_build_output_language_flag_uses_target_not_source(tmp_path):
+    """--language must reflect the translation's target language, not the
+    source book's OPF <dc:language> that ends up in metadata['language'].
+
+    Regression test: build_output used to pass metadata['language'] (read
+    straight from the source EPUB's OPF by extract_metadata_from_opf)
+    straight through to --language, so a book translated en->ru shipped
+    with an EPUB whose own metadata still claimed "en".
+    """
+    from src.calibre_pipeline import build_output
+
+    out = str(tmp_path / 'out.epub')
+    with patch('src.calibre_pipeline.check_calibre_installed', return_value=True), \
+         patch('subprocess.run') as mock_run:
+        mock_run.side_effect = _fake_run_factory()
+        build_output("# Ch\n\ntext", "epub",
+                     {"title": "T", "language": "en"},  # source language
+                     output_path=out, target_lang="german")  # translation target
+    ebook_calls = [c.args[0] for c in mock_run.call_args_list if c.args[0][0] == "ebook-convert"]
+    cmd_args = ebook_calls[0]
+    lang_idx = cmd_args.index("--language")
+    assert cmd_args[lang_idx + 1] == "de", (
+        f"--language must be the target language code ('de'), not the "
+        f"source metadata's 'en': got {cmd_args[lang_idx + 1]!r}"
+    )
+    assert "en" not in cmd_args
+
+
+def test_build_output_credits_translator(tmp_path):
+    """Output metadata must credit the AI translator (--book-producer),
+    matching the <translator> tag the classic FB2 pipeline already writes
+    via fb2_handler.add_translator_info()."""
+    from src.calibre_pipeline import build_output, _TRANSLATOR_CREDIT
+
+    out = str(tmp_path / 'out.epub')
+    with patch('src.calibre_pipeline.check_calibre_installed', return_value=True), \
+         patch('subprocess.run') as mock_run:
+        mock_run.side_effect = _fake_run_factory()
+        build_output("# Ch\n\ntext", "epub", {"title": "T"}, output_path=out)
+    ebook_calls = [c.args[0] for c in mock_run.call_args_list if c.args[0][0] == "ebook-convert"]
+    cmd_args = ebook_calls[0]
+    assert "--book-producer" in cmd_args
+    assert _TRANSLATOR_CREDIT in cmd_args

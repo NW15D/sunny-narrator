@@ -1,0 +1,68 @@
+:root {
+  color-scheme: light dark;
+  --fg: #1a1a1a;
+  --bg: #ffffff;
+  --muted: #6b6b6b;
+  --border: #d8d8d8;
+  --accent: #2b6cb0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: #eaeaea;
+    --bg: #171717;
+    --muted: #a0a0a0;
+    --border: #3a3a3a;
+    --accent: #6ea8e0;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+  margin: 0;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+header nav { display: flex; gap: 1rem; align-items: center; }
+header a.brand { font-weight: 600; text-decoration: none; color: var(--fg); }
+header a { color: var(--accent); text-decoration: none; }
+.muted { color: var(--muted); }
+
+.inline { display: inline; }
+.inline button {
+  background: none; border: none; color: var(--accent); cursor: pointer;
+  font: inherit; padding: 0;
+}
+
+main { padding: 1.5rem; max-width: 960px; margin: 0 auto; }
+
+form.filters { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+form.filters input, form.filters select { padding: 0.4rem; }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--border); }
+
+form label { display: block; margin-bottom: 0.75rem; }
+form input, form select, form textarea {
+  display: block; width: 100%; padding: 0.5rem; margin-top: 0.25rem;
+  background: var(--bg); color: var(--fg); border: 1px solid var(--border);
+}
+button {
+  padding: 0.5rem 1rem; border: 1px solid var(--accent); background: var(--accent);
+  color: white; cursor: pointer; border-radius: 4px;
+}
+
+fieldset { border: 1px solid var(--border); margin-bottom: 0.75rem; }
+.book-option { padding: 0.3rem; cursor: pointer; }
+.book-option:hover { background: var(--border); }

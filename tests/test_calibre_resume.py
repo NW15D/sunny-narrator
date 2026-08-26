@@ -48,6 +48,12 @@ def _install_mocks(monkeypatch, *, translate=None, build_output=None, validate_o
     monkeypatch.setattr(cp, 'convert_to_markdown',
                         lambda input_path: ("# Chapter\n\nSource text", {"title": "Book"}))
     monkeypatch.setattr(cp, 'extract_dictionary_from_md', lambda *a, **kw: {})
+    # run_pipeline now translates title/author/etc. via translate_metadata
+    # (see _translate_output_metadata) before dumping/building output. Stub
+    # it out here too, same as the other three steps above, so these tests
+    # stay hermetic (no real LLM call) — an identity pass-through keeps
+    # metadata['title'] == "Book" for the other assertions in this file.
+    monkeypatch.setattr(cp, 'translate_metadata', lambda metadata, *a, **kw: dict(metadata))
 
     def _default_translate(protected_md, **kwargs):
         stats_out = kwargs.get('stats_out')

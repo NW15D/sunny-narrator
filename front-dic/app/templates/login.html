@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Вход</h1>
+<form method="post" action="/api/auth/login">
+  <label>Логин или email<input type="text" name="login_or_email" required></label>
+  <label>Пароль<input type="password" name="password" required></label>
+  <button type="submit">Войти</button>
+</form>
+{% endblock %}

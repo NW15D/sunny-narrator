@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Загрузить словарь</h1>
+{% if not user %}
+<p>Нужно <a href="/login">войти</a>, чтобы загружать файлы.</p>
+{% else %}
+<form id="upload-form">
+  <label>Файл (.dic)<input type="file" name="file" accept=".dic" required></label>
+
+  <fieldset>
+    <legend>Книга</legend>
+    <input type="text" id="book-search" placeholder="Поиск книги по названию/автору" autocomplete="off">
+    <div id="book-results"></div>
+    <input type="hidden" id="book_id" name="book_id">
+    <details>
+      <summary>Книги нет в списке — создать новую</summary>
+      <input type="text" id="new-title" placeholder="Название книги">
+      <input type="text" id="new-author" placeholder="Автор книги">
+      <input type="text" id="new-series" placeholder="Серия (необязательно)">
+      <input type="number" id="new-series-index" placeholder="Номер в серии (необязательно)">
+      <button type="button" id="create-book">Создать книгу</button>
+    </details>
+  </fieldset>
+
+  <label>Язык оригинала
+    <select name="source_lang" required>
+      {% for code in lang_codes %}<option value="{{ code }}">{{ code }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Язык перевода
+    <select name="target_lang" required>
+      {% for code in lang_codes %}<option value="{{ code }}">{{ code }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Заметки<textarea name="description"></textarea></label>
+  <button type="submit">Загрузить</button>
+  <p id="upload-status"></p>
+</form>
+
+<script>
+const bookSearch = document.getElementById("book-search");
+const bookResults = document.getElementById("book-results");
+const bookIdInput = document.getElementById("book_id");
+
+async function searchBooks() {
+  const q = bookSearch.value.trim();
+  if (!q) { bookResults.innerHTML = ""; return; }
+  const res = await fetch(`/api/books?q=${encodeURIComponent(q)}`);
+  const books = await res.json();
+  bookResults.innerHTML = "";
+  books.forEach(b => {
+    const div = document.createElement("div");
+    div.className = "book-option";
+    div.textContent = b.title + " — " + b.author + (b.series_name ? " (" + b.series_name + ")" : "");
+    div.addEventListener("click", () => {
+      bookIdInput.value = b.id;
+      bookSearch.value = div.textContent;
+      bookResults.innerHTML = "";
+    });
+    bookResults.appendChild(div);
+  });
+}
+bookSearch.addEventListener("input", searchBooks);
+
+document.getElementById("create-book").addEventListener("click", async () => {
+  const fd = new FormData();
+  fd.append("title", document.getElementById("new-title").value);
+  fd.append("author", document.getElementById("new-author").value);
+  fd.append("series_name", document.getElementById("new-series").value);
+  fd.append("series_index", document.getElementById("new-series-index").value);
+  const res = await fetch("/api/books", { method: "POST", body: fd });
+  if (!res.ok) { alert("Не удалось создать книгу"); return; }
+  const data = await res.json();
+  bookIdInput.value = data.id;
+  bookSearch.value = document.getElementById("new-title").value;
+});
+
+document.getElementById("upload-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const status = document.getElementById("upload-status");
+  if (!bookIdInput.value) { status.textContent = "Выберите или создайте книгу"; return; }
+  const fd = new FormData(e.target);
+  fd.set("book_id", bookIdInput.value);
+  const res = await fetch("/api/dictionaries", { method: "POST", body: fd });
+  if (res.ok) {
+    status.textContent = "Готово, словарь опубликован.";
+    window.location = "/";
+  } else {
+    const data = await res.json().catch(() => ({}));
+    status.textContent = "Ошибка: " + JSON.stringify(data.detail || data);
+  }
+});
+</script>
+{% endif %}
+{% endblock %}

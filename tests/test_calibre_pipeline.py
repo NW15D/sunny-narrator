@@ -566,7 +566,13 @@ def test_full_pipeline_integration(tmp_path):
 
     with patch('src.calibre_pipeline.check_calibre_installed', return_value=True), \
          patch('subprocess.run') as mock_subprocess, \
-         patch('src.utils._pipeline.execute', return_value=mock_state) as mock_execute:
+         patch('src.utils._pipeline.execute', return_value=mock_state) as mock_execute, \
+         patch('src.calibre_pipeline.translate_metadata', side_effect=lambda metadata, *a, **kw: dict(metadata)):
+        # translate_metadata (used by run_pipeline's _translate_output_metadata
+        # step) goes through LLMServiceCompat/llm_service directly, not
+        # through _pipeline.execute, so it needs its own stub here to avoid
+        # a real network call — identity pass-through keeps the title
+        # ("Pipeline Test") unchanged for the filename assertion below.
 
         _fake_calls = {"ebook_convert": 0}
 

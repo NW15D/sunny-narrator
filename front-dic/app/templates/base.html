@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Sunny Narrator Dictionary Hub{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <a class="brand" href="/">Dictionary Hub</a>
+    <nav>
+      <a href="/">Каталог</a>
+      {% if user %}
+        <a href="/upload">Загрузить</a>
+        <span class="muted">{{ user.login }}</span>
+        <form action="/api/auth/logout" method="post" class="inline">
+          <button type="submit">Выйти</button>
+        </form>
+      {% else %}
+        <a href="/login">Войти</a>
+        <a href="/register">Регистрация</a>
+      {% endif %}
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

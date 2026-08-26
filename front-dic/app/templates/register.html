@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Регистрация</h1>
+<form method="post" action="/api/auth/register">
+  <label>Логин<input type="text" name="login" required></label>
+  <label>Email<input type="email" name="email" required></label>
+  <label>Пароль (не короче 8 символов)<input type="password" name="password" minlength="8" required></label>
+  <button type="submit">Зарегистрироваться</button>
+</form>
+{% endblock %}

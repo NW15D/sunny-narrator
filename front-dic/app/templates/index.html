@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Словари</h1>
+<form method="get" action="/" class="filters">
+  <select name="source_lang">
+    <option value="">Язык оригинала — любой</option>
+    {% for code in lang_codes %}
+    <option value="{{ code }}" {% if filters.source_lang == code %}selected{% endif %}>{{ code }}</option>
+    {% endfor %}
+  </select>
+  <select name="target_lang">
+    <option value="">Язык перевода — любой</option>
+    {% for code in lang_codes %}
+    <option value="{{ code }}" {% if filters.target_lang == code %}selected{% endif %}>{{ code }}</option>
+    {% endfor %}
+  </select>
+  <input type="text" name="author" placeholder="Автор книги" value="{{ filters.author }}">
+  <input type="text" name="series_name" placeholder="Серия" value="{{ filters.series_name }}">
+  <input type="text" name="q" placeholder="Название книги" value="{{ filters.q }}">
+  <button type="submit">Найти</button>
+</form>
+
+<table>
+  <thead>
+    <tr>
+      <th>Книга</th><th>Автор</th><th>Серия</th><th>Языки</th>
+      <th>Записей</th><th>Автор словаря</th><th>Скачиваний</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in items %}
+    <tr>
+      <td>{{ item.book_title }}</td>
+      <td>{{ item.book_author }}</td>
+      <td>{% if item.series_name %}{{ item.series_name }} #{{ item.series_index or "?" }}{% endif %}</td>
+      <td>{{ item.source_lang }} → {{ item.target_lang }}</td>
+      <td>{{ item.entries_count }}</td>
+      <td>{{ item.uploader_login }}</td>
+      <td>{{ item.downloads_count }}</td>
+      <td><a href="/api/dictionaries/{{ item.id }}/download">Скачать</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8">Ничего не найдено</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

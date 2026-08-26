@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Подтверждение email</h1>
+<p>Код отправлен на указанный email (если провайдер — <code>console</code>, смотрите лог сервера).</p>
+<form method="post" action="/api/auth/verify">
+  <label>Email<input type="email" name="email" value="{{ email }}" required></label>
+  <label>Код из письма<input type="text" name="code" pattern="\d{6}" required></label>
+  <button type="submit">Подтвердить</button>
+</form>
+{% endblock %}
