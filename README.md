@@ -6,7 +6,7 @@
 **Designed for:**
 - 📚 Glossary-driven translation of book series (consistent terminology across volumes)
 - 🔨 Dictionary creation for book and series translations
-- 💻 Local GPUs (16-24GB VRAM) via API , llama.cpp or Ollama , LMStudio etc
+- 💻 API  and Local GPUs (16-24GB VRAM) via API , llama.cpp or Ollama , LMStudio etc (1-2m tokens for book)
 - ☁️ Online translation services via API
 
 ## 🔄 General Workflow
