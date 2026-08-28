@@ -23,7 +23,7 @@ Pipeline selection is automatic based on file extension — no `--pipeline` flag
 
 **Step-by-step workflow:**
 1. **Clone repository** - `git clone` the project
-2. **Install dependencies** - `pip install -r requirements.txt`
+2. **Install dependencies** - `pip install -e .` (uses `pyproject.toml`)
 3. **Download spaCy dictionaries** - for source language
 4. **Configure** - Create `.env` from `.env.example` and fill in API keys
 5. **Prepare book** - Convert your book to `book.fb2` format
@@ -39,7 +39,7 @@ Pipeline selection is automatic based on file extension — no `--pipeline` flag
 
 ```bash
 # Install dependencies
-pip install -r requirements.txt
+pip install -e .
 
 # Configure .env
 cp .env.example .env
@@ -180,7 +180,7 @@ The pipeline is auto-selected when you provide a file with `.docx`, `.epub`, or 
 ```bash
 # Install system dependencies
 sudo apt install pandoc calibre
-pip install -r requirements.txt
+pip install -e .
 
 # Translate DOCX/EPUB/PDF (auto-detected by extension)
 python app.py

@@ -26,7 +26,7 @@ flowchart LR
 
 **Workflow passo a passo:**
 1. **Clone o repositório** - `git clone` o projeto
-2. **Instale as dependências** - `pip install -r requirements.txt`
+2. **Instale as dependências** - `pip install -e .` (usa `pyproject.toml`)
 3. **Baixe os dicionários spaCy** - para o idioma de origem
 4. **Configure** - Crie `.env` a partir de `.env.example` e preencha as chaves da API
 5. **Prepare o livro** - Converta seu livro para o formato `book.fb2`
@@ -42,7 +42,7 @@ flowchart LR
 
 ```bash
 # Instalar dependências
-pip install -r requirements.txt
+pip install -e .
 
 # Configurar .env
 cp .env.example .env
