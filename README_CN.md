@@ -26,7 +26,7 @@ flowchart LR
 
 **逐步工作流程:**
 1. **下载仓库** - 使用 `git clone` 克隆项目
-2. **安装依赖** - `pip install -r requirements.txt`
+2. **安装依赖** - `pip install -e .`（使用 `pyproject.toml`）
 3. **下载 spaCy 字典** - 为源语言安装
 4. **配置** - 从 `.env.example` 创建 `.env` 并填写 API 密钥
 5. **准备书籍** - 将您的书籍转换为 `book.fb2` 格式
@@ -42,7 +42,7 @@ flowchart LR
 
 ```bash
 # 安装依赖
-pip install -r requirements.txt
+pip install -e .
 
 # 配置 .env
 cp .env.example .env

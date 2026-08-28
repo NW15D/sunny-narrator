@@ -35,7 +35,7 @@ flowchart LR
 
 **Пошаговый workflow:**
 1. **Скачайте репозиторий** - `git clone` проекта
-2. **Установите зависимости** - `pip install -r requirements.txt`
+2. **Установите зависимости** - `pip install -e .` (используется `pyproject.toml`)
 3. **Скачайте словари spaCy** - для исходного языка
 4. **Настройте** - Создайте `.env` из `.env.example` и заполните ключи API
 5. **Подготовьте книгу** - Конвертируйте вашу книгу в формат `book.fb2`
@@ -51,7 +51,7 @@ flowchart LR
 
 ```bash
 # Установить зависимости
-pip install -r requirements.txt
+pip install -e .
 
 # Настроить .env
 cp .env.example .env
@@ -210,7 +210,7 @@ docker-compose -f docker-compose.gpu.yml up -d
 ```bash
 # Установить системные зависимости
 sudo apt install pandoc calibre
-pip install -r requirements.txt
+pip install -e .
 
 # Перевести DOCX/EPUB/PDF (автоопределение по расширению)
 python app.py

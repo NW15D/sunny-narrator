@@ -23,8 +23,8 @@ cd sunny-narrator
 python3 -m venv .venv
 source .venv/bin/activate
 
-# Install dependencies (CPU version)
-pip install -r requirements.txt
+# Install dependencies (CPU version, uses pyproject.toml)
+pip install -e .
 
 # Download spaCy model
 python -m spacy download en_core_web_lg
@@ -231,8 +231,8 @@ Sunny Narrator now supports an alternative pipeline that accepts **DOCX/EPUB/PDF
 ### Step 1: Install Python Dependencies
 
 ```bash
-# Already included in requirements.txt
-pip install -r requirements.txt
+# Already included in pyproject.toml
+pip install -e .
 ```
 
 ### Step 2: Install System Dependencies
