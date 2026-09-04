@@ -93,6 +93,51 @@ _RE_IMG_SRC = re.compile(
     re.IGNORECASE
 )
 
+# Pandoc fenced-div marker for *any* div, not just Calibre's own: a legacy
+# `<body link="blue" vlink="purple">` in a scraped source EPUB comes back out
+# of pandoc as `::: {link="blue" vlink="purple"}`. The attribute block is
+# matched loosely (no quote characters spelled out) because by the time this
+# runs the translation LLM may already have rewritten the straight quotes as
+# typographic ones — which is exactly what stops the construct from parsing
+# again on the way back to HTML and lands it in the book as visible text.
+# Only the marker is removed; any text sharing its line survives.
+_RE_FENCED_DIV_OPEN = re.compile(r'^[ \t]*:::+[ \t]*\{[^}\n]*\}[ \t]*', re.MULTILINE)
+# Empty inline wrappers from scraped EPUBs: Goodreads tracking anchors
+# (`<a class="actionLinkLite" href="...#"></a>`) and id-only spans. They hold
+# no text, only markup noise.
+_RE_EMPTY_INLINE_TAG = re.compile(r'<(span|a)\b[^>]*>\s*</\1>', re.IGNORECASE)
+
+# Raw HTML that still reaches the Markdown after _sanitize_source_html and the
+# extension-restricted pandoc writer below. Whatever it is, it is markup, not
+# prose, so it is swapped for a placeholder before translation and put back
+# afterwards — see _protect_markdown_html. <img> is excluded because
+# _protect_markdown_images claims those first, with a placeholder that keeps
+# the line recognizable as an image block during chunking.
+_RE_RAW_HTML_TAG = re.compile(r'</?(?!img\b)[a-zA-Z][a-zA-Z0-9]*(?:\s[^<>]*)?/?>')
+# Placeholder is an empty markdown link: unremarkable to the LLM, and if one
+# is lost anyway it renders as nothing rather than as stray visible text.
+_HTML_PLACEHOLDER_FMT = '[](sn-htmlref-{})'
+_RE_HTML_PLACEHOLDER = re.compile(r'\[\]\(sn-htmlref-(\d+)\)', re.IGNORECASE)
+
+# Attributes worth carrying into Markdown, per tag. Everything else (class,
+# style, legacy link/vlink/bgcolor, scraper-generated ids) only ever reaches
+# the translation LLM as noise — see _sanitize_source_html.
+_HTML_KEEP_ATTRS = {'img': ('src', 'alt', 'title'), 'a': ('href', 'title', 'id')}
+_HTML_KEEP_ATTRS_DEFAULT = ('id',)
+# Purely presentational containers: dropped, contents kept. These are what
+# pandoc would otherwise re-encode as fenced divs / bracketed spans.
+_HTML_UNWRAP_TAGS = ('span', 'div', 'font', 'section', 'article', 'header', 'footer')
+
+# Pandoc's default `markdown` writer keeps raw HTML verbatim and re-encodes
+# <div>/<span> as fenced divs and bracketed spans. None of that is book
+# content and none of it survives a translation round-trip intact, so the
+# writer is asked for plain Markdown instead. Kept as a module constant so
+# tests can assert on it without shelling out to pandoc.
+_PANDOC_MD_FORMAT = (
+    'markdown-raw_html-native_divs-native_spans'
+    '-fenced_divs-bracketed_spans-link_attributes-header_attributes'
+)
+
 # Same credit the classic FB2 pipeline injects via
 # src.fb2_handler.add_translator_info() (kept as a literal here rather than
 # imported, since that module's version lives inline in a function body,
@@ -449,6 +494,10 @@ def convert_to_markdown(input_path: str) -> tuple[str, dict]:
             if html_content:
                 logger.info("Cleaning Calibre markers from HTML...")
                 html_content = _clean_calibre_markers(html_content)
+                # Drop the source EPUB's own presentational markup before the
+                # Markdown round-trip — see _sanitize_source_html for why this
+                # has to happen here and not after translation.
+                html_content = _sanitize_source_html(html_content)
             
             if not html_content:
                 raise ValueError("No HTML content found in HTMLZ")
@@ -484,13 +533,27 @@ def convert_to_markdown(input_path: str) -> tuple[str, dict]:
             pandoc_timeout = int(getattr(config, 'pandoc_timeout', 900))
             # Use --wrap=auto to prevent extremely long lines
             # This ensures better chunking behavior later
-            cmd = [pandoc_exe, html_input_path, '-f', 'html', '-t', 'markdown',
-                   '--wrap=auto', '-o', markdown_output_path]
+            def _pandoc_md_cmd(md_format: str) -> list:
+                return [pandoc_exe, html_input_path, '-f', 'html', '-t', md_format,
+                        '--wrap=auto', '-o', markdown_output_path]
+
             try:
-                _run_command(cmd, timeout=pandoc_timeout)
+                _run_command(_pandoc_md_cmd(_PANDOC_MD_FORMAT), timeout=pandoc_timeout)
             except subprocess.CalledProcessError as e:
-                stderr = (e.stderr or "Unknown error")[:500]
-                raise ValueError(f"Pandoc conversion failed: {stderr}")
+                # A pandoc old enough to not know one of the disabled extension
+                # names rejects the whole format string. Falling back to the
+                # default writer costs cleanliness, not correctness:
+                # _clean_calibre_markers and _protect_markdown_html still catch
+                # what it lets through.
+                logger.warning(
+                    f"Pandoc rejected the extension-restricted Markdown writer "
+                    f"({(e.stderr or '')[:200].strip()}); retrying with plain 'markdown'."
+                )
+                try:
+                    _run_command(_pandoc_md_cmd('markdown'), timeout=pandoc_timeout)
+                except subprocess.CalledProcessError as retry_error:
+                    stderr = (retry_error.stderr or "Unknown error")[:500]
+                    raise ValueError(f"Pandoc conversion failed: {stderr}")
             except subprocess.TimeoutExpired:
                 raise ValueError(f"Pandoc conversion timed out (>{pandoc_timeout}s)")
 
@@ -514,6 +577,68 @@ def convert_to_markdown(input_path: str) -> tuple[str, dict]:
         except Exception as e:
             logger.error(f"Conversion failed: {e}")
             raise
+
+
+def _sanitize_source_html(html: str) -> str:
+    """Strip presentational markup out of the HTMLZ payload before pandoc sees it.
+
+    Scraped EPUBs carry a lot of markup that is not book content: Goodreads
+    tracking anchors (``<a class="actionLinkLite" href="...#"></a>``), id-only
+    wrapper spans, legacy ``<body link="blue" vlink="purple">`` attributes.
+    Pandoc faithfully re-encodes every bit of it into Markdown — as raw HTML,
+    or as a fenced div — and from there it travels to the translation LLM
+    looking exactly like prose. The LLM rewrites the straight quotes as
+    typographic ones, which stops the construct parsing on the way back to
+    HTML, and it ships in the finished book as literal visible text.
+
+    Here is the one place removing it costs nothing, because at this point it
+    is still unambiguously markup rather than a line of the translated book.
+
+    Never raises: a book with unparseable HTML should still translate, just
+    with the noise left in, so any failure returns the input unchanged.
+    """
+    if not html or not html.strip():
+        return html
+
+    try:
+        from bs4 import BeautifulSoup, Comment
+    except ImportError:
+        logger.warning("beautifulsoup4 unavailable; skipping source HTML sanitizing")
+        return html
+
+    try:
+        soup = BeautifulSoup(html, 'html.parser')
+
+        for node in soup.find_all(string=lambda t: isinstance(t, Comment)):
+            node.extract()
+        for tag in soup.find_all(['script', 'style']):
+            tag.decompose()
+
+        # Anchors with no text and no image are navigation/tracking leftovers,
+        # not links a reader can follow.
+        empty_anchors = 0
+        for tag in soup.find_all('a'):
+            if not tag.get_text(strip=True) and not tag.find('img'):
+                tag.decompose()
+                empty_anchors += 1
+
+        for tag in soup.find_all(True):
+            keep = _HTML_KEEP_ATTRS.get(tag.name, _HTML_KEEP_ATTRS_DEFAULT)
+            tag.attrs = {k: v for k, v in tag.attrs.items() if k in keep}
+
+        unwrapped = 0
+        for tag in soup.find_all(_HTML_UNWRAP_TAGS):
+            tag.unwrap()
+            unwrapped += 1
+
+        logger.info(
+            f"Sanitized source HTML: dropped {empty_anchors} empty anchor(s), "
+            f"unwrapped {unwrapped} presentational container(s)"
+        )
+        return str(soup)
+    except Exception as e:
+        logger.warning(f"Source HTML sanitizing failed ({e}); using HTML as-is")
+        return html
 
 
 def _clean_calibre_markers(text: str) -> str:
@@ -544,6 +669,21 @@ def _clean_calibre_markers(text: str) -> str:
     # Remove standalone :::
     text = _RE_CALIBRE_SECTION_BARE.sub('', text)
     text = _RE_CALIBRE_TRIPLE_COLON.sub('', text)
+
+    # Remove pandoc fenced-div markers for non-Calibre divs too. The
+    # Calibre-specific patterns above all require the literal substring
+    # "calibre", so a `::: {link="blue" vlink="purple"}` from the source
+    # EPUB's own markup used to sail straight through into the book text.
+    text = _RE_FENCED_DIV_OPEN.sub('', text)
+
+    # Remove empty <span>/<a> wrappers. Looped because unwrapping an inner
+    # anchor can leave its parent span empty in turn, and a single pass has
+    # already moved past the parent by then.
+    for _ in range(3):
+        cleaned = _RE_EMPTY_INLINE_TAG.sub('', text)
+        if cleaned == text:
+            break
+        text = cleaned
     
     # Remove HTML paragraphs containing only Calibre markers
     text = _RE_CALIBRE_PARA.sub('', text)
@@ -729,6 +869,59 @@ def _restore_markdown_images(text: str, images: list[str]) -> str:
         logger.warning(
             f"Image reference restoration mismatch: {len(images)} protected, "
             f"{restored} restored ({len(images) - restored} lost during translation)."
+        )
+
+    return text
+
+
+def _protect_markdown_html(markdown_text: str) -> tuple[str, list[str]]:
+    """Replace leftover raw HTML tags with placeholders before translation.
+
+    _sanitize_source_html and the extension-restricted pandoc writer between
+    them remove nearly all of it, but "nearly" is the operative word: a tag
+    that does reach the LLM comes back reworded, re-quoted, or reflowed, and a
+    tag that no longer parses is a tag that renders as visible text in the
+    finished book. Swapping each one for a placeholder is what keeps markup
+    behaving as markup — it goes back verbatim in _restore_markdown_html and
+    is real HTML again by the time pandoc converts Markdown back to HTML.
+
+    Call this after _protect_markdown_images: images get a placeholder shaped
+    to survive chunking as an image block, and are excluded here.
+    """
+    html_bits: list[str] = []
+
+    def _replace(match: "re.Match[str]") -> str:
+        html_bits.append(match.group(0))
+        return _HTML_PLACEHOLDER_FMT.format(len(html_bits) - 1)
+
+    return _RE_RAW_HTML_TAG.sub(_replace, markdown_text), html_bits
+
+
+def _restore_markdown_html(text: str, html_bits: list[str]) -> str:
+    """Undo _protect_markdown_html after translation.
+
+    Mirrors _restore_markdown_images: placeholders the LLM mangled past
+    recognition are left alone and counted, so a mismatch gets logged rather
+    than silently shipping a book with markup missing. An unrestored
+    placeholder renders as an empty link, i.e. as nothing — which is the
+    reason for that placeholder shape.
+    """
+    restored = 0
+
+    def _sub(match: "re.Match[str]") -> str:
+        nonlocal restored
+        idx = int(match.group(1))
+        if 0 <= idx < len(html_bits):
+            restored += 1
+            return html_bits[idx]
+        return match.group(0)
+
+    text = _RE_HTML_PLACEHOLDER.sub(_sub, text)
+
+    if html_bits and restored != len(html_bits):
+        logger.warning(
+            f"Raw HTML restoration mismatch: {len(html_bits)} protected, "
+            f"{restored} restored ({len(html_bits) - restored} lost during translation)."
         )
 
     return text
@@ -1364,6 +1557,25 @@ def build_output(
             # writes into <translator> — see _TRANSLATOR_CREDIT above).
             cmd += ["--book-producer", _TRANSLATOR_CREDIT]
 
+            # B4: Calibre builds no table of contents unless asked to. Its
+            # default chapter detection matches an English keyword list
+            # ("chapter", "part", "prologue", ...) against h1/h2 text, so a
+            # book translated into any other language detects zero chapters
+            # and ships with no navigation at all — which is exactly what was
+            # happening. Heading-level XPath is language-independent.
+            # --max-toc-links 0 stops Calibre falling back to scraping the
+            # body's <a> tags, which on a scraped source EPUB produces a TOC
+            # made of the source site's own links; --toc-threshold 0 keeps it
+            # from doing so when few chapters are detected.
+            cmd += [
+                "--level1-toc", "//*[name()='h1']",
+                "--level2-toc", "//*[name()='h2']",
+                "--level3-toc", "//*[name()='h3']",
+                "--chapter", "//*[name()='h1' or name()='h2']",
+                "--max-toc-links", "0",
+                "--toc-threshold", "0",
+            ]
+
             calibre_timeout = int(getattr(config, 'calibre_timeout', 1800))
             try:
                 _run_command(cmd, timeout=calibre_timeout)
@@ -1432,7 +1644,9 @@ def _generate_title_page(metadata: dict) -> str:
 """
     
     if author:
-        html += f"<h2>by {author}</h2>\n"
+        # Not an <h2>: the TOC XPath in build_output promotes every h2 into a
+        # navigation entry, and "by <author>" is not a chapter.
+        html += f'<p class="author">by {author}</p>\n'
     
     if publisher:
         html += f"<p><em>{publisher}</em></p>\n"
@@ -2283,6 +2497,10 @@ def run_pipeline(
         # Protect image references so the translation LLM can't drop/mangle
         # them; restored once translation is done (see _protect_markdown_images).
         protected_md, image_refs = _protect_markdown_images(markdown_text)
+        # Anything still carrying raw HTML after image protection is markup
+        # too, and just as unable to survive the LLM unguarded — see
+        # _protect_markdown_html.
+        protected_md, html_refs = _protect_markdown_html(protected_md)
 
         translate_stats = TranslationStats()
         translated_md = translate_chunks(
@@ -2300,6 +2518,8 @@ def run_pipeline(
             remove_on_success=False,
             stats_out=translate_stats,
         )
+        # Unprotect in reverse order of protection.
+        translated_md = _restore_markdown_html(translated_md, html_refs)
         translated_md = _restore_markdown_images(translated_md, image_refs)
 
         if stats_out is not None:

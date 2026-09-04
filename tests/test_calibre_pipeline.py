@@ -261,7 +261,7 @@ def test_generate_title_page():
     title_html = _generate_title_page(metadata)
     
     assert "<h1>Test Book</h1>" in title_html
-    assert "by Author Name</h2>" in title_html
+    assert '<p class="author">by Author Name</p>' in title_html
     assert "<p><em>Publisher</em></p>" in title_html
     assert "Language: en</p>" in title_html
 
