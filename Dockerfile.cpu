@@ -26,14 +26,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Upgrade pip
 RUN python3 -m pip install --upgrade pip setuptools wheel
 
-# Copy requirements first for better layer caching
-COPY requirements.txt .
+# Copy the dependency manifest first for better layer caching
+COPY pyproject.toml .
 
-# Install Python dependencies (CPU-only)
-# Note: requirements.txt uses CPU versions by default
-# For GPU support, use Dockerfile.gpu instead
-RUN python3 -m pip install --no-cache-dir -r requirements.txt && \
-    python3 -m pip install --no-cache-dir spacy
+# Install Python dependencies (CPU-only). torch comes from PyTorch's CPU
+# index first, so the project install below is already satisfied and does not
+# pull the much larger default CUDA build. The [gpu] extra is deliberately
+# not installed here - use the GPU Dockerfile for that.
+RUN python3 -m pip install --no-cache-dir \
+        --index-url https://download.pytorch.org/whl/cpu torch && \
+    python3 -m pip install --no-cache-dir .
 
 # Download spaCy models (multi-language support)
 RUN python3 -m spacy download en_core_web_lg && \
@@ -47,7 +49,6 @@ COPY app.py .
 COPY src/ ./src/
 COPY docs/ ./docs/
 COPY README*.md .
-COPY requirements.txt .
 
 # Create directories for volumes
 RUN mkdir -p /app/books /app/output

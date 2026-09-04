@@ -28,9 +28,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Upgrade pip
 RUN pip install --upgrade pip setuptools wheel
 
-# Install project (from pyproject.toml) - includes CUDA packages
+# Install project (from pyproject.toml) - [gpu] adds the CUDA packages
+# (cupy, spacy[cuda12x]); they are an optional extra rather than base
+# dependencies so the project stays installable without a CUDA toolchain.
 COPY pyproject.toml .
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir ".[gpu]"
 
 # Download spaCy models (multi-language support)
 RUN python3 -m spacy download en_core_web_lg && \

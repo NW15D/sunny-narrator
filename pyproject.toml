@@ -21,25 +21,39 @@ dependencies = [
     "pydantic==2.12.5",
     "beautifulsoup4==4.14.3",
     "scikit-learn==1.7.2",
-    "lxml==4.8.0",
+    # >=4.9.3 is the first release shipping cp312 wheels; the old ==4.8.0
+    # pin forced a source build (and a libxml2/libxslt toolchain) on any
+    # Python newer than 3.11.
+    "lxml>=4.9.3",
     "more-itertools==8.10.0",
     "joblib==1.5.3",
     "EbookLib==0.20",
     "Pillow==12.3.0",
     "pypandoc==1.17",
-    # NER / spaCy + CUDA 12.x
-    "spacy[cuda12x]==3.8.13",
+    # NER / spaCy. src/ner.py imports spacy and torch unconditionally, so both
+    # belong in the base set; the CUDA-specific builds live in the [gpu] extra
+    # below. Plain PyPI wheels here, because a pinned CUDA wheel URL is
+    # interpreter-specific and makes the whole project uninstallable on any
+    # other Python -- which is exactly what used to happen (see [gpu]).
+    "spacy==3.8.13",
     "thinc==8.3.13",
+    "torch>=2.5.1",
     # Encoding detection
     "charset-normalizer==3.4.6",
     "chardet==4.0.0",
-    # GPU acceleration
-    "cupy-cuda12x==14.1.1",
-    # PyTorch 2.5.1 + CUDA 12.1 (PEP 610 direct reference to .whl)
-    "torch @ https://download.pytorch.org/whl/cu121/torch-2.5.1%2Bcu121-cp311-cp311-linux_x86_64.whl",
 ]
 
 [project.optional-dependencies]
+# GPU acceleration for NER and cosine similarity. torch is deliberately NOT
+# pinned here to a download.pytorch.org wheel URL any more: that pin named a
+# cp311 build, so pip rejected the whole project on every other interpreter
+# and `pip install -e .` could not succeed at all on Python 3.12. The default
+# PyPI torch wheels for Linux already bundle a CUDA 12.x runtime, so the base
+# "torch>=2.5.1" covers the GPU case and only cupy stays CUDA-specific.
+gpu = [
+    "spacy[cuda12x]==3.8.13",
+    "cupy-cuda12x==14.1.1",
+]
 dev = [
     "pytest",
     "pytest-timeout",

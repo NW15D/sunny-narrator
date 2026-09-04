@@ -246,8 +246,8 @@ cupy.cuda.compiler.CompileException: nvrtc: error: invalid value for --gpu-archi
 
 **Решение:**
 ```bash
-# Использовать CPU версию CuPy
-# В requirements.txt закомментировать cupy-cuda12x
+# Использовать CPU версию CuPy: не ставить extra [gpu] из pyproject.toml
+# (cupy-cuda12x входит только в него, в базовых зависимостях его нет)
 
 # Или использовать CPU-only режим
 export GPU=false
