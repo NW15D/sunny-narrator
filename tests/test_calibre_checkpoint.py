@@ -14,6 +14,11 @@ class _FakeState:
     def __init__(self, text):
         self.final_translation = text
         self.synopsis = ''
+        # translate_chunk reads state.total_tokens on the success path
+        # (src/utils.py). Without it every "translation" raised AttributeError,
+        # was retried three times, and the resume assertions below failed for a
+        # reason that had nothing to do with checkpoints.
+        self.total_tokens = 0
 
 
 def _install(monkeypatch, calls, crash_after=None):
