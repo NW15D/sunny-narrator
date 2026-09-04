@@ -41,34 +41,61 @@ def test_toc_pandoc_flag():
         assert False
 
 
-def test_build_output_toc_integration():
-    """build_output does not currently generate a TOC.
+def test_build_output_requests_toc_from_calibre():
+    """build_output must ask Calibre for a language-independent TOC.
 
-    This used to introspect only inspect.getsource(build_output) for
-    '--toc'/'--wrap=none' and assert False when the (permanently absent)
-    --toc flag was missing — but the whole body was wrapped in
-    `except Exception`, which silently swallowed that AssertionError on
-    every run for years (see CLAUDE.md's Calibre pipeline notes). The
-    pandoc invocation also moved out of build_output and into
-    _markdown_to_html_file (batched Markdown->HTML conversion; see that
-    function's docstring), so a source check scoped to build_output alone
-    would no longer even see '--wrap=none'.
-
-    This documents the real, current behavior instead: no TOC is
-    requested. _add_toc_to_html exists but is dead code — never called
-    from build_output or run_pipeline. If TOC generation is implemented
-    later, this test should fail loudly and get updated, not silently pass.
+    This test used to assert the opposite — that no TOC was requested —
+    because for a long time none was: `ebook-convert` was handed only
+    metadata flags, and its default chapter detection matches an English
+    keyword list against h1/h2 text, so every translated book shipped with
+    empty navigation. The XPath options below replace that keyword matching
+    with heading levels, which work in any target language.
     """
     import inspect
-    from src.calibre_pipeline import build_output, _markdown_to_html_file
+    from src.calibre_pipeline import build_output
 
-    source = inspect.getsource(build_output) + inspect.getsource(_markdown_to_html_file)
+    source = inspect.getsource(build_output)
 
-    assert '--wrap=none' in source
-    assert '--toc' not in source, (
-        "build_output/_markdown_to_html_file now request a TOC from pandoc; "
-        "update this test's expectations if that was intentional."
+    for flag in ("--level1-toc", "--level2-toc", "--chapter", "--max-toc-links"):
+        assert flag in source, f"build_output no longer passes {flag} to ebook-convert"
+    assert "name()='h1'" in source, (
+        "TOC detection must key off heading level, not a language-specific "
+        "keyword regex — that is the bug this replaced."
     )
+
+
+def test_toc_args_reach_ebook_convert(tmp_path):
+    """The TOC flags must survive into the actual ebook-convert argv."""
+    from unittest.mock import MagicMock, patch
+    from src.calibre_pipeline import build_output
+
+    def _fake_run(cmd, *args, **kwargs):
+        # ebook-convert writes to cmd[2]; pandoc's cmd[2] is a flag, so its
+        # output path has to be read off -o (same stub as the other Calibre
+        # tests, inlined because tests/ is not an importable package).
+        if cmd[0] == "ebook-convert":
+            out = cmd[2]
+        else:
+            out = cmd[cmd.index('-o') + 1]
+        with open(out, 'w', encoding='utf-8') as f:
+            f.write('<p>x</p>')
+        return MagicMock(returncode=0)
+
+    out = str(tmp_path / 'out.epub')
+    with patch('src.calibre_pipeline.check_calibre_installed', return_value=True), \
+         patch('subprocess.run') as mock_run:
+        mock_run.side_effect = _fake_run
+        build_output("# Chapter One\n\nText", "epub",
+                     {"title": "T", "author": "A"}, output_path=out)
+
+    ebook_calls = [c.args[0] for c in mock_run.call_args_list
+                   if c.args[0][0] == "ebook-convert"]
+    assert len(ebook_calls) == 1
+    cmd = ebook_calls[0]
+    assert cmd[cmd.index("--level1-toc") + 1] == "//*[name()='h1']"
+    assert cmd[cmd.index("--level2-toc") + 1] == "//*[name()='h2']"
+    assert cmd[cmd.index("--max-toc-links") + 1] == "0"
+    assert cmd[cmd.index("--toc-threshold") + 1] == "0"
 
 
 if __name__ == "__main__":
@@ -77,7 +104,7 @@ if __name__ == "__main__":
     print("=" * 60)
     
     test1 = test_toc_pandoc_flag()
-    test2 = test_build_output_toc_integration()
+    test2 = test_build_output_requests_toc_from_calibre()
     
     results = []
     if test1 is not None:
