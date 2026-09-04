@@ -47,7 +47,7 @@ except ImportError:
 
 # Import existing utilities
 from src.utils import split_text_smartly, config, validate_translation_length, _pipeline, translate_chunk, translate_metadata
-from src.checkpoint_manager import CheckpointManager
+from src.checkpoint_manager import CheckpointManager, compute_fingerprint
 from src import markdown_utils
 from src.markdown_utils import split_markdown_by_size, sanitize_surrogates
 
@@ -1022,8 +1022,17 @@ def translate_chunks(
     start_time_iso = datetime.now().isoformat()
     total_source_len = 0
     total_target_len = 0
+    # Identifies this exact chunk list, so a checkpoint written against a
+    # different slicing of the book is discarded instead of being spliced onto
+    # boundaries it never belonged to — see compute_fingerprint.
+    fingerprint = compute_fingerprint(
+        chunks,
+        max_chunk_size=max_chunk_size,
+        source_lang=source_lang,
+        target_lang=target_lang,
+    )
     if checkpoint_mgr is not None:
-        saved = checkpoint_mgr.load()
+        saved = checkpoint_mgr.load(expected_fingerprint=fingerprint)
         if saved is not None and os.path.realpath(saved.get("book_path", "")) == os.path.realpath(book_path or ""):
             start_idx = saved.get("last_chunk", -1) + 1
             extra = saved.get("extra", {}) or {}
@@ -1165,6 +1174,7 @@ def translate_chunks(
                 synopsis_history={},
                 book_path=book_path or "",
                 start_time_iso=start_time_iso,
+                fingerprint=fingerprint,
                 extra={
                     'translated_parts': translated_parts,
                     'outline_text': outline_text,

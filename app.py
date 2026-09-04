@@ -41,6 +41,7 @@ from src.llm_logger import init_llm_logger
 from src.vocabulary_manager import get_vocabulary_manager, DictionaryCreatedSignal
 from src.character_registry import get_character_registry, reset_character_registry
 from src.epub_writer import create_epub_from_fb2
+from src.checkpoint_manager import CHECKPOINT_VERSION, compute_fingerprint
 
 # Initialize configuration
 config = Config()
@@ -71,6 +72,15 @@ if config.ner_opt:
 # Translation Engine
 # =============================================================================
 
+class _StaleCheckpoint(Exception):
+    """A checkpoint that does not describe the chunk list about to be translated.
+
+    Raised and handled entirely within main()'s resume block: it exists only
+    to skip the restore without indenting the whole success path, and it is
+    reported to the user before it is raised.
+    """
+
+
 class TranslationEngine:
     """
     Main translation engine with context management and recursive processing.
@@ -92,6 +102,9 @@ class TranslationEngine:
         self.last_section_idx = 0
         self.last_chunk_idx = 0
         self.start_time = datetime.now()
+        # Set by main() once the chunk list exists; written into every
+        # checkpoint so a resume can prove it refers to the same slicing.
+        self.checkpoint_fingerprint = None
 
         # Statistics counters
         self.stats = {
@@ -476,7 +489,8 @@ class TranslationEngine:
             checkpoint_file: Path to checkpoint JSON file
         """
         checkpoint = {
-            "version": 1,
+            "version": CHECKPOINT_VERSION,
+            "fingerprint": self.checkpoint_fingerprint,
             "book_path": self.book_path,
             "last_chunk": self.last_processed_chunk,
             "last_section_idx": self.last_section_idx,
@@ -887,8 +901,18 @@ def main():
 
     print(f"Prepared {len(chunks)} chunks from {len(sections)} sections")
 
+    # Identifies this exact chunk list. Computed before the resume block below,
+    # which slices `chunks` down to the unprocessed tail.
+    checkpoint_fingerprint = compute_fingerprint(
+        (c['chunk'] for c in chunks),
+        max_chunk_size=config.max_len_chunk,
+        source_lang=config.source_lang,
+        target_lang=config.target_lang,
+    )
+
     # 4. Translate
     engine = TranslationEngine(output_tfile, book_path=myfile)
+    engine.checkpoint_fingerprint = checkpoint_fingerprint
     _shutdown_state["engine"] = engine
 
     # Initialize content variable - will be populated during translation or loaded from temp file
@@ -906,6 +930,20 @@ def main():
             with open(checkpoint_file, 'r', encoding='utf-8') as f:
                 checkpoint = json.load(f)
 
+            # Progress is stored as "chunk N of the list", so resuming is only
+            # safe while the list is unchanged. A checkpoint from a different
+            # slicing (or one written before fingerprinting existed) would be
+            # spliced onto boundaries it never belonged to and quietly corrupt
+            # the book — see compute_fingerprint.
+            if checkpoint.get("fingerprint") != checkpoint_fingerprint:
+                reason = ("it predates checkpoint fingerprinting"
+                          if not checkpoint.get("fingerprint")
+                          else "the book no longer splits into the same chunks")
+                logger.warning(f"Checkpoint cannot be resumed ({reason}); starting fresh")
+                print(f"Checkpoint ignored ({reason}). Starting fresh.")
+                os.remove(checkpoint_file)
+                raise _StaleCheckpoint
+
             engine.restore_from_checkpoint(checkpoint)
             resume_from_chunk = checkpoint["last_chunk"] + 1
             chunks = chunks[resume_from_chunk:]
@@ -922,6 +960,8 @@ def main():
                         content = f.read()
             else:
                 print(f"Resuming from chunk {resume_from_chunk + 1}/{len(chunks) + resume_from_chunk}")
+        except _StaleCheckpoint:
+            pass  # already reported above; fall through to a fresh run
         except Exception as e:
             logger.error(f"Failed to load checkpoint: {e}")
             print("Starting fresh (checkpoint ignored)")

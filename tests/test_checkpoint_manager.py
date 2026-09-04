@@ -76,7 +76,10 @@ def test_save_creates_valid_checkpoint_file():
         with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
 
-        assert data["version"] == 1
+        # Bumped to 2 when checkpoints gained a fingerprint; asserted against
+        # the constant so the version and the payload cannot drift apart.
+        from checkpoint_manager import CHECKPOINT_VERSION
+        assert data["version"] == CHECKPOINT_VERSION
         assert data["book_path"] == "/tmp/book.fb2"
         assert data["last_chunk"] == 5
         assert data["last_section_idx"] == 1
