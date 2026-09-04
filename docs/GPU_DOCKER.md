@@ -49,12 +49,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Upgrade pip
 RUN python3 -m pip install --upgrade pip setuptools wheel
 
-# Copy requirements first for better layer caching
-COPY requirements.txt .
+# Copy the dependency manifest first for better layer caching
+COPY pyproject.toml .
 
-# Install Python dependencies with CUDA support
-RUN python3 -m pip install --no-cache-dir -r requirements.txt && \
-    python3 -m pip install --no-cache-dir spacy[cuda121]
+# Install Python dependencies with CUDA support ([gpu] adds cupy and
+# spacy[cuda12x] on top of the base dependencies)
+RUN python3 -m pip install --no-cache-dir ".[gpu]"
 
 # Download spaCy models (multi-language support)
 RUN python3 -m spacy download en_core_web_lg && \
