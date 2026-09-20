@@ -28,8 +28,8 @@
     },
     "synopsis": {
         "system": "You are an expert summarizer. Create concise, informative synopses for translation context.",
-        "user": "<text>\n{final_translation}\n</text>\n\nCreate a synopsis in {target_lang} (max 80 words). Requirements:\n- Plain text only (no markdown, no bold/italics)\n- No header like 'Synopsis:' or 'Summary:'\n- Include character gender if naturally possible\n- Output only the synopsis content",
-        "user_hunyuan": "<text>\n{final_translation}\n</text>\n\nCreate a synopsis in {target_lang} (max 80 words) from the text below. Requirements:\n- Plain text only (no markdown, no bold/italics)\n- No header like 'Synopsis:' or 'Summary:'\n- Include character gender if naturally possible\n- Output only the synopsis content"
+        "user": "{characters_block}<text>\n{final_translation}\n</text>\n\nCreate a synopsis in {target_lang} (max 80 words). Requirements:\n- Plain text only (no markdown, no bold/italics)\n- No header like 'Synopsis:' or 'Summary:'\n- ALWAYS state the gender of every character mentioned (he / she / it), using the <characters> list when given, otherwise infer it from the text; use gendered pronouns and verb forms consistently, never leave a character's gender ambiguous\n- Output only the synopsis content",
+        "user_hunyuan": "{characters_block}<text>\n{final_translation}\n</text>\n\nCreate a synopsis in {target_lang} (max 80 words) from the text below. Requirements:\n- Plain text only (no markdown, no bold/italics)\n- No header like 'Synopsis:' or 'Summary:'\n- ALWAYS state the gender of every character mentioned (he / she / it), using the <characters> list when given, otherwise infer it from the text; use gendered pronouns and verb forms consistently, never leave a character's gender ambiguous\n- Output only the synopsis content"
     },
     "vocabulary": {
         "system": "You are a terminology translator for {source_lang} to {target_lang} for {country}. Your task is to translate each term accurately. IMPORTANT: Output valid JSON only - never return empty response.",

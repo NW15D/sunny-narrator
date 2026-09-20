@@ -233,6 +233,39 @@ def _format_entries_standard(entries: List[Any]) -> str:
     return "\n".join(lines)
 
 
+_GENDER_LABELS = {
+    'he': 'male (he)', 'she': 'female (she)', 'it': 'neuter (it)', 'they': 'plural/non-binary (they)',
+}
+
+
+def build_synopsis_characters(vocab_entries, translation: str) -> str:
+    """
+    List the dictionary characters that appear in the translated chunk,
+    with their grammatical gender, for the synopsis prompt.
+
+    Matches both the target-language name (as it stands in the translation)
+    and the source name. Returns "" when no gendered entry is present.
+    """
+    if not vocab_entries:
+        return ""
+    haystack = translation.lower()
+    lines, seen = [], set()
+    for entry in vocab_entries:
+        get = entry.get if isinstance(entry, dict) else lambda k, d="": getattr(entry, k, d)
+        gender = (get('gender', '') or '').strip().lower()
+        target = (get('target', '') or '').strip()
+        source = (get('source', '') or '').strip()
+        if not gender or not (target or source) or (target or source) in seen:
+            continue
+        if not ((target and target.lower() in haystack) or (source and source.lower() in haystack)):
+            continue
+        seen.add(target or source)
+        lines.append(f"- {target or source}: {_GENDER_LABELS.get(gender, gender)}")
+    if not lines:
+        return ""
+    return "<characters>\n" + "\n".join(lines) + "\n</characters>\n\n"
+
+
 def replace_vocab_in_text(
     source_text: str,
     vocab_dict: Dict[str, str],
@@ -968,13 +1001,15 @@ class TranslationPipeline:
             user_prompt = config.get_prompt(
                 "synopsis", "user_hunyuan",
                 target_lang=context.target_lang,
-                final_translation=translation
+                final_translation=translation,
+                characters_block=build_synopsis_characters(context.vocab_entries, translation)
             )
         else:
             user_prompt = config.get_prompt(
                 "synopsis", "user",
                 target_lang=context.target_lang,
-                final_translation=translation
+                final_translation=translation,
+                characters_block=build_synopsis_characters(context.vocab_entries, translation)
             )
         system_prompt = config.get_prompt("synopsis", "system")
         

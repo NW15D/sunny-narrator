@@ -34,3 +34,16 @@ def test_translate_metadata_passes_vocab_to_prompt():
     assert "Harry Potter = Гарри Поттер" in captured["vocabulary_block"]
     template = utils.config.prompts["metadata_translation"]["user"]
     assert "{vocabulary_block}" in template
+
+
+def test_synopsis_characters_lists_gender_of_present_characters():
+    entries = [
+        {"source": "Alice", "target": "Алиса", "category": "PERSON", "gender": "she"},
+        {"source": "Bob", "target": "Боб", "category": "PERSON", "gender": "he"},
+        {"source": "Rome", "target": "Рим", "category": "LOC", "gender": ""},
+    ]
+    block = utils.build_synopsis_characters(entries, "Алиса пришла в Рим.")
+    assert "Алиса: female (she)" in block
+    assert "Боб" not in block and "Рим" not in block
+    assert utils.build_synopsis_characters(entries, "Никого нет.") == ""
+    assert utils.build_synopsis_characters([], "Алиса") == ""
