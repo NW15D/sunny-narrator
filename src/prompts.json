@@ -38,8 +38,8 @@
     },
     "metadata_translation": {
         "system": "You are a bibliographic metadata translator for {target_lang} ({country}). Translate book metadata preserving bibliographic conventions.",
-        "user": "<metadata>\n{metadata_json}\n</metadata>\n\nTranslate all values to {target_lang}. Localize author names appropriately. Preserve JSON structure. Output only valid JSON.",
-        "user_hunyuan": "<metadata>\n{metadata_json}\n</metadata>\n\nTranslate all values to {target_lang}. Localize author names appropriately. Preserve JSON structure. Output only valid JSON."
+        "user": "{vocabulary_block}<metadata>\n{metadata_json}\n</metadata>\n\nTranslate all values to {target_lang}. Localize author names appropriately. Preserve JSON structure. Output only valid JSON.",
+        "user_hunyuan": "{vocabulary_block}<metadata>\n{metadata_json}\n</metadata>\n\nTranslate all values to {target_lang}. Localize author names appropriately. Preserve JSON structure. Output only valid JSON."
     },
     "image_generation": {
         "generation": "Book cover design. Title: {title}. Author: {authors_str}. Genre: {genres}. Style inspiration: {annotation}. Target language: {target_lang}. Create a professional book cover illustration.",

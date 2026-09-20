@@ -1975,11 +1975,47 @@ def vocabulary(source_lang: str, target_lang: str, source_text: str,
     return result
 
 
+def build_metadata_vocab_block(vocab_entries, metadata: dict) -> str:
+    """
+    Build the <vocabulary> prompt block for metadata translation.
+
+    Keeps only the glossary terms that occur in the metadata values (title,
+    author, description/annotation, ...), so the title and the introduction
+    use the same names as the translated body. Entries may be VocabEntry
+    objects or dicts with source/target/category keys. Returns "" when
+    nothing matches, so the prompt stays unchanged for books without a .dic.
+    """
+    if not vocab_entries:
+        return ""
+    haystack = json.dumps(metadata, ensure_ascii=False).lower()
+    lines = []
+    for entry in vocab_entries:
+        get = entry.get if isinstance(entry, dict) else lambda k, d="": getattr(entry, k, d)
+        source, target = (get('source', '') or '').strip(), (get('target', '') or '').strip()
+        if not source or not target or source.lower() not in haystack:
+            continue
+        line = f"{source} = {target}"
+        category = (get('category', '') or '').strip()
+        if category:
+            line += f", {category}"
+        lines.append(line)
+    if not lines:
+        return ""
+    return (
+        "<vocabulary>\n" + "\n".join(lines) + "\n</vocabulary>\n"
+        "Use these glossary translations exactly for the listed terms and names.\n\n"
+    )
+
+
 @log_entry
 def translate_metadata(metadata: dict, source_lang: str, target_lang: str,
-                       country: str) -> dict:
+                       country: str, vocab_entries: list = None) -> dict:
     """
     Translate metadata dictionary using LLM in JSON mode.
+
+    vocab_entries: optional glossary entries; the ones present in the
+    metadata are injected into the prompt so titles/annotation follow the
+    book's dictionary.
     """
     try:
         # Use Hunyuan-specific prompt if model is Hunyuan
@@ -1993,7 +2029,8 @@ def translate_metadata(metadata: dict, source_lang: str, target_lang: str,
             source_lang=source_lang,
             target_lang=target_lang,
             country=country,
-            metadata_json=json.dumps(metadata, ensure_ascii=False)
+            metadata_json=json.dumps(metadata, ensure_ascii=False),
+            vocabulary_block=build_metadata_vocab_block(vocab_entries, metadata)
         )
         
         if not response:

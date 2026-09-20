@@ -996,7 +996,9 @@ def main():
         if metadata:
             lang_map = {'russian': 'ru', 'english': 'en', 'french': 'fr', 'german': 'de'}
             metadata['lang'] = lang_map.get(config.target_lang.lower(), config.target_lang)
-            translated_meta = ta.translate_metadata(metadata, config.source_lang, config.target_lang, config.country)
+            vocab_entries = list(engine.vocab_manager.vocab.values()) if engine.vocab_manager else []
+            translated_meta = ta.translate_metadata(metadata, config.source_lang, config.target_lang, config.country,
+                                                    vocab_entries=vocab_entries)
             if translated_meta:
                 header = fb2.update_header_with_metadata(header, translated_meta)
 

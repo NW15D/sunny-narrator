@@ -2296,7 +2296,8 @@ def _dump_translation(
     _atomic_write_text(meta_dump_path, json.dumps(payload, ensure_ascii=False, indent=2))
 
 
-def _translate_output_metadata(metadata: dict, source_lang: str, target_lang: str, country: str) -> None:
+def _translate_output_metadata(metadata: dict, source_lang: str, target_lang: str, country: str,
+                               vocab_entries: Optional[list] = None) -> None:
     """Translate title/author/publisher/description into the target
     language, in place.
 
@@ -2321,7 +2322,8 @@ def _translate_output_metadata(metadata: dict, source_lang: str, target_lang: st
     if not translatable:
         return
     try:
-        translated = translate_metadata(translatable, source_lang, target_lang, country)
+        translated = translate_metadata(translatable, source_lang, target_lang, country,
+                                        vocab_entries=vocab_entries)
     except Exception as e:
         logger.warning(f"Metadata translation failed (non-fatal, keeping source values): {e}")
         return
@@ -2457,12 +2459,6 @@ def run_pipeline(
         logger.info(f"Step 1/5: Converting {input_path} to Markdown...")
         markdown_text, metadata = convert_to_markdown(input_path)
 
-        # Translate title/author/publisher/description so the output
-        # file's own metadata (and title page) match the target language
-        # instead of staying in the source language — mirrors app.py's
-        # classic-pipeline call to the same translate_metadata().
-        _translate_output_metadata(metadata, source_lang, target_lang, country)
-
         # Step 2: Build dictionary if .dic doesn't exist (M6: build BEFORE translation
         # so the first run has vocabulary terms available)
         dic_path = Path(input_path).with_suffix('.dic')
@@ -2484,6 +2480,19 @@ def run_pipeline(
                 logger.warning(f"  Dictionary building failed (non-fatal): {e}")
         else:
             logger.info(f"Step 2/5: Dictionary already exists: {dic_path} (skipped)")
+
+        # Translate title/author/publisher/description so the output
+        # file's own metadata (and title page) match the target language
+        # instead of staying in the source language — mirrors app.py's
+        # classic-pipeline call to the same translate_metadata().
+        # Done after Step 2 so the glossary exists and the title and
+        # description use the same names as the translated body.
+        try:
+            metadata_vocab = _load_vocab_entries(input_path)
+        except Exception as e:
+            logger.warning(f"Failed to load vocabulary for metadata (non-fatal): {e}")
+            metadata_vocab = []
+        _translate_output_metadata(metadata, source_lang, target_lang, country, metadata_vocab)
 
         # Step 3: Translate
         logger.info("Step 3/5: Translating...")
