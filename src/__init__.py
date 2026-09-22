@@ -1,4 +1,4 @@
 """
 Sunny Narrator - AI-powered book translation tool
-Version: 2.0
+Version: 2.2
 """

@@ -1,6 +1,6 @@
 # Docker CPU Guide — Установка и использование
 
-**Version:** 2.0  
+**Version:** 2.2  
 **Date:** 2026-03-30  
 **Status:** ✅ CPU-only версия готова к использованию
 
@@ -288,5 +288,5 @@ docker-compose -f docker-compose.cpu.yml up -d
 ---
 
 **Author:** Sunny Narrator Team  
-**Version:** 2.0  
+**Version:** 2.2  
 **Лицензия:** Open Source

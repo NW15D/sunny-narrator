@@ -12,16 +12,36 @@ Sunny Narrator implements automatic length-based validation with recursive rechu
 │    ↓                                                            │
 │ 2. Measure translated chunk (target_len chars)                  │
 │    ↓                                                            │
-│ 3. Calculate difference:                                        │
-│    percent_diff = |target_len - source_len| / source_len × 100  │
+│ 3. Calculate deviation from the expected length:                │
+│    expected_len = source_len × expected_ratio (per book)        │
+│    percent_diff = |target_len - expected_len| / expected_len    │
 │    ↓                                                            │
 │ 4. Check threshold:                                             │
-│    IF percent_diff > threshold AND source_len > MIN_CHUNK_SIZE  │
+│    IF percent_diff > threshold AND source_len >= MIN_CHUNK_SIZE │
 │    THEN split and retranslate                                   │
 │    ↓                                                            │
 │ 5. Recursive retry (max depth: 3)                               │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+### Per-book length calibration (v2.2)
+
+Character counts differ between languages: Korean → Russian roughly doubles
+the text, Chinese → any alphabetic language grows even more. A fixed 1:1
+expectation made every CJK chunk fail the check, and splitting did not help —
+the halves keep the same ratio.
+
+The expected ratio is therefore learned from the book itself:
+
+- every accepted chunk of at least `MIN_CHUNK_SIZE` chars records its
+  `target_len / source_len`; the expected ratio is the **median** of them;
+- until **3** chunks are collected (warm-up) only gross failures are
+  rejected: ratio below ×0.25 or ×5 and above; the log shows `calibrating`;
+- a chunk kept only because the split depth was exhausted is not recorded;
+- calibration restarts for every book (and after resuming from a checkpoint).
+
+The log line shows the ratio and the expectation:
+`⚠ SPLIT [FINAL] 6776 → 9000 chars (×1.33, expected ×2.00, 33.6% off)`.
 
 ## ⚙️ Configuration
 
