@@ -2484,11 +2484,13 @@ def run_pipeline(
         if not dic_path.exists():
             logger.info("Step 2/5: Building dictionary from source markdown...")
             try:
+                from src.vocabulary_manager import min_word_length_for
                 dictionary = extract_dictionary_from_md(
                     markdown_text,
                     source_lang=source_lang,
                     target_lang=target_lang,
-                    country=country
+                    country=country,
+                    min_word_length=min_word_length_for(source_lang)
                 )
                 if dictionary:
                     save_dictionary(dictionary, str(dic_path))

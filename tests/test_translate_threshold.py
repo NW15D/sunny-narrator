@@ -28,6 +28,8 @@ def test_single_failed_chunk_aborts(monkeypatch):
         def __init__(self, text):
             self.final_translation = text
             self.synopsis = ''
+            self.synopsis_characters = []
+            self.total_tokens = 0
 
     def _execute(**kwargs):
         src_text = kwargs.get('source_text')
@@ -37,7 +39,11 @@ def test_single_failed_chunk_aborts(monkeypatch):
 
     fake_pipeline = type('P', (), {})()
     fake_pipeline.execute = staticmethod(_execute)
+    # translate_chunks goes through utils.translate_chunk, which uses
+    # utils._pipeline; patching only cp._pipeline let the test hit the real API.
     monkeypatch.setattr(cp, '_pipeline', fake_pipeline)
+    monkeypatch.setattr('src.utils._pipeline', fake_pipeline)
+    monkeypatch.setattr('src.utils.time.sleep', lambda s: None)
     monkeypatch.setattr(cp.time, 'sleep', lambda s: None)
 
     with pytest.raises(RuntimeError):

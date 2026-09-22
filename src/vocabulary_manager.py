@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 _CJK_LANGUAGES = {"korean", "ko", "japanese", "ja", "chinese", "zh"}
 
 
-def _min_word_length_for(source_lang: str) -> int:
+def min_word_length_for(source_lang: str) -> int:
     return 2 if source_lang.lower() in _CJK_LANGUAGES else 5
 
 
@@ -315,7 +315,7 @@ class VocabularyManager:
                 body,
                 min_count_ner=5,          # Entities with >= 5 occurrences
                 min_count_word=10,        # Words with >= 10 occurrences
-                min_word_length=_min_word_length_for(config.source_lang)
+                min_word_length=min_word_length_for(config.source_lang)
             )
             
             logger.info(f"Extracted {len(extracted_terms)} terms from text")
