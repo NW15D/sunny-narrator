@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from datetime import datetime
 from xml.sax.saxutils import escape as xml_escape
 
@@ -11,6 +12,88 @@ except ImportError:
 import src.fb2_handler as fb2
 
 logger = logging.getLogger(__name__)
+
+# Known chapter-marker patterns for common scraped web-novel formats:
+# Korean episode markers ("제20화", bare "20화"), and "Chapter N" / "Глава N" /
+# "Episode N" headings in English/Russian.
+_CHAPTER_MARKER_RE = re.compile(
+    r'^\s*('
+    r'제\s*\d+\s*화'
+    r'|\d+\s*화'
+    r'|chapter\s+\d+'
+    r'|глава\s+\d+'
+    r'|episode\s+\d+'
+    r')',
+    re.IGNORECASE,
+)
+
+# A line made up only of repeated separator characters (====, ----, ****, ####).
+_SEPARATOR_LINE_RE = re.compile(r'^\s*([=\-*_#~])\1{2,}\s*$')
+
+
+def _is_chapter_heading(line, next_line):
+    """A line is a chapter heading if it matches a known marker, or if the
+    line right after it is a "====" / "----" style separator — a common
+    convention in scraped web-novel TXT dumps.
+    """
+    stripped = line.strip()
+    if not stripped:
+        return False
+    if _CHAPTER_MARKER_RE.match(stripped):
+        return True
+    if next_line is not None and _SEPARATOR_LINE_RE.match(next_line):
+        return True
+    return False
+
+
+def _split_into_chapters(content):
+    """Splits raw TXT content into a list of (title, body_text) chapters.
+
+    Returns [(None, content)] untouched when no chapter heading is found,
+    so plain (non-chaptered) TXT files keep producing a single section.
+    """
+    lines = content.replace('\r\n', '\n').replace('\r', '\n').split('\n')
+    n = len(lines)
+
+    heading_indices = [
+        i for i in range(n)
+        if _is_chapter_heading(lines[i], lines[i + 1] if i + 1 < n else None)
+    ]
+
+    if not heading_indices:
+        return [(None, content)]
+
+    chapters = []
+    if heading_indices[0] > 0:
+        preamble = '\n'.join(lines[:heading_indices[0]]).strip()
+        if preamble:
+            chapters.append((None, preamble))
+
+    for idx, start in enumerate(heading_indices):
+        title = lines[start].strip()
+        body_start = start + 1
+        if body_start < n and _SEPARATOR_LINE_RE.match(lines[body_start]):
+            body_start += 1
+        end = heading_indices[idx + 1] if idx + 1 < len(heading_indices) else n
+        chapters.append((title, '\n'.join(lines[body_start:end])))
+
+    return chapters
+
+
+def _split_paragraphs(text):
+    """Splits chapter text into paragraphs.
+
+    When the text contains blank-line-separated blocks, each block is one
+    paragraph (lines wrapped inside a block stay joined — classic hard-wrapped
+    book TXT). Otherwise every non-empty line is its own paragraph, which is
+    how most scraped web-novel TXT is formatted (no blank line between
+    paragraphs).
+    """
+    if '\n\n' in text:
+        blocks = re.split(r'\n\s*\n+', text)
+    else:
+        blocks = text.split('\n')
+    return [p.strip() for p in blocks if p.strip()]
 
 
 def _read_with_fallback(file_path):
@@ -71,20 +154,20 @@ def parse_txt(file_path):
 </description>
 """
 
-    # Create body
-    # Wrap text in paragraphs
-    paragraphs = content.split('\n\n')
-    body_content = ""
-    for p in paragraphs:
-        p = p.strip()
-        if p:
-            # Escape XML chars
-            p = p.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-            body_content += f"<p>{p}</p>\n"
-            
-    # Wrap in a single section so the chunker can find it
-    body = f"<body>\n<section>\n{body_content}\n</section>\n</body>"
-    
+    # Create body: split into chapters (if any chapter headings are detected),
+    # then into paragraphs within each chapter.
+    section_blocks = []
+    for chapter_title, chapter_text in _split_into_chapters(content):
+        section_parts = []
+        if chapter_title:
+            section_parts.append(f"<title><p>{xml_escape(chapter_title)}</p></title>")
+        for p in _split_paragraphs(chapter_text):
+            section_parts.append(f"<p>{xml_escape(p)}</p>")
+        if section_parts:
+            section_blocks.append("<section>\n" + "\n".join(section_parts) + "\n</section>")
+
+    body = "<body>\n" + "\n".join(section_blocks) + "\n</body>"
+
     footer = "</FictionBook>"
     
     return body, header, footer
