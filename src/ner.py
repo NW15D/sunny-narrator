@@ -23,6 +23,26 @@ config = Config()
 # Module-level cache for spaCy models (Problem 3 fix)
 _nlp_cache = {}
 
+# NER entity categories we care about for a glossary (people, places,
+# organizations). Different spaCy pipelines use different label schemes for
+# the same categories: most "core_news"/"core_web" models trained on
+# OntoNotes-style corpora (en, ja, zh, ru, ...) use ORG/LOC/GPE/PERSON/...,
+# but ko_core_news_lg is trained on the KLUE corpus and uses its own
+# 2-letter scheme (PS=person, LC=location, OG=organization, DT=date,
+# TI=time, QT=quantity) - none of which overlap with the OntoNotes labels.
+# Without this, filtering by an OntoNotes-only category list silently
+# drops every entity found in Korean text.
+NER_CATEGORIES = ["ORG", "LOC", "GPE", "PERSON", "EVENT", "FAC", "PRODUCT", "PS", "LC", "OG"]
+
+# Normalize scheme-specific labels to their OntoNotes-style equivalent so
+# .dic output categories stay consistent regardless of which model produced
+# them.
+_LABEL_NORMALIZATION = {"PS": "PERSON", "LC": "LOC", "OG": "ORG"}
+
+
+def _normalize_label(label):
+    return _LABEL_NORMALIZATION.get(label, label)
+
 def _get_nlp(model_name, max_length=200000):
     """Get or create a cached spaCy model instance."""
     if model_name not in _nlp_cache:
@@ -171,7 +191,6 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
         if config.debug:
             print(f"Split text into {len(text_chunks)} chunks of {chunk_size} chars each")
 
-        ner_category = ["ORG", "LOC", "GPE", "PERSON", "EVENT", "FAC", "PRODUCT"]
         ents = []
 
         for i, chunk in enumerate(text_chunks):
@@ -183,8 +202,8 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
                 # surface form) would have every entity's vector_norm come out
                 # at 0, silently dropping the entire NER result.
                 ents.extend([
-                    (ent.text.strip(), ent.label_)
-                    for ent in doc.ents if ent.label_ in ner_category
+                    (ent.text.strip(), _normalize_label(ent.label_))
+                    for ent in doc.ents if ent.label_ in NER_CATEGORIES
                 ])
 
                 if config.debug:
@@ -995,8 +1014,6 @@ def create_series_vocab(
     # Load spaCy model once for all books
     nlp = _get_nlp(config.nermodel, max_length=200000)
 
-    ner_category = ["ORG", "LOC", "GPE", "PERSON", "EVENT", "FAC", "PRODUCT"]
-
     for book_path in book_files:
         book_name = Path(book_path).stem
         book_names[book_path] = book_name
@@ -1020,10 +1037,11 @@ def create_series_vocab(
                 doc = nlp(chunk, disable=["parser", "lemmatizer", "attribute_ruler"])
 
                 # Collect raw entities with their labels (see make_vocab() for
-                # why vector_norm is not used to filter entities)
+                # why vector_norm is not used to filter entities, and
+                # NER_CATEGORIES for why the label list isn't OntoNotes-only)
                 for ent in doc.ents:
-                    if ent.label_ in ner_category:
-                        all_raw_entities.append((ent.text.strip(), ent.label_, book_name))
+                    if ent.label_ in NER_CATEGORIES:
+                        all_raw_entities.append((ent.text.strip(), _normalize_label(ent.label_), book_name))
 
                 # Collect words (case-insensitive)
                 for token in doc:
