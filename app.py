@@ -117,6 +117,9 @@ class TranslationEngine:
             'language_mismatch_retries': 0,
         }
 
+        # Expected translation length ratio is learned per book
+        ta.length_calibration.reset()
+
         # Character registry (shared between synopsis and vocabulary)
         reset_character_registry()
         self.character_registry = get_character_registry()

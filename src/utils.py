@@ -1376,38 +1376,81 @@ MAX_DEPTH = 3  # Maximum recursion depth
 MAX_LLM_CALLS_PER_CHUNK = 15  # Cap total LLM calls per chunk (prevents exponential blowup)
 
 
-def validate_translation_length(source_text: str, translated_text: str, 
+class LengthCalibration:
+    """
+    Expected target/source length ratio, learned from this book's own chunks.
+
+    Character counts differ a lot between languages (a Korean chunk becomes
+    roughly twice as long in Russian, Chinese even more), so the length check
+    compares against the median ratio of already accepted chunks instead of
+    assuming 1:1. Until WARMUP chunks are collected only gross failures
+    (outside WARMUP_RANGE) are rejected.
+    """
+    WARMUP = 3
+    WARMUP_RANGE = (0.25, 5.0)
+
+    def __init__(self):
+        self.ratios: List[float] = []
+
+    def reset(self):
+        self.ratios.clear()
+
+    def record(self, source_len: int, target_len: int):
+        # Short chunks (headings, single lines) have noisy ratios
+        if source_len >= MIN_CHUNK_SIZE and target_len > 0:
+            self.ratios.append(target_len / source_len)
+
+    def expected_ratio(self) -> Optional[float]:
+        if len(self.ratios) < self.WARMUP:
+            return None
+        ordered = sorted(self.ratios)
+        mid = len(ordered) // 2
+        return ordered[mid] if len(ordered) % 2 else (ordered[mid - 1] + ordered[mid]) / 2
+
+
+length_calibration = LengthCalibration()
+
+
+def validate_translation_length(source_text: str, translated_text: str,
                                  stage_name: str = "") -> tuple:
     """
     Validate translation length and determine if rechunking is needed.
-    
+
     Args:
         source_text: Original source text
         translated_text: Translated text
         stage_name: Name of pipeline stage (for logging)
-        
+
     Returns:
         Tuple of (is_valid: bool, percent_diff: float, should_split: bool)
+        percent_diff is the deviation from the expected (calibrated) length.
     """
     source_len = len(source_text)
     target_len = len(translated_text)
-    
+
     if source_len == 0:
         return True, 0.0, False
-    
-    percent_diff = abs(target_len - source_len) / source_len * 100
-    
-    # Check if rechunking is needed
-    should_split = (
-        source_len >= MIN_CHUNK_SIZE and
-        percent_diff > config.length_check_threshold
-    )
-    
+
+    ratio = target_len / source_len
+    expected = length_calibration.expected_ratio()
+    if expected is None:
+        low, high = LengthCalibration.WARMUP_RANGE
+        percent_diff = abs(target_len - source_len) / source_len * 100
+        out_of_range = not (low <= ratio < high)
+        expectation = "calibrating"
+    else:
+        expected_len = source_len * expected
+        percent_diff = abs(target_len - expected_len) / expected_len * 100
+        out_of_range = percent_diff > config.length_check_threshold
+        expectation = f"expected ×{expected:.2f}"
+
+    should_split = source_len >= MIN_CHUNK_SIZE and out_of_range
+
     if should_split:
-        logger.error(f"⚠ SPLIT [{stage_name}] {source_len} → {target_len} chars ({percent_diff:.1f}%) - rechunking needed")
+        logger.error(f"⚠ SPLIT [{stage_name}] {source_len} → {target_len} chars (×{ratio:.2f}, {expectation}, {percent_diff:.1f}% off) - rechunking needed")
     elif config.debug:
-        logger.debug(f"[{stage_name}] {source_len} → {target_len} chars ({percent_diff:.1f}%) ✓ OK")
-    
+        logger.debug(f"[{stage_name}] {source_len} → {target_len} chars (×{ratio:.2f}, {expectation}) ✓ OK")
+
     return not should_split, percent_diff, should_split
 
 
@@ -1526,6 +1569,11 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
     
     if character_sink is not None:
         character_sink.extend(state.synopsis_characters)
+
+    # Also reached when splitting is exhausted (MAX_DEPTH): such an outlier
+    # must not shift the expected ratio.
+    if not should_split:
+        length_calibration.record(len(source_text), len(state.final_translation))
 
     # Success - log tokens (F6: state.total_tokens is accumulated in
     # PipelineState.add_result; state.final_result does not exist)

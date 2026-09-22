@@ -149,3 +149,55 @@ if __name__ == "__main__":
     print("  1. No separator between rechunked parts")
     print("  2. Rechunked parts may not have proper structure markers")
     print("  3. translate_chunks may not handle combined_translation correctly")
+
+
+def test_length_check_learns_expected_ratio_from_book():
+    """ko→ru doubles the character count: that must not trigger rechunking."""
+    import src.utils as ta
+    cal = ta.length_calibration
+    src_text = "가" * 3000
+
+    # Warm-up: only gross failures are rejected
+    assert ta.validate_translation_length(src_text, "я" * 6000, "T")[2] is False
+    assert ta.validate_translation_length(src_text, "я" * 600, "T")[2] is True
+    assert ta.validate_translation_length(src_text, "я" * 15000, "T")[2] is True
+
+    for target_len in (5900, 6000, 6200):
+        cal.record(3000, target_len)
+    assert cal.expected_ratio() == 2.0
+
+    # Calibrated: judged against ×2.0 with the usual threshold
+    assert ta.validate_translation_length(src_text, "я" * 6500, "T")[2] is False
+    assert ta.validate_translation_length(src_text, "я" * 3000, "T")[2] is True   # half missing
+    assert ta.validate_translation_length(src_text, "я" * 9000, "T")[2] is True
+
+
+def test_length_calibration_ignores_short_chunks():
+    import src.utils as ta
+    cal = ta.length_calibration
+    cal.record(100, 900)
+    cal.record(ta.MIN_CHUNK_SIZE, 0)
+    assert cal.ratios == []
+
+
+def test_translate_chunk_records_only_accepted_chunks(monkeypatch):
+    import src.utils as ta
+    src_text = "가" * 3000
+
+    def fake_execute(**kw):
+        state = ta.PipelineState(context=None)
+        state.add_result(ta.TranslationResult(
+            stage=ta.TranslationStage.FINAL, llm_role=ta.LLMRole.TRANSLATE,
+            text=fake_execute.out))
+        return state
+
+    monkeypatch.setattr(ta._pipeline, 'execute', fake_execute)
+
+    fake_execute.out = "я" * 6000
+    ta.translate_chunk('korean', 'russian', src_text, '', {}, [])
+    assert ta.length_calibration.ratios == [2.0]
+
+    # Rejected at MAX_DEPTH (no further split) — not learned
+    fake_execute.out = "я" * 30000
+    ta.translate_chunk('korean', 'russian', src_text, '', {}, [], depth=ta.MAX_DEPTH)
+    assert ta.length_calibration.ratios == [2.0]

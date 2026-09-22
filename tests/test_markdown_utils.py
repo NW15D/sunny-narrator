@@ -85,9 +85,16 @@ def test_add_toc_to_html():
     assert 'Section 1.1' in toc_html
 
 
+def _calibrate_one_to_one():
+    from src.utils import length_calibration
+    for _ in range(length_calibration.WARMUP):
+        length_calibration.record(2000, 2000)
+
+
 def test_validate_translation_length_rejects_too_long():
     """Test length validation function from src.utils."""
     from src.utils import validate_translation_length
+    _calibrate_one_to_one()
     
     # Test chunk with 50% diff (above threshold of 20%) - need >2000 chars for MIN_CHUNK_SIZE
     is_valid, percent_diff, should_split = validate_translation_length(
@@ -107,6 +114,7 @@ def test_validate_translation_length_rejects_too_long():
 
 def test_validate_translation_length_accepts_ok_and_rejects_small_chunk():
     """Test length validation function from src.utils."""
+    _calibrate_one_to_one()
     # Test chunk with 50% diff (source_len >= 2000 required for split)
     is_valid, percent_diff, should_split = validate_translation_length(
         "x" * 2500, "x" * 3750, "test"  # 50% diff, source >= MIN_CHUNK_SIZE

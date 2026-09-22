@@ -46,7 +46,7 @@ except ImportError:
     pypandoc = None
 
 # Import existing utilities
-from src.utils import split_text_smartly, config, validate_translation_length, _pipeline, translate_chunk, translate_metadata
+from src.utils import split_text_smartly, config, validate_translation_length, _pipeline, translate_chunk, translate_metadata, length_calibration
 from src.checkpoint_manager import CheckpointManager, compute_fingerprint
 from src import markdown_utils
 from src.markdown_utils import split_markdown_by_size, sanitize_surrogates
@@ -988,6 +988,7 @@ def translate_chunks(
     # This ensures chunks don't exceed max_chunk_size (unlike old _split_into_chunks)
     chunks = _split_into_chunks_md(markdown_text, max_chunk_size)
     total_chunks = len(chunks)
+    length_calibration.reset()  # expected length ratio is learned per book
     
     if logger:
         logger.info(f"Text length: {len(markdown_text):,} chars, max_chunk_size: {max_chunk_size}")
