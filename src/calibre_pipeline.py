@@ -1048,9 +1048,11 @@ def translate_chunks(
             checkpoint_mgr.remove()
 
     # Load vocabulary if book_path provided and no explicit vocab_dict
+    vocab_from_file = False
     if vocab_dict is None and book_path:
         try:
             vocab_dict = _load_vocab_dict(book_path)
+            vocab_from_file = os.path.exists(Path(book_path).parent / f"{Path(book_path).stem}.dic")
             if vocab_dict and logger:
                 logger.info(f"Loaded vocabulary: {len(vocab_dict)} terms")
             # Also load vocab_entries for 5-stage translation
@@ -1064,6 +1066,7 @@ def translate_chunks(
                 print(f"Warning: Failed to load vocabulary: {e}")
             vocab_dict = {}
             vocab_entries = []
+            vocab_from_file = False
     elif vocab_dict is None:
         vocab_dict = {}
     
@@ -1091,8 +1094,10 @@ def translate_chunks(
         if vocab_entries:
             chunk_vocab_entries = [e for e in vocab_entries if e.get('source', '').lower() in chunk_lower]
         translation = None
+        characters = []
         for attempt in range(3):  # Up to 3 attempts
             try:
+                characters = []
                 translation, synopsis = translate_chunk(
                     source_lang=source_lang,
                     target_lang=target_lang,
@@ -1102,9 +1107,10 @@ def translate_chunks(
                     vocab_entries=chunk_vocab_entries,
                     country=country,
                     style=style,
-                    fast_mode=fast_mode
+                    fast_mode=fast_mode,
+                    character_sink=characters
                 )
-                
+
                 outline_text = synopsis or ""
                 break  # Success
                 
@@ -1144,7 +1150,19 @@ def translate_chunks(
             translation = chunk
             failed_chunks += 1
             chunk_failed = True
-        
+
+        if characters and not chunk_failed and vocab_from_file:
+            from src.vocabulary_manager import apply_character_genders
+            dic_path = str(Path(book_path).parent / f"{Path(book_path).stem}.dic")
+            try:
+                updated, added = apply_character_genders(dic_path, characters)
+                if updated or added:
+                    logger.info(f"Dictionary {dic_path}: gender set for {updated}, added {added} character(s)")
+                    vocab_dict = _load_vocab_dict(book_path)
+                    vocab_entries = _load_vocab_entries(book_path)
+            except OSError as e:
+                logger.warning(f"Could not update dictionary with character genders: {e}")
+
         # Sanitize surrogates before storing
         translation = sanitize_surrogates(translation)
         translated_parts.append(translation)

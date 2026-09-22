@@ -239,6 +239,7 @@ class TranslationEngine:
                 logger.debug(f"Vocab dict: {len(vocab_dict)} terms, formatted: {len(formatted_vocab)} chars")
                 logger.debug(f"Vocab entries: {len(entries)} full objects")
             
+            characters = []
             translation, synopsis = ta.translate_chunk(
                 source_lang=config.source_lang,
                 target_lang=config.target_lang,
@@ -249,11 +250,15 @@ class TranslationEngine:
                 country=config.country,
                 style='xml',
                 fast_mode=config.fast_trans,
-                depth=0  # Start at depth 0
+                depth=0,  # Start at depth 0
+                character_sink=characters
             )
 
             if translation is None:
                 raise ValueError("Translation returned None")
+
+            if self.vocab_manager:
+                self.vocab_manager.record_character_genders(characters)
 
             return translation, synopsis
 

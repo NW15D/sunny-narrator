@@ -45,6 +45,75 @@ def _min_word_length_for(source_lang: str) -> int:
     return 2 if source_lang.lower() in _CJK_LANGUAGES else 5
 
 
+def _dic_field(value: str) -> str:
+    # Only the first field after "=" can be CSV-quoted: later fields follow
+    # ", " and csv.reader (no skipinitialspace) would keep the quotes literally.
+    return f'"{value}"' if ',' in value else value
+
+
+def apply_character_genders(dict_file: str, characters: List[Dict[str, str]]) -> Tuple[int, int]:
+    """
+    Write genders reported by the synopsis stage into a .dic file.
+
+    A character found in the file (by source, else by target name) gets its
+    gender filled in only when the gender field is empty: a gender already in
+    the file was set by the user or an earlier chunk and wins. An unknown
+    character is appended as "source = target, PERSON, gender, ".
+
+    Returns (updated, added) counts.
+    """
+    with open(dict_file, 'r', encoding='utf-8-sig') as f:
+        lines = f.read().split('\n')
+
+    index = {}  # source/target lowercased -> (line_idx, source, fields)
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped or stripped.startswith('#') or '=' not in stripped:
+            continue
+        source, rest = (p.strip() for p in stripped.split('=', 1))
+        fields = [f.strip() for f in next(csv.reader([rest]), [])]
+        if not source or not fields:
+            continue
+        index.setdefault(source.lower(), (i, source, fields))
+        if fields[0]:
+            index.setdefault(fields[0].lower(), (i, source, fields))
+
+    updated, appended = 0, []
+    for char in characters:
+        hit = index.get(char['source'].lower()) or index.get(char['target'].lower())
+        if hit is None:
+            appended.append(f"{char['source']} = {_dic_field(char['target'])}, PERSON, {char['gender']}, ")
+            entry = (None, char['source'], [char['target'], 'PERSON', char['gender'], ''])
+            index[char['source'].lower()] = entry
+            index.setdefault(char['target'].lower(), entry)
+            continue
+        line_idx, source, fields = hit
+        fields += [''] * (4 - len(fields))
+        if line_idx is None or fields[2]:
+            continue
+        fields[2] = char['gender']
+        if not fields[1]:
+            fields[1] = 'PERSON'
+        lines[line_idx] = f"{source} = {_dic_field(fields[0])}, " + ", ".join(fields[1:])
+        updated += 1
+
+    if not updated and not appended:
+        return 0, 0
+
+    while lines and not lines[-1].strip():
+        lines.pop()
+    content = '\n'.join(lines + appended) + '\n'
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(dict_file) or '.', suffix='.tmp')
+    try:
+        with os.fdopen(tmp_fd, 'w', encoding='utf-8') as f:
+            f.write(content)
+        os.replace(tmp_path, dict_file)
+    except Exception:
+        os.unlink(tmp_path)
+        raise
+    return updated, len(appended)
+
+
 class DictionaryCreatedSignal(Exception):
     """Raised when a new dictionary has been created and the pipeline should stop for user review."""
     def __init__(self, dict_path: str):
@@ -710,7 +779,17 @@ class VocabularyManager:
         
         if config.debug:
             logger.debug(f"[VocabularyManager] Extracted {len(self.characters)} characters, synced with registry")
-    
+
+    def record_character_genders(self, characters: List[Dict[str, str]]):
+        """Persist synopsis-reported genders to the .dic and reload it."""
+        if not characters or not os.path.exists(self.dict_file):
+            return
+        updated, added = apply_character_genders(self.dict_file, characters)
+        if updated or added:
+            logger.info(f"Dictionary {self.dict_file}: gender set for {updated}, added {added} character(s)")
+            self.vocab = self._load_from_file()
+            self._extract_characters()
+
     def get_vocab_for_chunk(self, chunk_text: str, s_idx: int, c_idx: int) -> List[VocabEntry]:
         """
         Get vocabulary entries relevant to this chunk.
