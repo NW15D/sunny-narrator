@@ -178,9 +178,13 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
             try:
                 # We only need NER here, so we can disable parser and lemmatizer to save time and avoid warnings
                 doc = nlp(chunk, disable=["parser", "lemmatizer", "attribute_ruler"])
+                # No vector_norm filter here: languages with sparse word-vector
+                # coverage (e.g. Korean, where particles attach to the entity
+                # surface form) would have every entity's vector_norm come out
+                # at 0, silently dropping the entire NER result.
                 ents.extend([
                     (ent.text.strip(), ent.label_)
-                    for ent in doc.ents if ent.vector_norm != 0 and ent.label_ in ner_category
+                    for ent in doc.ents if ent.label_ in ner_category
                 ])
 
                 if config.debug:
@@ -1015,9 +1019,10 @@ def create_series_vocab(
                 # Direct NER without make_vocab's merging
                 doc = nlp(chunk, disable=["parser", "lemmatizer", "attribute_ruler"])
 
-                # Collect raw entities with their labels
+                # Collect raw entities with their labels (see make_vocab() for
+                # why vector_norm is not used to filter entities)
                 for ent in doc.ents:
-                    if ent.label_ in ner_category and ent.vector_norm != 0:
+                    if ent.label_ in ner_category:
                         all_raw_entities.append((ent.text.strip(), ent.label_, book_name))
 
                 # Collect words (case-insensitive)

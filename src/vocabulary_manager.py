@@ -34,6 +34,16 @@ from src.character_registry import get_character_registry, Character
 config = Config()
 logger = logging.getLogger(__name__)
 
+# Languages written without spaces between words, where a "word" is typically
+# 1-3 characters (Hangul syllable blocks / CJK ideographs). A min_word_length
+# tuned for space-separated alphabetic languages (default 5) would discard
+# almost every frequent word in these languages.
+_CJK_LANGUAGES = {"korean", "ko", "japanese", "ja", "chinese", "zh"}
+
+
+def _min_word_length_for(source_lang: str) -> int:
+    return 2 if source_lang.lower() in _CJK_LANGUAGES else 5
+
 
 class DictionaryCreatedSignal(Exception):
     """Raised when a new dictionary has been created and the pipeline should stop for user review."""
@@ -236,7 +246,7 @@ class VocabularyManager:
                 body,
                 min_count_ner=5,          # Entities with >= 5 occurrences
                 min_count_word=10,        # Words with >= 10 occurrences
-                min_word_length=5         # Words with length >= 5
+                min_word_length=_min_word_length_for(config.source_lang)
             )
             
             logger.info(f"Extracted {len(extracted_terms)} terms from text")
