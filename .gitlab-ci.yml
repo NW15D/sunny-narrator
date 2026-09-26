@@ -98,6 +98,8 @@ tests:
     - if: $CI_COMMIT_BRANCH == "main"
 
 test-badge:
+  tags:
+    - runner2
   # Publishes a custom project badge "N solved / M failed" parsed from
   # report.xml. Requires CI/CD variable BADGE_TOKEN (project access token,
   # api scope, reporter role). Runs even when tests fail, so the badge
