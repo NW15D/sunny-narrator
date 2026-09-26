@@ -33,6 +33,7 @@
 
 stages:
   - test
+  - badge
 
 tests:
   stage: test
@@ -95,3 +96,22 @@ tests:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == "main"
+
+test-badge:
+  # Publishes a custom project badge "N solved / M failed" parsed from
+  # report.xml. Requires CI/CD variable BADGE_TOKEN (project access token,
+  # api scope, reporter role). Runs even when tests fail, so the badge
+  # turns red instead of going stale.
+  stage: badge
+  image: python:3.12-alpine
+  needs: [tests]
+  when: always
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+  script:
+    - |
+      if [ -z "${BADGE_TOKEN:-}" ]; then
+        echo "BADGE_TOKEN not set - skipping badge publish (see .gitlab/ci/test-badge.py)";
+        exit 0;
+      fi
+    - python .gitlab/ci/test-badge.py
