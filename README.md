@@ -1,8 +1,7 @@
 # Sunny Narrator
 
-[![Pipeline](https://gt.farhome.ru/sn/sunny-narrator/badges/main/pipeline.svg)](https://gt.farhome.ru/sn/sunny-narrator/-/pipelines)
-[![Repository](https://img.shields.io/badge/repository-private-lightgrey.svg)](https://gt.farhome.ru/sn/sunny-narrator)
-[![Last commit](https://img.shields.io/badge/last%20commit-2026--09--26-informational.svg)](https://gt.farhome.ru/sn/sunny-narrator/-/commits/main)
+[![Tests](https://github.com/NW15D/sunny-narrator/actions/workflows/tests.yml/badge.svg)](https://github.com/NW15D/sunny-narrator/actions/workflows/tests.yml)
+[![Last commit](https://img.shields.io/github/last-commit/NW15D/sunny-narrator)](https://github.com/NW15D/sunny-narrator/commits/main)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **Version:** 2.2  
