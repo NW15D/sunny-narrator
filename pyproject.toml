@@ -50,8 +50,11 @@ dependencies = [
 # and `pip install -e .` could not succeed at all on Python 3.12. The default
 # PyPI torch wheels for Linux already bundle a CUDA 12.x runtime, so the base
 # "torch>=2.5.1" covers the GPU case and only cupy stays CUDA-specific.
+# The spacy[cuda12x] extra is deliberately NOT used: spaCy 3.8.13 caps it at
+# cupy-cuda12x<13, which cannot be satisfied together with the pinned
+# cupy 14.1.1 (pip: ResolutionImpossible, the Docker build failed on it).
+# spaCy is already in the base set and picks up whichever cupy is importable.
 gpu = [
-    "spacy[cuda12x]==3.8.13",
     "cupy-cuda12x==14.1.1",
 ]
 dev = [
