@@ -1,0 +1,93 @@
+# GitLab CI for sunny-narrator — full pytest suite (CPU-only) + JUnit report.
+#
+# Behavioral reference: .github/workflows/tests.yml (GitHub Actions).
+# Ported faithfully, with a few deliberate changes (see notes below).
+#
+# Why the dummy env keys are REQUIRED (kept verbatim from the GH workflow):
+#   src.utils.LLMService instantiates openai clients at __init__ and the
+#   openai SDK rejects empty keys; no network calls are made (all LLM
+#   traffic is mocked in the unit tests).
+#
+# Why torch comes from the CPU index:
+#   src.ner imports torch at module level; no CUDA is needed on CI, and the
+#   default PyPI wheels would pull multi-GB CUDA runtimes.
+#
+# Why pandoc is apt-installed:
+#   tests/test_feature_parity.py and tests/test_toc_feature.py call
+#   pypandoc.convert_text for real. GitHub ubuntu runners ship pandoc
+#   preinstalled; python:3.11-slim does not, so we install it explicitly.
+#
+# Deliberate differences vs. the GitHub workflow:
+#   1. `pip install -e '.[dev]'` installs the exact pinned dependency set
+#      from pyproject.toml plus the dev extras (pytest, pytest-timeout,
+#      pytest-cov) — the GH workflow floats on unpinned PyPI versions.
+#   2. JUnit XML report + `artifacts:reports:junit` with `when: always`, so
+#      the pipeline/MR "Tests" summary works and a future badge job can
+#      parse report.xml even when the job fails. (No native GitLab badge
+#      for passed/failed counts exists; see task artifact for options.)
+#   3. Defensive fallback: if any spaCy leaf dependency has no prebuilt
+#      wheel for this Python (Rust/Cython extensions: blis, murmurhash,
+#      sudachipy, ...), pip would abort with a build error; the script
+#      bootstraps a minimal Rust toolchain and retries once. Duplicates the
+#      project's documented install-pain history.
+
+stages:
+  - test
+
+tests:
+  stage: test
+  image: python:3.11-slim
+  interruptible: true
+
+  # Same dummy keys as .github/workflows/tests.yml — required at import time.
+  variables:
+    API_KEY_TRANSLATE: ci-dummy-key
+    API_KEY_PROOFREAD: ci-dummy-key
+    API_KEY_IMAGES: ci-dummy-key
+    PIP_CACHE_DIR: $CI_PROJECT_DIR/.pip-cache
+    DEBIAN_FRONTEND: noninteractive
+
+  cache:
+    # pip's download cache survives between pipelines (per-runner storage).
+    key: "$CI_JOB_IMAGE"
+    paths:
+      - .pip-cache/
+
+  before_script:
+    # pandoc — real conversions in test_feature_parity / test_toc_feature.
+    # build-essential + curl — fallback toolchain for source builds (see #3).
+    - apt-get update -qq
+    - apt-get install -y -qq --no-install-recommends pandoc curl ca-certificates build-essential
+    - python -m pip install --upgrade pip
+
+  script:
+    # 1) CPU-only PyTorch first, so pip never considers the CUDA wheels.
+    - python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+    # 2) Project deps (pinned) + dev extras (pytest, pytest-timeout, pytest-cov).
+    #    Rare fallback: on a missing wheel pip tries an sdist build that needs
+    #    cargo; bootstrap a minimal Rust toolchain and retry once.
+    - |
+      if ! python -m pip install -e '.[dev]'; then
+        echo "pip install failed - bootstrapping Rust toolchain and retrying";
+        export PATH="$HOME/.cargo/bin:$PATH";
+        if ! command -v cargo >/dev/null 2>&1; then
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup-init.sh;
+          sh /tmp/rustup-init.sh -y --profile minimal;
+        fi;
+        python -m pip install -e '.[dev]';
+      fi
+    # 3) Full suite. pyproject's addopts already ignores the non-pytest
+    #    tests/test_calibre_cleanup.py and sets timeout=120 for every test.
+    - python -m pytest tests/ -q --junitxml=report.xml
+
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml
+    paths:
+      - report.xml
+    expire_in: 1 week
+
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
