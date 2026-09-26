@@ -47,6 +47,7 @@ except ImportError:
 
 # Import existing utilities
 from src.utils import split_text_smartly, config, validate_translation_length, translate_chunk, translate_metadata, length_calibration
+from src.utils import _pipeline  # noqa: F401  (tests monkeypatch cp._pipeline.execute)
 from src.checkpoint_manager import CheckpointManager, compute_fingerprint
 from src import markdown_utils
 from src.markdown_utils import sanitize_surrogates
