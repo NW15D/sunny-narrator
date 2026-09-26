@@ -3,6 +3,7 @@
 [![Pipeline](https://gt.farhome.ru/sn/sunny-narrator/badges/main/pipeline.svg)](https://gt.farhome.ru/sn/sunny-narrator/-/pipelines)
 [![Repository](https://img.shields.io/badge/repository-private-lightgrey.svg)](https://gt.farhome.ru/sn/sunny-narrator)
 [![Last commit](https://img.shields.io/badge/last%20commit-2026--09--26-informational.svg)](https://gt.farhome.ru/sn/sunny-narrator/-/commits/main)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **Version:** 2.2  
 **Glossary-Driven AI Book Translator** for FB2/TXT/EPUB/DOCX/PDF. Dual-LLM translation system with 5-stage quality control.
