@@ -46,10 +46,10 @@ except ImportError:
     pypandoc = None
 
 # Import existing utilities
-from src.utils import split_text_smartly, config, validate_translation_length, _pipeline, translate_chunk, translate_metadata, length_calibration
+from src.utils import split_text_smartly, config, validate_translation_length, translate_chunk, translate_metadata, length_calibration
 from src.checkpoint_manager import CheckpointManager, compute_fingerprint
 from src import markdown_utils
-from src.markdown_utils import split_markdown_by_size, sanitize_surrogates
+from src.markdown_utils import sanitize_surrogates
 
 # Precompiled Calibre-specific cleanup patterns (narrowed to avoid removing valid Pandoc attributes)
 _RE_CALIBRE_COMMENT = re.compile(r'<!--\s*\d+\s*-->')

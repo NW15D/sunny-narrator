@@ -9,7 +9,6 @@ Per product decision:
   into <p>/<empty-line/> (verified empirically).
 """
 import sys
-import os
 from unittest.mock import MagicMock, patch
 from pathlib import Path
 
