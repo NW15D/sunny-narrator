@@ -23,14 +23,18 @@ jobs:
           python-version: "3.11"
           cache: pip
 
+      # The pandoc *binary* is NOT guaranteed on ubuntu-latest; tests call
+      # pypandoc.convert_text for real (test_toc_feature, test_feature_parity).
+      - name: Install pandoc
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq pandoc
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           # CPU-only PyTorch first (src.ner imports torch at module level; no CUDA needed)
           python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
           # Pinned project deps + dev extras (pytest, pytest-timeout, pytest-cov),
-          # same as .gitlab-ci.yml. The pandoc *binary* is preinstalled on
-          # GitHub ubuntu runners (tests call pypandoc.convert_text for real).
+          # same as .gitlab-ci.yml.
           python -m pip install -e '.[dev]'
 
       - name: Run tests
