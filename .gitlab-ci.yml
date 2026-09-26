@@ -37,6 +37,10 @@ stages:
 tests:
   stage: test
   image: python:3.11-slim
+  # Project runner (id=29) is tagged and run_untagged=false, so jobs must
+  # carry the tag explicitly or they stay pending forever.
+  tags:
+    - runner2
   interruptible: true
 
   # Same dummy keys as .github/workflows/tests.yml — required at import time.
