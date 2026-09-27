@@ -5,18 +5,17 @@
 [![Last commit](https://img.shields.io/github/last-commit/NW15D/sunny-narrator)](https://github.com/NW15D/sunny-narrator/commits/main)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Version:** 2.2  
-**Glossary-Driven AI Book Translator** for FB2/TXT/EPUB/DOCX/PDF. Dual-LLM translation system with 5-stage quality control.
+**Version:** 2.3  
+**Glossary-Driven AI Book Translator** for FB2/TXT/EPUB/DOCX/PDF — an LLM-powered fiction book translator with dual-LLM translation and 5-stage quality control.
+
+🖥️ **Console app (CLI)** — no graphical interface; basic command-line experience is recommended.
 
 **Designed for:**
 - 📚 Glossary-driven translation of book series (consistent terminology across volumes)
 - 🔨 Dictionary creation for book and series translations
-- 💻 Local GPUs (16-24GB VRAM) via llama.cpp, Ollama, LM Studio etc. — any OpenAI-compatible API (1-2M tokens per book)
+- 💻 Local GPUs (16-24GB VRAM) via llama.cpp, Ollama, LM Studio etc. and any OpenAI-compatible API (3-4M tokens per book)
 - ☁️ Online translation services via API
-- 👥 Character gender detection when the dictionary does not specify it (written back to the .dic and reused in later chunks)
-- 📏 Automatic calibration of the post-translation chunk length check, based on the first 3 chunks
-- 🈶 Adaptation for CJK languages (Korean, Japanese, Chinese)
-- 🌐 Direct translation with dictionaries from CJK languages into any language
+- 🎓 Professional and non-professional translators alike — for drafting book translations and building dictionaries
 
 ## 🔄 General Workflow
 
@@ -110,6 +109,14 @@ DEBUG=off
 **Speed:** ~2.5x faster (2 stages instead of 5)
 
 **Details:** [docs/FAST_TRANS.md](docs/FAST_TRANS.md)
+
+---
+
+## 📏 Chunk Length Calibration
+
+After each chunk is translated, its length is checked against an expected source→target ratio to catch truncated or bloated output. Instead of a fixed threshold, the ratio is calibrated automatically per book: the first 3 accepted chunks are only checked for gross failures (×0.25 … ×5), then the expected ratio becomes the median of accepted chunks so far.
+
+**Details:** [docs/RECHUNKING_GUIDE.md](docs/RECHUNKING_GUIDE.md)
 
 ---
 
@@ -283,6 +290,7 @@ The console log shows every step of the translation: length checks with the cali
 
 ## 📝 Versions
 
+- **v2.3** — README overhaul: consolidated capabilities list, added CLI-only tool note, unified Docker registry links across all language versions, SEO improvements
 - **v2.2** — Character gender detection written back to the dictionary; per-book calibration of the translation length check; CJK adaptation (Korean, Japanese, Chinese) with direct translation from CJK into any language
 - **v2.1** — Auto-detect pipeline by file extension (.docx/.epub/.pdf → Calibre; .fb2/.txt → classic); removed `--pipeline` flag
 - **v2.0** — Migrated from pip requirements.txt to pyproject.toml; PyTorch CUDA 12.1 + cuPy

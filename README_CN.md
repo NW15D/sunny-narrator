@@ -1,17 +1,16 @@
 # Sunny Narrator
 
-**版本:** 2.2  
-**基于术语表的 AI 书籍翻译器**，支持 FB2/TXT/EPUB/DOCX/PDF。双 LLM 翻译系统，具有 5 阶段质量控制。
+**版本:** 2.3  
+**基于术语表的 AI 书籍翻译器（AI book translator）**，支持 FB2/TXT/EPUB/DOCX/PDF —— 基于 LLM 的小说/文学翻译工具（fiction book translator），采用双 LLM 翻译系统与 5 阶段质量控制。
+
+🖥️ **命令行工具（CLI）** —— 无图形界面，需要一定的命令行使用经验。
 
 **适用于：**
 - 📚 系列图书的术语表驱动翻译（所有卷中保持一致的术语）
 - 🔨 书籍和系列翻译的词典创建
-- 💻 通过 llama.cpp、Ollama、LM Studio 等使用本地 GPU（16-24GB VRAM）——支持任何兼容 OpenAI 的 API（每本书约 100-200 万 token）
+- 💻 通过 llama.cpp、Ollama、LM Studio 等使用本地 GPU（16-24GB VRAM），以及任何兼容 OpenAI 的 API（每本书约 300-400 万 token）
 - ☁️ 通过 API 使用在线翻译服务
-- 👥 词典未注明时自动判断角色性别（写回 .dic，供后续分块使用）
-- 📏 基于前 3 个分块自动校准翻译后的分块长度检查
-- 🈶 针对 CJK 语言（韩语、日语、中文）的适配
-- 🌐 支持借助词典从 CJK 语言直接翻译为任意语言
+- 🎓 面向专业和非专业译者 —— 用于生成书籍翻译草稿和词典
 
 ## 🔄 通用工作流程
 
@@ -105,6 +104,14 @@ DEBUG=off
 **速度：** 快约 2.5 倍（2 个阶段而非 5 个）
 
 **详情：** [docs/FAST_TRANS.md](docs/FAST_TRANS.md)
+
+---
+
+## 📏 分块长度校准
+
+每个分块翻译完成后，会将其长度与预期的 source→target 比例进行核对，以捕捉被截断或被拉长的译文。该比例并非固定阈值，而是按书自动校准：前 3 个被接受的分块只检查严重失败（×0.25 … ×5），此后预期比例取自已接受分块的中位数。
+
+**详情：** [docs/RECHUNKING_GUIDE.md](docs/RECHUNKING_GUIDE.md)
 
 ---
 
@@ -204,6 +211,11 @@ docker-compose up -d
 docker-compose -f docker-compose.cpu.yml up -d
 ```
 
+**预构建 GPU 镜像**（[GitHub Container Registry](https://github.com/NW15D/sunny-narrator/pkgs/container/sunny-narrator)，在每次推送到 `main` 时从 `Dockerfile` 构建）：
+```bash
+docker pull ghcr.io/nw15d/sunny-narrator:main
+```
+
 **指南：** [docs/DOCKER_CPU_GUIDE.md](docs/DOCKER_CPU_GUIDE.md)、[docs/GPU_DOCKER.md](docs/GPU_DOCKER.md)
 
 ---
@@ -272,6 +284,7 @@ Calibre 的内部标记（`calibre_link-*` 锚点、`.calibre` 类）会被自�
 
 ## 📝 版本
 
+- **v2.3** — README 更新：统一各语言版本内容、标注为无界面命令行工具、在所有语言版本中添加 Docker 镜像仓库链接、SEO 优化
 - **v2.2** — 判断角色性别并写回词典；按书自动校准译文长度检查；CJK（韩语、日语、中文）适配，支持从 CJK 直接翻译为任意语言
 - **v2.1** — 按文件扩展名自动选择流程（.docx/.epub/.pdf → Calibre；.fb2/.txt → 经典）；移除 `--pipeline` 参数
 - **v2.0** — 从 requirements.txt 迁移到 pyproject.toml；PyTorch CUDA 12.1 + cuPy

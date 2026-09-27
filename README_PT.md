@@ -1,17 +1,16 @@
 # Sunny Narrator
 
-**Versão:** 2.2  
-**Tradutor de livros guiado por glossário** para FB2/TXT/EPUB/DOCX/PDF. Sistema de tradução com dois LLMs e controle de qualidade em 5 estágios.
+**Versão:** 2.3  
+**Tradutor de livros guiado por glossário (AI book translator)** para FB2/TXT/EPUB/DOCX/PDF — um tradutor de ficção baseado em LLM (LLM fiction book translator), com sistema de tradução em dois LLMs e controle de qualidade em 5 estágios.
+
+🖥️ **Utilitário de linha de comando (CLI)** — sem interface gráfica; recomenda-se experiência básica com terminal.
 
 **Projetado para:**
 - 📚 Tradução de séries de livros guiada por glossário (terminologia consistente em todos os volumes)
 - 🔨 Criação de dicionários para traduções de livros e séries
-- 💻 GPUs locais (16-24 GB VRAM) via llama.cpp, Ollama, LM Studio etc. — qualquer API compatível com OpenAI (1-2 milhões de tokens por livro)
+- 💻 GPUs locais (16-24 GB VRAM) via llama.cpp, Ollama, LM Studio etc. e qualquer API compatível com OpenAI (3-4 milhões de tokens por livro)
 - ☁️ Serviços de tradução online via API
-- 👥 Detecção do gênero dos personagens quando não indicado no dicionário (gravado no .dic e reutilizado nos chunks seguintes)
-- 📏 Calibração automática do controle de tamanho dos chunks após a tradução, com base nos 3 primeiros chunks
-- 🈶 Adaptação para idiomas CJK (coreano, japonês, chinês)
-- 🌐 Tradução direta com dicionários de idiomas CJK para qualquer idioma
+- 🎓 Tradutores profissionais e não profissionais — para gerar rascunhos de tradução de livros e dicionários
 
 ## 🔄 Workflow Geral
 
@@ -105,6 +104,14 @@ DEBUG=off
 **Velocidade:** ~2.5x mais rápido (2 estágios em vez de 5)
 
 **Detalhes:** [docs/FAST_TRANS.md](docs/FAST_TRANS.md)
+
+---
+
+## 📏 Calibração do Tamanho dos Chunks
+
+Após a tradução de cada chunk, seu tamanho é verificado em relação a uma proporção esperada source→target, para detectar traduções truncadas ou infladas. Em vez de um limite fixo, a proporção é calibrada automaticamente por livro: os 3 primeiros chunks aceitos só são verificados contra falhas grosseiras (×0,25 … ×5); depois disso, a proporção esperada passa a ser a mediana dos chunks já aceitos.
+
+**Detalhes:** [docs/RECHUNKING_GUIDE.md](docs/RECHUNKING_GUIDE.md)
 
 ---
 
@@ -204,6 +211,11 @@ docker-compose up -d
 docker-compose -f docker-compose.cpu.yml up -d
 ```
 
+**Imagem GPU pré-compilada** ([GitHub Container Registry](https://github.com/NW15D/sunny-narrator/pkgs/container/sunny-narrator), compilada a partir do `Dockerfile` a cada push para `main`):
+```bash
+docker pull ghcr.io/nw15d/sunny-narrator:main
+```
+
 **Guias:** [docs/DOCKER_CPU_GUIDE.md](docs/DOCKER_CPU_GUIDE.md), [docs/GPU_DOCKER.md](docs/GPU_DOCKER.md)
 
 ---
@@ -273,6 +285,7 @@ O log do console mostra cada etapa da tradução: verificações de tamanho com 
 
 ## 📝 Versões
 
+- **v2.3** — Atualização do README: conteúdo unificado em todos os idiomas, nota sobre ferramenta CLI sem interface, links do registro Docker adicionados a todas as versões, melhorias de SEO
 - **v2.2** — Detecção do gênero dos personagens com gravação no dicionário; calibração do controle de tamanho da tradução por livro; adaptação para CJK (coreano, japonês, chinês) e tradução direta de CJK para qualquer idioma
 - **v2.1** — Detecção automática do pipeline pela extensão (.docx/.epub/.pdf → Calibre; .fb2/.txt → clássico); flag `--pipeline` removida
 - **v2.0** — Migração de requirements.txt para pyproject.toml; PyTorch CUDA 12.1 + cuPy
