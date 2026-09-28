@@ -1,5 +1,9 @@
 # Sunny Narrator
 
+<p align="center">
+  <img src="assets/sunny-narrator-github-banner.webp" alt="Sunny Narrator — translate EPUB, PDF, TXT, FB2 and DOCX books into many languages" width="100%">
+</p>
+
 [![Tests](https://github.com/NW15D/sunny-narrator/actions/workflows/tests.yml/badge.svg)](https://github.com/NW15D/sunny-narrator/actions/workflows/tests.yml)
 [![Docker](https://github.com/NW15D/sunny-narrator/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/NW15D/sunny-narrator/pkgs/container/sunny-narrator)
 [![Last commit](https://img.shields.io/github/last-commit/NW15D/sunny-narrator)](https://github.com/NW15D/sunny-narrator/commits/main)
