@@ -712,25 +712,30 @@ def _clean_calibre_markers(text: str) -> str:
     return text.strip()
 
 
-def _load_vocab_dict(book_path: str) -> dict:
+def _load_vocab_dict(book_path: str, dict_file: Optional[str] = None) -> dict:
     """
     Load vocabulary dictionary from .dic file.
-    
+
     Parses the .dic file (format: source = target, category, gender, notes)
     and returns a simple source->target mapping.
-    
+
     Args:
         book_path: Path to the book file (used to find corresponding .dic)
-        
+        dict_file: Explicit .dic path (DICTIONARY env/--dictionary override).
+            Takes precedence over the auto <book_name>.dic lookup.
+
     Returns:
         Dictionary mapping source terms to target translations
     """
     from pathlib import Path
-    
-    book_dir = Path(book_path).parent
-    book_name = Path(book_path).stem
-    dic_path = book_dir / f"{book_name}.dic"
-    
+
+    if dict_file:
+        dic_path = Path(dict_file)
+    else:
+        book_dir = Path(book_path).parent
+        book_name = Path(book_path).stem
+        dic_path = book_dir / f"{book_name}.dic"
+
     if not dic_path.exists():
         return {}
     
@@ -755,25 +760,30 @@ def _load_vocab_dict(book_path: str) -> dict:
     return vocab
 
 
-def _load_vocab_entries(book_path: str) -> list:
+def _load_vocab_entries(book_path: str, dict_file: Optional[str] = None) -> list:
     """
     Load vocabulary entries from .dic file as dict objects with full metadata.
-    
+
     Parses the .dic file (format: source = target, category, gender, notes)
     and returns a list of dict objects with keys: source, target, category, gender, notes.
-    
+
     Args:
         book_path: Path to the book file (used to find corresponding .dic)
-        
+        dict_file: Explicit .dic path (DICTIONARY env/--dictionary override).
+            Takes precedence over the auto <book_name>.dic lookup.
+
     Returns:
         List of dict objects with vocabulary entry metadata
     """
     from pathlib import Path
-    
-    book_dir = Path(book_path).parent
-    book_name = Path(book_path).stem
-    dic_path = book_dir / f"{book_name}.dic"
-    
+
+    if dict_file:
+        dic_path = Path(dict_file)
+    else:
+        book_dir = Path(book_path).parent
+        book_name = Path(book_path).stem
+        dic_path = book_dir / f"{book_name}.dic"
+
     if not dic_path.exists():
         return []
     
@@ -938,6 +948,7 @@ def translate_chunks(
     fast_mode: bool = False,
     vocab_dict: Optional[dict] = None,
     book_path: Optional[str] = None,
+    dict_file: Optional[str] = None,
     checkpoint_file: Optional[str] = None,
     remove_on_success: bool = True,
     stats_out: Optional['TranslationStats'] = None
@@ -962,6 +973,9 @@ def translate_chunks(
         vocab_dict: Optional vocabulary dictionary. If None and book_path is provided,
                     will be loaded from book's .dic file
         book_path: Optional path to the book file (used to load vocabulary)
+        dict_file: Optional explicit .dic path (DICTIONARY env/--dictionary
+            override). Takes precedence over the auto <book_name>.dic lookup
+            derived from book_path.
         checkpoint_file: Optional path to a checkpoint JSON for resume support
         remove_on_success: If True (default), delete the checkpoint once all
             chunks are translated. run_pipeline() passes False so the
@@ -1053,12 +1067,13 @@ def translate_chunks(
     vocab_from_file = False
     if vocab_dict is None and book_path:
         try:
-            vocab_dict = _load_vocab_dict(book_path)
-            vocab_from_file = os.path.exists(Path(book_path).parent / f"{Path(book_path).stem}.dic")
+            vocab_dict = _load_vocab_dict(book_path, dict_file)
+            vocab_from_file = os.path.exists(Path(dict_file) if dict_file
+                                              else Path(book_path).parent / f"{Path(book_path).stem}.dic")
             if vocab_dict and logger:
                 logger.info(f"Loaded vocabulary: {len(vocab_dict)} terms")
             # Also load vocab_entries for 5-stage translation
-            vocab_entries = _load_vocab_entries(book_path)
+            vocab_entries = _load_vocab_entries(book_path, dict_file)
             if vocab_entries and logger:
                 logger.info(f"Loaded vocab_entries: {len(vocab_entries)} entries")
         except Exception as e:
@@ -1155,13 +1170,13 @@ def translate_chunks(
 
         if characters and not chunk_failed and vocab_from_file:
             from src.vocabulary_manager import apply_character_genders
-            dic_path = str(Path(book_path).parent / f"{Path(book_path).stem}.dic")
+            dic_path = dict_file or str(Path(book_path).parent / f"{Path(book_path).stem}.dic")
             try:
                 updated, added = apply_character_genders(dic_path, characters)
                 if updated or added:
                     logger.info(f"Dictionary {dic_path}: gender set for {updated}, added {added} character(s)")
-                    vocab_dict = _load_vocab_dict(book_path)
-                    vocab_entries = _load_vocab_entries(book_path)
+                    vocab_dict = _load_vocab_dict(book_path, dict_file)
+                    vocab_entries = _load_vocab_entries(book_path, dict_file)
             except OSError as e:
                 logger.warning(f"Could not update dictionary with character genders: {e}")
 
@@ -2374,6 +2389,7 @@ def run_pipeline(
     allow_invalid: bool = False,
     checkpoint_file: Optional[str] = None,
     fresh: bool = False,
+    dict_file: Optional[str] = None,
     stats_out: Optional['TranslationStats'] = None
 ) -> str:
     """
@@ -2388,6 +2404,9 @@ def run_pipeline(
         country: Target country for cultural context
         fast_mode: Skip reflection/improve stages
         skip_validation: Skip output validation step (for testing)
+        dict_file: Explicit .dic vocabulary path (DICTIONARY env/--dictionary
+            override), taking precedence over the automatic <book_name>.dic
+            lookup next to input_path. Defaults to config.dictionary.
         checkpoint_file: Optional path to a translation checkpoint JSON. If
             not given, one is derived from input_path + target_lang next to
             the source file (deterministic, no timestamp — same naming
@@ -2404,6 +2423,9 @@ def run_pipeline(
         Path to the generated output file
     """
     _init_logger()
+
+    # dict_file precedence: explicit argument > DICTIONARY env/config
+    dict_file = dict_file or getattr(config, 'dictionary', None)
 
     # Validate input/output format scope: Calibre pipeline is for
     # DOCX/EPUB/PDF only. FB2 stays with the classic pipeline (direct XML
@@ -2481,7 +2503,7 @@ def run_pipeline(
 
         # Step 2: Build dictionary if .dic doesn't exist (M6: build BEFORE translation
         # so the first run has vocabulary terms available)
-        dic_path = Path(input_path).with_suffix('.dic')
+        dic_path = Path(dict_file) if dict_file else Path(input_path).with_suffix('.dic')
         if not dic_path.exists():
             logger.info("Step 2/5: Building dictionary from source markdown...")
             try:
@@ -2510,7 +2532,7 @@ def run_pipeline(
         # Done after Step 2 so the glossary exists and the title and
         # description use the same names as the translated body.
         try:
-            metadata_vocab = _load_vocab_entries(input_path)
+            metadata_vocab = _load_vocab_entries(input_path, dict_file)
         except Exception as e:
             logger.warning(f"Failed to load vocabulary for metadata (non-fatal): {e}")
             metadata_vocab = []
@@ -2552,6 +2574,7 @@ def run_pipeline(
             country=country,
             fast_mode=fast_mode,
             book_path=input_path,  # Enable vocabulary loading
+            dict_file=dict_file,
             checkpoint_file=checkpoint_file,
             # Keep the checkpoint until build_output/validate_output below
             # actually succeed — a crash during EPUB assembly must not

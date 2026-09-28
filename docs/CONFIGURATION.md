@@ -95,6 +95,7 @@ TARGET_LANG=russian
 |-----------|---------|-------------|
 | `NER` | `true` | Enable NER processing |
 | `NERMODEL` | `en_core_web_lg` | spaCy model for NER |
+| `DICTIONARY` | (empty, auto) | Explicit path to the `.dic` vocabulary file, overriding the automatic `<book_name>.dic` lookup next to the source file. Also settable via `--dictionary <path>` (CLI wins over the env value). Applies to both pipelines |
 
 **More details:** [NER_GUIDE.md](NER_GUIDE.md), [NER_CPU_FALLBACK_ANALYSIS.md](NER_CPU_FALLBACK_ANALYSIS.md)
 

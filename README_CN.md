@@ -1,6 +1,6 @@
 # Sunny Narrator
 
-**版本:** 2.3  
+**版本:** 2.4  
 **基于术语表的 AI 书籍翻译器（AI book translator）**，支持 FB2/TXT/EPUB/DOCX/PDF —— 基于 LLM 的小说/文学翻译工具（fiction book translator），采用双 LLM 翻译系统与 5 阶段质量控制。
 
 🖥️ **命令行工具（CLI）** —— 无图形界面，需要一定的命令行使用经验。
@@ -126,6 +126,7 @@ Alice = Алиса, PERSON, she, 主角
 
 - 首次运行时通过 NER（命名实体 + 高频词）自动创建，然后由 LLM 翻译。
 - **角色性别**（`he`、`she`、`it`、`they`）：如果词典未注明性别，摘要阶段会根据文本判断并写入 `.dic`；词典中没有的角色会以 `名字 = 译名, PERSON, 性别` 追加到末尾。文件中已有的性别不会被覆盖——手动修改始终优先。
+- **指定词典路径：** 默认在书籍旁查找词典（`books/MyBook.fb2` → `books/MyBook.dic`）。如需使用其他文件（例如系列共享词典），可在 `.env` 中设置 `DICTIONARY=path/to/file.dic`，或传入 `--dictionary path/to/file.dic`（命令行参数优先）。两个流程均支持；若文件不存在，将在该路径创建（目录必须已存在）。
 
 **格式指南：** [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md)
 
@@ -284,6 +285,7 @@ Calibre 的内部标记（`calibre_link-*` 锚点、`.calibre` 类）会被自�
 
 ## 📝 版本
 
+- **v2.4** — `DICTIONARY`（`.env`）/ `--dictionary`（命令行）：为两个流程指定 `.dic` 文件的路径
 - **v2.3** — README 更新：统一各语言版本内容、标注为无界面命令行工具、在所有语言版本中添加 Docker 镜像仓库链接、SEO 优化
 - **v2.2** — 判断角色性别并写回词典；按书自动校准译文长度检查；CJK（韩语、日语、中文）适配，支持从 CJK 直接翻译为任意语言
 - **v2.1** — 按文件扩展名自动选择流程（.docx/.epub/.pdf → Calibre；.fb2/.txt → 经典）；移除 `--pipeline` 参数

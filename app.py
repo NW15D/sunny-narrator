@@ -130,7 +130,7 @@ class TranslationEngine:
         # Vocabulary manager for dictionary handling
         self.vocab_manager = None
         if book_path:
-            self.vocab_manager = get_vocabulary_manager(book_path)
+            self.vocab_manager = get_vocabulary_manager(book_path, dict_file=config.dictionary)
 
         # Per-chunk vocabulary cache: compute once per chunk, reuse for
         # entries/dict/formatted (previously rebuilt 3-4x per chunk)
@@ -832,7 +832,8 @@ def main():
     # Prepare paths
     file_name, file_ext = os.path.splitext(os.path.basename(myfile))
     output_dir = os.path.dirname(myfile) or '.'
-    dict_file = f"{output_dir}/{file_name}.dic"
+    # DICTIONARY/--dictionary overrides the auto <book_name>.dic next to the book
+    dict_file = config.dictionary or f"{output_dir}/{file_name}.dic"
     timestamp = datetime.now().strftime("%H%M-%d%m")
 
     if file_ext.lower() not in ['.fb2', '.epub', '.txt']:
@@ -1098,6 +1099,12 @@ if __name__ == '__main__':
     parser.add_argument('--fresh', action='store_true',
                         help='DOCX/EPUB/PDF only: ignore any existing translation '
                              'checkpoint/dump and translate from scratch')
+    # Explicit vocabulary file — both pipelines
+    parser.add_argument('--dictionary', type=str, default=None,
+                        help='Explicit path to the .dic vocabulary file to use for '
+                             'translation, overriding the automatic <book_name>.dic '
+                             'lookup next to the source file (both pipelines). '
+                             'Same as setting DICTIONARY in .env')
 
     args, unknown = parser.parse_known_args()
 
@@ -1105,6 +1112,15 @@ if __name__ == '__main__':
     if args.max_chunk_size is not None and args.max_chunk_size <= 0:
         print("Error: --max-chunk-size must be a positive integer", file=sys.stderr)
         sys.exit(1)
+
+    # --dictionary overrides DICTIONARY from .env (both pipelines)
+    if args.dictionary:
+        config.dictionary = args.dictionary
+    if config.dictionary:
+        dict_dir = os.path.dirname(os.path.abspath(config.dictionary))
+        if not os.path.isdir(dict_dir):
+            print(f"Error: directory for DICTIONARY does not exist: {dict_dir}", file=sys.stderr)
+            sys.exit(1)
 
     # Supported input formats (used by --build-dict validation and pipeline auto-detection)
     CALIBRE_INPUT_FORMATS = {'.docx', '.epub', '.pdf'}
@@ -1248,6 +1264,7 @@ if __name__ == '__main__':
                 country=config.country,
                 fast_mode=args.fast_mode,
                 fresh=args.fresh,
+                dict_file=config.dictionary,
                 stats_out=stats,
             )
             print(f"\n✓ Pipeline complete: {output_path}")

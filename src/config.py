@@ -83,6 +83,13 @@ class Config:
         self.cover_prompt = os.getenv('COVER_PROMPT', '')
         
         self.example = os.getenv('EXAMPLE', '')
+
+        # DICTIONARY: explicit path to the .dic vocabulary file to use for
+        # translation, overriding the automatic <book_name>.dic lookup next
+        # to the source file (VocabularyManager, calibre_pipeline._load_vocab_dict).
+        # Empty/unset keeps the default auto-detection. Also settable per run
+        # via --dictionary (see app.py argparse block).
+        self.dictionary = os.getenv('DICTIONARY', '') or None
         self.source_lang = os.getenv('SOURCE_LANG', 'english')
         self.target_lang = os.getenv('TARGET_LANG', 'russian')
         

@@ -237,11 +237,13 @@ class VocabularyManager:
         formatted = manager.format_for_model(chunk_vocab, model="Hunyuan")
     """
     
-    def __init__(self, book_path: str):
+    def __init__(self, book_path: str, dict_file: Optional[str] = None):
         self.book_path = book_path
         self.book_dir = os.path.dirname(book_path)
         self.book_name = Path(book_path).stem
-        self.dict_file = os.path.join(self.book_dir, f"{self.book_name}.dic")
+        # Explicit dict_file argument > DICTIONARY env/config > auto lookup
+        # next to the source file (<book_name>.dic).
+        self.dict_file = dict_file or config.dictionary or os.path.join(self.book_dir, f"{self.book_name}.dic")
         
         self.vocab: Dict[str, VocabEntry] = {}
         self.characters: Dict[str, Character] = {}
@@ -1079,9 +1081,16 @@ class VocabularyManager:
 # Global manager instance (lazy initialization)
 _vocabulary_manager: Optional[VocabularyManager] = None
 
-def get_vocabulary_manager(book_path: str) -> VocabularyManager:
-    """Get or create vocabulary manager for book."""
+def get_vocabulary_manager(book_path: str, dict_file: Optional[str] = None) -> VocabularyManager:
+    """Get or create vocabulary manager for book.
+
+    dict_file: explicit .dic path (DICTIONARY env/--dictionary CLI override).
+    See VocabularyManager.__init__ for precedence.
+    """
     global _vocabulary_manager
-    if _vocabulary_manager is None or _vocabulary_manager.book_path != book_path:
-        _vocabulary_manager = VocabularyManager(book_path)
+    candidate = VocabularyManager(book_path, dict_file=dict_file)
+    if (_vocabulary_manager is None
+            or _vocabulary_manager.book_path != book_path
+            or _vocabulary_manager.dict_file != candidate.dict_file):
+        _vocabulary_manager = candidate
     return _vocabulary_manager

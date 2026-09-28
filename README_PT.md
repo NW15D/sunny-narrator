@@ -1,6 +1,6 @@
 # Sunny Narrator
 
-**Versão:** 2.3  
+**Versão:** 2.4  
 **Tradutor de livros guiado por glossário (AI book translator)** para FB2/TXT/EPUB/DOCX/PDF — um tradutor de ficção baseado em LLM (LLM fiction book translator), com sistema de tradução em dois LLMs e controle de qualidade em 5 estágios.
 
 🖥️ **Utilitário de linha de comando (CLI)** — sem interface gráfica; recomenda-se experiência básica com terminal.
@@ -126,6 +126,7 @@ Alice = Алиса, PERSON, she, Personagem principal
 
 - Criado automaticamente na primeira execução via NER (entidades nomeadas + palavras frequentes) e depois traduzido pelo LLM.
 - **Gênero dos personagens** (`he`, `she`, `it`, `they`): se o dicionário não indica o gênero, o estágio de sinopse o determina pelo texto e grava no `.dic`; personagens ausentes do dicionário são adicionados ao final como `nome = tradução, PERSON, gênero`. Um gênero já presente no arquivo nunca é sobrescrito — edições manuais sempre prevalecem.
+- **Caminho explícito do dicionário:** por padrão o dicionário é procurado ao lado do livro (`books/MyBook.fb2` → `books/MyBook.dic`). Para usar outro arquivo, por exemplo um dicionário comum da série, defina `DICTIONARY=path/to/file.dic` no `.env` ou passe `--dictionary path/to/file.dic` (a flag da CLI tem prioridade). Funciona nos dois pipelines; um arquivo inexistente é criado nesse caminho (o diretório deve existir).
 
 **Guia de formato:** [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md)
 
@@ -285,6 +286,7 @@ O log do console mostra cada etapa da tradução: verificações de tamanho com 
 
 ## 📝 Versões
 
+- **v2.4** — `DICTIONARY` (`.env`) / `--dictionary` (CLI): caminho explícito do arquivo `.dic` para os dois pipelines
 - **v2.3** — Atualização do README: conteúdo unificado em todos os idiomas, nota sobre ferramenta CLI sem interface, links do registro Docker adicionados a todas as versões, melhorias de SEO
 - **v2.2** — Detecção do gênero dos personagens com gravação no dicionário; calibração do controle de tamanho da tradução por livro; adaptação para CJK (coreano, japonês, chinês) e tradução direta de CJK para qualquer idioma
 - **v2.1** — Detecção automática do pipeline pela extensão (.docx/.epub/.pdf → Calibre; .fb2/.txt → clássico); flag `--pipeline` removida
