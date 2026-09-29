@@ -172,15 +172,6 @@ def parse_txt(file_path):
     
     return body, header, footer
 
-def prepare_chunks(body, max_len_chunk):
-    """
-    Uses the existing FB2 chunking logic.
-    
-    Need TXT chunking logic with MAX_LEN_CHUNK
-
-    """
-    return fb2.prepare_chunks(body, max_len_chunk)
-
 def get_cover_image(header, footer):
     """
     TXT usually doesn't have an embedded cover.

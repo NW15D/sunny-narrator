@@ -109,9 +109,12 @@ class TranslationEngine:
         # Set by main() once the chunk list exists; written into every
         # checkpoint so a resume can prove it refers to the same slicing.
         self.checkpoint_fingerprint = None
-        # Bytes of output_tfile that belong to fully processed chunks; stored
-        # in the checkpoint so a resume can cut off a half-written tail.
+        # _tfile_size follows every write to output_tfile; _tfile_committed
+        # only moves together with last_processed_chunk and is what the
+        # checkpoint stores, so a checkpoint taken between the two (signal
+        # handler) never claims a chunk it does not list as processed.
         self._tfile_size = 0
+        self._tfile_committed = 0
 
         # Statistics counters
         self.stats = {
@@ -420,7 +423,7 @@ class TranslationEngine:
             if first_gid == 0:
                 # A fresh run must not append to a leftover file of an old run.
                 open(output_tfile, 'w', encoding='utf-8').close()
-                self._tfile_size = 0
+                self._tfile_size = self._tfile_committed = 0
 
         def emit(text: str):
             if text:
@@ -477,6 +480,7 @@ class TranslationEngine:
             self.last_processed_chunk = g_id
             self.last_section_idx = s_idx
             self.last_chunk_idx = c_idx
+            self._tfile_committed = self._tfile_size
 
             # Save checkpoint after each chunk
             if checkpoint_file:
@@ -494,6 +498,7 @@ class TranslationEngine:
         if section_meta:
             enter_units(len(section_meta) - 1)
         emit('</section>\n' * cur_depth)
+        self._tfile_committed = self._tfile_size
 
         # Warn if too many chunks failed
         total_processed = self.stats['successful'] + self.stats['failed']
@@ -517,7 +522,7 @@ class TranslationEngine:
             "last_chunk": self.last_processed_chunk,
             "last_section_idx": self.last_section_idx,
             "last_chunk_idx": self.last_chunk_idx,
-            "tfile_size": self._tfile_size,
+            "tfile_size": self._tfile_committed,
             "stats": self.stats,
             "lengths": {
                 "total_source_len": self.total_source_len,
@@ -562,7 +567,7 @@ class TranslationEngine:
                 logger.warning(f"Cutting {actual_size - expected_size} bytes of an unfinished "
                                f"chunk from {self.output_tfile}")
                 os.truncate(self.output_tfile, expected_size)
-        self._tfile_size = expected_size or 0
+        self._tfile_size = self._tfile_committed = expected_size or 0
 
         self.stats = checkpoint.get("stats", self.stats)
         self.total_source_len = checkpoint.get("lengths", {}).get("total_source_len", 0)
@@ -780,13 +785,15 @@ def _save_vocabulary_formatted(translated_text: str, dict_file: str, original_te
     logger.info(f"Dictionary saved: {dict_file} ({len(translations)} entries)")
 
 
-def write_to_file(data, output_file: str, auto_repair_fb2: bool = False):
+def write_to_file(data, output_file: str, auto_repair_fb2: bool = False,
+                  known_errors: list = None):
     """Write data to file.
 
     With auto_repair_fb2 the text goes through fb2_repair.repair_if_needed
     first. That only touches a book which fails schema validation, keeps the
     result only if the text is unchanged and the error count drops, and fixes
     unbalanced tags where they occur instead of at the end of the book.
+    known_errors: validate_fb2() result for data, if the caller already has it.
     """
     if isinstance(data, str):
         data = [data]
@@ -795,7 +802,7 @@ def write_to_file(data, output_file: str, auto_repair_fb2: bool = False):
 
     if auto_repair_fb2:
         from src.fb2_repair import repair_if_needed
-        content, notes = repair_if_needed(content)
+        content, notes = repair_if_needed(content, errors=known_errors)
         for note in notes:
             logger.info(f"FB2 auto-repair: {note}")
 
@@ -1099,11 +1106,13 @@ def main():
         except Exception as e:
             logger.error(f"EPUB creation failed: {e}")
             final_output_path = f"{output_base}.fb2"
-            write_to_file(xml_str, final_output_path, auto_repair_fb2=config.fb2_auto_repair)
+            write_to_file(xml_str, final_output_path, auto_repair_fb2=config.fb2_auto_repair,
+                      known_errors=errors)
             print(f"\n✓ FB2 created (fallback): {final_output_path}")
     else:
         final_output_path = output_file
-        write_to_file(xml_str, final_output_path, auto_repair_fb2=config.fb2_auto_repair)
+        write_to_file(xml_str, final_output_path, auto_repair_fb2=config.fb2_auto_repair,
+                      known_errors=errors)
         print(f"\n✓ FB2 created: {final_output_path}")
 
     # Statistics + translation metrics report (shared with the Calibre

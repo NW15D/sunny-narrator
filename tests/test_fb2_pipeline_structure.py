@@ -165,3 +165,36 @@ def test_failed_chunk_placeholder_is_a_valid_paragraph(monkeypatch):
         result, _syn = _REAL_PROCESS_CHUNK_RECURSIVE(eng, '<p>x</p>', 0, 0, 7, '')
     assert result == '<p>[TRANSLATION FAILED: chunk 7]</p>'
     assert eng.stats['failed'] == 1
+
+
+def test_checkpoint_taken_mid_chunk_does_not_duplicate_text_on_resume(tmp_path):
+    """A signal between writing a chunk and marking it processed saves a checkpoint."""
+    _body, _h, _f, sections, meta, chunks = _prepare()
+    _e, full, _t, _c = _run(tmp_path, chunks, sections, meta, name='full')
+
+    tfile, ckpt = str(tmp_path / 'sig_tmp.fb2'), str(tmp_path / 'sig.checkpoint.json')
+    engine = TranslationEngine(tfile)
+    real_append = engine._append_tfile
+    writes = {'n': 0}
+
+    class Interrupted(Exception):
+        pass
+
+    def append_then_signal(path, text):
+        real_append(path, text)
+        writes['n'] += 1
+        if writes['n'] == 7:                   # somewhere after a chunk body was written
+            engine.save_checkpoint(ckpt)       # what the SIGTERM handler does
+            raise Interrupted
+
+    engine._append_tfile = append_then_signal
+    with pytest.raises(Interrupted):
+        engine.process_all_chunks(chunks, sections, {}, tfile, None, section_meta=meta)
+
+    with open(ckpt, encoding='utf-8') as f:
+        checkpoint = json.load(f)
+    resume_from = checkpoint['last_chunk'] + 1
+    engine2 = TranslationEngine(tfile)
+    engine2.restore_from_checkpoint(checkpoint)
+    new = engine2.process_all_chunks(chunks[resume_from:], sections, {}, tfile, ckpt, section_meta=meta)
+    assert assemble_resume_content(new, resume_from, tfile) == full

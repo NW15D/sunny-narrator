@@ -19,6 +19,7 @@ for _mod in ('openai', 'tiktoken', 'PIL', 'PIL.Image', 'dotenv', 'httpx'):
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import src.fb2_handler as fb2
+from src.fb2_structure import split_blocks
 import src.utils as utils
 from src.config import Config
 
@@ -57,7 +58,7 @@ def test_full_workflow_simulation():
     
     # Step 1: Prepare chunks
     max_chunk_size = 150  # Small size to force multiple chunks
-    sections = fb2.prepare_chunks(sample_body, max_chunk_size)
+    sections = fb2.prepare_body_structure(sample_body, max_chunk_size)[0]
     
     print(f"Parsed {len(sections)} sections")
     total_chunks = sum(len(s) for s in sections)
@@ -111,16 +112,16 @@ def test_chunk_size_respects_limit():
     body = f"<section><p>{long_text}</p><p>{long_text}</p></section>"
     
     max_len = 200
-    sections = fb2.prepare_chunks(body, max_len)
+    sections = fb2.prepare_body_structure(body, max_len)[0]
     
     print(f"Max chunk size: {max_len}")
     for s_idx, section in enumerate(sections):
         for c_idx, chunk in enumerate(section):
             chunk_len = len(chunk)
             print(f"  Chunk {s_idx}-{c_idx}: {chunk_len} chars")
-            # Allow some overshoot for tag completion
-            assert chunk_len <= max_len * 1.5, \
-                f"Chunk {chunk_len} exceeds limit {max_len * 1.5}"
+            # Only a single block larger than the limit may exceed it
+            assert chunk_len <= max_len or len(split_blocks(chunk)) == 1, \
+                f"Chunk {chunk_len} exceeds limit {max_len}"
     
     print("PASS")
 
@@ -130,7 +131,7 @@ def test_empty_sections_handled():
     print("\n--- Test: Empty Sections ---")
     
     body = "<section></section><section><p>Only this.</p></section>"
-    sections = fb2.prepare_chunks(body, 1000)
+    sections = fb2.prepare_body_structure(body, 1000)[0]
     
     print(f"Sections found: {len(sections)}")
     # Empty section should result in empty chunks list or be skipped
@@ -149,7 +150,7 @@ def test_nested_tags_balanced():
 <p>Another <cite>quote with <emphasis>nested</emphasis> tags</cite>.</p>
 </section>"""
     
-    sections = fb2.prepare_chunks(body, 100)  # Force splitting
+    sections = fb2.prepare_body_structure(body, 100)[0]  # Force splitting
     
     for s_idx, section in enumerate(sections):
         for c_idx, chunk in enumerate(section):
@@ -159,11 +160,9 @@ def test_nested_tags_balanced():
             opening = re.findall(r'<([a-zA-Z][a-zA-Z0-9]*)[^>]*?(?<!/)>', chunk)
             closing = re.findall(r'</([a-zA-Z][a-zA-Z0-9]*)>', chunk)
             
-            # After _ensure_balanced_tags, tags should be balanced
+            # Chunks are cut between blocks, so every tag is balanced
             for tag in set(opening):
-                open_count = opening.count(tag)
-                close_count = closing.count(tag)
-                print(f"    <{tag}>: open={open_count}, close={close_count}")
+                assert opening.count(tag) == closing.count(tag), tag
     
     print("PASS")
 

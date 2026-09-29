@@ -34,6 +34,7 @@ import tiktoken
 from src.config import Config
 from src.llm_logger import log_llm_call
 from src.p_tags_processor import post_process_p_tags
+from src.fb2_structure import split_in_two
 
 # LLMService, TranslationPipeline, translate_chunk are defined in this module
 
@@ -1536,15 +1537,21 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
             logger.warning(f"LLM call cap ({MAX_LLM_CALLS_PER_CHUNK}) reached, stopping recursion")
         return "", ""
     
-    # Rechunking if needed (ERROR logging)
-    if should_split and depth < MAX_DEPTH:
+    # Rechunking if needed (ERROR logging). FB2 ("xml") chunks are split
+    # between blocks so both halves stay well-formed; a single block that
+    # cannot be split is accepted as is.
+    do_split = should_split and depth < MAX_DEPTH
+    if do_split:
+        part1, part2 = (split_in_two(source_text) if style == 'xml'
+                        else split_text_smartly(source_text))
+        if not part2.strip():
+            logger.warning("Chunk is a single FB2 block and cannot be split; keeping its translation")
+            do_split = False
+    if do_split:
         if _llm_call_count[0] >= MAX_LLM_CALLS_PER_CHUNK:
             logger.warning(f"LLM call cap ({MAX_LLM_CALLS_PER_CHUNK}) reached before split, stopping recursion")
             return state.final_translation, state.synopsis
         metrics.log_rechunk(depth, percent_diff)  # ERROR level
-        
-        # Split source text
-        part1, part2 = split_text_smartly(source_text)
         
         # Translate parts recursively
         result1, syn1 = translate_chunk(

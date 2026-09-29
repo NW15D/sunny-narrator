@@ -217,3 +217,73 @@ def test_repair_fragment_fuzz_never_loses_text_and_always_yields_xml(keep_sectio
         assert repair_fragment(fixed, keep_sections=keep_sections) == fixed, (text, fixed)
         if not keep_sections:
             assert 'section' not in fixed
+
+
+# --------------------------------------------------------------------------
+# Regressions from code review
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize('fragment', [
+    '<table><tr><td>A</td><td/><td>C</td></tr></table>',
+    '<p>a</p><p/><p>b</p>',
+    '<p>x<strong/>y</p>',
+])
+def test_self_closed_elements_are_kept(fragment):
+    assert repair_fragment(fragment) == fragment
+
+
+def test_empty_anchor_section_is_kept_in_book_level_repair():
+    body = '<section id="n4"><p>a</p></section><section id="n5"/><section id="n6"><p>b</p></section>'
+    assert repair_fragment(body, keep_sections=True, strip_unknown=False) == body
+
+
+def test_self_closed_block_still_closes_an_open_paragraph():
+    assert repair_fragment('<p>a<p/>b</p>') == '<p>a</p><p/><p>b</p>'
+
+
+def test_split_container_keeps_its_id_only_once():
+    cite = '<cite id="c1">' + ''.join(f'<p>paragraph {i} ' + 'x' * 40 + '</p>' for i in range(6)) + '</cite>'
+    chunks = chunk_unit_content(cite, 120)
+    assert len(chunks) > 1
+    assert ''.join(chunks).count('id="c1"') == 1
+    assert chunks[0].startswith('<cite id="c1">')
+    assert all(c.startswith('<cite>') for c in chunks[1:])
+
+
+@pytest.mark.parametrize('broken, fixed', [
+    ('Hello <emphasis>world</emphasis> again', '<p>Hello <emphasis>world</emphasis> again</p>'),
+    ('one\n\n<emphasis>two</emphasis>', '<p>one</p>\n<p><emphasis>two</emphasis></p>'),
+    ('<p>x</p> stray <p>y</p>', '<p>x</p><p>stray</p><p>y</p>'),
+])
+def test_wrapping_keeps_word_boundaries(broken, fixed):
+    assert repair_fragment(broken) == fixed
+
+
+@pytest.mark.parametrize('prose', [
+    '<p>if a<b and c>d then</p>',
+    '<p>x <i am not a tag> y</p>',
+    '<p>arrow <= and <p but not a tag</p>',
+])
+def test_tag_like_prose_is_escaped_not_turned_into_markup(prose):
+    fixed = sanitize_translated_chunk(prose)
+    _well_formed(fixed)
+    assert visible_text(fixed) == visible_text(prose)
+    assert '<strong' not in fixed and '<emphasis' not in fixed
+
+
+def test_split_in_two_cuts_between_blocks_and_stanzas():
+    from src.fb2_structure import split_in_two
+    paras = ''.join(f'<p>para {i} text text</p>' for i in range(10))
+    head, tail = split_in_two(paras)
+    assert head + tail == paras and head.endswith('</p>') and tail.startswith('<p>')
+    assert abs(len(head) - len(tail)) < len('<p>para 0 text text</p>') * 2
+
+    poem = '<poem>' + ''.join(f'<stanza><v>l{i}</v><v>m{i}</v></stanza>' for i in range(8)) + '</poem>'
+    head, tail = split_in_two(poem)
+    for part in (head, tail):
+        assert part.startswith('<poem>') and part.endswith('</poem>')
+        assert repair_fragment(part) == part
+    assert visible_text(head + tail) == visible_text(poem)
+
+    single = '<p>' + 'word ' * 600 + '</p>'
+    assert split_in_two(single) == (single, '')

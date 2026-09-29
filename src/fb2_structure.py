@@ -20,6 +20,9 @@ import re
 from typing import Dict, List, NamedTuple, Optional, Tuple
 
 _TAG_RE = re.compile(r'<(/?)([A-Za-z][\w:.-]*)((?:[^>"\']|"[^"]*"|\'[^\']*\')*?)(/?)>')
+# A match of _TAG_RE is markup only if its attribute part is well formed;
+# "a<b and c>d" in translated prose is text, not a <b> element.
+_ATTRS_RE = re.compile(r'(?:\s+[A-Za-z_:][\w:.-]*\s*=\s*(?:"[^"]*"|\'[^\']*\'))*\s*')
 _SECTION_TAG_RE = re.compile(
     r'<(/?)section\b((?:[^>"\']|"[^"]*"|\'[^\']*\')*?)(/?)>', re.IGNORECASE)
 
@@ -170,11 +173,13 @@ def _fit_block(block: str, max_len: int) -> List[str]:
     if name not in _SPLITTABLE or not close:
         return [block]
     open_tag = m.group(0)
+    # Only the first part keeps the id; repeating it would duplicate an xs:ID.
+    rest_tag = re.sub(r'\s+id\s*=\s*(?:"[^"]*"|\'[^\']*\')', '', open_tag)
     inner = block[m.end():close.start()]
     parts = _pack_blocks(_glue_blocks(split_blocks(inner)), max(max_len - len(open_tag) - len(name) - 3, 1))
     if len(parts) <= 1:
         return [block]
-    return [f'{open_tag}{p}</{name}>' for p in parts]
+    return [f'{open_tag if i == 0 else rest_tag}{p}</{name}>' for i, p in enumerate(parts)]
 
 
 def _pack_blocks(blocks: List[str], max_len: int) -> List[str]:
@@ -201,6 +206,26 @@ def chunk_unit_content(content: str, max_len: int) -> List[str]:
     whole (translate_chunk has its own length-based rechunking for that).
     """
     return [c.strip() for c in _pack_blocks(split_blocks(content), max_len) if c.strip()]
+
+
+def split_in_two(text: str) -> Tuple[str, str]:
+    """Split a chunk near its middle, between blocks (or stanzas of a poem).
+
+    Used when a translation fails the length check and the chunk has to be
+    translated in halves. Returns (text, '') when the chunk is a single block
+    that cannot be split without cutting markup.
+    """
+    pieces: List[str] = []
+    for block in split_blocks(text):
+        pieces.extend(_fit_block(block, max(len(text) // 2, 1)))
+    half = sum(len(p) for p in pieces) / 2
+    best, best_gap, acc = None, None, 0
+    for i in range(1, len(pieces)):
+        acc += len(pieces[i - 1])
+        head, tail = ''.join(pieces[:i]), ''.join(pieces[i:])
+        if head.strip() and tail.strip() and (best_gap is None or abs(acc - half) < best_gap):
+            best, best_gap = (head, tail), abs(acc - half)
+    return best or (text, '')
 
 
 def prepare_body_structure(body: str, max_len_chunk: int) -> Tuple[List[List[str]], List[Dict]]:
@@ -270,7 +295,8 @@ def _fix_text(seg: str) -> str:
 def visible_text(xml: str) -> str:
     """Text content with tags, entities and whitespace normalised away."""
     xml = re.sub(r'<!--.*?-->|<\?.*?\?>|<!DOCTYPE[^>]*>', '', xml.replace('\ufeff', ''), flags=re.DOTALL)
-    return re.sub(r'\s+', '', html.unescape(_TAG_RE.sub('', xml)))
+    xml = _TAG_RE.sub(lambda m: '' if _ATTRS_RE.fullmatch(m.group(3)) else m.group(0), xml)
+    return re.sub(r'\s+', '', html.unescape(xml))
 
 
 def strip_code_fences(text: str) -> str:
@@ -300,7 +326,10 @@ def repair_fragment(text: str, *, keep_sections: bool = False,
         flags.append(False)
 
     def close_top() -> None:
-        out.append(f'</{stack.pop()}>')
+        name = stack.pop()
+        if name in ('p', 'v') and out and out[-1] == ' ':
+            out.pop()  # the separator emit_text kept for a following inline
+        out.append(f'</{name}>')
         flags.pop()
 
     def close_through(idx: int) -> None:
@@ -334,15 +363,37 @@ def repair_fragment(text: str, *, keep_sections: bool = False,
             out.append(seg)
             return
         pieces = [p for p in re.split(r'\n\s*\n', seg) if p.strip()]
+        ends_with_break = re.search(r'\n\s*\n\s*$', seg) is not None
         for i, piece in enumerate(pieces):
             open_implicit()
             out.append(piece.strip())
-            if i < len(pieces) - 1:
+            if i < len(pieces) - 1 or ends_with_break:
                 close_top()
                 out.append('\n')
+            elif piece[-1].isspace():
+                out.append(' ')  # keeps "Hello <emphasis>world" from gluing
+
+    def prepare_for(name: str) -> None:
+        """Close whatever cannot contain `name` before it starts."""
+        if name == 'section':
+            while stack and stack[-1] != 'section':
+                close_top()
+            while stack and flags[-1]:
+                close_top()
+                while stack and stack[-1] != 'section':
+                    close_top()
+        elif name in _BLOCKISH:
+            close_para()
+            if name in stack:
+                close_through(len(stack) - 1 - stack[::-1].index(name))
+            mark_block(name)
+        elif name in _INLINE and needs_wrapper():
+            open_implicit()
 
     pos = 0
     for m in _TAG_RE.finditer(text):
+        if not _ATTRS_RE.fullmatch(m.group(3)):
+            continue  # not markup: stays part of the next text run and gets escaped
         emit_text(text[pos:m.start()])
         pos = m.end()
         closing, raw_name, attrs, selfclose = m.groups()
@@ -369,23 +420,11 @@ def repair_fragment(text: str, *, keep_sections: bool = False,
                 mark_block(name)
             out.append(f'<{name}{attrs.rstrip()}/>')
             continue
+        prepare_for(name)
         if selfclose:
+            # An empty element (<td/>, <p/>, an anchor <section id="n"/>) is content too
+            out.append(f'<{name}{attrs.rstrip()}/>')
             continue
-
-        if name == 'section':
-            while stack and stack[-1] != 'section':
-                close_top()
-            while stack and flags[-1]:
-                close_top()
-                while stack and stack[-1] != 'section':
-                    close_top()
-        elif name in _BLOCKISH:
-            close_para()
-            if name in stack:
-                close_through(len(stack) - 1 - stack[::-1].index(name))
-            mark_block(name)
-        elif name in _INLINE and needs_wrapper():
-            open_implicit()
 
         push(name)
         out.append(m.group(0) if name == raw_name else f'<{name}{attrs}>')

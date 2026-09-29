@@ -19,10 +19,8 @@ from src.xml_utils import (
     update_header_with_metadata,
     get_cover_image,
     replace_cover_image,
-    prepare_chunks,
-    prepare_chunks_with_sections,
-    prepare_body_structure
 )
+from src.fb2_structure import prepare_body_structure
 
 config = Config()
 
@@ -33,8 +31,6 @@ __all__ = [
     'update_header_with_metadata',
     'get_cover_image',
     'replace_cover_image',
-    'prepare_chunks',
-    'prepare_chunks_with_sections',
     'prepare_body_structure',
     'save_fb2',
     'add_translator_info'
