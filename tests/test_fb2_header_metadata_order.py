@@ -50,3 +50,20 @@ def test_new_cover_is_inserted_before_lang():
               '<lang>en</lang></title-info></description>')
     new_header, _footer, _body = fb2.replace_cover_image(header, '</FictionBook>', '', 'aGVsbG8=')
     assert new_header.index('<coverpage>') < new_header.index('<lang>')
+
+
+def test_cover_binary_is_found_whatever_the_attribute_order():
+    header = ('<description><title-info><coverpage><image l:href="#c.jpg"/></coverpage>'
+              '</title-info></description>')
+    for footer in ('<binary id="c.jpg" content-type="image/jpeg">QUJD</binary>',
+                   '<binary content-type="image/jpeg" id="c.jpg">QUJD</binary>',
+                   "<binary id='c.jpg' content-type='image/jpeg'>QUJD</binary>"):
+        assert fb2.get_cover_image(header, footer) == ('#c.jpg', 'QUJD'), footer
+
+
+def test_replacing_the_cover_drops_the_old_binary_whatever_the_attribute_order():
+    header = ('<description><title-info><coverpage><image l:href="#c.jpg"/></coverpage>'
+              '</title-info></description>')
+    footer = '<binary id="c.jpg" content-type="image/jpeg">OLD</binary></FictionBook>'
+    _h, new_footer, _b = fb2.replace_cover_image(header, footer, '', 'NEW')
+    assert 'OLD' not in new_footer and new_footer.count('<binary') == 1 and 'NEW' in new_footer

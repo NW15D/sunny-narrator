@@ -130,3 +130,13 @@ def test_namespace_repair_does_not_duplicate_xmlns_l():
     root = re.search(r'<FictionBook\b[^>]*>', repaired).group(0)
     assert root.count('xmlns:l=') == 1 and 'xmlns="http://www.gribuser.ru' in root
     assert fb2_repair._well_formed(repaired)
+
+
+def test_repair_without_fewer_errors_is_discarded(monkeypatch):
+    book = _valid_book().replace('<section id="lonely">', '<section id="lonely"><p>x</p><section><p>y</p></section>')
+    errors = xc.validate_fb2(book)
+    assert errors and fb2_repair._well_formed(book)
+    monkeypatch.setattr(fb2_repair, 'repair_fb2', lambda s: (s.replace('<body>', '<body>\n', 1), ['noop']))
+    kept, notes = repair_if_needed(book, errors=errors)
+    assert kept is book
+    assert notes == [f'Repair discarded: {len(errors)} errors before, {len(errors)} after']

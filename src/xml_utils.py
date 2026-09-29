@@ -268,7 +268,9 @@ def get_cover_image(header: str, footer: str) -> Tuple[str, str]:
     
     # Search for image in footer (binary data section)
     # Look for <binary content-type="image/png" id="cover.png">
-    binary_pattern = rf'<binary[^>]*content-type="[^"]*image[^"]*"[^>]*id="{re.escape(image_id)}"[^>]*>(.*?)</binary>'
+    # Attribute order varies between FB2 producers (id first is common)
+    binary_pattern = (rf'<binary(?=[^>]*\bcontent-type=["\'][^"\']*image)'
+                      rf'(?=[^>]*\bid=["\']{re.escape(image_id)}["\'])[^>]*>(.*?)</binary>')
     match = re.search(binary_pattern, footer, re.DOTALL | re.IGNORECASE)
     
     if match:
@@ -326,7 +328,7 @@ def replace_cover_image(header: str, footer: str, body: str, new_content: str) -
     image_id = image_href.lstrip('#')
     
     # Remove old binary if exists
-    binary_pattern = rf'<binary[^>]*id="{re.escape(image_id)}"[^>]*>.*?</binary>'
+    binary_pattern = rf'<binary(?=[^>]*\bid=["\']{re.escape(image_id)}["\'])[^>]*>.*?</binary>'
     footer = re.sub(binary_pattern, '', footer, flags=re.DOTALL | re.IGNORECASE)
     
     # Add new binary data

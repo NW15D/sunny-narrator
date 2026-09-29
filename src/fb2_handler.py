@@ -1,13 +1,12 @@
 """
 FB2 file handler.
 
-Handles parsing, reading, and writing FB2 files.
+Handles parsing and reading FB2 files.
 Uses xml_utils for common XML operations.
 """
 
 import re
 import logging
-from pathlib import Path
 
 import chardet
 
@@ -32,7 +31,6 @@ __all__ = [
     'get_cover_image',
     'replace_cover_image',
     'prepare_body_structure',
-    'save_fb2',
     'add_translator_info'
 ]
 
@@ -129,43 +127,3 @@ def add_translator_info(header: str) -> str:
     block = f'<translator><nickname>{_TRANSLATOR_NICK}</nickname><email>n@uwns.org</email></translator>'
     return header[:m.start()] + section[:pos] + block + section[pos:] + header[m.end():]
 
-
-def save_fb2(body: str, header: str, footer: str, output_path: str, auto_repair: bool = False) -> None:
-    """
-    Save FB2 file from components.
-    
-    Args:
-        body: FB2 body content
-        header: FB2 header
-        footer: FB2 footer
-        output_path: Output file path
-        auto_repair: Whether to auto-repair common XML errors (default: True)
-    """
-    content = header + body + footer
-    
-    # Auto-repair FB2 XML if enabled
-    if auto_repair:
-        from .fb2_repair import repair_and_validate
-        import logging
-        
-        logger = logging.getLogger(__name__)
-        repaired, repairs, errors = repair_and_validate(content)
-        
-        if repairs:
-            logger.info(" | ".join(repairs))
-            content = repaired
-        
-        if errors:
-            logger.warning(f"FB2 validation errors after repair: {len(errors)}")
-            for error in errors[:5]:  # Log first 5 errors
-                logger.warning(f"  - {error}")
-    
-    output_file = Path(output_path)
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-    
-    with open(output_file, 'w', encoding='utf-8') as f:
-        f.write(content)
-
-
-# Keep existing functions for backward compatibility
-# They now delegate to xml_utils

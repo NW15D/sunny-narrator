@@ -167,34 +167,6 @@ def validate_after_repair(xml_string: str) -> List[str]:
     return validate_fb2(xml_string)
 
 
-def repair_and_validate(xml_string: str, max_iterations: int = 3) -> Tuple[str, List[str], List[str]]:
-    """
-    Repair FB2 and validate result with iteration limit.
-
-    Args:
-        xml_string: FB2 XML to repair
-        max_iterations: Maximum repair iterations to prevent infinite loops
-
-    Returns:
-        Tuple of (repaired_xml, repairs_made, remaining_errors)
-    """
-    all_repairs = []
-    current = xml_string
-
-    for _ in range(max_iterations):
-        repaired, repairs = repair_fb2(current)
-        all_repairs.extend(repairs)
-
-        actual_fixes = [r for r in repairs if not r.startswith("FB2 auto-repair")]
-        if not actual_fixes:
-            break
-
-        current = repaired
-
-    errors = validate_after_repair(current)
-    return current, all_repairs, errors
-
-
 def repair_if_needed(xml_string: str, errors: List[str] = None) -> Tuple[str, List[str]]:
     """
     Repair a finished book only if it fails validation (text is always

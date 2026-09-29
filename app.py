@@ -1074,7 +1074,7 @@ def main():
 
     if config.api_key_images:
         print("Processing cover...")
-        cover_data = fb2.get_cover_image(header, footer)
+        _cover_href, cover_data = fb2.get_cover_image(header, footer)
         if cover_data:
             cover_result = ta.process_image_request(cover_data, config.source_lang, config.target_lang, config.country)
             if cover_result:
