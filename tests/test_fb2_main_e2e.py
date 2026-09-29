@@ -262,9 +262,13 @@ def test_lost_translation_file_restarts_instead_of_resuming_into_a_hole(book, ru
         assert xml.count(needle) == 1, needle
 
 
-def test_cover_is_sent_to_the_image_model_and_replaced(book, run_main, monkeypatch):
+@pytest.mark.parametrize('image, content_type, ext', [
+    (b'\x89PNG\r\n\x1a\n' + b'\x00' * 24, 'image/png', 'png'),
+    (b'\xff\xd8\xff\xe0' + b'\x00' * 24, 'image/jpeg', 'jpg'),
+])
+def test_cover_is_sent_to_the_image_model_and_replaced(book, run_main, monkeypatch, image, content_type, ext):
     import base64
-    new_cover = base64.b64encode(b'\x89PNG\r\n\x1a\n' + b'\x00' * 24).decode()
+    new_cover = base64.b64encode(image).decode()
     sent = []
 
     def fake_image(image_data, source_lang, target_lang, country, metadata=None):
@@ -278,9 +282,11 @@ def test_cover_is_sent_to_the_image_model_and_replaced(book, run_main, monkeypat
     base64.b64decode(sent[0])
     [out] = _outputs(book.parent, 'fb2')
     xml = _read(out)
-    assert f'<binary content-type="image/png" id="cover.png">{new_cover}</binary>' in xml
+    assert f'<binary content-type="{content_type}" id="cover.png">{new_cover}</binary>' in xml
     assert xc.validate_fb2(xml) == []
-    assert (book.parent / 'book_cover.jpg').exists()
+    saved = sorted(p.name for p in book.parent.glob('book_cover.*'))
+    assert saved == [f'book_cover.{ext}']
+    assert (book.parent / saved[0]).read_bytes() == image
 
 
 def test_book_without_a_cover_does_not_call_the_image_model(book, run_main, monkeypatch):

@@ -67,3 +67,22 @@ def test_replacing_the_cover_drops_the_old_binary_whatever_the_attribute_order()
     footer = '<binary id="c.jpg" content-type="image/jpeg">OLD</binary></FictionBook>'
     _h, new_footer, _b = fb2.replace_cover_image(header, footer, '', 'NEW')
     assert 'OLD' not in new_footer and new_footer.count('<binary') == 1 and 'NEW' in new_footer
+
+
+def test_new_cover_binary_gets_the_content_type_of_its_data():
+    import base64
+    header = ('<description><title-info><coverpage><image l:href="#c.jpg"/></coverpage>'
+              '</title-info></description>')
+    footer = '<binary id="c.jpg" content-type="image/jpeg">OLD</binary></FictionBook>'
+    for data, expected in ((b'\xff\xd8\xff\xe0' + b'\x00' * 20, 'image/jpeg'),
+                           (b'\x89PNG\r\n\x1a\n' + b'\x00' * 20, 'image/png'),
+                           (b'GIF89a' + b'\x00' * 20, 'image/gif')):
+        b64 = base64.b64encode(data).decode()
+        _h, new_footer, _b = fb2.replace_cover_image(header, footer, '', b64)
+        assert f'<binary content-type="{expected}" id="c.jpg">{b64}</binary>' in new_footer
+
+
+def test_undecodable_cover_data_falls_back_to_png():
+    from src.xml_utils import sniff_base64_image_type
+    assert sniff_base64_image_type('%%%') == 'image/png'
+    assert sniff_base64_image_type('') == 'image/png'

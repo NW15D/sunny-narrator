@@ -21,6 +21,7 @@ from bs4 import BeautifulSoup, Comment, NavigableString, Tag
 from ebooklib import epub
 
 from src.config import Config
+from src.xml_utils import IMAGE_EXTENSIONS, sniff_image_type
 
 config = Config()
 logger = logging.getLogger(__name__)
@@ -51,9 +52,6 @@ _KEEP = {'p', 'strong', 'sub', 'sup', 'code', 'em', 's', 'table', 'tr', 'th', 't
          'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'root'}
 _PLAIN_ATTRS = {'class', 'xml:lang', 'colspan', 'rowspan', 'src', 'alt', 'href', 'epub:type', 'title'}
 _ALIGN_CSS = {'align': 'text-align', 'valign': 'vertical-align'}
-
-_IMAGE_EXT = {'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif',
-              'image/webp': '.webp', 'image/svg+xml': '.svg'}
 
 _CSS = """\
 body { margin: 0 5%; line-height: 1.4; }
@@ -117,23 +115,6 @@ def _serialize(node, out: List[str]) -> None:
     out.append(f'</{node.name}>')
 
 
-def _sniff_image_type(data: bytes, declared: str) -> Optional[str]:
-    if data.startswith(b'\xff\xd8\xff'):
-        return 'image/jpeg'
-    if data.startswith(b'\x89PNG\r\n\x1a\n'):
-        return 'image/png'
-    if data[:6] in (b'GIF87a', b'GIF89a'):
-        return 'image/gif'
-    if data[:4] == b'RIFF' and data[8:12] == b'WEBP':
-        return 'image/webp'
-    if b'<svg' in data[:1024]:
-        return 'image/svg+xml'
-    declared = (declared or '').strip().lower()
-    if declared == 'image/jpg':
-        return 'image/jpeg'
-    return declared if declared in _IMAGE_EXT else None
-
-
 def _load_images(footer: str) -> Dict[str, dict]:
     """FB2 <binary> blocks -> {fb2 id: {data, content_type, file_name, uid}}."""
     images: Dict[str, dict] = {}
@@ -148,10 +129,10 @@ def _load_images(footer: str) -> Dict[str, dict]:
         except Exception as e:
             logger.warning(f"Skipping image {image_id}: bad base64 ({e})")
             continue
-        content_type = _sniff_image_type(data, attrs.get('content-type', ''))
+        content_type = sniff_image_type(data, attrs.get('content-type', ''))
         if not content_type:
             continue
-        ext = _IMAGE_EXT[content_type]
+        ext = IMAGE_EXTENSIONS[content_type]
         base = re.sub(r'[^A-Za-z0-9_.-]', '_', image_id) or 'image'
         if not base.lower().endswith((ext, '.jpeg')):
             base += ext

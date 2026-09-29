@@ -5,11 +5,43 @@ Common utilities for XML parsing, metadata extraction, and FB2 manipulation.
 Used by fb2_handler, epub_handler, txt_handler.
 """
 
+import base64
+import binascii
 import re
 import os
 import tempfile
 from bs4 import BeautifulSoup
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Optional, Tuple
+
+IMAGE_EXTENSIONS = {'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif',
+                    'image/webp': '.webp', 'image/svg+xml': '.svg'}
+
+
+def sniff_image_type(data: bytes, declared: str = '') -> Optional[str]:
+    """Media type from the image bytes; the declared type is only a fallback
+    (FB2 files and image APIs both mislabel images)."""
+    if data.startswith(b'\xff\xd8\xff'):
+        return 'image/jpeg'
+    if data.startswith(b'\x89PNG\r\n\x1a\n'):
+        return 'image/png'
+    if data[:6] in (b'GIF87a', b'GIF89a'):
+        return 'image/gif'
+    if data[:4] == b'RIFF' and data[8:12] == b'WEBP':
+        return 'image/webp'
+    if b'<svg' in data[:1024]:
+        return 'image/svg+xml'
+    declared = (declared or '').strip().lower()
+    if declared == 'image/jpg':
+        return 'image/jpeg'
+    return declared if declared in IMAGE_EXTENSIONS else None
+
+
+def sniff_base64_image_type(b64: str, default: str = 'image/png') -> str:
+    try:
+        head = base64.b64decode(re.sub(r'\s+', '', b64)[:64])
+    except (binascii.Error, ValueError):
+        return default
+    return sniff_image_type(head) or default
 
 
 def get_safe_xml_parser():
@@ -331,9 +363,8 @@ def replace_cover_image(header: str, footer: str, body: str, new_content: str) -
     binary_pattern = rf'<binary(?=[^>]*\bid=["\']{re.escape(image_id)}["\'])[^>]*>.*?</binary>'
     footer = re.sub(binary_pattern, '', footer, flags=re.DOTALL | re.IGNORECASE)
     
-    # Add new binary data
-    # Try to detect content type from image data or default to PNG
-    content_type = "image/png"
+    # Add new binary data (image models return PNG or JPEG depending on the provider)
+    content_type = sniff_base64_image_type(new_content)
     new_binary = f'<binary content-type="{content_type}" id="{image_id}">{new_content}</binary>'
     
     # Insert before closing </FictionBook>

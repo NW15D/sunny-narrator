@@ -40,6 +40,7 @@ from src.llm_logger import init_llm_logger
 from src.vocabulary_manager import get_vocabulary_manager, DictionaryCreatedSignal
 from src.character_registry import get_character_registry, reset_character_registry
 from src.epub_writer import create_epub_from_fb2
+from src.xml_utils import IMAGE_EXTENSIONS, sniff_image_type
 from src.checkpoint_manager import CHECKPOINT_VERSION, compute_fingerprint
 from src.fb2_structure import (
     close_dangling_sections,
@@ -1080,8 +1081,10 @@ def main():
             if cover_result:
                 header, footer, body = fb2.replace_cover_image(header, footer, body, cover_result)
                 try:
-                    with open(f"{output_dir}/{file_name}_cover.jpg", 'wb') as f:
-                        f.write(base64.b64decode(cover_result))
+                    cover_bytes = base64.b64decode(cover_result)
+                    ext = IMAGE_EXTENSIONS.get(sniff_image_type(cover_bytes), '.png')
+                    with open(f"{output_dir}/{file_name}_cover{ext}", 'wb') as f:
+                        f.write(cover_bytes)
                 except Exception as e:
                     logger.error(f"Cover save error: {e}")
 
