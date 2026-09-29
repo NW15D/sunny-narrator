@@ -53,8 +53,6 @@ COPY README*.md .
 # Create directories for volumes
 RUN mkdir -p /app/books /app/output
 
-# Set environment for CPU-only mode
-ENV GPU=false
 ENV NER=true
 
 # Health check (CPU mode)
@@ -65,7 +63,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 ENTRYPOINT ["python3", "app.py"]
 
 # Labels for documentation
-LABEL version="2.4"
+LABEL version="2.5"
 LABEL description="Sunny Narrator - AI-powered book translation (CPU-only)"
 LABEL gpu="false"
 LABEL author="Sunny Narrator Team"

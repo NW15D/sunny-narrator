@@ -9,7 +9,7 @@
 [![Last commit](https://img.shields.io/github/last-commit/NW15D/sunny-narrator)](https://github.com/NW15D/sunny-narrator/commits/main)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Version:** 2.4  
+**Version:** 2.5  
 **Glossary-Driven AI Book Translator** for FB2/TXT/EPUB/DOCX/PDF — an LLM-powered fiction book translator with dual-LLM translation and 5-stage quality control.
 
 🖥️ **Console app (CLI)** — no graphical interface; basic command-line experience is recommended.
@@ -76,27 +76,32 @@ FILE=books/mybook.fb2 python app.py
 
 ## 📋 Configuration
 
-### Basic .env
+Copy the bundled `env.sample` to `.env`. It is a complete, working configuration: **Gemma 4** translates and **Qwen 3.6** proofreads, both through an OpenAI-compatible server (llama.cpp, Ollama, LM Studio, vLLM or a hosted API). Every option is documented inline, and the end of the file has ready-made variants: two llama.cpp servers, one Ollama server, an English source, FB2 → EPUB and a fast draft.
 
 ```bash
-# API Settings
-API_KEY_TRANSLATE=your-key
-API_BASE_TRANSLATE=http://localhost:11434/v1
-MODEL_TRANSLATE=google/gemma-2-27b-it
-JSON_MODE=true    # 🚀 Recommended: structured JSON for all stages
+cp env.sample .env
+```
 
-API_KEY_PROOFREAD=your-key
+Then adjust at least these keys:
+
+```bash
+# Translate LLM — Gemma 4
+API_KEY_TRANSLATE=your-api-key-here        # any non-empty string for a local server
+API_BASE_TRANSLATE=http://localhost:11434/v1
+MODEL_TRANSLATE=Gemma4-26B                 # name as your server reports it
+
+# Proofread LLM — Qwen 3.6
+API_KEY_PROOFREAD=your-api-key-here
 API_BASE_PROOFREAD=http://localhost:11434/v1
-MODEL_PROOFREAD=Mistral
+MODEL_PROOFREAD=Qwen36-35B
 
 # Book and languages
 FILE=books/mybook.fb2
-SOURCE_LANG=english
-TARGET_LANG=russian
+SOURCE_LANG=ko
+TARGET_LANG=ru
 
-# Processing
-FAST_TRANS=false    # Fast mode (skip quality stages)
-DEBUG=off
+# Output: fb2 or epub for FB2/TXT; epub, docx or pdf for EPUB/DOCX/PDF
+OUTPUT_FORMAT=fb2
 ```
 
 **All options:** [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
@@ -297,6 +302,7 @@ The console log shows every step of the translation: length checks with the cali
 
 ## 📝 Versions
 
+- **v2.5** — Reworked FB2 pipeline: chunks follow the section tree (nested sections, poems split between stanzas), LLM markup is repaired where it breaks, crash-safe resume; FB2 → EPUB via `--output-format epub` / `OUTPUT_FORMAT=epub` (nested TOC, footnotes, cover, images); cover generation and the `sunny-narrator` command fixed; `env.sample` with Gemma 4 + Qwen 3.6 examples; unused options removed (`CONCURRENT_LIMIT`, `COVER_PROMPT`, `S_PROMT_IMAGES`, `TEMP_IMAGES`, `SHORT`, `EXAMPLE`); checkpoints from earlier versions are not resumed
 - **v2.4** — `DICTIONARY` (`.env`) / `--dictionary` (CLI): explicit path to the `.dic` file for both pipelines
 - **v2.3** — README overhaul: consolidated capabilities list, added CLI-only tool note, unified Docker registry links across all language versions, SEO improvements
 - **v2.2** — Character gender detection written back to the dictionary; per-book calibration of the translation length check; CJK adaptation (Korean, Japanese, Chinese) with direct translation from CJK into any language

@@ -12,10 +12,10 @@ This document describes how to run Sunny Narrator with NVIDIA GPU support for fa
 
 ```bash
 # Build and run with GPU support
-docker-compose -f docker-compose.gpu.yml up --build
+docker-compose -f docker-compose.yml up --build
 ```
 
-## Dockerfile.gpu
+## Dockerfile
 
 ```dockerfile
 # Production-ready Dockerfile for Sunny Narrator with NVIDIA GPU support
@@ -76,7 +76,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 ENTRYPOINT ["python3", "app.py"]
 ```
 
-## docker-compose.gpu.yml
+## docker-compose.yml
 
 ```yaml
 version: "3.8"
@@ -85,7 +85,7 @@ services:
   sunny-narrator:
     build:
       context: .
-      dockerfile: Dockerfile.gpu
+      dockerfile: Dockerfile
     image: sunny-narrator:gpu
     container_name: sunny-narrator-gpu
     env_file:
@@ -130,13 +130,11 @@ sudo systemctl restart docker
 ### Check GPU availability in container
 
 ```bash
-docker-compose -f docker-compose.gpu.yml exec sunny-narrator nvidia-smi
+docker-compose -f docker-compose.yml exec sunny-narrator nvidia-smi
 ```
 
-### Disable GPU fallback
+### GPU fallback
 
-If GPU is not available, the application automatically falls back to CPU. To force GPU mode, set in `.env`:
-
-```bash
-NER_GPU_ONLY=true
-```
+If no GPU is available, spaCy (NER) automatically falls back to the CPU; there
+is no option to require the GPU. To force the CPU on a GPU host, hide the GPU:
+`CUDA_VISIBLE_DEVICES=` (empty).

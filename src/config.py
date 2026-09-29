@@ -31,7 +31,7 @@ class Config:
 
         # Translation API (translate model)
         self.api_key_translate = os.getenv('API_KEY_TRANSLATE', os.getenv('API_KEY', ''))
-        self.base_url_translate = os.getenv('API_BASE_TRANSLATE', os.getenv('API_BASE', 'http://192.168.0.55:6150/v1'))
+        self.base_url_translate = os.getenv('API_BASE_TRANSLATE', os.getenv('API_BASE', 'http://localhost:11434/v1'))
         self.sys_not_promt_translate = os.getenv('S_PROMT_TRANSLATE', os.getenv('S_PROMT', '')).lower() in ('true', '1', 'on')
         self.model_translate = os.getenv('MODEL_TRANSLATE', os.getenv('MODEL', 'Mistral'))
         self.temp_translate = _parse_numeric_env('TEMP_TRANSLATE', os.getenv('TEMP', 0.01))
@@ -116,7 +116,7 @@ class Config:
             "slovenian": "sl_core_news_lg", "sl": "sl_core_news_lg"
         }
         
-        # NER defaulted to True in .env
+        # NER: on unless NER=false
         self.ner_opt = os.getenv('NER', 'True').lower() in ['true', '1', 't']
         self.country = os.getenv('COUNTRY', 'Россия')
         
@@ -127,7 +127,7 @@ class Config:
         self.max_len_chunk = _parse_numeric_env('MAX_LEN_CHUNK', 8192, cast=int)
         self.length_check_threshold = _parse_numeric_env('LENGTH_CHECK_THRESHOLD', 20, cast=int)
         
-        # File defaulted to books/Freedom.fb2 (stripped quotes)
+        # FILE: the book to translate (relative paths are resolved from the CWD)
         self.myfile = os.getenv('FILE', 'books/Cargo.fb2')
         if not os.path.isabs(self.myfile):
              self.myfile = str(Path(os.getcwd()) / self.myfile)

@@ -118,14 +118,10 @@ Error loading spaCy model: nvrtc: error: invalid value for --gpu-architecture
 
 **Solution 1: Use CPU for NER**
 
-In `.env`:
+spaCy uses the GPU whenever it sees one (`spacy.prefer_gpu()`). Hide the GPU
+from it for the run:
 ```bash
-SPACY_USE_GPU=false
-```
-
-Or in `src/ner.py`, comment out:
-```python
-# gpu = spacy.prefer_gpu()  # Disabled to avoid NVRTC errors
+CUDA_VISIBLE_DEVICES= python3 app.py
 ```
 
 **Solution 2: Reinstall CuPy with correct architecture**
@@ -264,7 +260,8 @@ python3 -c "import pypandoc; print('pypandoc OK')"
 # Basic usage (auto-detected by file extension)
 python3 app.py
 
-# Specify output format (docx, epub or pdf)
+# Specify output format: epub, docx or pdf for DOCX/EPUB/PDF input;
+# fb2 or epub for FB2/TXT input
 python3 app.py --output-format epub
 
 # Custom chunk size + fast mode
@@ -282,21 +279,21 @@ python3 app.py --max-chunk-size 4000 --fast-mode
 
 ```bash
 # Input file (DOCX, EPUB or PDF)
-myfile=/path/to/book.epub
+FILE=/path/to/book.epub
 
 # Translation settings
-source_lang=en
-target_lang=ru
-country=Россия
+SOURCE_LANG=en
+TARGET_LANG=ru
+COUNTRY=Россия
 
 # Output format (docx, epub, or pdf)
-output_format=epub
+OUTPUT_FORMAT=epub
 ```
 
 ### Pipeline Flow
 
 ```
-Input (EPUB/FB2)
+Input (DOCX/EPUB/PDF)
     ↓
 Calibre ebook-convert → HTMLZ
     ↓
@@ -384,10 +381,6 @@ JSON_MODE=true    # 🚀 Recommended: structured JSON for all stages
 # NER Configuration
 NER=true
 NERMODEL=en_core_web_lg
-
-# GPU/CPU Mode
-# Set to false if you get NVRTC errors
-SPACY_USE_GPU=false
 
 # Language
 SOURCE_LANG=english

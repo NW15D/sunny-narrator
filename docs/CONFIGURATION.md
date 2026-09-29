@@ -1,78 +1,98 @@
 # Configuration Guide — Complete Parameter Reference
 
-**Version:** 2.2  
-**Date:** 2026-03-30
+**Version:** 2.5  
+**Updated:** 2026-09-29
 
 ---
 
 ## 📋 Overview
 
-The `.env` file contains all configuration parameters for Sunny Narrator.
+All settings are read from `.env` in the project root (see `src/config.py`).
+Start from the bundled [`env.sample`](../env.sample): it is a complete working
+configuration — **Gemma 4** translates, **Qwen 3.6** proofreads, both through an
+OpenAI-compatible server — with every option documented inline and ready-made
+variants at the end of the file.
 
-**Minimal configuration:**
 ```bash
-API_KEY_TRANSLATE=your-key
-API_BASE_TRANSLATE=http://localhost:11434/v1
-MODEL_TRANSLATE=google/gemma-2-27b-it
-
-SOURCE_LANG=english
-TARGET_LANG=russian
+cp env.sample .env
 ```
 
----
-
-## 🔧 API Settings
-
-### Translate LLM (Translation)
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `API_KEY_TRANSLATE` | — | API key for Translate LLM |
-| `API_BASE_TRANSLATE` | `http://localhost:11434/v1` | Base URL for API |
-| `MODEL_TRANSLATE` | `Mistral` | Model for translation |
-| `S_PROMT_TRANSLATE` | `false` | `true` for Gemma 2/3 (do not support system prompts) |
-| `TEMP_TRANSLATE` | `0.01` | Base temperature (fallback) |
-| `TIMEOUT_TRANSLATE` | `6000` | Request timeout (seconds) |
-| `DISABLE_JSON_MODE_TRANSLATE` | `true` | ~~Disable JSON mode~~ **DEPRECATED** — use `JSON_MODE` |
-| `JSON_MODE` | `false` | Enable structured JSON for all stages (**recommended**) |
-
-### Proofread LLM (Proofreading)
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `API_KEY_PROOFREAD` | — | API key for Proofread LLM |
-| `API_BASE_PROOFREAD` | `https://api.openai.com/v1` | Base URL for API |
-| `MODEL_PROOFREAD` | `tencent/Hunyuan-MT-7B` | Model for proofreading |
-| `S_PROMT_PROOFREAD` | `false` | `true` for Gemma 2/3 |
-| `TEMP_PROOFREAD` | `0.7` | Base temperature (fallback) |
-| `TIMEOUT_PROOFREAD` | `6000` | Request timeout (seconds) |
-| `DISABLE_JSON_MODE_PROOFREAD` | `true` | ~~Disable JSON mode~~ **DEPRECATED** — use `JSON_MODE` |
-
-> ⚠️ **Legacy flags:** `DISABLE_JSON_MODE_TRANSLATE` and `DISABLE_JSON_MODE_PROOFREAD` are deprecated.
-> When `JSON_MODE=true`, JSON is enabled for all stages automatically.
-> Legacy flags maintain backward compatibility but may be removed in future versions.
-
-### Stage-Specific Temperatures
-
-| Parameter | Default | Stage | Description |
-|-----------|---------|-------|-------------|
-| `TEMP_INITIAL` | `TEMP_TRANSLATE` | 1 | Initial translation (consistency) |
-| `TEMP_REFLECTION` | `0.4` | 2 | Quality review (creative analysis) |
-| `TEMP_IMPROVE` | `0.4` | 3 | Apply suggestions (flexible editing) |
-| `TEMP_FINAL_EDIT` | `0.15` | 4 | Final proofreading (precision) |
-| `TEMP_SYNOPSIS` | `0.15` | 5 | Synopsis generation (accuracy) |
-
-**More details:** [TEMPERATURE_STRATEGY.md](TEMPERATURE_STRATEGY.md)
+Minimal changes: the two API blocks (`API_KEY_*`, `API_BASE_*`, `MODEL_*`),
+`FILE`, `SOURCE_LANG`, `TARGET_LANG`.
 
 ---
 
-## 🌍 Languages
+## 🔧 LLM APIs
+
+Any OpenAI-compatible endpoint works: llama.cpp (`llama-server`), Ollama,
+LM Studio, vLLM, hosted APIs. `MODEL_*` must be the model name exactly as the
+server reports it (`GET <API_BASE>/models`). For a local server without
+authentication any non-empty API key will do.
+
+### Translate LLM — stage 1 (INITIAL) and 5 (SYNOPSIS)
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `SOURCE_LANG` | `english` | Source language |
-| `TARGET_LANG` | `russian` | Target language |
-| `COUNTRY` | `Russia` | Country for localization |
+| `API_KEY_TRANSLATE` | — | API key |
+| `API_BASE_TRANSLATE` | `http://localhost:11434/v1` | Base URL |
+| `MODEL_TRANSLATE` | `Mistral` | Model name (reference setup: Gemma 4) |
+| `TEMP_TRANSLATE` | `0.01` | Base temperature (fallback for `TEMP_INITIAL`) |
+| `TIMEOUT_TRANSLATE` | `6000` | Request timeout, seconds |
+| `NOTHINK_TRANSLATE` | `false` | Disable the model's thinking/reasoning mode |
+| `S_PROMT_TRANSLATE` | `false` | `true` for models without system-prompt support (the system prompt is merged into the user message) |
+
+### Proofread LLM — stages 2-4 (REFLECTION, IMPROVE, FINAL_EDIT)
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `API_KEY_PROOFREAD` | — | API key |
+| `API_BASE_PROOFREAD` | `https://api.openai.com/v1` | Base URL |
+| `MODEL_PROOFREAD` | `tencent/Hunyuan-MT-7B` | Model name (reference setup: Qwen 3.6) |
+| `TEMP_PROOFREAD` | `0.7` | Base temperature |
+| `TIMEOUT_PROOFREAD` | `6000` | Request timeout, seconds |
+| `NOTHINK_PROOFREAD` | `false` | Disable thinking mode |
+| `S_PROMT_PROOFREAD` | `false` | Same as `S_PROMT_TRANSLATE` |
+
+### Images LLM — cover (classic pipeline, optional)
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `API_KEY_IMAGES` | — | Empty = the original cover is kept. When set, the cover is sent to the images model (**a paid call per book**) and replaced by the result, which is also saved as `<book>_<TARGET_LANG>_cover.<ext>` |
+| `API_BASE_IMAGES` | — | Base URL |
+| `MODEL_IMAGES` | `gpt-image-1.5` | Model name |
+| `TIMEOUT_IMAGES` | `600` | Request timeout, seconds |
+
+### Stage temperatures
+
+| Parameter | Default | Stage |
+|-----------|---------|-------|
+| `TEMP_INITIAL` | `TEMP_TRANSLATE` | 1 — initial translation |
+| `TEMP_REFLECTION` | `0.4` | 2 — quality review |
+| `TEMP_IMPROVE` | `0.4` | 3 — apply review suggestions |
+| `TEMP_FINAL_EDIT` | `0.15` | 4 — final proofreading |
+| `TEMP_SYNOPSIS` | `0.15` | 5 — synopsis for the next chunk |
+
+**Details:** [TEMPERATURE_STRATEGY.md](TEMPERATURE_STRATEGY.md)
+
+### JSON mode
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `JSON_MODE` | `false` | Structured JSON input/output for all stages (**recommended: `true`**) |
+| `DISABLE_JSON_MODE_TRANSLATE` / `DISABLE_JSON_MODE_PROOFREAD` | `true` | Per-role switches, used only when `JSON_MODE` is not `true` |
+
+**Details:** [JSON_MODE_ANALYSIS.md](JSON_MODE_ANALYSIS.md)
+
+---
+
+## 🌍 Book and languages
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `FILE` | `books/Cargo.fb2` | The book. `.fb2`/`.txt` → classic pipeline, `.epub`/`.docx`/`.pdf` → Calibre pipeline |
+| `SOURCE_LANG` | `english` | Full name or ISO code (`korean`/`ko`, `english`/`en`, ...). Also selects the spaCy model and the CJK adaptations |
+| `TARGET_LANG` | `russian` | Full name or ISO code |
+| `COUNTRY` | `Россия` | Country for localization context in prompts |
 
 ---
 
@@ -80,155 +100,89 @@ TARGET_LANG=russian
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `MAX_LEN_CHUNK` | `8192` | Maximum chunk size (characters) |
-| `LENGTH_CHECK_THRESHOLD` | `20` | Rechunking threshold (%) |
-| `FAST_TRANS` | `false` | Fast mode (skip stages 2-4) |
-| `DEBUG` | `off` | Debug mode |
+| `MAX_LEN_CHUNK` | `8192` | Chunk size in source characters. The classic pipeline cuts only between blocks (paragraphs, poems between stanzas), so a single larger block stays whole |
+| `LENGTH_CHECK_THRESHOLD` | `20` | Allowed deviation (%) from the expected translation length before a chunk is split and retranslated |
+| `FAST_TRANS` | `on` (!) | Skip stages 2-4; set `false` for literary translation |
 
-**More details:** [FAST_TRANS.md](FAST_TRANS.md), [RECHUNKING_GUIDE.md](RECHUNKING_GUIDE.md)
+**Details:** [RECHUNKING_GUIDE.md](RECHUNKING_GUIDE.md), [FAST_TRANS.md](FAST_TRANS.md)
 
 ---
 
-## 📎 NER (Named Entity Recognition)
+## 📎 Dictionary and NER
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `NER` | `true` | Enable NER processing |
-| `NERMODEL` | `en_core_web_lg` | spaCy model for NER |
-| `DICTIONARY` | (empty, auto) | Explicit path to the `.dic` vocabulary file, overriding the automatic `<book_name>.dic` lookup next to the source file. Also settable via `--dictionary <path>` (CLI wins over the env value). Applies to both pipelines |
+| `NER` | `true` | Build the dictionary from named entities on the first run |
+| `NERMODEL` | by `SOURCE_LANG` | spaCy model; empty = chosen from `SOURCE_LANG` and downloaded automatically (`en` → `en_core_web_lg`, `ko` → `ko_core_news_lg`, ...; full map in `src/config.py`) |
+| `DICTIONARY` | empty | Explicit path to the `.dic` file instead of `<book>.dic` next to the book. CLI: `--dictionary <path>` (wins over `.env`). Both pipelines |
 
-**More details:** [NER_GUIDE.md](NER_GUIDE.md), [NER_CPU_FALLBACK_ANALYSIS.md](NER_CPU_FALLBACK_ANALYSIS.md)
+**Details:** [NER_GUIDE.md](NER_GUIDE.md), [DICTIONARY_FORMAT.md](DICTIONARY_FORMAT.md)
 
 ---
 
-## 🐳 GPU/CPU
+## 📤 Output
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `GPU` | `true` | Use GPU if available |
-| `SPACY_USE_GPU` | `false` | Force CPU for spaCy |
+| `OUTPUT_FORMAT` | `fb2` | FB2/TXT input: `fb2` or `epub`. EPUB/DOCX/PDF input: `epub`, `docx` or `pdf` (`fb2` there means `epub`). CLI: `--output-format` (wins over `.env`) |
+| `FB2_AUTO_REPAIR` | `true` | Classic pipeline: if the finished FB2 fails schema validation, rebalance its tags where they break. The repair is kept only if the book text is unchanged, the result is well-formed and the error count drops |
 
-**More details:** [DOCKER_CPU_GUIDE.md](DOCKER_CPU_GUIDE.md)
+The result is written next to the source file with a language marker in its
+name, e.g. `books/Book_russian_1530-2909.fb2` (classic) or
+`books/Title_ru.epub` (Calibre).
 
 ---
 
-## 🖼️ Images (Cover)
+## 📚 Calibre pipeline (EPUB/DOCX/PDF input)
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `API_KEY_IMAGES` | — | API key for image generation |
-| `API_BASE_IMAGES` | — | Base URL for images |
-| `MODEL_IMAGES` | `gpt-image-1.5` | Model for generation |
+| `PANDOC_BATCH_CHARS` | `200000` | Markdown → HTML conversion batch size |
+| `PANDOC_TIMEOUT` | `900` | Seconds before a pandoc batch is killed |
+| `CALIBRE_TIMEOUT` | `1800` | Seconds before `ebook-convert` is killed |
+| `MAX_FAILED_CHUNK_RATIO` | `0.0` | Share of failed chunks allowed before the pipeline aborts |
 
 ---
 
-## 📝 Configuration Examples
+## 🔍 Logging
 
-### Local LLM (Ollama)
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `DEBUG` | `off` | Detailed console log (length checks, dictionary matching, synopsis) |
+| `DEBUG_HTTP` | `off` | With `DEBUG` on: also raw HTTP traces of the LLM clients |
+| `LLM_LOGGING` | `false` | Every LLM call as a JSON line in `LLM_LOGGING_DIR/llm_calls_YYYY-MM-DD.log` |
+| `LLM_LOGGING_DIR` | `logs` | Directory for the LLM call log |
 
-```bash
-API_KEY_TRANSLATE=ollama
-API_BASE_TRANSLATE=http://localhost:11434/v1
-MODEL_TRANSLATE=gemma2:27b
-S_PROMT_TRANSLATE=true
-JSON_MODE=true
-
-API_KEY_PROOFREAD=ollama
-API_BASE_PROOFREAD=http://localhost:11434/v1
-MODEL_PROOFREAD=mistral:7b
-S_PROMT_PROOFREAD=false
-
-GPU=false
-NER=true
-```
-
-### API (OpenAI/Hunyuan)
-
-```bash
-API_KEY_TRANSLATE=sk-xxx
-API_BASE_TRANSLATE=https://api.openai.com/v1
-MODEL_TRANSLATE=gpt-4
-JSON_MODE=true
-
-API_KEY_PROOFREAD=sk-xxx
-API_BASE_PROOFREAD=https://api.openai.com/v1
-MODEL_PROOFREAD=gpt-4
-
-GPU=true
-NER=true
-```
-
-### CPU-only (no GPU)
-
-```bash
-GPU=false
-SPACY_USE_GPU=false
-NER=true
-
-# Other parameters use defaults
-```
+**Details:** [LOGGING.md](LOGGING.md)
 
 ---
 
-## 🧩 JSON Mode
+## 🕰️ Legacy names
 
-**JSON mode** enables structured input/output format for all 4 translation stages (INITIAL, REFLECTION, IMPROVE, FINAL_EDIT).
+Older `.env` files keep working: these names are read when the new one is not set.
 
-### Enabling
-```bash
-JSON_MODE=true
-```
+| New name | Old name |
+|----------|----------|
+| `API_KEY_TRANSLATE`, `API_BASE_TRANSLATE`, `MODEL_TRANSLATE`, `TEMP_TRANSLATE`, `TIMEOUT_TRANSLATE`, `S_PROMT_TRANSLATE` | `API_KEY`, `API_BASE`, `MODEL`, `TEMP`, `TIMEOUT`, `S_PROMT` |
+| `API_KEY_PROOFREAD`, `API_BASE_PROOFREAD`, `MODEL_PROOFREAD`, `TEMP_PROOFREAD`, `TIMEOUT_PROOFREAD`, `S_PROMT_PROOFREAD` | `API_KEY2`, `API_BASE2`, `MODEL2`, `TEMP2`, `TIMEOUT2`, `S_PROMT2` |
+| `API_KEY_IMAGES`, `API_BASE_IMAGES`, `MODEL_IMAGES`, `TIMEOUT_IMAGES` | `API_KEY3`, `API_BASE3`, `MODEL3`, `TIMEOUT3` |
 
-### Advantages
-- More reliable parsing (no XML tag conflicts)
-- Structured input: vocabulary, synopsis, context in JSON
-- Consistent output format across all stages
-
-### Behavior
-When `JSON_MODE=true`:
-- All stages use JSON prompts from `prompts.json` (categories with `_json` suffix)
-- LLM output is parsed as JSON
-- On parsing error — automatic fallback to XML mode
-
-### Details
-- [JSON Mode Analysis](JSON_MODE_ANALYSIS.md) — full documentation on input/output formats
-- Prompt categories: `initial_translation_json`, `reflection_json`, `improve_json`, `editor_json`
-- In JSON prompts, curly braces are escaped: `{{ "translation": "..." }}`
+Removed in 2.5 (ignored if still present): `CONCURRENT_LIMIT`, `COVER_PROMPT`,
+`S_PROMT_IMAGES`/`S_PROMT3`, `TEMP_IMAGES`/`TEMP3`, `SHORT`, `EXAMPLE`.
 
 ---
 
-## 🔍 Debugging
-
-### Enable DEBUG mode
+## ✅ Checking the configuration
 
 ```bash
-DEBUG=on
-```
-
-**What is logged:**
-- LLM requests/responses
-- Chunk processing time
-- Token statistics
-- NER extraction
-- Vocabulary matching
-
-### Verify configuration
-
-```bash
-python3 -c "from src.config import Config; c = Config(); print(f'NER: {c.ner_opt}, GPU: {c.gpu_enabled}')"
+python3 -c "from src.config import Config; c = Config(); print(c.model_translate, c.model_proofread, c.output_format, c.ner_opt)"
 ```
 
 ---
 
 ## 📚 Related documentation
 
-- [INSTALLATION.md](INSTALLATION.md) — Installation
+- [INSTALLATION.md](INSTALLATION.md) — installation
 - [TRANSLATION_STAGES.md](TRANSLATION_STAGES.md) — 5-stage pipeline
-- [TEMPERATURE_STRATEGY.md](TEMPERATURE_STRATEGY.md) — Temperatures
-- [NER_GUIDE.md](NER_GUIDE.md) — NER processing
-- [DOCKER_CPU_GUIDE.md](DOCKER_CPU_GUIDE.md) — Docker configuration
-
----
-
-**Version:** 2.2  
-**Updated:** 2026-03-30
+- [RESUME.md](RESUME.md) — resume after a crash
+- [DOCKER_CPU_GUIDE.md](DOCKER_CPU_GUIDE.md), [GPU_DOCKER.md](GPU_DOCKER.md) — Docker

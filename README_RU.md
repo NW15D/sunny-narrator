@@ -1,6 +1,6 @@
 # Sunny Narrator
 
-**Версия:** 2.4  
+**Версия:** 2.5  
 **AI-переводчик книг с глоссарием (AI book translator)** для форматов FB2/TXT/EPUB/DOCX/PDF — переводчик художественной литературы на базе LLM (LLM fiction book translator) с двумя независимыми LLM и 5-стадийным контролем качества.
 
 🖥️ **Консольная утилита (CLI)** — без графического интерфейса, требует базового опыта работы с командной строкой.
@@ -67,27 +67,32 @@ FILE=books/mybook.fb2 python app.py
 
 ## 📋 Конфигурация
 
-### Базовый .env
+Скопируйте прилагаемый `env.sample` в `.env`. Это полная рабочая конфигурация: **Gemma 4** переводит, **Qwen 3.6** вычитывает, обе модели — через OpenAI-совместимый сервер (llama.cpp, Ollama, LM Studio, vLLM или облачный API). Каждая опция описана прямо в файле, а в его конце есть готовые варианты: два сервера llama.cpp, один сервер Ollama, английский оригинал, FB2 → EPUB и быстрый черновик.
 
 ```bash
-# Настройки API
-API_KEY_TRANSLATE=ваш-ключ
-API_BASE_TRANSLATE=http://localhost:11434/v1
-MODEL_TRANSLATE=google/gemma-2-27b-it
-JSON_MODE=true    # 🚀 Рекомендуется: структурированный JSON на всех стадиях
+cp env.sample .env
+```
 
-API_KEY_PROOFREAD=ваш-ключ
+Затем поправьте как минимум эти ключи:
+
+```bash
+# Translate LLM — Gemma 4
+API_KEY_TRANSLATE=your-api-key-here        # любая непустая строка для локального сервера
+API_BASE_TRANSLATE=http://localhost:11434/v1
+MODEL_TRANSLATE=Gemma4-26B                 # имя модели так, как его отдаёт сервер
+
+# Proofread LLM — Qwen 3.6
+API_KEY_PROOFREAD=your-api-key-here
 API_BASE_PROOFREAD=http://localhost:11434/v1
-MODEL_PROOFREAD=Mistral
+MODEL_PROOFREAD=Qwen36-35B
 
 # Книга и языки
 FILE=books/mybook.fb2
-SOURCE_LANG=english
-TARGET_LANG=russian
+SOURCE_LANG=ko
+TARGET_LANG=ru
 
-# Обработка
-FAST_TRANS=false    # Быстрый режим (пропуск стадий качества)
-DEBUG=off
+# Вывод: fb2 или epub для FB2/TXT; epub, docx или pdf для EPUB/DOCX/PDF
+OUTPUT_FORMAT=fb2
 ```
 
 **Все опции:** [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
@@ -288,6 +293,7 @@ FILE=books/mybook.epub python app.py --output-format epub
 
 ## 📝 Версии
 
+- **v2.5** — Переработанный FB2-пайплайн: чанки режутся по дереву секций (вложенные секции, стихи — между строфами), разметка от LLM чинится там, где сломана, надёжное возобновление после сбоя; FB2 → EPUB через `--output-format epub` / `OUTPUT_FORMAT=epub` (вложенное оглавление, сноски, обложка, картинки); исправлены генерация обложки и команда `sunny-narrator`; `env.sample` с примерами Gemma 4 + Qwen 3.6; удалены неиспользуемые опции (`CONCURRENT_LIMIT`, `COVER_PROMPT`, `S_PROMT_IMAGES`, `TEMP_IMAGES`, `SHORT`, `EXAMPLE`); чекпоинты предыдущих версий не продолжаются
 - **v2.4** — `DICTIONARY` (`.env`) / `--dictionary` (CLI): явный путь к `.dic`-файлу для обоих пайплайнов
 - **v2.3** — Обновление README: единое содержание на всех языках, пометка о CLI-инструменте без интерфейса, ссылки на Docker registry во всех переводах README, SEO-правки
 - **v2.2** — Определение пола персонажей с записью в словарь; калибровка контроля длины перевода по книге; адаптация для CJK (корейский, японский, китайский) и прямой перевод с CJK на любой язык

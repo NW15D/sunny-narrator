@@ -8,7 +8,6 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONPATH=/app
-ENV GPU=true
 ENV NER=true
 
 # Set working directory
@@ -53,6 +52,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 ENTRYPOINT ["python3", "app.py"]
 
 # Labels
-LABEL version="2.4"
+LABEL version="2.5"
 LABEL description="Sunny Narrator - AI-powered book translation (GPU/CUDA)"
 LABEL gpu="true"

@@ -15,7 +15,6 @@ services:
       - ./logs:/app/logs
       - ./src/prompts.json:/app/src/prompts.json
     environment:
-      - GPU=true
       - NER=true
     stdin_open: true
     tty: true

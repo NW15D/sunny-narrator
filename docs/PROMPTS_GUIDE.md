@@ -49,12 +49,12 @@
 В `.env` файле укажите флаги для Translate и Proofread LLM:
 
 ```bash
-# Translate LLM (Translation)
-MODEL_TRANSLATE=google/gemma-2-27b-it
-S_PROMT_TRANSLATE=true    # true = объединять system+user
+# Translate LLM (Translation) — эталонная связка из env.sample
+MODEL_TRANSLATE=Gemma4-26B
+S_PROMT_TRANSLATE=false   # Gemma 4 принимает system; true только для Gemma 2/3
 
 # Proofread LLM (Proofreading)
-MODEL_PROOFREAD=Mistral
+MODEL_PROOFREAD=Qwen36-35B
 S_PROMT_PROOFREAD=false   # false = раздельные сообщения
 ```
 
@@ -73,6 +73,8 @@ S_PROMT_PROOFREAD=false   # false = раздельные сообщения
 
 | Модель | S_PROMT_TRANSLATE | Примечания |
 |--------|-------------------|------------|
+| Gemma 4 (`Gemma4-26B` в `env.sample`) | false | Рабочая связка из `env.sample` |
+| Qwen 3.6 (`Qwen36-35B`) | false | Поддерживает system |
 | `google/gemma-2-9b-it` | **true** | Gemma 2 не поддерживает system |
 | `google/gemma-2-27b-it` | **true** | Gemma 2 не поддерживает system |
 | `google/gemma-3-12b-it` | **true** | Gemma 3 не поддерживает system |
@@ -87,6 +89,7 @@ S_PROMT_PROOFREAD=false   # false = раздельные сообщения
 
 | Модель | S_PROMT_PROOFREAD | Примечания |
 |--------|-------------------|------------|
+| Qwen 3.6 (`Qwen36-35B` в `env.sample`) | false | Рабочая связка из `env.sample` |
 | `google/gemma-2-9b-it` | **true** | Gemma 2 не поддерживает system |
 | `Mistral-7B-Instruct` | false | Поддерживает system |
 | `Ministral-8B` | false | Поддерживает system |
@@ -175,19 +178,19 @@ S_PROMT_PROOFREAD=false   # false = раздельные сообщения
 ### .env файл
 
 ```bash
-# Translate LLM
-MODEL_TRANSLATE=google/gemma-2-27b-it
+# Translate LLM — Gemma 4
+MODEL_TRANSLATE=Gemma4-26B
 API_BASE_TRANSLATE=http://localhost:11434/v1
 API_KEY_TRANSLATE=your-key
-S_PROMT_TRANSLATE=true          # ⚠️ true для Gemma!
+S_PROMT_TRANSLATE=false         # ⚠️ true только для Gemma 2/3
 TEMP_TRANSLATE=0.01
 
-# Proofread LLM
-MODEL_PROOFREAD=Mistral
+# Proofread LLM — Qwen 3.6
+MODEL_PROOFREAD=Qwen36-35B
 API_BASE_PROOFREAD=http://localhost:11434/v1
 API_KEY_PROOFREAD=your-key
-S_PROMT_PROOFREAD=false         # false для Mistral
-TEMP_PROOFREAD=0.7
+S_PROMT_PROOFREAD=false
+TEMP_PROOFREAD=0.3
 
 # Общие
 SOURCE_LANG=english

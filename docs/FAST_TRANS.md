@@ -114,9 +114,9 @@ FAST_TRANS=true
 ### Combining with other parameters
 
 ```bash
-# Fast translation + CPU
+# Fast translation + CPU (hide the GPU from spaCy)
 FAST_TRANS=true
-GPU=false
+CUDA_VISIBLE_DEVICES=
 
 # Fast translation + debug
 FAST_TRANS=true

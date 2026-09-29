@@ -1,6 +1,6 @@
 # Sunny Narrator
 
-**版本:** 2.4  
+**版本:** 2.5  
 **基于术语表的 AI 书籍翻译器（AI book translator）**，支持 FB2/TXT/EPUB/DOCX/PDF —— 基于 LLM 的小说/文学翻译工具（fiction book translator），采用双 LLM 翻译系统与 5 阶段质量控制。
 
 🖥️ **命令行工具（CLI）** —— 无图形界面，需要一定的命令行使用经验。
@@ -67,27 +67,32 @@ FILE=books/mybook.fb2 python app.py
 
 ## 📋 配置
 
-### 基本 .env
+将附带的 `env.sample` 复制为 `.env`。它是一份完整可用的配置：**Gemma 4** 负责翻译，**Qwen 3.6** 负责校对，两者都通过兼容 OpenAI 的服务器（llama.cpp、Ollama、LM Studio、vLLM 或在线 API）调用。每个选项都在文件中有说明，文件末尾还提供了现成的变体：两个 llama.cpp 服务器、一个 Ollama 服务器、英文原文、FB2 → EPUB 以及快速草稿。
 
 ```bash
-# API 设置
-API_KEY_TRANSLATE=your-key
-API_BASE_TRANSLATE=http://localhost:11434/v1
-MODEL_TRANSLATE=google/gemma-2-27b-it
-JSON_MODE=true    # 🚀 推荐：所有阶段使用结构化 JSON
+cp env.sample .env
+```
 
-API_KEY_PROOFREAD=your-key
+然后至少修改以下键：
+
+```bash
+# 翻译 LLM — Gemma 4
+API_KEY_TRANSLATE=your-api-key-here        # 本地服务器可填任意非空字符串
+API_BASE_TRANSLATE=http://localhost:11434/v1
+MODEL_TRANSLATE=Gemma4-26B                 # 与服务器报告的模型名称一致
+
+# 校对 LLM — Qwen 3.6
+API_KEY_PROOFREAD=your-api-key-here
 API_BASE_PROOFREAD=http://localhost:11434/v1
-MODEL_PROOFREAD=Mistral
+MODEL_PROOFREAD=Qwen36-35B
 
 # 书籍和语言
 FILE=books/mybook.fb2
-SOURCE_LANG=english
-TARGET_LANG=russian
+SOURCE_LANG=ko
+TARGET_LANG=ru
 
-# 处理
-FAST_TRANS=false    # 快速模式（跳过质量阶段）
-DEBUG=off
+# 输出：FB2/TXT 为 fb2 或 epub；EPUB/DOCX/PDF 为 epub、docx 或 pdf
+OUTPUT_FORMAT=fb2
 ```
 
 **所有选项：** [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
@@ -285,6 +290,7 @@ Calibre 的内部标记（`calibre_link-*` 锚点、`.calibre` 类）会被自�
 
 ## 📝 版本
 
+- **v2.5** — 重写 FB2 流程：按章节树切分（嵌套章节，诗歌在诗节之间切分），在出错位置修复 LLM 标记，崩溃后可靠续传；通过 `--output-format epub` / `OUTPUT_FORMAT=epub` 实现 FB2 → EPUB（嵌套目录、脚注、封面、图片）；修复封面生成和 `sunny-narrator` 命令；`env.sample` 提供 Gemma 4 + Qwen 3.6 示例；删除未使用的选项（`CONCURRENT_LIMIT`、`COVER_PROMPT`、`S_PROMT_IMAGES`、`TEMP_IMAGES`、`SHORT`、`EXAMPLE`）；不再续传旧版本的检查点
 - **v2.4** — `DICTIONARY`（`.env`）/ `--dictionary`（命令行）：为两个流程指定 `.dic` 文件的路径
 - **v2.3** — README 更新：统一各语言版本内容、标注为无界面命令行工具、在所有语言版本中添加 Docker 镜像仓库链接、SEO 优化
 - **v2.2** — 判断角色性别并写回词典；按书自动校准译文长度检查；CJK（韩语、日语、中文）适配，支持从 CJK 直接翻译为任意语言

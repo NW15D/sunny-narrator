@@ -12,8 +12,8 @@ Sunny Narrator поддерживает **два режима работы**:
 
 | Режим | Dockerfile | docker-compose | Требования |
 |-------|------------|----------------|------------|
-| **CPU-only** | `Dockerfile` (по умолчанию) | `docker-compose.yml` | Нет GPU |
-| **GPU (NVIDIA)** | `Dockerfile.gpu` | `docker-compose.gpu.yml` | NVIDIA GPU + CUDA |
+| **CPU-only** | `Dockerfile.cpu` | `docker-compose.cpu.yml` | Нет GPU |
+| **GPU (NVIDIA)** | `Dockerfile` | `docker-compose.yml` | NVIDIA GPU + CUDA |
 
 ---
 
@@ -76,7 +76,7 @@ pip install torch  # CPU version
 
 ---
 
-### Dockerfile.gpu (NVIDIA GPU)
+### Dockerfile (NVIDIA GPU)
 
 **Базовый образ:** `nvidia/cuda:12.1.0-runtime-ubuntu22.04`
 
@@ -103,32 +103,32 @@ pip install cupy-cuda12x
 ```bash
 # .env
 NER=true           # Включить NER обработку
-GPU=false          # false для CPU, true для GPU
 NERMODEL=en_core_web_lg
+# spaCy сам использует GPU, если видит его; CPU-образ собран без cupy.
+# Скрыть GPU на GPU-хосте: CUDA_VISIBLE_DEVICES= (пусто)
 ```
 
-### docker-compose.yml (CPU)
+### docker-compose.cpu.yml (CPU)
 
 ```yaml
 services:
   sunny-narrator:
     build:
       context: .
-      dockerfile: Dockerfile  # CPU-only
+      dockerfile: Dockerfile.cpu  # CPU-only
     environment:
-      - GPU=false  # Force CPU mode
       - NER=true
     # No GPU resources needed
 ```
 
-### docker-compose.gpu.yml (GPU)
+### docker-compose.yml (GPU)
 
 ```yaml
 services:
   sunny-narrator:
     build:
       context: .
-      dockerfile: Dockerfile.gpu
+      dockerfile: Dockerfile
     deploy:
       resources:
         reservations:
@@ -190,9 +190,9 @@ sudo systemctl restart docker
 # Проверить что GPU доступен
 docker run --rm --gpus all nvidia/cuda:12.1.0-base-ubuntu22.04 nvidia-smi
 
-# Проверить что docker-compose.gpu.yml работает
-docker-compose -f docker-compose.gpu.yml up -d
-docker-compose -f docker-compose.gpu.yml exec sunny-narrator python3 -c "import torch; print(f'CUDA: {torch.cuda.is_available()}')"
+# Проверить что docker-compose.yml работает
+docker-compose -f docker-compose.yml up -d
+docker-compose -f docker-compose.yml exec sunny-narrator python3 -c "import torch; print(f'CUDA: {torch.cuda.is_available()}')"
 ```
 
 ---
@@ -249,8 +249,7 @@ cupy.cuda.compiler.CompileException: nvrtc: error: invalid value for --gpu-archi
 # Использовать CPU версию CuPy: не ставить extra [gpu] из pyproject.toml
 # (cupy-cuda12x входит только в него, в базовых зависимостях его нет)
 
-# Или использовать CPU-only режим
-export GPU=false
+# Или использовать CPU-only образ
 docker-compose -f docker-compose.cpu.yml up -d
 ```
 
@@ -281,9 +280,8 @@ docker-compose -f docker-compose.cpu.yml up -d
 ## 📚 Связанная документация
 
 - [INSTALLATION.md](INSTALLATION.md) — Общая установка
-- [NER_CPU_FALLBACK_ANALYSIS.md](NER_CPU_FALLBACK_ANALYSIS.md) — Валидация NER на CPU
-- [docker-compose.yml](../docker-compose.yml) — CPU версия
-- [docker-compose.gpu.yml](../docker-compose.gpu.yml) — GPU версия
+- [docker-compose.cpu.yml](../docker-compose.cpu.yml) — CPU версия
+- [docker-compose.yml](../docker-compose.yml) — GPU версия
 
 ---
 

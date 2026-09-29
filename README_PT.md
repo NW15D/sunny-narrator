@@ -1,6 +1,6 @@
 # Sunny Narrator
 
-**Versão:** 2.4  
+**Versão:** 2.5  
 **Tradutor de livros guiado por glossário (AI book translator)** para FB2/TXT/EPUB/DOCX/PDF — um tradutor de ficção baseado em LLM (LLM fiction book translator), com sistema de tradução em dois LLMs e controle de qualidade em 5 estágios.
 
 🖥️ **Utilitário de linha de comando (CLI)** — sem interface gráfica; recomenda-se experiência básica com terminal.
@@ -67,27 +67,32 @@ FILE=books/mybook.fb2 python app.py
 
 ## 📋 Configuração
 
-### .env Básico
+Copie o `env.sample` incluído para `.env`. É uma configuração completa e funcional: o **Gemma 4** traduz e o **Qwen 3.6** revisa, ambos por meio de um servidor compatível com OpenAI (llama.cpp, Ollama, LM Studio, vLLM ou uma API online). Cada opção está documentada no próprio arquivo, e no final há variantes prontas: dois servidores llama.cpp, um servidor Ollama, original em inglês, FB2 → EPUB e rascunho rápido.
 
 ```bash
-# Configurações de API
-API_KEY_TRANSLATE=sua-chave
-API_BASE_TRANSLATE=http://localhost:11434/v1
-MODEL_TRANSLATE=google/gemma-2-27b-it
-JSON_MODE=true    # 🚀 Recomendado: JSON estruturado em todos os estágios
+cp env.sample .env
+```
 
-API_KEY_PROOFREAD=sua-chave
+Depois ajuste pelo menos estas chaves:
+
+```bash
+# LLM de tradução — Gemma 4
+API_KEY_TRANSLATE=your-api-key-here        # qualquer string não vazia para um servidor local
+API_BASE_TRANSLATE=http://localhost:11434/v1
+MODEL_TRANSLATE=Gemma4-26B                 # nome do modelo como o servidor o informa
+
+# LLM de revisão — Qwen 3.6
+API_KEY_PROOFREAD=your-api-key-here
 API_BASE_PROOFREAD=http://localhost:11434/v1
-MODEL_PROOFREAD=Mistral
+MODEL_PROOFREAD=Qwen36-35B
 
 # Livro e idiomas
 FILE=books/mybook.fb2
-SOURCE_LANG=english
-TARGET_LANG=russian
+SOURCE_LANG=ko
+TARGET_LANG=ru
 
-# Processamento
-FAST_TRANS=false    # Modo rápido (pula estágios de qualidade)
-DEBUG=off
+# Saída: fb2 ou epub para FB2/TXT; epub, docx ou pdf para EPUB/DOCX/PDF
+OUTPUT_FORMAT=fb2
 ```
 
 **Todas as opções:** [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
@@ -286,6 +291,7 @@ O log do console mostra cada etapa da tradução: verificações de tamanho com 
 
 ## 📝 Versões
 
+- **v2.5** — Pipeline FB2 reformulado: os chunks seguem a árvore de seções (seções aninhadas, poemas divididos entre estrofes), a marcação do LLM é corrigida onde quebra, retomada segura após falhas; FB2 → EPUB via `--output-format epub` / `OUTPUT_FORMAT=epub` (sumário aninhado, notas, capa, imagens); geração de capa e o comando `sunny-narrator` corrigidos; `env.sample` com exemplos Gemma 4 + Qwen 3.6; opções não usadas removidas (`CONCURRENT_LIMIT`, `COVER_PROMPT`, `S_PROMT_IMAGES`, `TEMP_IMAGES`, `SHORT`, `EXAMPLE`); checkpoints de versões anteriores não são retomados
 - **v2.4** — `DICTIONARY` (`.env`) / `--dictionary` (CLI): caminho explícito do arquivo `.dic` para os dois pipelines
 - **v2.3** — Atualização do README: conteúdo unificado em todos os idiomas, nota sobre ferramenta CLI sem interface, links do registro Docker adicionados a todas as versões, melhorias de SEO
 - **v2.2** — Detecção do gênero dos personagens com gravação no dicionário; calibração do controle de tamanho da tradução por livro; adaptação para CJK (coreano, japonês, chinês) e tradução direta de CJK para qualquer idioma
