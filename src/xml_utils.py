@@ -58,6 +58,10 @@ def atomic_write(target_path: str, content: str, encoding: str = 'utf-8') -> Non
         raise
 
 
+_AUTHOR_FIELD_ORDER = ['first-name', 'middle-name', 'last-name', 'nickname',
+                       'home-page', 'email', 'id']
+
+
 def extract_metadata(header: str) -> Dict[str, Any]:
     """
     Extracts key metadata from the FB2 header using BeautifulSoup.
@@ -165,22 +169,52 @@ def update_header_with_metadata(header: str, metadata: Dict[str, Any]) -> str:
         if title_tag:
             title_tag.string = metadata['book-title']
     
-    # Update authors
-    if 'author' in metadata:
-        # Remove existing authors
-        for author_tag in title_info.find_all('author'):
-            author_tag.decompose()
-        
-        # Add new authors
+    # Update authors. They must stay in front of <book-title> (FB2 schema
+    # order), so the new ones go where the old ones were.
+    if metadata.get('author'):
+        existing = title_info.find_all('author', recursive=False)
+        new_authors = []
         for author_data in metadata['author']:
             author_tag = soup.new_tag('author')
-            for field, value in author_data.items():
-                if value:
+            for field in _AUTHOR_FIELD_ORDER:
+                if author_data.get(field):
                     field_tag = soup.new_tag(field)
-                    field_tag.string = value
+                    field_tag.string = author_data[field]
                     author_tag.append(field_tag)
-            title_info.append(author_tag)
-    
+            new_authors.append(author_tag)
+        anchor = existing[0] if existing else title_info.find('book-title', recursive=False)
+        for author_tag in new_authors:
+            if anchor is not None:
+                anchor.insert_before(author_tag)
+            else:
+                title_info.append(author_tag)
+        for author_tag in existing:
+            author_tag.decompose()
+
+    # Update language: the book is now in the target language; keep the
+    # original one as <src-lang>.
+    if metadata.get('lang'):
+        lang = metadata['lang']
+        lang = str(lang[0] if isinstance(lang, list) and lang else lang).strip()
+        lang_tag = title_info.find('lang', recursive=False)
+        if lang and lang_tag is not None:
+            old_lang = lang_tag.get_text().strip()
+            if old_lang and old_lang != lang and title_info.find('src-lang', recursive=False) is None:
+                src_tag = soup.new_tag('src-lang')
+                src_tag.string = old_lang
+                lang_tag.insert_after(src_tag)
+            lang_tag.string = lang
+        elif lang:
+            lang_tag = soup.new_tag('lang')
+            lang_tag.string = lang
+            anchor = next((title_info.find(n, recursive=False)
+                           for n in ('src-lang', 'translator', 'sequence')
+                           if title_info.find(n, recursive=False) is not None), None)
+            if anchor is not None:
+                anchor.insert_before(lang_tag)
+            else:
+                title_info.append(lang_tag)
+
     # Update annotation
     if 'annotation' in metadata:
         annotation_tag = title_info.find('annotation')
@@ -276,7 +310,12 @@ def replace_cover_image(header: str, footer: str, body: str, new_content: str) -
             # readers (e.g. the EPUB writer's coverpage lookup) find it.
             image_tag['l:href'] = image_href
             cover_tag.append(image_tag)
-            title_info.append(cover_tag)
+            # <coverpage> precedes <lang> in the FB2 schema order
+            lang_tag = title_info.find('lang', recursive=False)
+            if lang_tag is not None:
+                lang_tag.insert_before(cover_tag)
+            else:
+                title_info.append(cover_tag)
         # Return serialized result, but strip </FictionBook> if BS4 added it
         result = str(soup)
         if '</FictionBook>' in result and '</FictionBook>' not in header:
@@ -468,70 +507,18 @@ def _find_chunk_boundary(text: str, start: int, end: int) -> int:
 
 def prepare_chunks_with_sections(body: str, max_len_chunk: int) -> List[List[str]]:
     """
-    Splits the body content into sections and chunks based on max_len_chunk.
-    Preserves original FB2 section structure.
-    
-    Args:
-        body: FB2 body content
-        max_len_chunk: Maximum chunk size in characters
-        
+    Splits the body into structural units (see fb2_structure.split_body_units)
+    and each unit into balanced chunks of about max_len_chunk characters.
+
     Returns:
-        List of sections, where each section is a list of chunks:
+        List of units, each a list of chunks:
         [[section1_chunk1, section1_chunk2], [section2_chunk1], ...]
     """
-    body_str = body
-    sections = []
-    
-    start = 0
-    while start < len(body_str):
-        # Find the start of the next section (any attributes, any case)
-        m = _SECTION_OPEN_RE.search(body_str, start)
-        if not m:
-            break
+    return prepare_body_structure(body, max_len_chunk)[0]
 
-        section_start = m.end()
-        section_end, section_close_end = _find_matching_section_end(body_str, section_start)
 
-        if section_end == -1:
-            break
-
-        section_content = body_str[section_start:section_end]
-        chunks = []
-
-        # Split the section into chunks with tag-aware boundaries
-        # Note: We don't balance tags here - chunks may have unbalanced tags
-        # (e.g., <title> opened in one chunk, closed in another)
-        # Full XML validation happens only on final assembled document
-        chunk_start = 0
-        while chunk_start < len(section_content):
-            chunk_end = chunk_start + max_len_chunk
-            
-            if chunk_end >= len(section_content):
-                chunk_text = section_content[chunk_start:]
-                chunks.append(chunk_text)
-                break
-            else:
-                chunk_end = _find_chunk_boundary(section_content, chunk_start, chunk_end)
-                chunk_text = section_content[chunk_start:chunk_end]
-                chunks.append(chunk_text)
-                chunk_start = chunk_end
-
-        sections.append(chunks)
-        start = section_close_end
-
-    if not sections:
-        # Fallback: split entire body as one section
-        chunks = []
-        chunk_start = 0
-        while chunk_start < len(body_str):
-            chunk_end = chunk_start + max_len_chunk
-            if chunk_end >= len(body_str):
-                chunks.append(body_str[chunk_start:])
-                break
-            else:
-                chunk_end = _find_chunk_boundary(body_str, chunk_start, chunk_end)
-                chunks.append(body_str[chunk_start:chunk_end])
-                chunk_start = chunk_end
-        sections = [chunks]
-
-    return sections
+def prepare_body_structure(body: str, max_len_chunk: int) -> Tuple[List[List[str]], List[Dict[str, Any]]]:
+    """Like prepare_chunks_with_sections, plus per-unit {'open_tag', 'depth'}
+    so the caller can rebuild the original (nested) section tree."""
+    from src.fb2_structure import prepare_body_structure as _prepare
+    return _prepare(body, max_len_chunk)

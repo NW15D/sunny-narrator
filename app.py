@@ -16,7 +16,6 @@ import time
 import warnings
 import base64
 import logging
-import re
 import json
 from datetime import datetime
 from pathlib import Path
@@ -42,6 +41,11 @@ from src.vocabulary_manager import get_vocabulary_manager, DictionaryCreatedSign
 from src.character_registry import get_character_registry, reset_character_registry
 from src.epub_writer import create_epub_from_fb2
 from src.checkpoint_manager import CHECKPOINT_VERSION, compute_fingerprint
+from src.fb2_structure import (
+    close_dangling_sections,
+    sanitize_translated_chunk,
+    section_transition,
+)
 
 # Initialize configuration
 config = Config()
@@ -105,6 +109,9 @@ class TranslationEngine:
         # Set by main() once the chunk list exists; written into every
         # checkpoint so a resume can prove it refers to the same slicing.
         self.checkpoint_fingerprint = None
+        # Bytes of output_tfile that belong to fully processed chunks; stored
+        # in the checkpoint so a resume can cut off a half-written tail.
+        self._tfile_size = 0
 
         # Statistics counters
         self.stats = {
@@ -321,7 +328,7 @@ class TranslationEngine:
         else:
             # All retries failed — return visible placeholder instead of silent empty string
             logger.warning(f"All validation attempts failed for chunk {g_id}")
-            final_content = f"[TRANSLATION FAILED: chunk {g_id}]"
+            final_content = f"<p>[TRANSLATION FAILED: chunk {g_id}]</p>"
             self.stats['failed'] += 1
             return final_content, synopsis
 
@@ -329,7 +336,7 @@ class TranslationEngine:
         if not final_content or not final_content.strip():
             logger.warning(f"Empty translation result for chunk {g_id}")
             self.stats['failed'] += 1
-            return f"[TRANSLATION FAILED: chunk {g_id}]", synopsis
+            return f"<p>[TRANSLATION FAILED: chunk {g_id}]</p>", synopsis
 
         # Count successful translation
         self.stats['successful'] += 1
@@ -349,30 +356,33 @@ class TranslationEngine:
 
     def _post_process_xml(self, source_text: str, translated_text: str) -> str:
         """
-        Basic XML cleanup after translation.
+        Fix XML structure of one translated chunk, locally.
 
-        NOTE: Does NOT repair tag structure for chunks.
-        Chunks may have intentionally unbalanced tags
-        (e.g., <title> opened in one chunk, closed in another).
-        Full XML validation happens only on final assembled document.
-
-        - Removes artifacts via rem_tags()
-        - Does NOT use LLM repair (would break chunk structure)
+        Chunks are balanced by construction (see fb2_structure), so anything
+        unbalanced in the LLM answer is the LLM's fault and is repaired right
+        here, at the spot it broke, instead of being patched at the end of the
+        book. Never drops text.
         """
-        # Basic cleanup only - no XML parsing of chunks
-        # rem_tags is for final FB2 validation, not chunk processing
-        cleaned = translated_text.strip()
+        return sanitize_translated_chunk(translated_text)
 
-        # Remove common artifacts
-        cleaned = re.sub(r'\n\s*\n+', '\n\n', cleaned)
-
-        return cleaned
+    def _append_tfile(self, output_tfile: str, text: str):
+        with open(output_tfile, 'a', encoding='utf-8') as f:
+            f.write(text)
+        self._tfile_size = os.path.getsize(output_tfile)
 
     def process_all_chunks(self, all_chunks: list, orig_sections: list,
-                           vocab: dict, output_tfile: str, checkpoint_file: str = None) -> str:
+                           vocab: dict, output_tfile: str, checkpoint_file: str = None,
+                           section_meta: list = None) -> str:
         """
-        Process all chunks sequentially.
-        Groups chunks by section and wraps each section in <section> tags.
+        Process all chunks sequentially and write them out as a section tree.
+
+        Every translated chunk is appended to output_tfile right away, so the
+        file is always a prefix of the finished body (only the closers of the
+        currently open sections are missing) and a crash loses at most the
+        chunk in flight. Section tags are produced here from section_meta
+        (open tag + depth per unit, see fb2_structure.prepare_body_structure)
+        and never by the LLM, so the tree is balanced by construction.
+        Without section_meta every unit is a flat top-level <section>.
 
         Args:
             all_chunks: List of chunk dicts with metadata
@@ -380,9 +390,11 @@ class TranslationEngine:
             vocab: Vocabulary dictionary
             output_tfile: Temp output file path
             checkpoint_file: Path to checkpoint JSON file (optional)
+            section_meta: Per-unit {'open_tag', 'depth'} (optional)
 
         Returns:
-            Combined translated content with proper <section> wrapping
+            Translated content produced by this call (the whole body on a
+            fresh run, only the new part on a resume)
         """
         content_parts = []  # F1: list+join вместо O(n²)-конкатенации строк
         total = len(all_chunks)
@@ -392,30 +404,41 @@ class TranslationEngine:
         print(f"Starting translation: {total} chunks")
         print(f"{'='*60}\n")
 
-        # Track which sections have been written to avoid duplicates on resume
-        written_sections = set()
-        current_section_idx = -1
-        current_section_chunks = []
+        def unit_meta(s_idx: int) -> dict:
+            if section_meta and s_idx < len(section_meta):
+                return section_meta[s_idx]
+            return {'open_tag': '<section>', 'depth': 1}
+
+        first_gid = all_chunks[0]['global_id'] if all_chunks else 0
+        if first_gid > 0 and self.last_processed_chunk >= 0:
+            # Resume: output_tfile already holds everything up to the last
+            # processed chunk, including the tags of the sections still open.
+            emitted_unit = self.last_section_idx
+            cur_depth = unit_meta(emitted_unit)['depth']
+        else:
+            emitted_unit, cur_depth = -1, 0
+            if first_gid == 0:
+                # A fresh run must not append to a leftover file of an old run.
+                open(output_tfile, 'w', encoding='utf-8').close()
+                self._tfile_size = 0
+
+        def emit(text: str):
+            if text:
+                content_parts.append(text)
+                self._append_tfile(output_tfile, text)
+
+        def enter_units(upto: int):
+            nonlocal emitted_unit, cur_depth
+            while emitted_unit < upto:
+                emitted_unit += 1
+                text, cur_depth = section_transition(unit_meta(emitted_unit), cur_depth)
+                emit(text)
 
         for item in all_chunks:
             chunk = item['chunk']
             s_idx = item['section_idx']
             c_idx = item['chunk_idx']
             g_id = item['global_id']
-
-            # If we moved to a new section, write the previous one
-            if s_idx != current_section_idx and current_section_idx != -1:
-                if current_section_idx not in written_sections:
-                    # Write accumulated section content
-                    section_content = "\n".join(current_section_chunks)
-                    section_wrapped = f"<section>\n{section_content}\n</section>"
-                    content_parts.append(section_wrapped + "\n")
-                    with open(output_tfile, 'a', encoding='utf-8') as f:
-                        f.write(section_wrapped + "\n")
-                    written_sections.add(current_section_idx)
-                current_section_chunks = []
-
-            current_section_idx = s_idx
 
             # Get formatted vocabulary
             formatted_vocab = self.get_formatted_vocab_for_chunk(chunk, s_idx, c_idx)
@@ -444,17 +467,11 @@ class TranslationEngine:
                 raise RuntimeError(f"Empty translation result for chunk {c_idx} in section {s_idx}")
 
             # Statistics
-            if final_content:
-                self.total_source_len += len(chunk)
-                self.total_target_len += len(final_content)
+            self.total_source_len += len(chunk)
+            self.total_target_len += len(final_content)
 
-                # Clean final_content: remove outer <section> if present (will be wrapped later)
-                cleaned_content = final_content.strip()
-                if cleaned_content.startswith('<section>') and cleaned_content.endswith('</section>'):
-                    cleaned_content = cleaned_content[9:-10].strip()
-
-                # Accumulate chunks for this section
-                current_section_chunks.append(cleaned_content)
+            enter_units(s_idx)
+            emit(final_content.strip() + "\n")
 
             # Update last processed chunk
             self.last_processed_chunk = g_id
@@ -472,14 +489,11 @@ class TranslationEngine:
                 status = "✓" if final_content else "✗ EMPTY"
                 print(f"  [{status}] {len(chunk)} → {len(final_content):,} chars ({length_diff_pct:+.1f}%) | Successful: {self.stats['successful']}/{self.stats['failed'] + self.stats['successful']}")
 
-        # Write the last section after the loop
-        if current_section_chunks and current_section_idx not in written_sections:
-            section_content = "\n".join(current_section_chunks)
-            section_wrapped = f"<section>\n{section_content}\n</section>"
-            content_parts.append(section_wrapped + "\n")
-            with open(output_tfile, 'a', encoding='utf-8') as f:
-                f.write(section_wrapped + "\n")
-            written_sections.add(current_section_idx)
+        # Units after the last chunk (sections without text) and the closers
+        # of whatever is still open.
+        if section_meta:
+            enter_units(len(section_meta) - 1)
+        emit('</section>\n' * cur_depth)
 
         # Warn if too many chunks failed
         total_processed = self.stats['successful'] + self.stats['failed']
@@ -503,6 +517,7 @@ class TranslationEngine:
             "last_chunk": self.last_processed_chunk,
             "last_section_idx": self.last_section_idx,
             "last_chunk_idx": self.last_chunk_idx,
+            "tfile_size": self._tfile_size,
             "stats": self.stats,
             "lengths": {
                 "total_source_len": self.total_source_len,
@@ -531,7 +546,24 @@ class TranslationEngine:
 
         Args:
             checkpoint: Checkpoint dict loaded from JSON
+
+        Raises:
+            ValueError: the translated-output file no longer matches the
+                checkpoint, so resuming would silently lose or duplicate text.
         """
+        expected_size = checkpoint.get("tfile_size")
+        if expected_size:
+            actual_size = os.path.getsize(self.output_tfile) if os.path.exists(self.output_tfile) else 0
+            if actual_size < expected_size:
+                raise ValueError(
+                    f"{self.output_tfile} holds {actual_size} bytes but the checkpoint "
+                    f"expects {expected_size}: previously translated text is missing")
+            if actual_size > expected_size:
+                logger.warning(f"Cutting {actual_size - expected_size} bytes of an unfinished "
+                               f"chunk from {self.output_tfile}")
+                os.truncate(self.output_tfile, expected_size)
+        self._tfile_size = expected_size or 0
+
         self.stats = checkpoint.get("stats", self.stats)
         self.total_source_len = checkpoint.get("lengths", {}).get("total_source_len", 0)
         self.total_target_len = checkpoint.get("lengths", {}).get("total_target_len", 0)
@@ -751,20 +783,41 @@ def _save_vocabulary_formatted(translated_text: str, dict_file: str, original_te
 def write_to_file(data, output_file: str, auto_repair_fb2: bool = False):
     """Write data to file.
 
-    Note: Auto-repair is disabled by default as it may corrupt valid content.
-    FB2 structure should be correct at generation time.
+    With auto_repair_fb2 the text goes through fb2_repair.repair_if_needed
+    first. That only touches a book which fails schema validation, keeps the
+    result only if the text is unchanged and the error count drops, and fixes
+    unbalanced tags where they occur instead of at the end of the book.
     """
     if isinstance(data, str):
         data = [data]
 
     content = '\n'.join(data)
 
-    # Write content to file
+    if auto_repair_fb2:
+        from src.fb2_repair import repair_if_needed
+        content, notes = repair_if_needed(content)
+        for note in notes:
+            logger.info(f"FB2 auto-repair: {note}")
+
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write(content)
 
-    # Note: Auto-repair disabled - it was causing content loss
-    # FB2 structure should be validated at generation time, not repair time
+
+def resolve_classic_output_format(cli_value, config_value: str) -> str:
+    """Output format for the classic (FB2/TXT) pipeline: fb2 or epub.
+
+    An explicit --output-format that the classic pipeline cannot write is an
+    error; a leftover OUTPUT_FORMAT (e.g. docx meant for another book) only
+    falls back to fb2 with a warning.
+    """
+    value = (cli_value or config_value or 'fb2').lower()
+    if value in ('fb2', 'epub'):
+        return value
+    if cli_value:
+        raise ValueError(f"FB2/TXT input can only be written as fb2 or epub, not {value}.")
+    logger.warning(f"OUTPUT_FORMAT={value} is not available for FB2/TXT input; writing fb2.")
+    print(f"Warning: OUTPUT_FORMAT={value} is not available for FB2/TXT input; writing fb2.")
+    return 'fb2'
 
 
 def build_resume_paths(myfile: str, target_lang: str) -> dict:
@@ -892,9 +945,10 @@ def main():
     # 3. Prepare Chunks
     print("Preparing chunks...")
 
-    # Use prepare_chunks_with_sections to preserve original FB2 section structure
-    # Returns: [[section1_chunk1, section1_chunk2], [section2_chunk1], ...]
-    sections = fb2.prepare_chunks_with_sections(body, config.max_len_chunk)
+    # prepare_body_structure keeps the original (nested) FB2 section tree:
+    # sections = [[unit1_chunk1, unit1_chunk2], [unit2_chunk1], ...] and
+    # section_meta = [{'open_tag', 'depth'}, ...] to rebuild the tree on output.
+    sections, section_meta = fb2.prepare_body_structure(body, config.max_len_chunk)
 
     chunks = []
     gid = 0
@@ -990,7 +1044,8 @@ def main():
     # Process chunks if any remain, or content was already loaded from temp file above
     if chunks:
         try:
-            content = engine.process_all_chunks(chunks, sections, vocab, output_tfile, checkpoint_file)
+            content = engine.process_all_chunks(chunks, sections, vocab, output_tfile, checkpoint_file,
+                                                section_meta=section_meta)
             content = assemble_resume_content(content, resume_from_chunk, output_tfile)
         finally:
             # Ensure checkpoint is saved on unexpected exit (signal handler triggers SystemExit)
@@ -1003,8 +1058,7 @@ def main():
         print("Translating metadata...")
         metadata = fb2.extract_metadata(header)
         if metadata:
-            lang_map = {'russian': 'ru', 'english': 'en', 'french': 'fr', 'german': 'de'}
-            metadata['lang'] = lang_map.get(config.target_lang.lower(), config.target_lang)
+            metadata['lang'] = config.lang_code_map.get(config.target_lang.lower(), config.target_lang)
             vocab_entries = list(engine.vocab_manager.vocab.values()) if engine.vocab_manager else []
             translated_meta = ta.translate_metadata(metadata, config.source_lang, config.target_lang, config.country,
                                                     vocab_entries=vocab_entries)
@@ -1025,6 +1079,9 @@ def main():
                     logger.error(f"Cover save error: {e}")
 
     # 6. Finalize
+    # Sections are emitted by code, so this only ever closes the tail of a
+    # run that was cut off right before its closing tags were written.
+    content = close_dangling_sections(content)
     xml_str = f"{header}<body>\n{content}</body>\n{footer}"
 
     # Validation
@@ -1048,8 +1105,6 @@ def main():
         final_output_path = output_file
         write_to_file(xml_str, final_output_path, auto_repair_fb2=config.fb2_auto_repair)
         print(f"\n✓ FB2 created: {final_output_path}")
-        if config.fb2_auto_repair:
-            print(f"  (Auto-repair check enabled - fixed version may be created alongside)")
 
     # Statistics + translation metrics report (shared with the Calibre
     # pipeline via src.utils.print_translation_report so both branches
@@ -1089,7 +1144,8 @@ if __name__ == '__main__':
     parser.add_argument('--min-count-word', type=int, default=5,
                        help='Minimum occurrences for common words')
     parser.add_argument('--output-format', type=str, default=None,
-                       help='Output format for DOCX/EPUB/PDF input: docx, epub or pdf (default: from config)')
+                       help='Output format. FB2/TXT input: fb2 or epub; DOCX/EPUB/PDF input: '
+                            'docx, epub or pdf (default: OUTPUT_FORMAT from config)')
     parser.add_argument('--max-chunk-size', type=int, default=None,
                        help='Max chunk size in chars for DOCX/EPUB/PDF translation (default: MAX_LEN_CHUNK=8192 from config)')
     # Fast mode — shared across both pipelines
@@ -1291,6 +1347,12 @@ if __name__ == '__main__':
         # ---- Classic FB2/TXT pipeline ----
         if args.fast_mode:
             config.fast_trans = True
+        try:
+            config.output_format = resolve_classic_output_format(args.output_format, config.output_format)
+        except ValueError as e:
+            print(f"Error: {e}")
+            sys.exit(1)
+        print(f"Output format: {config.output_format}")
         main()
     else:
         print(f"Error: Unsupported input format: {input_ext}")

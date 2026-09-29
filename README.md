@@ -254,6 +254,8 @@ Calibre service markup (`calibre_link-*` anchors, `.calibre` classes) is removed
 > (default for `.fb2` and `.txt` files) for FB2: it manipulates the XML directly
 > and preserves all book structure.
 
+**FB2 → EPUB:** `FILE=books/mybook.fb2 python app.py --output-format epub` (or `OUTPUT_FORMAT=epub` in `.env`). The classic pipeline translates the FB2 and builds the EPUB straight from it: nested table of contents, footnotes, cover, images, poems and epigraphs.
+
 **Full guide:** [docs/INSTALLATION.md](docs/INSTALLATION.md#-calibre-pipeline-auto-detected)
 
 ---

@@ -146,13 +146,16 @@ class Config:
         self.llm_logging_enabled = os.getenv('LLM_LOGGING', 'false').lower() in ['true', '1', 't', 'on', 'yes']
         self.llm_logging_dir = os.getenv('LLM_LOGGING_DIR', 'logs')
 
-        # Output format: 'fb2' or 'epub' (default: fb2)
+        # Output format (default: fb2). Classic pipeline (FB2/TXT input) writes
+        # fb2 or epub; the Calibre pipeline (EPUB/DOCX/PDF input) epub, docx or pdf.
+        # app.py checks the value against the pipeline that is actually used.
         self.output_format = os.getenv('OUTPUT_FORMAT', 'fb2').lower()
-        if self.output_format not in ['fb2', 'epub']:
+        if self.output_format not in ['fb2', 'epub', 'docx', 'pdf']:
             self.output_format = 'fb2'
         
-        # FB2 auto-repair: write _fixed version alongside original (default: false)
-        self.fb2_auto_repair = os.getenv('FB2_AUTO_REPAIR', 'false').lower() in ['true', '1', 't', 'on', 'yes']
+        # FB2 auto-repair of the finished book (default: true). Only acts on a book
+        # that fails schema validation and never changes its text.
+        self.fb2_auto_repair = os.getenv('FB2_AUTO_REPAIR', 'true').lower() in ['true', '1', 't', 'on', 'yes']
 
         # Calibre pipeline: pandoc/ebook-convert are run on a whole book, so
         # large books need batching + timeouts instead of one unbounded

@@ -1,15 +1,23 @@
 """
 EPUB Writer
 
-Creates EPUB files from translated FB2-like structure.
-Converts internal FB2 representation back to EPUB format.
+Creates EPUB files from the FB2 representation the classic pipeline produces
+(header / body / footer strings).
+
+Every FB2 <section> becomes an XHTML file (a section that has sub-sections gets
+one file for its own text and one per sub-section, so no text is repeated), the
+table of contents mirrors the section tree, footnote bodies become a "Notes"
+file and internal <a> links are rewritten to file#id targets.
 """
 
 import base64
+import html
 import logging
 import re
-from datetime import datetime
-from bs4 import BeautifulSoup
+import uuid
+from typing import Dict, List, Optional, Tuple
+
+from bs4 import BeautifulSoup, Comment, NavigableString, Tag
 from ebooklib import epub
 
 from src.config import Config
@@ -17,362 +25,631 @@ from src.config import Config
 config = Config()
 logger = logging.getLogger(__name__)
 
+_XLINK_NS = 'xmlns:l="http://www.w3.org/1999/xlink" xmlns:xlink="http://www.w3.org/1999/xlink"'
+_HTML_VOID = {'br', 'img', 'hr'}
+_INLINE_NAMES = {'p', 'v', 'subtitle', 'text-author', 'td', 'th', 'strong', 'emphasis',
+                 'em', 'a', 'span', 's', 'strikethrough', 'sub', 'sup', 'code', 'style',
+                 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'}
+
+# FB2 element -> (HTML element, class)
+_SIMPLE = {
+    'emphasis': ('em', None),
+    'strikethrough': ('s', None),
+    'cite': ('blockquote', 'cite'),
+    'epigraph': ('blockquote', 'epigraph'),
+    'poem': ('div', 'poem'),
+    'stanza': ('div', 'stanza'),
+    'v': ('p', 'verse'),
+    'text-author': ('p', 'text-author'),
+    'date': ('p', 'date'),
+    'subtitle': ('p', 'subtitle'),
+    'annotation': ('div', 'annotation'),
+    'history': ('div', 'history'),
+}
+_KEEP = {'p', 'strong', 'sub', 'sup', 'code', 'em', 's', 'table', 'tr', 'th', 'td',
+         'section', 'aside', 'div', 'blockquote', 'span', 'br', 'img', 'a',
+         'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'root'}
+_PLAIN_ATTRS = {'class', 'xml:lang', 'colspan', 'rowspan', 'src', 'alt', 'href', 'epub:type', 'title'}
+_ALIGN_CSS = {'align': 'text-align', 'valign': 'vertical-align'}
+
+_IMAGE_EXT = {'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif',
+              'image/webp': '.webp', 'image/svg+xml': '.svg'}
+
+_CSS = """\
+body { margin: 0 5%; line-height: 1.4; }
+p { margin: 0; text-indent: 1.5em; text-align: justify; }
+h1, h2, h3, h4, h5, h6 { text-align: center; margin: 1.6em 0 1em; line-height: 1.25; page-break-after: avoid; }
+h1 { font-size: 1.6em; }
+h2 { font-size: 1.35em; }
+h3 { font-size: 1.15em; }
+.subtitle { text-align: center; font-weight: bold; text-indent: 0; margin: 1.2em 0 0.8em; }
+.epigraph { margin: 1em 0 1em 25%; font-style: italic; }
+.cite { margin: 1em 2em; }
+.text-author { text-align: right; font-style: italic; text-indent: 0; }
+.date { text-align: right; text-indent: 0; }
+.poem { margin: 1em 0 1em 2em; }
+.stanza { margin: 0 0 1em; }
+.verse { text-indent: 0; text-align: left; }
+.poem-title, .title { font-weight: bold; text-align: center; }
+.poem-title p, .title p { text-indent: 0; text-align: center; }
+.image { text-align: center; margin: 1em 0; }
+.image img, p img { max-width: 100%; height: auto; }
+table { border-collapse: collapse; margin: 1em auto; }
+td, th { border: 1px solid #888; padding: 0.25em 0.5em; text-indent: 0; }
+a.noteref { vertical-align: super; font-size: 0.75em; text-decoration: none; }
+aside { margin: 0.6em 0; }
+"""
+
+
+# ---------------------------------------------------------------------------
+# Small helpers
+# ---------------------------------------------------------------------------
+
+def _href(tag: Tag) -> str:
+    return tag.get('l:href') or tag.get('xlink:href') or tag.get('href') or ''
+
+
+def _text(tag: Optional[Tag]) -> str:
+    return re.sub(r'\s+', ' ', tag.get_text(' ', strip=True)).strip() if tag is not None else ''
+
+
+def _xml_soup(fragment: str) -> Tuple[BeautifulSoup, Tag]:
+    soup = BeautifulSoup(f'<root {_XLINK_NS}>{fragment}</root>', 'xml')
+    return soup, soup.find('root')
+
+
+def _serialize(node, out: List[str]) -> None:
+    """Serialize as HTML-parser-safe XHTML (no self-closed non-void elements)."""
+    if isinstance(node, Comment):
+        return
+    if isinstance(node, NavigableString):
+        out.append(html.escape(str(node), quote=False))
+        return
+    attrs = ''.join(
+        f' {k}="{html.escape(" ".join(v) if isinstance(v, list) else str(v), quote=True)}"'
+        for k, v in node.attrs.items())
+    if node.name in _HTML_VOID:
+        out.append(f'<{node.name}{attrs}/>')
+        return
+    out.append(f'<{node.name}{attrs}>')
+    for child in node.children:
+        _serialize(child, out)
+    out.append(f'</{node.name}>')
+
+
+def _sniff_image_type(data: bytes, declared: str) -> Optional[str]:
+    if data.startswith(b'\xff\xd8\xff'):
+        return 'image/jpeg'
+    if data.startswith(b'\x89PNG\r\n\x1a\n'):
+        return 'image/png'
+    if data[:6] in (b'GIF87a', b'GIF89a'):
+        return 'image/gif'
+    if data[:4] == b'RIFF' and data[8:12] == b'WEBP':
+        return 'image/webp'
+    if b'<svg' in data[:1024]:
+        return 'image/svg+xml'
+    declared = (declared or '').strip().lower()
+    if declared == 'image/jpg':
+        return 'image/jpeg'
+    return declared if declared in _IMAGE_EXT else None
+
+
+def _load_images(footer: str) -> Dict[str, dict]:
+    """FB2 <binary> blocks -> {fb2 id: {data, content_type, file_name, uid}}."""
+    images: Dict[str, dict] = {}
+    used_names = set()
+    for m in re.finditer(r'<binary\b([^>]*)>(.*?)</binary>', footer, re.DOTALL):
+        attrs = {k.lower(): v for k, v in re.findall(r'([\w:-]+)\s*=\s*["\']([^"\']*)["\']', m.group(1))}
+        image_id = attrs.get('id')
+        if not image_id:
+            continue
+        try:
+            data = base64.b64decode(re.sub(r'\s+', '', m.group(2)))
+        except Exception as e:
+            logger.warning(f"Skipping image {image_id}: bad base64 ({e})")
+            continue
+        content_type = _sniff_image_type(data, attrs.get('content-type', ''))
+        if not content_type:
+            continue
+        ext = _IMAGE_EXT[content_type]
+        base = re.sub(r'[^A-Za-z0-9_.-]', '_', image_id) or 'image'
+        if not base.lower().endswith((ext, '.jpeg')):
+            base += ext
+        name, n = base, 1
+        while name.lower() in used_names:
+            n += 1
+            name = f'{base.rsplit(".", 1)[0]}_{n}{ext}'
+        used_names.add(name.lower())
+        images[image_id] = {'data': data, 'content_type': content_type,
+                            'file_name': f'images/{name}', 'uid': f'img{len(images) + 1}'}
+    return images
+
+
+def _parse_metadata(header: str) -> dict:
+    soup = BeautifulSoup(header, 'xml')
+    info = soup.find('title-info')
+    meta = {'title': 'Unknown Title', 'authors': [], 'lang': 'en', 'description': '',
+            'genres': [], 'series': None, 'publisher': '', 'cover_id': None}
+    if info is None:
+        return meta
+
+    title = _text(info.find('book-title'))
+    if title:
+        meta['title'] = title
+
+    for author in info.find_all('author', recursive=False):
+        parts = [_text(author.find(n)) for n in ('first-name', 'middle-name', 'last-name')]
+        name = ' '.join(p for p in parts if p) or _text(author.find('nickname'))
+        if name:
+            meta['authors'].append(name)
+
+    lang = _text(info.find('lang')).replace('_', '-')
+    if lang:
+        meta['lang'] = lang
+
+    annotation = info.find('annotation')
+    if annotation is not None:
+        paragraphs = [_text(p) for p in annotation.find_all('p')]
+        meta['description'] = ' '.join(p for p in paragraphs if p) or _text(annotation)
+
+    meta['genres'] = [_text(g) for g in info.find_all('genre') if _text(g)]
+
+    sequence = info.find('sequence')
+    if sequence is not None and sequence.get('name'):
+        meta['series'] = (sequence.get('name'), sequence.get('number', ''))
+
+    publisher = soup.find('publish-info')
+    if publisher is not None:
+        meta['publisher'] = _text(publisher.find('publisher'))
+
+    cover = info.find('coverpage')
+    image = cover.find('image') if cover is not None else None
+    if image is not None and _href(image).startswith('#'):
+        meta['cover_id'] = _href(image)[1:]
+    return meta
+
+
+def _extra_bodies(footer: str) -> List[str]:
+    """Inner XML of every <body> in the footer (footnotes, comments)."""
+    return [m.group(1) for m in re.finditer(r'<body\b[^>]*>(.*?)</body>', footer, re.DOTALL)]
+
+
+# ---------------------------------------------------------------------------
+# Body -> XHTML pages
+# ---------------------------------------------------------------------------
+
+class _Page:
+    def __init__(self, file_name: str, title: str, wrapper: Tag, links: List[Tag]):
+        self.file_name = file_name
+        self.title = title
+        self.wrapper = wrapper
+        self.links = links
+
+
+class _Converter:
+    """Turns an FB2 body (bs4 tree) into XHTML pages plus a nested TOC."""
+
+    def __init__(self, soup: BeautifulSoup, images: Dict[str, dict], strict: bool = True):
+        self.soup = soup
+        self.images = images
+        self.strict = strict  # drop <image> whose binary is missing; else guess images/<id>
+        self.pages: List[_Page] = []
+        self._aliases: Dict[str, str] = {}
+        self._used_ids: set = set()
+        self._id_file: Dict[str, str] = {}
+        self._untitled = 0
+
+    # -- ids ---------------------------------------------------------------
+    def alias(self, old: str) -> str:
+        if old in self._aliases:
+            return self._aliases[old]
+        new = re.sub(r'[^A-Za-z0-9_.-]', '_', old) or 'id'
+        if not re.match(r'[A-Za-z_]', new):
+            new = f'id_{new}'
+        base, n = new, 1
+        while new in self._used_ids:
+            n += 1
+            new = f'{base}_{n}'
+        self._used_ids.add(new)
+        self._aliases[old] = new
+        return new
+
+    # -- tree walk ---------------------------------------------------------
+    @staticmethod
+    def _has_content(nodes: list) -> bool:
+        return any(isinstance(n, Tag) or (isinstance(n, NavigableString)
+                                          and not isinstance(n, Comment) and str(n).strip())
+                   for n in nodes)
+
+    def _fallback_title(self) -> str:
+        self._untitled += 1
+        return str(self._untitled)
+
+    def _new_page(self, nodes: list, title: str, level: int, section_id: Optional[str]) -> _Page:
+        wrapper = self.soup.new_tag('section')
+        if section_id:
+            wrapper['id'] = section_id
+        for node in nodes:
+            wrapper.append(node.extract())
+        links: List[Tag] = []
+        self._convert(wrapper, level, links)
+        file_name = f'chapter_{len(self.pages) + 1:04d}.xhtml'
+        for t in [wrapper, *wrapper.find_all(id=True)]:
+            if t.get('id'):
+                self._id_file[t['id']] = file_name
+        page = _Page(file_name, title, wrapper, links)
+        self.pages.append(page)
+        return page
+
+    def _walk_section(self, section: Tag, level: int) -> list:
+        """Return TOC nodes [(file, title, [children])] for this section."""
+        title = _text(section.find('title', recursive=False))
+        title_for_page = title or self._fallback_title()
+        nodes: list = []
+        first: Optional[_Page] = None
+        children: list = []
+
+        def flush():
+            nonlocal nodes, first
+            if self._has_content(nodes):
+                page = self._new_page(nodes, title_for_page, level,
+                                      section.get('id') and self.alias(section['id']) if first is None else None)
+                first = first or page
+            nodes = []
+
+        for child in list(section.children):
+            if isinstance(child, Tag) and child.name == 'section':
+                flush()
+                children.extend(self._walk_section(child, level + 1))
+            else:
+                nodes.append(child)
+        flush()
+        if first is None:
+            return children
+        return [(first.file_name, title_for_page, children)]
+
+    def build(self, body_root: Tag, extra_roots: List[Tag]) -> list:
+        toc: list = []
+        nodes: list = []
+
+        def flush_front():
+            nonlocal nodes
+            if self._has_content(nodes):
+                page = self._new_page(nodes, _text(next((n for n in nodes if isinstance(n, Tag)
+                                                         and n.name == 'title'), None))
+                                      or self._fallback_title(), 1, None)
+                toc.append((page.file_name, page.title, []))
+            nodes = []
+
+        for child in list(body_root.children):
+            if isinstance(child, Tag) and child.name == 'section':
+                flush_front()
+                toc.extend(self._walk_section(child, 1))
+            else:
+                nodes.append(child)
+        flush_front()
+
+        for root in extra_roots:
+            title = _text(root.find('title', recursive=False)) or 'Notes'
+            notes_nodes = []
+            for child in list(root.children):
+                if isinstance(child, Tag) and child.name == 'section':
+                    child.name = 'aside'
+                    child['epub:type'] = 'footnote'
+                notes_nodes.append(child)
+            if self._has_content(notes_nodes):
+                page = self._new_page(notes_nodes, title, 1, None)
+                toc.append((page.file_name, title, []))
+
+        self._resolve_links()
+        return toc
+
+    # -- element conversion ------------------------------------------------
+    def _title_level(self, tag: Tag, wrapper: Tag, base: int) -> Optional[int]:
+        parent = tag.parent
+        if parent is wrapper:
+            return base
+        if parent is not None and parent.name == 'section':
+            depth, p = 0, parent
+            while p is not None and p is not wrapper:
+                depth += p.name == 'section'
+                p = p.parent
+            return base + depth
+        return None
+
+    def _convert(self, wrapper: Tag, level: int, links: List[Tag]) -> None:
+        soup = self.soup
+        for tag in list(wrapper.find_all(True)):
+            if getattr(tag, 'decomposed', False):
+                continue
+            name = tag.name
+            classes = [tag['class']] if tag.get('class') else []
+
+            if name == 'title':
+                lvl = self._title_level(tag, wrapper, level)
+                if lvl is not None:
+                    tag.name = f'h{min(lvl, 6)}'
+                    for i, p in enumerate(tag.find_all('p', recursive=False)):
+                        if i:
+                            p.insert_before(soup.new_tag('br'))
+                        p.name = 'span'
+                        p['class'] = 'title-line'
+                else:
+                    tag.name = 'div'
+                    parent_classes = (tag.parent.get('class') or '').split() if tag.parent is not None else []
+                    in_poem = bool({'poem', 'stanza'} & set(parent_classes))
+                    classes.append('poem-title' if in_poem else 'title')
+            elif name in _SIMPLE:
+                tag.name, cls = _SIMPLE[name]
+                if cls:
+                    classes.append(cls)
+            elif name == 'empty-line':
+                tag.name = 'br'
+                tag.attrs = {}
+                continue
+            elif name == 'style':
+                tag.name = 'span'
+                if tag.get('name'):
+                    classes.append(tag['name'])
+            elif name == 'image':
+                self._convert_image(tag)
+                continue
+            elif name == 'a':
+                if not self._convert_link(tag, links):
+                    continue
+            elif name not in _KEEP:
+                tag.unwrap()
+                continue
+
+            self._clean_attrs(tag, classes)
+
+    def _convert_image(self, tag: Tag) -> None:
+        href = _href(tag)
+        info = self.images.get(href[1:]) if href.startswith('#') else None
+        if info is None:
+            if self.strict or not href.startswith('#'):
+                tag.decompose()
+                return
+            info = {'file_name': f'images/{href[1:]}'}
+        img = self.soup.new_tag('img')
+        img['src'] = info['file_name']
+        img['alt'] = tag.get('alt') or tag.get('title') or ''
+        parent = tag.parent
+        if parent is not None and parent.name in _INLINE_NAMES:
+            tag.replace_with(img)
+        else:
+            block = self.soup.new_tag('div')
+            block['class'] = 'image'
+            block.append(img)
+            tag.replace_with(block)
+
+    def _convert_link(self, tag: Tag, links: List[Tag]) -> bool:
+        href = _href(tag)
+        if not href:
+            tag.unwrap()
+            return False
+        kind = tag.get('type')
+        tag.attrs = {'href': href}
+        if kind == 'note':
+            tag['epub:type'] = 'noteref'
+            tag['class'] = 'noteref'
+        if href.startswith('#'):
+            links.append(tag)
+        return True
+
+    def _clean_attrs(self, tag: Tag, classes: List[str]) -> None:
+        attrs: Dict[str, str] = {}
+        css: List[str] = []
+        for key, value in tag.attrs.items():
+            if key == 'id':
+                attrs['id'] = self.alias(value)
+            elif key == 'style':
+                classes.append(value)
+            elif key in _ALIGN_CSS:
+                css.append(f'{_ALIGN_CSS[key]}: {value}')
+            elif key in _PLAIN_ATTRS:
+                attrs[key] = value
+        if attrs.get('class') and attrs['class'] not in classes:
+            classes.insert(0, attrs['class'])
+        classes = [c for c in dict.fromkeys(classes) if c]
+        if classes:
+            attrs['class'] = ' '.join(classes)
+        else:
+            attrs.pop('class', None)
+        if css:
+            attrs['style'] = '; '.join(css)
+        tag.attrs = attrs
+
+    def _resolve_links(self) -> None:
+        for page in self.pages:
+            for a in page.links:
+                if getattr(a, 'decomposed', False):
+                    continue
+                old = a['href'][1:]
+                target = self._aliases.get(old)
+                file_name = self._id_file.get(target) if target else None
+                if file_name is None:
+                    a.unwrap()
+                else:
+                    a['href'] = f'#{target}' if file_name == page.file_name else f'{file_name}#{target}'
+
+    def page_html(self, page: _Page) -> str:
+        out: List[str] = []
+        _serialize(page.wrapper, out)
+        return f'<html><body>{"".join(out)}</body></html>'
+
+
+def _toc_items(nodes: list, counter: List[int]) -> list:
+    items = []
+    for file_name, title, children in nodes:
+        counter[0] += 1
+        link = epub.Link(file_name, title, f'nav{counter[0]}')
+        if children:
+            items.append((epub.Section(title, file_name), _toc_items(children, counter)))
+        else:
+            items.append(link)
+    return items
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
 def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) -> str:
     """
     Create an EPUB file from FB2-like structure.
-    
+
     Args:
         header: FB2 header XML string
-        body: FB2 body XML string
-        footer: FB2 footer with binary blocks
+        body: FB2 body XML string (content of the main <body>)
+        footer: FB2 footer with binary blocks (and footnote bodies)
         output_path: Output file path (without extension)
-    
+
     Returns:
         Path to created EPUB file
     """
-    book = epub.EpubBook()
-    
-    # Parse header for metadata
-    soup = BeautifulSoup(header, 'xml')
-    title_info = soup.find('title-info')
-    
-    # --- Extract Metadata ---
-    # Title
-    title_tag = title_info.find('book-title') if title_info else None
-    title = title_tag.get_text() if title_tag else "Unknown Title"
-    book.set_title(title)
-    
-    # Author
-    author_tag = title_info.find('author') if title_info else None
-    if author_tag:
-        first_name = author_tag.find('first-name')
-        last_name = author_tag.find('last-name')
-        nickname = author_tag.find('nickname')
-        
-        if first_name and last_name:
-            author_name = f"{first_name.get_text()} {last_name.get_text()}"
-        elif nickname:
-            author_name = nickname.get_text()
-        else:
-            author_name = last_name.get_text() if last_name else "Unknown Author"
-        
-        book.add_author(author_name)
-    
-    # Language
-    lang_tag = title_info.find('lang') if title_info else None
-    lang = lang_tag.get_text() if lang_tag else "en"
-    book.set_language(lang)
-    
-    # Identifier
-    book.set_identifier(f"sunny-narrator-{datetime.now().strftime('%Y%m%d%H%M%S')}")
-    
-    # Description/Annotation
-    annotation_tag = title_info.find('annotation') if title_info else None
-    if annotation_tag:
-        # Get all paragraphs
-        paragraphs = annotation_tag.find_all('p')
-        if paragraphs:
-            description = ' '.join(p.get_text() for p in paragraphs)
-        else:
-            description = annotation_tag.get_text()
-        book.add_metadata('DC', 'description', description)
-    
-    # Genre/Subject
-    genre_tags = title_info.find_all('genre') if title_info else []
-    for genre_tag in genre_tags:
-        book.add_metadata('DC', 'subject', genre_tag.get_text())
-    
-    # Series
-    sequence_tag = title_info.find('sequence') if title_info else None
-    if sequence_tag:
-        series_name = sequence_tag.get('name', '')
-        series_number = sequence_tag.get('number', '')
-        if series_name:
-            book.add_metadata('OPF', 'calibre:series', series_name)
-            if series_number:
-                book.add_metadata('OPF', 'calibre:series_index', str(series_number))
-    
-    # Publisher
-    publish_info = soup.find('publish-info')
-    if publish_info:
-        publisher_tag = publish_info.find('publisher')
-        if publisher_tag:
-            book.add_metadata('DC', 'publisher', publisher_tag.get_text())
-    
-    # --- Extract Images from Footer ---
-    images = {}
-    binary_pattern = r'<binary(?=[^>]*?id="([^"]+)")(?=[^>]*?content-type="([^"]+)")[^>]*?>([^<]+)</binary>'
-    
-    for match in re.finditer(binary_pattern, footer):
-        image_id = match.group(1)
-        content_type = match.group(2)
-        b64_data = match.group(3)
-        
-        try:
-            image_data = base64.b64decode(b64_data)
-            images[image_id] = {
-                'data': image_data,
-                'content_type': content_type
-            }
-        except Exception as e:
-            if config.debug:
-                print(f"Warning: Failed to decode image {image_id}: {e}")
-    
-    # Find cover image (determined before adding items so the cover image
-    # can be added exactly once, via book.set_cover(), instead of twice).
-    coverpage_tag = title_info.find('coverpage') if title_info else None
-    cover_image_id = None
-    if coverpage_tag:
-        image_tag = coverpage_tag.find('image')
-        if image_tag:
-            href = (
-                image_tag.get('l:href', '')
-                or image_tag.get('xlink:href', '')
-                or image_tag.get('href', '')
-            )
-            if href.startswith('#'):
-                cover_image_id = href[1:]
-
-    # Add images to book
-    for image_id, img_info in images.items():
-        # Clean up image_id for EPUB (remove special chars)
-        safe_id = re.sub(r'[^\w\-_.]', '_', image_id)
-        file_name = f"images/{safe_id}"
-
-        # Store mapping for body references
-        images[image_id]['file_name'] = file_name
-
-        # The cover image is added below via book.set_cover(), which creates
-        # its own EpubCover item. Adding it here too would create a second
-        # manifest item with the same href (duplicate href is invalid EPUB
-        # and writes the same bytes twice into the zip).
-        if image_id == cover_image_id:
-            continue
-
-        img_item = epub.EpubItem(
-            uid=image_id,
-            file_name=file_name,
-            media_type=img_info['content_type'],
-            content=img_info['data']
-        )
-        book.add_item(img_item)
-
-    # Set cover if found
-    if cover_image_id and cover_image_id in images:
-        cover_data = images[cover_image_id]['data']
-        cover_file = images[cover_image_id]['file_name']
-        book.set_cover(cover_file, cover_data)
-    
-    # --- Process Body into Chapters ---
-    chapters = []
-    chapter_count = 0
-    
-    # Validate body is not empty and contains translated text
     if not body or not body.strip():
         raise ValueError("FB2 body is empty - translation may have failed")
-    
-    # Check if body looks like it hasn't been translated (still mostly English for Russian target)
+
     if config.target_lang.lower() != 'english':
-        ascii_chars = len(re.findall(r'[a-zA-Z]', body))
-        total_chars = len(body)
-        ascii_ratio = ascii_chars / total_chars if total_chars > 0 else 0
-        
-        if ascii_ratio > 0.7:  # More than 70% English-ish characters
+        ascii_ratio = len(re.findall(r'[a-zA-Z]', body)) / len(body)
+        if ascii_ratio > 0.7:
             logger.warning(f"High ASCII ratio ({ascii_ratio:.1%}) in FB2 body. "
-                          f"May indicate translation failed or content not properly updated.")
-    
-    # Parse body
-    body_soup = BeautifulSoup(f"<body>{body}</body>", 'xml')
-    
-    for section in body_soup.find_all('section'):
-        chapter_count += 1
-        
-        # Get section title
-        title_tag = section.find('title')
-        chapter_title = title_tag.get_text() if title_tag else f"Chapter {chapter_count}"
-        
-        # Clean up title for filename
-        safe_title = re.sub(r'[^\w\s]', '', chapter_title)[:50]
-        safe_title = re.sub(r'\s+', '_', safe_title.strip())
-        file_name = f"chapter_{chapter_count}_{safe_title}.xhtml"
-        
-        # Update image references
-        for img in section.find_all('image'):
-            href = (
-                img.get('l:href', '')
-                or img.get('xlink:href', '')
-                or img.get('href', '')
-            )
-            if href.startswith('#'):
-                img_id = href[1:]
-                if img_id in images:
-                    # Replace with img tag for HTML
-                    new_img = body_soup.new_tag('img')
-                    new_img['src'] = images[img_id]['file_name']
-                    img.replace_with(new_img)
-        
-        # Convert FB2 tags to HTML
-        section_html = _fb2_to_html(str(section))
-        
-        # Create chapter
-        chapter = epub.EpubHtml(
-            title=chapter_title,
-            file_name=file_name,
-            lang=lang
-        )
-        chapter.content = f"<html><body>{section_html}</body></html>"
-        
+                           f"May indicate translation failed or content not properly updated.")
+
+    meta = _parse_metadata(header)
+    book = epub.EpubBook()
+    book.set_identifier(f'urn:uuid:{uuid.uuid4()}')
+    book.set_title(meta['title'])
+    book.set_language(meta['lang'])
+    for i, author in enumerate(meta['authors'], 1):
+        book.add_author(author, uid=f'creator{i}')
+    if meta['description']:
+        book.add_metadata('DC', 'description', meta['description'])
+    for genre in meta['genres']:
+        book.add_metadata('DC', 'subject', genre)
+    if meta['publisher']:
+        book.add_metadata('DC', 'publisher', meta['publisher'])
+    if meta['series']:
+        name, number = meta['series']
+        book.add_metadata(None, 'meta', '', {'name': 'calibre:series', 'content': name})
+        if number:
+            book.add_metadata(None, 'meta', '', {'name': 'calibre:series_index', 'content': str(number)})
+
+    images = _load_images(footer)
+    cover_id = meta['cover_id'] if meta['cover_id'] in images else None
+    for image_id, info in images.items():
+        if image_id == cover_id:
+            book.set_cover(info['file_name'], info['data'])
+        else:
+            book.add_item(epub.EpubItem(uid=info['uid'], file_name=info['file_name'],
+                                        media_type=info['content_type'], content=info['data']))
+
+    css = epub.EpubItem(uid='style', file_name='style/book.css', media_type='text/css',
+                        content=_CSS.encode('utf-8'))
+    book.add_item(css)
+
+    soup, body_root = _xml_soup(body)
+    conv = _Converter(soup, images)
+    extra_roots = _adopt(soup, [_xml_soup(x)[1] for x in _extra_bodies(footer)])
+    toc = conv.build(body_root, extra_roots)
+
+    if not conv.pages:
+        raise ValueError("FB2 body has no readable content")
+
+    chapters = []
+    for page in conv.pages:
+        chapter = epub.EpubHtml(title=page.title, file_name=page.file_name, lang=meta['lang'])
+        chapter.content = conv.page_html(page)
+        chapter.add_link(href='style/book.css', rel='stylesheet', type='text/css')
         book.add_item(chapter)
         chapters.append(chapter)
-    
-    # If no sections found, create a single chapter
-    if not chapters:
-        chapter = epub.EpubHtml(
-            title=title,
-            file_name="chapter_1.xhtml",
-            lang=lang
-        )
-        chapter.content = f"<html><body>{_fb2_to_html(body)}</body></html>"
-        book.add_item(chapter)
-        chapters.append(chapter)
-    
-    # --- Table of Contents and Spine ---
-    book.toc = chapters
+
+    book.toc = _toc_items(toc, [0]) or chapters
     book.add_item(epub.EpubNcx())
     book.add_item(epub.EpubNav())
-    
-    # Spine: nav + all chapters
-    book.spine = ['nav'] + chapters
-    
-    # --- Write EPUB ---
+    book.spine = (['cover'] if cover_id else []) + [('nav', 'no')] + chapters
+
     epub_path = f"{output_path}.epub"
-    epub.write_epub(epub_path, book, {})
-    
+    # epub3_pages: ebooklib would list every element with epub:type + id (our
+    # footnotes) in a bogus hidden page-list.
+    epub.write_epub(epub_path, book, {'epub3_pages': False})
+
     if config.debug:
         print(f"EPUB created: {epub_path}")
-        print(f"  Chapters: {len(chapters)}")
+        print(f"  Files: {len(chapters)}")
         print(f"  Images: {len(images)}")
-    
-    # --- Validate and Auto-Repair EPUB ---
-    # DISABLED: See issue #1 - Auto-repair causes empty body bug
-    # try:
-    #     repaired_path, repairs, errors = validate_and_repair_epub(epub_path)
-    #     
-    #     if repairs and repairs[0] != "EPUB is valid":
-    #         import logging
-    #         logger = logging.getLogger(__name__)
-    #         logger.info("EPUB Auto-Repair: " + " | ".join(repairs))
-    #     
-    #     if errors:
-    #         import logging
-    #         logger = logging.getLogger(__name__)
-    #         logger.warning(f"EPUB validation errors remaining: {len(errors)}")
-    #         for error in errors[:5]:
-    #             logger.warning(f"  {error}")
-    # except Exception as e:
-    #     import logging
-    #     logger = logging.getLogger(__name__)
-    #     logger.warning(f"EPUB repair failed: {e}")
+
     try:
-        # Just validate without repair for now
         from .epub_repair import validate_epub
         errors = validate_epub(epub_path)
         if errors:
-            # Use the module-level logger; a late local assignment here made
-            # `logger` function-local and tripped F823 on the earlier use.
             logger.warning(f"EPUB validation warnings: {len(errors)}")
             for error in errors[:3]:
                 logger.warning(f"  {error}")
     except Exception as e:
-        # Don't fail if validation/repair fails
         if config.debug:
             print(f"EPUB validation warning: {e}")
-    
+
     return epub_path
 
 
-def _fb2_to_html(fb2_content: str) -> str:
+def _adopt(soup: BeautifulSoup, roots: List[Tag]) -> List[Tag]:
+    """Move already parsed extra bodies into the main soup (single tree)."""
+    adopted = []
+    for root in roots:
+        holder = soup.new_tag('root')
+        for child in list(root.children):
+            holder.append(child.extract())
+        adopted.append(holder)
+    return adopted
+
+
+def _fb2_to_html(fb2_content: str, level: int = 1) -> str:
     """
-    Convert FB2 XML fragment to HTML using a DOM parser (no regex on tags).
+    Convert an FB2 XML fragment to XHTML using a DOM parser (no regex on tags).
 
-    Preserves element attributes; maps FB2 semantics to HTML equivalents.
+    Maps FB2 semantics to HTML equivalents; titles directly under the fragment
+    root become <h{level}>, nested sections' titles get deeper levels.
     """
-    soup = BeautifulSoup(f"<root>{fb2_content}</root>", 'xml')
-
-    for old, new in (('emphasis', 'em'), ('subtitle', 'h2'), ('cite', 'blockquote'), ('title', 'h1')):
-        for tag in soup.find_all(old):
-            tag.name = new
-
-    for tag in soup.find_all('epigraph'):
-        tag.name = 'blockquote'
-        tag['class'] = 'epigraph'
-
-    for tag in soup.find_all('poem'):
-        tag.name = 'div'
-        tag['class'] = 'poem'
-
-    for tag in soup.find_all('stanza'):
-        tag.name = 'div'
-        tag['class'] = 'stanza'
-
-    for tag in soup.find_all('v'):
-        tag.name = 'p'
-        tag['class'] = 'verse'
-
-    for tag in soup.find_all('text-author'):
-        tag.name = 'p'
-        tag['class'] = 'text-author'
-
-    for tag in soup.find_all('empty-line'):
-        tag.replace_with(soup.new_tag('br'))
-
-    for img in soup.find_all('image'):
-        href = img.get('l:href') or img.get('xlink:href') or img.get('href') or ''
-        new_img = soup.new_tag('img')
-        if href.startswith('#'):
-            new_img['src'] = f"images/{href[1:]}"
-        elif href:
-            new_img['src'] = href
-        img.replace_with(new_img)
-
-    for section in soup.find_all('section'):
-        section.unwrap()
-
-    root = soup.find('root')
-    return root.decode_contents() if root else ''
+    soup, root = _xml_soup(fb2_content)
+    conv = _Converter(soup, {}, strict=False)
+    links: List[Tag] = []
+    conv._convert(root, level, links)
+    out: List[str] = []
+    for child in root.children:
+        _serialize(child, out)
+    return ''.join(out)
 
 
 def fb2_to_epub(fb2_path: str, output_path: str = None) -> str:
     """
     Convert an FB2 file to EPUB.
-    
+
     Args:
         fb2_path: Path to FB2 file
         output_path: Output path (without extension). If None, same as input.
-    
+
     Returns:
         Path to created EPUB file
     """
+    from src.fb2_handler import _read_file_with_encoding_fallback
+
     if output_path is None:
         output_path = fb2_path.rsplit('.', 1)[0]
-    
-    # Parse FB2
-    with open(fb2_path, 'r', encoding='utf-8') as f:
-        content = f.read()
-    
-    # Split into header, body, footer
+
+    content = _read_file_with_encoding_fallback(fb2_path)
+
     start_body = content.find('<body')
     end_body_tag = content.find('</body>')
-    
+
     if start_body == -1 or end_body_tag == -1:
         raise ValueError("Invalid FB2 structure")
-    
+
     end_start_body = content.find('>', start_body) + 1
-    end_body = end_body_tag
-    
+
     header = content[:start_body]
-    body = content[end_start_body:end_body]
+    body = content[end_start_body:end_body_tag]
     footer = content[end_body_tag + len('</body>'):]
-    
+
     return create_epub_from_fb2(header, body, footer, output_path)

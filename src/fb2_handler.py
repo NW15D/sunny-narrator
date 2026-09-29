@@ -20,7 +20,8 @@ from src.xml_utils import (
     get_cover_image,
     replace_cover_image,
     prepare_chunks,
-    prepare_chunks_with_sections
+    prepare_chunks_with_sections,
+    prepare_body_structure
 )
 
 config = Config()
@@ -34,6 +35,7 @@ __all__ = [
     'replace_cover_image',
     'prepare_chunks',
     'prepare_chunks_with_sections',
+    'prepare_body_structure',
     'save_fb2',
     'add_translator_info'
 ]
@@ -90,6 +92,9 @@ def parse_xml(file_path: str) -> tuple:
     body = re.sub(r'<myheader>.*?</myheader>', '', body, flags=re.DOTALL)
     body = re.sub(r'<myfooter>.*?</myfooter>', '', body, flags=re.DOTALL)
 
+    # Output is always written as UTF-8, whatever the source file used
+    header = re.sub(r'(<\?xml[^>]*?encoding\s*=\s*)(["\'])[^"\']*\2', r'\1"UTF-8"', header, count=1)
+
     # Add translator info
     header = add_translator_info(header)
 
@@ -103,24 +108,30 @@ def parse_xml(file_path: str) -> tuple:
     return body, header, footer
 
 
+_TRANSLATOR_NICK = 'Sunny narrator opensource AI translator'
+
+
 def add_translator_info(header: str) -> str:
     """
     Add translator info to FB2 header.
-    
+
+    <translator> has to precede <sequence> inside <title-info> (schema order),
+    so it is inserted there rather than blindly before </title-info>.
+
     Args:
         header: FB2 header string
-        
+
     Returns:
         Updated header with translator info
     """
-    translator_block = '<translator><nickname>Sunny narrator opensource AI translator</nickname><email>n@uwns.org</email></translator></title-info>'
-    header = re.sub(
-        r'</title-info>',
-        translator_block,
-        header,
-        flags=re.DOTALL
-    )
-    return header
+    m = re.search(r'<title-info\b.*?</title-info>', header, flags=re.DOTALL)
+    if not m or _TRANSLATOR_NICK in m.group(0):
+        return header
+    section = m.group(0)
+    seq = re.search(r'<sequence\b', section)
+    pos = seq.start() if seq else section.rindex('</title-info>')
+    block = f'<translator><nickname>{_TRANSLATOR_NICK}</nickname><email>n@uwns.org</email></translator>'
+    return header[:m.start()] + section[:pos] + block + section[pos:] + header[m.end():]
 
 
 def save_fb2(body: str, header: str, footer: str, output_path: str, auto_repair: bool = False) -> None:

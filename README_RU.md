@@ -245,6 +245,8 @@ FILE=books/mybook.epub python app.py --output-format epub
 > (по умолчанию для `.fb2` и `.txt`): он работает с XML напрямую и сохраняет
 > всю структуру книги.
 
+**FB2 → EPUB:** `FILE=books/mybook.fb2 python app.py --output-format epub` (или `OUTPUT_FORMAT=epub` в `.env`). Классический пайплайн переводит FB2 и собирает EPUB прямо из него: вложенное оглавление, сноски, обложка, картинки, стихи и эпиграфы.
+
 **Полное руководство:** [docs/INSTALLATION.md](docs/INSTALLATION.md#-calibre-pipeline-auto-detected)
 
 ---

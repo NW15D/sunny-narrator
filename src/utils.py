@@ -1262,8 +1262,12 @@ class TranslationPipeline:
         
         text = remove_tags_with_check(text, "final_edit", LLMRole.PROOFREAD)
         
-        # NEW: Post-process <p> tags (validate balance or auto-structure)
-        text = post_process_p_tags(text)
+        # Post-process <p> tags (validate balance or auto-structure). Skipped
+        # for FB2 ("xml" style): it appends missing </p> at the end of the
+        # chunk and wraps poems in <p>; the classic pipeline rebalances
+        # translated chunks locally (fb2_structure.repair_fragment) instead.
+        if context.style != 'xml':
+            text = post_process_p_tags(text)
         
         # Retry if text became empty after remove_tags
         if (not text or len(text.strip()) == 0) and tokens_used > 0:
