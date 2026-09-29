@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 import app as app_module
 import src.fb2_handler as fb2
 import src.xmlcheck as xc
-from app import TranslationEngine, assemble_resume_content
+from app import TranslationEngine
 from src.fb2_structure import close_dangling_sections
 
 RICH = os.path.join(os.path.dirname(__file__), 'data', 'rich_book.fb2')
@@ -83,7 +83,7 @@ def test_resume_from_every_possible_cut_gives_the_same_book(tmp_path):
         engine2 = TranslationEngine(tfile)
         engine2.restore_from_checkpoint(checkpoint)
         new = engine2.process_all_chunks(chunks[resume_from:], {}, tfile, ckpt, section_meta=meta)
-        assert assemble_resume_content(new, resume_from, tfile) == full, f'cut after {cut} chunks'
+        assert new == full, f'cut after {cut} chunks'
 
 
 def test_half_written_chunk_is_cut_off_on_resume(tmp_path):
@@ -99,7 +99,7 @@ def test_half_written_chunk_is_cut_off_on_resume(tmp_path):
     engine2 = TranslationEngine(tfile)
     engine2.restore_from_checkpoint(checkpoint)
     new = engine2.process_all_chunks(chunks[5:], {}, tfile, ckpt, section_meta=meta)
-    assert assemble_resume_content(new, 5, tfile) == full
+    assert new == full
 
 
 def test_resume_refuses_when_the_output_file_lost_text(tmp_path):
@@ -197,4 +197,40 @@ def test_checkpoint_taken_mid_chunk_does_not_duplicate_text_on_resume(tmp_path):
     engine2 = TranslationEngine(tfile)
     engine2.restore_from_checkpoint(checkpoint)
     new = engine2.process_all_chunks(chunks[resume_from:], {}, tfile, ckpt, section_meta=meta)
-    assert assemble_resume_content(new, resume_from, tfile) == full
+    assert new == full
+
+
+def test_interruption_while_writing_the_tail_does_not_lose_trailing_sections(tmp_path):
+    """The book ends with an anchor section after the last chunk of text."""
+    meta = [{'open_tag': '<section id="a">', 'depth': 1, 'chunks': 1},
+            {'open_tag': '<section id="b">', 'depth': 1, 'chunks': 1},
+            {'open_tag': '<section id="end">', 'depth': 1, 'chunks': 0}]
+    chunks = [{'chunk': '<p>a</p>', 'section_idx': 0, 'chunk_idx': 0, 'global_id': 0},
+              {'chunk': '<p>b</p>', 'section_idx': 1, 'chunk_idx': 0, 'global_id': 1}]
+    _e, full, _t, _c = _run(tmp_path, chunks, None, meta, name='full')
+    assert '<section id="end">' in full
+
+    tfile, ckpt = str(tmp_path / 'tail_tmp.fb2'), str(tmp_path / 'tail.checkpoint.json')
+    engine = TranslationEngine(tfile)
+    real_append = engine._append_tfile
+
+    class Interrupted(Exception):
+        pass
+
+    def append(path, text):
+        if 'id="end"' in text:
+            engine.save_checkpoint(ckpt)       # signal arrives while the tail is written
+            raise Interrupted
+        real_append(path, text)
+
+    engine._append_tfile = append
+    with pytest.raises(Interrupted):
+        engine.process_all_chunks(chunks, {}, tfile, ckpt, section_meta=meta)
+
+    with open(ckpt, encoding='utf-8') as f:
+        checkpoint = json.load(f)
+    remaining = chunks[checkpoint['last_chunk'] + 1:]
+    assert remaining, 'the last chunk must not count as done before the tail is written'
+    engine2 = TranslationEngine(tfile)
+    engine2.restore_from_checkpoint(checkpoint)
+    assert engine2.process_all_chunks(remaining, {}, tfile, ckpt, section_meta=meta) == full

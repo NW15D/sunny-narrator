@@ -88,9 +88,9 @@ class CharacterRegistry:
     Usage:
         registry = CharacterRegistry()
         
-        # From VocabularyManager
-        registry.load_from_vocab(vocab_manager.vocab, vocab_manager.characters)
-        
+        # Filled from the dictionary by VocabularyManager._extract_characters
+        registry.add_character("Alice", "Алиса", "she")
+
         # During translation
         registry.detect_mentions(text, section_idx, chunk_idx)
         
@@ -113,8 +113,7 @@ class CharacterRegistry:
         key = self._normalize_key(char.name)
         for form in char.get_all_forms():
             self.name_index[form.lower()] = key
-    
-    
+
     def add_character(self, name: str, target_name: str = "", gender: str = "", 
                       category: str = "PERSON", notes: str = "") -> Character:
         """
@@ -151,9 +150,7 @@ class CharacterRegistry:
                 self.gender_stats[gender] += 1
         
         return char
-    
-    
-    
+
     def detect_mentions(self, text: str, section_idx: int, chunk_idx: int) -> List[Character]:
         """
         Detect character mentions in text and record them.

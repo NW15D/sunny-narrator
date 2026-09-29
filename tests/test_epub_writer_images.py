@@ -74,3 +74,10 @@ def test_epub_with_every_image_type_is_sound(tmp_path):
         opf = zf.read('EPUB/content.opf').decode()
     for media in ('image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'):
         assert f'media-type="{media}"' in opf
+
+
+def test_jpeg_named_id_keeps_its_name_only_when_it_is_a_jpeg():
+    images = _load_images(_binary('photo.jpeg', 'image/jpeg', JPEG) + _binary('pic.jpeg', 'image/jpeg', PNG))
+    assert images['photo.jpeg']['file_name'] == 'images/photo.jpeg'
+    assert images['pic.jpeg']['file_name'] == 'images/pic.jpeg.png'
+    assert images['pic.jpeg']['content_type'] == 'image/png'

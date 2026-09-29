@@ -13,9 +13,13 @@ from typing import Iterable
 
 logger = logging.getLogger(__name__)
 
-# Bumped from 1 when checkpoints gained a fingerprint. A version 1 file has no
-# fingerprint to compare, so it can never be proven safe to resume from.
-CHECKPOINT_VERSION = 2
+# 2: checkpoints gained a fingerprint (a version 1 file has none to compare,
+#    so it can never be proven safe to resume from).
+# 3: the classic pipeline streams a nested section tree into its temp file and
+#    records the committed file size; a version 2 temp file holds only whole
+#    top-level sections. The version is part of the fingerprint, so older
+#    checkpoints are never resumed.
+CHECKPOINT_VERSION = 3
 
 
 def compute_fingerprint(chunks: Iterable[str], **params) -> str:

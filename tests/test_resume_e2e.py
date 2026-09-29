@@ -5,7 +5,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from app import TranslationEngine, assemble_resume_content
+from app import TranslationEngine
 
 
 def _chunks():
@@ -43,7 +43,7 @@ def test_interrupt_resume_keeps_all_content(tmp_path, monkeypatch):
     engine2 = TranslationEngine(tfile)
     engine2.restore_from_checkpoint(checkpoint)
     new_content = engine2.process_all_chunks(chunks[resume_from_chunk:], {}, tfile, ckpt)
-    full = assemble_resume_content(new_content, resume_from_chunk, tfile)
+    full = new_content
 
     for s in range(2):
         for c in range(2):

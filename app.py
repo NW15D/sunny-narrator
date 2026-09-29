@@ -389,13 +389,12 @@ class TranslationEngine:
             vocab: Vocabulary dictionary
             output_tfile: Temp output file path
             checkpoint_file: Path to checkpoint JSON file (optional)
-            section_meta: Per-unit {'open_tag', 'depth'} (optional)
+            section_meta: Per-unit {'open_tag', 'depth', 'chunks'} (optional)
 
         Returns:
-            Translated content produced by this call (the whole body on a
-            fresh run, only the new part on a resume)
+            The whole translated body as written to output_tfile (on a resume
+            too: earlier chunks are already in the file)
         """
-        content_parts = []  # F1: list+join вместо O(n²)-конкатенации строк
         total = len(all_chunks)
 
         logger.info(f"Starting translation: {total} chunks")
@@ -423,8 +422,24 @@ class TranslationEngine:
 
         def emit(text: str):
             if text:
-                content_parts.append(text)
                 self._append_tfile(output_tfile, text)
+
+        # The last chunk of the book (known from the per-unit chunk counts)
+        # is committed together with the tail, so a checkpoint that says
+        # "every chunk is done" always describes a finished file.
+        book_end = None
+        if section_meta and all('chunks' in m for m in section_meta):
+            filled = [i for i, m in enumerate(section_meta) if m['chunks']]
+            if filled:
+                book_end = (filled[-1], section_meta[filled[-1]]['chunks'] - 1)
+        tail_written = False
+
+        def emit_tail():
+            # Units after the last chunk (sections without text) and the
+            # closers of whatever is still open.
+            if section_meta:
+                enter_units(len(section_meta) - 1)
+            emit('</section>\n' * cur_depth)
 
         def enter_units(upto: int):
             nonlocal emitted_unit, cur_depth
@@ -471,6 +486,9 @@ class TranslationEngine:
 
             enter_units(s_idx)
             emit(final_content.strip() + "\n")
+            if (s_idx, c_idx) == book_end:
+                emit_tail()
+                tail_written = True
 
             # Update last processed chunk
             self.last_processed_chunk = g_id
@@ -486,15 +504,12 @@ class TranslationEngine:
             if config.debug:
                 length_diff = len(final_content) - len(chunk) if final_content else 0
                 length_diff_pct = (length_diff / len(chunk) * 100) if chunk and len(chunk) > 0 else 0
-                status = "✓" if final_content else "✗ EMPTY"
-                print(f"  [{status}] {len(chunk)} → {len(final_content):,} chars ({length_diff_pct:+.1f}%) | Successful: {self.stats['successful']}/{self.stats['failed'] + self.stats['successful']}")
+                print(f"  [✓] {len(chunk)} → {len(final_content):,} chars ({length_diff_pct:+.1f}%) | Successful: {self.stats['successful']}/{self.stats['failed'] + self.stats['successful']}")
 
-        # Units after the last chunk (sections without text) and the closers
-        # of whatever is still open.
-        if section_meta:
-            enter_units(len(section_meta) - 1)
-        emit('</section>\n' * cur_depth)
-        self._tfile_committed = self._tfile_size
+        if book_end is None and not tail_written:
+            # No chunk counts (flat sections) or a book without any text
+            emit_tail()
+            self._tfile_committed = self._tfile_size
 
         # Warn if too many chunks failed
         total_processed = self.stats['successful'] + self.stats['failed']
@@ -502,7 +517,8 @@ class TranslationEngine:
             print(f"\n⚠️ WARNING: {self.stats['failed']}/{total_processed} chunks failed to translate!")
             logger.warning(f"High failure rate: {self.stats['failed']}/{total_processed} chunks failed")
 
-        return "".join(content_parts)
+        with open(output_tfile, encoding='utf-8') as f:
+            return f.read()
 
     def save_checkpoint(self, checkpoint_file: str):
         """
@@ -833,16 +849,6 @@ def build_resume_paths(myfile: str, target_lang: str) -> dict:
     }
 
 
-def assemble_resume_content(new_content: str, resume_from_chunk: int, output_tfile: str) -> str:
-    """On resume, output_tfile has ALL sections (prior + new) but
-    process_all_chunks only returns new chunks' content.
-    Read the full accumulated file to avoid data loss."""
-    if resume_from_chunk > 0 and os.path.exists(output_tfile):
-        with open(output_tfile, 'r', encoding='utf-8') as f:
-            return f.read()
-    return new_content
-
-
 # =============================================================================
 # Main Entry Point
 # =============================================================================
@@ -869,6 +875,9 @@ def main():
     signal.signal(signal.SIGINT, _handle_shutdown)
     signal.signal(signal.SIGTERM, _handle_shutdown)
 
+    # cli() has already done this; main() may also be called on its own and
+    # must never write FB2 XML into a file named .pdf/.docx
+    config.output_format = resolve_classic_output_format(None, config.output_format)
 
     # Check input file
     myfile = config.myfile
@@ -962,6 +971,8 @@ def main():
         max_chunk_size=config.max_len_chunk,
         source_lang=config.source_lang,
         target_lang=config.target_lang,
+        # The temp file holds the open tags of this exact section tree
+        section_tree=json.dumps([[m['open_tag'], m['depth'], m['chunks']] for m in section_meta]),
     )
 
     # 4. Translate
@@ -1037,7 +1048,6 @@ def main():
         try:
             content = engine.process_all_chunks(chunks, vocab, output_tfile, checkpoint_file,
                                                 section_meta=section_meta)
-            content = assemble_resume_content(content, resume_from_chunk, output_tfile)
         finally:
             # Ensure checkpoint is saved on unexpected exit (signal handler triggers SystemExit)
             if checkpoint_file:
@@ -1049,11 +1059,14 @@ def main():
         print("Translating metadata...")
         metadata = fb2.extract_metadata(header)
         if metadata:
-            metadata['lang'] = config.lang_code_map.get(config.target_lang.lower(), config.target_lang)
+            target_code = config.lang_code_map.get(config.target_lang.lower(), config.target_lang)
+            metadata['lang'] = target_code
             vocab_entries = list(engine.vocab_manager.vocab.values()) if engine.vocab_manager else []
             translated_meta = ta.translate_metadata(metadata, config.source_lang, config.target_lang, config.country,
                                                     vocab_entries=vocab_entries)
             if translated_meta:
+                # The LLM translates values; the language code is not one of them.
+                translated_meta['lang'] = target_code
                 header = fb2.update_header_with_metadata(header, translated_meta)
 
     if config.api_key_images:
@@ -1066,7 +1079,8 @@ def main():
                 try:
                     cover_bytes = base64.b64decode(cover_result)
                     ext = IMAGE_EXTENSIONS.get(sniff_image_type(cover_bytes), '.png')
-                    with open(f"{output_dir}/{file_name}_cover{ext}", 'wb') as f:
+                    # language marker: translations into other languages keep their own cover
+                    with open(f"{output_dir}/{file_name}_{config.target_lang}_cover{ext}", 'wb') as f:
                         f.write(cover_bytes)
                 except Exception as e:
                     logger.error(f"Cover save error: {e}")

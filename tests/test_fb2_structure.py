@@ -83,7 +83,7 @@ def test_stray_closer_dropped_and_self_closing_section_kept():
 
 def test_body_wrapper_tags_are_ignored():
     sections, meta = prepare_body_structure('<body><section id="x"><p>t</p></section></body>', 1000)
-    assert meta == [{'open_tag': '<section id="x">', 'depth': 1}]
+    assert meta == [{'open_tag': '<section id="x">', 'depth': 1, 'chunks': 1}]
     assert '<body' not in ''.join(''.join(s) for s in sections)
 
 
@@ -287,3 +287,18 @@ def test_split_in_two_cuts_between_blocks_and_stanzas():
 
     single = '<p>' + 'word ' * 600 + '</p>'
     assert split_in_two(single) == (single, '')
+
+
+@pytest.mark.parametrize('broken, fixed', [
+    ('<p>line one<br>line two</p>', '<p>line one</p>\n<p>line two</p>'),
+    ('<v>строка<br/>вторая</v>', '<v>строка</v>\n<v>вторая</v>'),
+    ('<p><emphasis>a<br/>b</emphasis> c</p>', '<p><emphasis>a</emphasis></p>\n<p><emphasis>b</emphasis> c</p>'),
+    ('<p>trailing<br/></p><p>next</p>', '<p>trailing</p><p>next</p>'),
+    ('word<br>word', '<p>word</p>\n<p>word</p>'),
+    ('<poem><stanza><v>a<br>b</v></stanza></poem>', '<poem><stanza><v>a</v>\n<v>b</v></stanza></poem>'),
+])
+def test_br_breaks_the_paragraph_instead_of_gluing_words(broken, fixed):
+    result = repair_fragment(broken)
+    assert result == fixed
+    assert repair_fragment(result) == result
+    _well_formed(result)

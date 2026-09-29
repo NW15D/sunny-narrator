@@ -308,9 +308,7 @@ class VocabularyManager:
         else:
             # Create empty dictionary template
             self._create_template()
-    
-    
-    
+
     def _parse_and_append_chunk(self, vocab_translated: str, chunk_num: int, total_chunks: int) -> int:
         """
         Parse LLM response and append entries to the dictionary file in consistent CSV format.

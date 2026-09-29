@@ -228,11 +228,72 @@ def split_in_two(text: str) -> Tuple[str, str]:
     return best or (text, '')
 
 
+_SENTENCE_END_RE = re.compile(r'[.!?\u2026][\u00bb\u201d"\')\]]*\s+')
+
+
+def split_paragraph_in_two(text: str) -> Optional[Tuple[str, str]]:
+    """Split a chunk that is one huge paragraph at the sentence end nearest
+    its middle, into two paragraphs of the same kind.
+
+    Only cuts where no inline element is open, so both halves stay
+    well-formed; the id stays on the first half. join_paragraph_halves()
+    turns the two translations back into one paragraph. Returns None if the
+    chunk is not a single paragraph or has no usable sentence boundary.
+    """
+    blocks = [b for b in split_blocks(text) if b.strip()]
+    if len(blocks) != 1:
+        return None
+    m = re.fullmatch(r'\s*<(p|v|subtitle|text-author)\b([^>]*)>(.*)</\1\s*>\s*', blocks[0], re.DOTALL)
+    if not m or m.group(2).rstrip().endswith('/'):
+        return None
+    name, attrs, inner = m.groups()
+
+    open_at = []  # (position, inline depth after it)
+    depth = 0
+    for t in _TAG_RE.finditer(inner):
+        if t.group(4) or not _ATTRS_RE.fullmatch(t.group(3)):
+            continue
+        depth += -1 if t.group(1) else 1
+        open_at.append((t.end(), depth))
+
+    def depth_at(pos: int) -> int:
+        d = 0
+        for end, after in open_at:
+            if end > pos:
+                break
+            d = after
+        return d
+
+    half = len(inner) / 2
+    cuts = [c.end() for c in _SENTENCE_END_RE.finditer(inner)
+            if 0 < c.end() < len(inner) and depth_at(c.end()) == 0]
+    if not cuts:
+        return None
+    cut = min(cuts, key=lambda c: abs(c - half))
+    return (f'<{name}{attrs}>{inner[:cut].rstrip()}</{name}>',
+            f'<{name}>{inner[cut:].lstrip()}</{name}>')
+
+
+def join_paragraph_halves(first: str, second: str) -> str:
+    """Merge the translations of split_paragraph_in_two()'s halves."""
+    a = sanitize_translated_chunk(first)
+    b = sanitize_translated_chunk(second)
+    tail = re.search(r'</(\w[\w-]*)>\s*$', a)
+    head = re.match(r'\s*<(\w[\w-]*)\b[^>]*>', b)
+    if (tail and head and tail.group(1) == head.group(1)
+            and len([x for x in split_blocks(a) if x.strip()]) == 1
+            and len([x for x in split_blocks(b) if x.strip()]) == 1):
+        return a[:tail.start()].rstrip() + ' ' + b[head.end():].lstrip()
+    return a + '\n' + b
+
+
 def prepare_body_structure(body: str, max_len_chunk: int) -> Tuple[List[List[str]], List[Dict]]:
-    """Return (sections, meta): chunks per unit and each unit's open_tag/depth."""
+    """Return (sections, meta): chunks per unit and each unit's open_tag,
+    depth and number of chunks."""
     units = split_body_units(body)
     sections = [chunk_unit_content(u.content, max_len_chunk) for u in units]
-    meta = [{'open_tag': u.open_tag, 'depth': u.depth} for u in units]
+    meta = [{'open_tag': u.open_tag, 'depth': u.depth, 'chunks': len(s)}
+            for u, s in zip(units, sections)]
     return sections, meta
 
 
@@ -301,6 +362,9 @@ def visible_text(xml: str) -> str:
 
 def strip_code_fences(text: str) -> str:
     return re.sub(r'^\s*```[A-Za-z0-9]*[ \t]*\n|\n[ \t]*```\s*$', '', text)
+
+
+_BREAK_MARK = '\x00br\x00'
 
 
 def repair_fragment(text: str, *, keep_sections: bool = False,
@@ -390,6 +454,22 @@ def repair_fragment(text: str, *, keep_sections: bool = False,
         elif name in _INLINE and needs_wrapper():
             open_implicit()
 
+    def line_break() -> None:
+        """FB2 has no <br>: end the paragraph (or verse) here and start a new
+        one of the same kind, reopening the inline elements that were open."""
+        for i in range(len(stack) - 1, -1, -1):
+            if stack[i] in _PARA:
+                para, inline = stack[i], stack[i + 1:]
+                close_through(i)
+                out.append(_BREAK_MARK + '\n')
+                push(para)
+                out.append(f'<{para}>')
+                for name in inline:
+                    push(name)
+                    out.append(f'<{name}>')
+                return
+        out.append(' ')
+
     pos = 0
     for m in _TAG_RE.finditer(text):
         if not _ATTRS_RE.fullmatch(m.group(3)):
@@ -398,6 +478,10 @@ def repair_fragment(text: str, *, keep_sections: bool = False,
         pos = m.end()
         closing, raw_name, attrs, selfclose = m.groups()
         name = raw_name.lower()
+        if name == 'br':
+            if not closing:
+                line_break()
+            continue
         if strip_unknown:
             name = _ALIASES.get(name, name)
             if name not in _KNOWN:
@@ -431,7 +515,10 @@ def repair_fragment(text: str, *, keep_sections: bool = False,
 
     emit_text(text[pos:])
     close_through(0)
-    return ''.join(out)
+    result = ''.join(out)
+    # a <br> right before the end of its paragraph must not leave an empty one
+    result = re.sub(_BREAK_MARK + r'\n<(\w+)>(?:<[\w-]+>)*(?:</[\w-]+>)*</\1>', '', result)
+    return result.replace(_BREAK_MARK, '')
 
 
 def sanitize_translated_chunk(translated: str) -> str:

@@ -71,6 +71,10 @@ timeout = 120
 # (pytest collection). Ignored so the suite runs without a calibre install.
 addopts = "--ignore=tests/test_calibre_cleanup.py"
 
+[tool.setuptools]
+# app.py is the entry point module (console script sunny-narrator = app:cli)
+py-modules = ["app"]
+
 [tool.setuptools.packages.find]
 include = ["src*"]
 

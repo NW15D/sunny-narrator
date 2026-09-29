@@ -284,8 +284,8 @@ def test_cover_is_sent_to_the_image_model_and_replaced(book, run_main, monkeypat
     xml = _read(out)
     assert f'<binary content-type="{content_type}" id="cover.png">{new_cover}</binary>' in xml
     assert xc.validate_fb2(xml) == []
-    saved = sorted(p.name for p in book.parent.glob('book_cover.*'))
-    assert saved == [f'book_cover.{ext}']
+    saved = sorted(p.name for p in book.parent.glob('book_*cover.*'))
+    assert saved == [f'book_russian_cover.{ext}']
     assert (book.parent / saved[0]).read_bytes() == image
 
 
@@ -305,3 +305,68 @@ def test_unknown_arguments_are_reported(book, run_cli, capsys):
     run_cli(book, '--pipeline', 'classic')
     assert 'ignoring unknown arguments: --pipeline classic' in capsys.readouterr().out
     assert _outputs(book.parent, 'fb2')
+
+
+def test_checkpoint_of_a_different_section_tree_is_not_resumed(book, run_main, capsys):
+    with pytest.raises(Interrupted):
+        run_main(book, translate=_fake_translate(fail_on=5))
+    # Same text and same chunks, but chapter two now sits at the top level.
+    text = book.read_text(encoding='cp1251')
+    moved = re.search(r'<section id="c2">.*?</section>\n', text, re.DOTALL).group(0)
+    text = text.replace(moved, '', 1).replace('<section id="lonely">', moved + '<section id="lonely">', 1)
+    book.write_text(text, encoding='cp1251')
+
+    run_main(book)
+    assert 'Checkpoint ignored' in capsys.readouterr().out
+    [out] = _outputs(book.parent, 'fb2')
+    xml = _read(out)
+    assert xc.validate_fb2(xml) == []
+    assert xml.count('SECOND CHAPTER TEXT.') == 1
+
+
+def test_old_version_checkpoints_are_not_resumed():
+    from src.checkpoint_manager import CHECKPOINT_VERSION, compute_fingerprint
+    assert CHECKPOINT_VERSION >= 3
+    chunks = ['<p>a</p>']
+    assert compute_fingerprint(chunks, section_tree='[]') != compute_fingerprint(chunks, section_tree='[[1]]')
+
+
+@pytest.mark.parametrize('llm_lang', ['русский', ['Russian'], None])
+def test_book_language_comes_from_the_config_not_the_llm(book, run_main, llm_lang):
+    def metadata_llm(metadata, *args, **kwargs):
+        answer = dict(metadata, **{'book-title': 'БОГАТАЯ КНИГА'})
+        if llm_lang is None:
+            answer.pop('lang')
+        else:
+            answer['lang'] = llm_lang
+        return answer
+
+    run_main(book, output_format='epub', metadata=metadata_llm)
+    [out] = _outputs(book.parent, 'epub')
+    import zipfile
+    with zipfile.ZipFile(out) as zf:
+        assert '<dc:language>ru</dc:language>' in zf.read('EPUB/content.opf').decode()
+
+
+def test_fb2_language_comes_from_the_config_not_the_llm(book, run_main):
+    run_main(book, metadata=lambda metadata, *a, **k: dict(metadata, lang='русский'))
+    [out] = _outputs(book.parent, 'fb2')
+    xml = _read(out)
+    assert '<lang>ru</lang>' in xml and xc.validate_fb2(xml) == []
+
+
+def test_main_on_its_own_never_writes_fb2_into_a_pdf(book, run_main):
+    run_main(book, output_format='pdf')
+    assert _outputs(book.parent, 'fb2')
+    assert not glob.glob(os.path.join(book.parent, 'book_russian_*.pdf'))
+
+
+def test_covers_of_different_target_languages_do_not_overwrite_each_other(book, run_main, monkeypatch):
+    import base64
+    png = base64.b64encode(b'\x89PNG\r\n\x1a\n' + b'\x00' * 24).decode()
+    monkeypatch.setattr(app.ta, 'process_image_request', lambda *a, **k: png)
+    run_main(book, images_key='key')
+    monkeypatch.setattr(app.config, 'target_lang', 'german')
+    run_main(book, images_key='key')
+    names = sorted(p.name for p in book.parent.glob('book_*cover.*'))
+    assert names == ['book_german_cover.png', 'book_russian_cover.png']

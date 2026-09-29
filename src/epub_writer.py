@@ -134,7 +134,7 @@ def _load_images(footer: str) -> Dict[str, dict]:
             continue
         ext = IMAGE_EXTENSIONS[content_type]
         base = re.sub(r'[^A-Za-z0-9_.-]', '_', image_id) or 'image'
-        if not base.lower().endswith((ext, '.jpeg')):
+        if not (base.lower().endswith(ext) or (ext == '.jpg' and base.lower().endswith('.jpeg'))):
             base += ext
         name, n = base, 1
         while name.lower() in used_names:

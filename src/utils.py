@@ -34,7 +34,7 @@ import tiktoken
 from src.config import Config
 from src.llm_logger import log_llm_call
 from src.p_tags_processor import post_process_p_tags
-from src.fb2_structure import split_in_two
+from src.fb2_structure import join_paragraph_halves, split_in_two, split_paragraph_in_two
 
 # LLMService, TranslationPipeline, translate_chunk are defined in this module
 
@@ -1484,12 +1484,19 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
     # between blocks so both halves stay well-formed; a single block that
     # cannot be split is accepted as is.
     do_split = should_split and depth < MAX_DEPTH
+    rejoin = None
     if do_split:
         part1, part2 = (split_in_two(source_text) if style == 'xml'
                         else split_text_smartly(source_text))
         if not part2.strip():
-            logger.warning("Chunk is a single FB2 block and cannot be split; keeping its translation")
-            do_split = False
+            # A single block: split a huge paragraph at a sentence end and
+            # glue the two translations back into one paragraph.
+            halves = split_paragraph_in_two(source_text)
+            if halves:
+                (part1, part2), rejoin = halves, join_paragraph_halves
+            else:
+                logger.warning("Chunk is a single FB2 block and cannot be split; keeping its translation")
+                do_split = False
     if do_split:
         if _llm_call_count[0] >= MAX_LLM_CALLS_PER_CHUNK:
             logger.warning(f"LLM call cap ({MAX_LLM_CALLS_PER_CHUNK}) reached before split, stopping recursion")
@@ -1516,7 +1523,7 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
                 "translation — refusing to combine partial results"
             )
             return "", ""
-        combined_translation = result1 + "\n\n" + result2
+        combined_translation = rejoin(result1, result2) if rejoin else result1 + "\n\n" + result2
         combined_synopsis = " ".join(s for s in (syn1, syn2) if s)
         
         return combined_translation, combined_synopsis
@@ -1549,10 +1556,7 @@ class LLMServiceCompat:
     
     def __init__(self):
         self._new_service = llm_service
-    
-    
-    
-    
+
     def complete(self, role: LLMRole, system_prompt: str, user_prompt: str,
                  max_tokens: int = 8192, json_mode: bool = False,
                  stage: 'TranslationStage' = None) -> str:

@@ -44,3 +44,24 @@ def test_text_style_still_uses_the_old_splitter(monkeypatch):
     text = '\n\n'.join('Sentence number %d. ' % i * 10 for i in range(20))
     seen, _ = _run(monkeypatch, text, 'text')
     assert len(seen) == 3 and seen[1] + seen[2] == text
+
+
+def test_huge_paragraph_is_split_at_a_sentence_and_joined_back(monkeypatch):
+    sentences = [f'Sentence {i} has <emphasis>some words</emphasis> in it. ' for i in range(80)]
+    para = '<p id="big">' + ''.join(sentences).strip() + '</p>'
+    seen, result = _run(monkeypatch, para, 'xml')
+    assert len(seen) == 3
+    first, second = seen[1], seen[2]
+    assert first.startswith('<p id="big">') and first.endswith('.</p>')
+    assert second.startswith('<p>Sentence ') and second.endswith('</p>')
+    for half in (first, second):
+        assert repair_fragment(half) == half              # never cut inside <emphasis>
+    assert result.count('<p') == 1 and result.count('</p>') == 1
+    assert result.startswith('<p id="big">') and 'in it. Sentence' in result
+    assert result.count('Sentence ') == 80
+
+
+def test_paragraph_halves_that_came_back_as_several_blocks_are_kept_apart():
+    from src.fb2_structure import join_paragraph_halves
+    assert join_paragraph_halves('<p>A.</p>', '<p>B.</p><p>C.</p>') == '<p>A.</p>\n<p>B.</p><p>C.</p>'
+    assert join_paragraph_halves('<p>A.</p>', '<p>B.</p>') == '<p>A. B.</p>'

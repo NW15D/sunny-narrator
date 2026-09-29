@@ -47,3 +47,24 @@ def test_console_script_points_at_the_cli_not_at_main():
     module, func = target.split(':')
     assert (module, func) == ('app', 'cli')
     assert callable(getattr(app, func))
+
+
+def test_app_module_is_packaged_for_the_console_script():
+    """Without py-modules the installed script cannot import `app` outside the repo."""
+    import tomllib
+    with open(os.path.join(os.path.dirname(__file__), '..', 'pyproject.toml'), 'rb') as f:
+        setuptools_cfg = tomllib.load(f)['tool']['setuptools']
+    assert 'app' in setuptools_cfg.get('py-modules', [])
+
+
+def test_installed_console_script_runs_outside_the_repo(tmp_path):
+    import shutil
+    import subprocess
+    script = shutil.which('sunny-narrator', path=os.path.dirname(sys.executable))
+    if script is None:
+        pytest.skip('package is not installed in this environment')
+    env = dict(os.environ, API_KEY_TRANSLATE='t', API_KEY_PROOFREAD='t', API_KEY_IMAGES='t')
+    result = subprocess.run([script, '--help'], cwd=tmp_path, env=env,
+                            capture_output=True, text=True, timeout=120)
+    assert result.returncode == 0, result.stderr
+    assert 'usage: sunny-narrator' in result.stdout
