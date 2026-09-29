@@ -6,6 +6,7 @@ runs: chunking, local repair, section tree, metadata, validation, auto-repair,
 FB2/EPUB writing, checkpoint and resume.
 """
 import glob
+import json
 import os
 import re
 import runpy
@@ -62,6 +63,16 @@ def book(tmp_path):
     path.write_text(text, encoding='cp1251')
     (tmp_path / 'book.dic').write_text('# reviewed, no terms\n', encoding='utf-8')
     return path
+
+
+@pytest.fixture(autouse=True)
+def _restore_signal_handlers():
+    """main() installs its own SIGINT/SIGTERM handlers; keep pytest's."""
+    import signal
+    saved = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
+    yield
+    for sig, handler in saved.items():
+        signal.signal(sig, handler)
 
 
 @pytest.fixture
@@ -370,3 +381,53 @@ def test_covers_of_different_target_languages_do_not_overwrite_each_other(book, 
     run_main(book, images_key='key')
     names = sorted(p.name for p in book.parent.glob('book_*cover.*'))
     assert names == ['book_german_cover.png', 'book_russian_cover.png']
+
+
+
+def test_sigterm_saves_a_checkpoint_and_the_run_resumes(book, run_main, tmp_path):
+    import signal
+    reference = tmp_path / 'reference'
+    reference.mkdir()
+    shutil.copy(book, reference / 'book.fb2')
+    shutil.copy(book.parent / 'book.dic', reference / 'book.dic')
+    run_main(reference / 'book.fb2')
+    [expected] = _outputs(reference, 'fb2')
+
+    base = _fake_translate()
+    calls = {'n': 0}
+
+    def translate_then_sigterm(*args, **kwargs):
+        calls['n'] += 1
+        if calls['n'] == 5:
+            signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)   # what the OS would call
+        return base(*args, **kwargs)
+
+    with pytest.raises(SystemExit) as exc:
+        run_main(book, translate=translate_then_sigterm)
+    assert exc.value.code == 1
+    [ckpt] = glob.glob(os.path.join(book.parent, '*.checkpoint.json'))
+    with open(ckpt, encoding='utf-8') as f:
+        assert json.load(f)['last_chunk'] == 3                    # chunks 0-3 finished
+
+    translate = _fake_translate()
+    for _ in range(4):
+        translate('en', 'ru', '<p>x</p>', '', {})
+    run_main(book, translate=translate)
+    [out] = _outputs(book.parent, 'fb2')
+    body = re.search(r'<body>.*?</body>', _read(out), re.DOTALL).group(0)
+    assert body == re.search(r'<body>.*?</body>', _read(expected), re.DOTALL).group(0)
+
+
+def test_first_run_creates_the_dictionary_and_stops(book, run_main, monkeypatch):
+    import src.vocabulary_manager as vm
+    monkeypatch.setattr(vm.config, 'ner_opt', False)   # no spaCy model in the test env: empty template
+    os.remove(book.parent / 'book.dic')
+
+    def no_llm(*args, **kwargs):
+        raise AssertionError('nothing is translated before the dictionary is reviewed')
+
+    with pytest.raises(SystemExit) as exc:
+        run_main(book, translate=no_llm)
+    assert exc.value.code == 0
+    assert (book.parent / 'book.dic').exists()
+    assert not _outputs(book.parent, 'fb2') and not _outputs(book.parent, 'epub')

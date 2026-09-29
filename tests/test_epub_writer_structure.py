@@ -169,3 +169,66 @@ def test_fb2_to_html_titles_and_poem_titles():
     assert '<h1><span class="title-line">A</span><br/><span class="title-line">B</span></h1>' in out
     assert '<h2>' in out                              # title of a nested section
     assert '<div class="poem-title"><p>PT</p></div>' in out
+
+
+def _page_texts(path):
+    return {n: d.decode() for n, d in _files(path).items() if re.search(r'chapter_\d+\.xhtml$', n)}
+
+
+def test_section_holding_only_subsections_gets_no_empty_page(tmp_path):
+    header = '<description><title-info><book-title>T</book-title><lang>en</lang></title-info></description>'
+    body = ('<section><section><title><p>A</p></title><p>text a</p></section>'
+            '<section><title><p>B</p></title><p>text b</p></section></section>')
+    path = create_epub_from_fb2(header, body, '', str(tmp_path / 'b'))
+    assert check_epub(path) == []
+    pages = _page_texts(path)
+    assert len(pages) == 2
+    nav = etree.fromstring(_files(path)['EPUB/nav.xhtml'])
+    assert [a.text for a in nav.iter(f'{XHTML}a')] == ['A', 'B']
+
+
+def test_style_unknown_tags_and_duplicate_ids(tmp_path):
+    header = '<description><title-info><book-title>T</book-title><lang>en</lang></title-info></description>'
+    body = ('<section id="x"><p>a <style name="smallcaps">caps</style> <weird>kept text</weird></p>'
+            '<p id="x">same id</p><p id="x y">bad id</p><!-- a comment --></section>')
+    path = create_epub_from_fb2(header, body, '', str(tmp_path / 'b'))
+    assert check_epub(path) == []                      # includes the duplicate-id check
+    page = next(iter(_page_texts(path).values()))
+    assert '<span class="smallcaps">caps</span>' in page
+    assert 'kept text' in page and '<weird' not in page
+    assert 'a comment' not in page
+    ids = re.findall(r' id="([^"]+)"', page)
+    assert len(ids) == len(set(ids)) == 3
+
+
+def test_header_without_title_info_uses_defaults_and_publisher_is_kept(tmp_path):
+    body = '<section><p>text</p></section>'
+    path = create_epub_from_fb2('<description/>', body, '', str(tmp_path / 'a'))
+    opf = _files(path)['EPUB/content.opf'].decode()
+    assert '<dc:title>Unknown Title</dc:title>' in opf and '<dc:language>en</dc:language>' in opf
+
+    header = ('<description><title-info><book-title>T</book-title><lang>en</lang></title-info>'
+              '<publish-info><publisher>Pub &amp; Co</publisher></publish-info></description>')
+    path = create_epub_from_fb2(header, body, '', str(tmp_path / 'b'))
+    assert '<dc:publisher>Pub &amp; Co</dc:publisher>' in _files(path)['EPUB/content.opf'].decode()
+
+
+def test_body_without_readable_content_is_refused(tmp_path):
+    with pytest.raises(ValueError, match='no readable content'):
+        create_epub_from_fb2('<description/>', '<!-- only a comment -->', '', str(tmp_path / 'b'))
+
+
+def test_untranslated_looking_body_is_only_a_warning(tmp_path, caplog):
+    body = '<section><p>' + 'plain english words ' * 50 + '</p></section>'
+    create_epub_from_fb2('<description/>', body, '', str(tmp_path / 'b'))
+    assert 'High ASCII ratio' in caplog.text
+
+
+def test_links_go_to_the_first_element_of_a_repeated_id(tmp_path):
+    header = '<description><title-info><book-title>T</book-title><lang>en</lang></title-info></description>'
+    body = ('<section><p id="dup">first</p><p id="dup">second</p>'
+            '<p><a l:href="#dup">jump</a></p></section>')
+    path = create_epub_from_fb2(header, body, '', str(tmp_path / 'b'))
+    assert check_epub(path) == []
+    page = next(iter(_page_texts(path).values()))
+    assert '<p id="dup">first</p>' in page and 'href="#dup"' in page

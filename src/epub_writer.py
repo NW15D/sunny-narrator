@@ -221,8 +221,16 @@ class _Converter:
 
     # -- ids ---------------------------------------------------------------
     def alias(self, old: str) -> str:
+        """XHTML id for an FB2 id. The first element with that id owns it
+        (links resolve to it); a repeated id in a broken FB2 gets a fresh,
+        unlinked one, since XHTML ids must be unique."""
         if old in self._aliases:
-            return self._aliases[old]
+            return self._fresh_id(old)
+        new = self._fresh_id(old)
+        self._aliases[old] = new
+        return new
+
+    def _fresh_id(self, old: str) -> str:
         new = re.sub(r'[^A-Za-z0-9_.-]', '_', old) or 'id'
         if not re.match(r'[A-Za-z_]', new):
             new = f'id_{new}'
@@ -231,7 +239,6 @@ class _Converter:
             n += 1
             new = f'{base}_{n}'
         self._used_ids.add(new)
-        self._aliases[old] = new
         return new
 
     # -- tree walk ---------------------------------------------------------

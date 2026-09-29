@@ -302,3 +302,24 @@ def test_br_breaks_the_paragraph_instead_of_gluing_words(broken, fixed):
     assert result == fixed
     assert repair_fragment(result) == result
     _well_formed(result)
+
+
+@pytest.mark.parametrize('chunk', [
+    '<p>One. Two.</p><p>Three. Four.</p>',                 # two blocks: split_in_two's job
+    '<poem><stanza><v>A. B.</v></stanza></poem>',          # not a paragraph
+    '<p>no sentence end anywhere in here</p>',
+    '<p>A <emphasis>B. C</emphasis> D</p>',                 # the only boundary is inside <emphasis>
+    '<p/>',
+])
+def test_split_paragraph_in_two_refuses_what_it_cannot_split_cleanly(chunk):
+    from src.fb2_structure import split_paragraph_in_two
+    assert split_paragraph_in_two(chunk) is None
+
+
+def test_closing_br_is_ignored():
+    assert repair_fragment('<p>a</br>b</p>') == '<p>ab</p>'
+
+
+def test_self_closed_section_does_not_change_the_depth():
+    text = '<section id="a"><section id="n"/><p>x</p>'
+    assert close_dangling_sections(text) == text + '\n</section>\n'

@@ -140,3 +140,11 @@ def test_repair_without_fewer_errors_is_discarded(monkeypatch):
     kept, notes = repair_if_needed(book, errors=errors)
     assert kept is book
     assert notes == [f'Repair discarded: {len(errors)} errors before, {len(errors)} after']
+
+
+def test_missing_body_is_added_after_the_description():
+    book = ('<?xml version="1.0" encoding="UTF-8"?>\n<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0">'
+            '<description><title-info><book-title>T</book-title></title-info></description></FictionBook>')
+    repaired, repairs = repair_fb2(book)
+    assert '</description>\n<body>\n</body>' in repaired
+    assert any('Added missing <body>' in r for r in repairs)
