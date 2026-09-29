@@ -76,13 +76,8 @@ class Config:
         # Images API (Cover API)
         self.api_key_images = os.getenv('API_KEY_IMAGES', os.getenv('API_KEY3', ''))
         self.base_url_images = os.getenv('API_BASE_IMAGES', os.getenv('API_BASE3', ''))
-        self.sys_not_promt_images = os.getenv('S_PROMT_IMAGES', os.getenv('S_PROMT3', '')).lower() in ('true', '1', 'on')
         self.model_images = os.getenv('MODEL_IMAGES', os.getenv('MODEL3', 'gpt-image-1.5'))
-        self.temp_images = _parse_numeric_env('TEMP_IMAGES', os.getenv('TEMP3', 0.5))
         self.timeout_images = _parse_numeric_env('TIMEOUT_IMAGES', os.getenv('TIMEOUT3', 600), cast=int)
-        self.cover_prompt = os.getenv('COVER_PROMPT', '')
-        
-        self.example = os.getenv('EXAMPLE', '')
 
         # DICTIONARY: explicit path to the .dic vocabulary file to use for
         # translation, overriding the automatic <book_name>.dic lookup next
@@ -129,8 +124,6 @@ class Config:
         default_model = self.lang_model_map.get(self.source_lang.lower(), 'en_core_web_lg')
         self.nermodel = os.getenv('NERMODEL', default_model)
         self.fast_trans = os.getenv('FAST_TRANS', 'on').lower() in ['true', '1', 'on', 'yes']
-        self.concurrent_limit = _parse_numeric_env('CONCURRENT_LIMIT', 1, cast=int)
-        self.short = os.getenv('SHORT')
         self.max_len_chunk = _parse_numeric_env('MAX_LEN_CHUNK', 8192, cast=int)
         self.length_check_threshold = _parse_numeric_env('LENGTH_CHECK_THRESHOLD', 20, cast=int)
         

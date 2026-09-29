@@ -1,12 +1,12 @@
 """
 Sunny Narrator - AI-powered book translation tool.
 
-Translates FB2/EPUB/TXT books using dual-LLM architecture:
-- Translate LLM (Hunyuan): Translation + Synopsis generation
-- Proofread LLM: Quality reflection + Style improvement
+Translates books with a dual-LLM architecture (translate LLM + proofread LLM).
+FB2/TXT go through the classic pipeline in this module; DOCX/EPUB/PDF are
+routed to src/calibre_pipeline.py.
 
 Usage:
-    python app.py  # Uses config from .env
+    python app.py [--output-format ...]   # config from .env, see cli()
 """
 
 import os
@@ -123,9 +123,6 @@ class TranslationEngine:
             'failed': 0,
             'total_tokens': 0,
             'retry_tokens': 0,
-            'rechunk_events': 0,
-            'xml_repairs': 0,
-            'language_mismatch_retries': 0,
         }
 
         # Expected translation length ratio is learned per book
@@ -374,9 +371,8 @@ class TranslationEngine:
             f.write(text)
         self._tfile_size = os.path.getsize(output_tfile)
 
-    def process_all_chunks(self, all_chunks: list, orig_sections: list,
-                           vocab: dict, output_tfile: str, checkpoint_file: str = None,
-                           section_meta: list = None) -> str:
+    def process_all_chunks(self, all_chunks: list, vocab: dict, output_tfile: str,
+                           checkpoint_file: str = None, section_meta: list = None) -> str:
         """
         Process all chunks sequentially and write them out as a section tree.
 
@@ -390,7 +386,6 @@ class TranslationEngine:
 
         Args:
             all_chunks: List of chunk dicts with metadata
-            orig_sections: Original sections structure (list of lists)
             vocab: Vocabulary dictionary
             output_tfile: Temp output file path
             checkpoint_file: Path to checkpoint JSON file (optional)
@@ -622,15 +617,6 @@ def load_vocab_from_file(file_path: str) -> dict:
                 if notes:
                     vocab[key]['notes'] = notes
     return vocab
-
-
-def _translate_vocabulary_batch(terms_text: str, source_lang: str, target_lang: str, country: str) -> str:
-    """
-    Translate vocabulary terms in batch using translate LLM.
-    DEPRECATED: Use ta.vocabulary() with prompts.json instead.
-    """
-    # This function is deprecated - use ta.vocabulary() with proper prompts
-    raise NotImplementedError("Use ta.vocabulary() with prompts.json instead")
 
 
 def _save_vocabulary_formatted(translated_text: str, dict_file: str, original_terms: str):
@@ -895,9 +881,8 @@ def main():
     output_dir = os.path.dirname(myfile) or '.'
     # DICTIONARY/--dictionary overrides the auto <book_name>.dic next to the book
     dict_file = config.dictionary or f"{output_dir}/{file_name}.dic"
-    timestamp = datetime.now().strftime("%H%M-%d%m")
 
-    if file_ext.lower() not in ['.fb2', '.epub', '.txt']:
+    if file_ext.lower() not in ['.fb2', '.txt']:
         print(f"Error: Unsupported format: {file_ext}")
         sys.exit(1)  # H8: error path must exit non-zero
 
@@ -913,8 +898,6 @@ def main():
     print(f"Parsing {file_ext.upper()} file...")
     if file_ext.lower() == '.fb2':
         body, header, footer = fb2.parse_xml(myfile)
-    elif file_ext.lower() == '.epub':
-        body, header, footer = epub.parse_epub(myfile)
     else:
         body, header, footer = txt.parse_txt(myfile)
 
@@ -1052,7 +1035,7 @@ def main():
     # Process chunks if any remain, or content was already loaded from temp file above
     if chunks:
         try:
-            content = engine.process_all_chunks(chunks, sections, vocab, output_tfile, checkpoint_file,
+            content = engine.process_all_chunks(chunks, vocab, output_tfile, checkpoint_file,
                                                 section_meta=section_meta)
             content = assemble_resume_content(content, resume_from_chunk, output_tfile)
         finally:
@@ -1138,7 +1121,9 @@ def main():
         logger.info(f"Checkpoint removed: {checkpoint_file}")
 
 
-if __name__ == '__main__':
+def cli():
+    """Command-line entry point (`python app.py`, `sunny-narrator`): parses
+    arguments and routes the input file to the classic or Calibre pipeline."""
     import argparse
 
     parser = argparse.ArgumentParser(description='Sunny Narrator - AI book translator')
@@ -1175,6 +1160,8 @@ if __name__ == '__main__':
                              'Same as setting DICTIONARY in .env')
 
     args, unknown = parser.parse_known_args()
+    if unknown:
+        print(f"Warning: ignoring unknown arguments: {' '.join(unknown)}")
 
     # M12: validate --max-chunk-size (must be positive)
     if args.max_chunk_size is not None and args.max_chunk_size <= 0:
@@ -1222,7 +1209,7 @@ if __name__ == '__main__':
 
     # Handle single book dictionary build
     if args.build_dict:
-        from src.ner import make_vocab, _save_vocabulary_formatted
+        from src.ner import make_vocab
         book_path = args.build_dict
         if not os.path.exists(book_path):
             print(f"Error: Book file not found: {book_path}")
@@ -1292,7 +1279,7 @@ if __name__ == '__main__':
         print(f"Error: Input file not found: {input_file}")
         sys.exit(1)
     if not input_file:
-        print("Error: No input file specified. Set myfile in .env or pass via --input")
+        print("Error: No input file specified. Set FILE in .env")
         sys.exit(1)
 
     input_ext = os.path.splitext(input_file)[1].lower()
@@ -1371,8 +1358,7 @@ if __name__ == '__main__':
         print(f"Supported formats: DOCX, EPUB, PDF (Calibre pipeline), FB2, TXT (Classic pipeline)")
         sys.exit(1)
 
-    # Warn on unknown --pipeline flag (backward compat)
-    for i, arg in enumerate(unknown):
-        if arg == '--pipeline' and i + 1 < len(unknown):
-            print(f"⚠️  Warning: --pipeline flag is removed in v2.1. Pipeline auto-detected by file extension.")
-            break
+
+
+if __name__ == '__main__':
+    cli()

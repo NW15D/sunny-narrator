@@ -1,7 +1,7 @@
 """Direct unit tests for src/synopsis_manager.py.
 
 Covers: SectionContext accumulation rules, SynopsisManager public API,
-synopsis_cache persistence (tmp_path JSON roundtrip), SynopsisGenerator
+synopsis_cache persistence (tmp_path JSON roundtrip)
 fallback extraction, edge cases (empty input, missing sections/files).
 
 Note: SynopsisManager(character_registry=None) falls back to the global
@@ -13,7 +13,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from src.synopsis_manager import SectionContext, SynopsisManager, SynopsisGenerator
+from src.synopsis_manager import SectionContext, SynopsisManager
 
 
 class DummyRegistry:
@@ -93,9 +93,7 @@ def test_get_synopsis_does_not_create_side_effects():
     m = make_manager()
     m.get_synopsis(0, 0)
     # get_synopsis lazily creates the section, but no chunk data is added
-    stats = m.get_section_stats(0)
-    assert stats["chunks"] == 0
-    assert stats["total_synopsis_chars"] == 0
+    assert m.section_contexts[0].chunk_synopses == []
     assert m.get_synopsis(0, 1) == ""
 
 
@@ -163,33 +161,6 @@ def test_generate_synopsis_respects_max_chars():
 # get_section_stats / reset_section
 # ---------------------------------------------------------------------------
 
-def test_get_section_stats_missing_section():
-    m = make_manager()
-    assert m.get_section_stats(99) == {"chunks": 0, "total_synopsis_chars": 0}
-
-
-def test_get_section_stats_with_data():
-    m = make_manager()
-    m.add_chunk_result(0, 0, "t", generated_synopsis="AAAA")
-    m.add_chunk_result(0, 1, "t", generated_synopsis="BB")
-    stats = m.get_section_stats(0)
-    assert stats["chunks"] == 2
-    assert stats["total_synopsis_chars"] == 6
-    assert stats["accumulated_synopsis_chars"] == len("AAAA BB")
-
-
-def test_reset_section_removes_context():
-    m = make_manager()
-    m.add_chunk_result(0, 0, "t", generated_synopsis="SYN")
-    m.reset_section(0)
-    assert 0 not in m.section_contexts
-    assert m.get_synopsis(0, 1) == ""
-
-
-def test_reset_section_missing_is_noop():
-    m = make_manager()
-    m.reset_section(42)  # must not raise
-
 
 # ---------------------------------------------------------------------------
 # synopsis_cache persistence
@@ -245,38 +216,4 @@ def test_synopsis_cache_restore_from_missing_file(tmp_path):
 # SynopsisGenerator fallback
 # ---------------------------------------------------------------------------
 
-def test_generator_without_llm_uses_fallback():
-    gen = SynopsisGenerator()
-    assert gen.llm_service is None
-    result = gen.generate("First sentence here. Second one.")
-    assert result == "First sentence here"
 
-
-def test_generator_fallback_strips_xml_tags():
-    gen = SynopsisGenerator()
-    assert gen._fallback_extract("<p>Hello there. Rest.</p>") == "Hello there"
-
-
-def test_generator_fallback_truncates_long_sentence():
-    gen = SynopsisGenerator()
-    long_text = "A" * 200
-    result = gen._fallback_extract(long_text)
-    assert result == "A" * 150 + "..."
-
-
-def test_generator_fallback_empty_text():
-    gen = SynopsisGenerator()
-    assert gen._fallback_extract("") == ""
-
-
-def test_generator_falls_back_when_llm_fails(monkeypatch):
-    import src.utils as u
-
-    def broken(**kwargs):
-        raise RuntimeError("LLM down")
-
-    monkeypatch.setattr(u.llm_service_compat, "complete", broken)
-    gen = SynopsisGenerator()
-    gen.llm_service = object()  # truthy -> tries LLM path
-    result = gen.generate("Fallback wins. Really.")
-    assert result == "Fallback wins"

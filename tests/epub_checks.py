@@ -5,6 +5,9 @@ from urllib.parse import unquote, urldefrag
 
 from lxml import etree
 
+from src import epub_writer
+from src.fb2_handler import _read_file_with_encoding_fallback
+
 XHTML = '{http://www.w3.org/1999/xhtml}'
 OPF = '{http://www.idpf.org/2007/opf}'
 EPUB_NS = 'http://www.idpf.org/2007/ops'
@@ -93,3 +96,23 @@ def check_epub(path):
     if not navs:
         problems.append('no nav document with epub:type="toc"')
     return problems
+
+
+def fb2_file_to_epub(fb2_path, output_base):
+    """Build an EPUB straight from an FB2 file (no translation)."""
+    content = _read_file_with_encoding_fallback(fb2_path)
+    start, end = content.find('<body'), content.find('</body>')
+    header = content[:start]
+    body = content[content.find('>', start) + 1:end]
+    footer = content[end + len('</body>'):]
+    return epub_writer.create_epub_from_fb2(header, body, footer, output_base)
+
+
+def fragment_to_html(fragment, level=1, images=None):
+    """Run the EPUB writer's FB2 -> XHTML conversion on a fragment."""
+    soup, root = epub_writer._xml_soup(fragment)
+    epub_writer._Converter(soup, images or {})._convert(root, level, [])
+    out = []
+    for child in root.children:
+        epub_writer._serialize(child, out)
+    return ''.join(out)

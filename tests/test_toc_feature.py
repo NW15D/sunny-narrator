@@ -17,7 +17,7 @@ def test_toc_pandoc_flag():
     # pandoc 2.9 emits a TOC only for standalone documents (fragment
     # conversion has no TOC element at all); element id is uppercase:
     # <nav id="TOC">. Production does not rely on pandoc --toc anyway
-    # (calibre_pipeline._add_toc_to_html builds the TOC itself).
+    # (ebook-convert builds the TOC, see calibre_pipeline.build_output).
     md = "# Chapter 1\n\n## Section 1.1\n\n### Subsection 1.1.1\n\nText"
     base_args = ['--wrap=none', '--standalone', '--metadata', 'title=Test']
     

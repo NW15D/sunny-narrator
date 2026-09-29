@@ -60,7 +60,6 @@ class TranslationMetrics:
         self.total_tokens = 0
         self.retry_tokens = 0
         self.rechunk_count = 0
-        self.xml_repair_count = 0
         self.language_mismatch_retries = 0
         self.successful_translations = 0
         self.failed_translations = 0
@@ -76,12 +75,6 @@ class TranslationMetrics:
         with self._lock:
             self.rechunk_count += 1
         logger.error(f"RECHUNK #{self.rechunk_count} at depth {depth}: {percent_diff:.1f}% length difference")
-        
-    def log_xml_repair(self, issue: str):
-        """Log XML repair event (ERROR level)."""
-        with self._lock:
-            self.xml_repair_count += 1
-        logger.error(f"XML REPAIR #{self.xml_repair_count}: {issue}")
         
     def log_language_mismatch(self, tokens: int):
         """Log language mismatch retry (ERROR level)."""
@@ -113,7 +106,6 @@ class TranslationMetrics:
             "retry_tokens": self.retry_tokens,
             "retry_percentage": (self.retry_tokens / total) * 100,
             "rechunk_count": self.rechunk_count,
-            "xml_repair_count": self.xml_repair_count,
             "language_mismatch_retries": self.language_mismatch_retries
         }
         
@@ -129,7 +121,6 @@ class TranslationMetrics:
         logger.info(f"Total tokens: {report['total_tokens']:,}")
         logger.info(f"Retry tokens: {report['retry_tokens']:,} ({report['retry_percentage']:.1f}%)")
         logger.info(f"Rechunk events: {report['rechunk_count']}")
-        logger.info(f"XML repairs: {report['xml_repair_count']}")
         logger.info(f"Language mismatch retries: {report['language_mismatch_retries']}")
         logger.info("=" * 60)
 
@@ -402,7 +393,6 @@ class TranslationResult:
     llm_role: LLMRole
     text: str
     metadata: Dict[str, Any] = field(default_factory=dict)
-    processing_time: float = 0.0
     tokens_used: int = 0
     
     
@@ -439,40 +429,6 @@ class PipelineState:
             self.final_translation = result.text
 
 
-# Workflow definition (5 stages - NEW ORDER)
-TRANSLATION_WORKFLOW = [
-    {
-        "stage": TranslationStage.INITIAL,
-        "llm_role": LLMRole.TRANSLATE,
-        "function": "initial_translation",
-        "description": "Translate with dictionary and synopsis context"
-    },
-    {
-        "stage": TranslationStage.REFLECTION,
-        "llm_role": LLMRole.PROOFREAD,
-        "function": "reflection",
-        "description": "Quality review + suggestions (country-aware)"
-    },
-    {
-        "stage": TranslationStage.IMPROVE,
-        "llm_role": LLMRole.TRANSLATE,
-        "function": "improve_translation",
-        "description": "Apply reflection suggestions"
-    },
-    {
-        "stage": TranslationStage.FINAL,
-        "llm_role": LLMRole.PROOFREAD,
-        "function": "final_edit",
-        "description": "Final proofreading against original (XML tag restoration)"
-    },
-    {
-        "stage": TranslationStage.SYNOPSIS,
-        "llm_role": LLMRole.TRANSLATE,
-        "function": "generate_synopsis",
-        "description": "Summary from final translation (for next chunk context)"
-    },
-]
-
 # Initialize global config
 config = Config()
 
@@ -505,19 +461,6 @@ def log_entry(func):
 
 # Constants
 MAX_TOKENS_PER_CHUNK = config.max_len_chunk * 2  # 2x chunk size for translation overhead
-
-# Language mapping for models requiring ISO codes
-LANG_MAP = {
-    "english": "en", "russian": "ru", "chinese": "zh",
-    "french": "fr", "german": "de", "spanish": "es",
-    "italian": "it", "japanese": "ja", "korean": "ko",
-    "portuguese": "pt", "czech": "cs", "polish": "pl",
-    "ukrainian": "uk", "dutch": "nl", "turkish": "tr",
-    "vietnamese": "vi", "thai": "th", "arabic": "ar",
-    "hebrew": "he", "hindi": "hi", "indonesian": "id",
-    "swedish": "sv", "norwegian": "no", "danish": "da",
-    "finnish": "fi", "greek": "el", "hungarian": "hu"
-}
 
 
 # =============================================================================
@@ -1607,20 +1550,8 @@ class LLMServiceCompat:
     def __init__(self):
         self._new_service = llm_service
     
-    @property
-    def clientTranslate(self):
-        """Translate LLM client (Hunyuan)."""
-        return self._new_service._translate_client
     
-    @property
-    def clientProofread(self):
-        """Proofread LLM client."""
-        return self._new_service._proofread_client
     
-    @property
-    def clientImages(self):
-        """Images LLM client."""
-        return self._new_service._images_client
     
     def complete(self, role: LLMRole, system_prompt: str, user_prompt: str,
                  max_tokens: int = 8192, json_mode: bool = False,
@@ -2023,48 +1954,6 @@ def split_text_smartly(text: str) -> tuple:
 
 
 @log_entry
-def translate(source_lang: str, target_lang: str, source_text: str,
-              style: str, outline_text: str, country: str, vocab_dict: dict,
-              max_tokens: int = MAX_TOKENS_PER_CHUNK, temperature: float = None) -> tuple:
-    """
-    Translate source_text using dual-LLM pipeline.
-    
-    Args:
-        source_lang: Source language
-        target_lang: Target language
-        source_text: Text to translate
-        style: "xml" or "text"
-        outline_text: Context synopsis
-        country: Target country
-        vocab_dict: Translation dictionary
-        max_tokens: Max tokens per chunk
-        temperature: Temperature override (ignored, uses config)
-    
-    Returns:
-        (final_translation, synopsis)
-    """
-    # Token check
-    num_tokens = num_tokens_in_string(source_text)
-    if num_tokens > max_tokens:
-        raise ValueError(f"Chunk of size {num_tokens} tokens exceeds limit of {max_tokens}")
-    
-    logger.info(f"→ [translate] Using dual-LLM pipeline (fast_mode={config.fast_trans})")
-    
-    final_translation, synopsis = translate_chunk(
-        source_lang=source_lang,
-        target_lang=target_lang,
-        source_text=source_text,
-        outline_text=outline_text,
-        vocab_dict=vocab_dict if vocab_dict else {},
-        country=country,
-        style=style,
-        fast_mode=config.fast_trans
-    )
-    
-    return final_translation, synopsis
-
-
-@log_entry
 def vocabulary(source_lang: str, target_lang: str, source_text: str,
                country: str, role: str) -> str:
     """
@@ -2225,7 +2114,7 @@ def process_image_request(image_data: str, source_lang: str, target_lang: str,
         if config.debug:
             logger.debug(f"Image prompt: {prompt[:100]}...")
         
-        client = llm_service.clientImages
+        client = llm_service._images_client
         
         if metadata:
             # Generate new image
@@ -2282,7 +2171,9 @@ def process_image_request(image_data: str, source_lang: str, target_lang: str,
         # Resize and encode
         img = Image.open(io.BytesIO(img_bytes))
         img = img.resize((1024, 1536), Image.Resampling.LANCZOS)
-        
+        if img.mode != 'RGB':
+            img = img.convert('RGB')  # image models return RGBA PNGs; JPEG has no alpha
+
         output = io.BytesIO()
         img.save(output, format="JPEG", quality=70)
         

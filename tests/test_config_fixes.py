@@ -10,7 +10,6 @@ def clean_env():
     keys_to_clear = [
         'API_KEY_TRANSLATE', 'API_KEY', 'API_KEY_PROOFREAD', 'API_KEY2',
         'S_PROMT_TRANSLATE', 'S_PROMT', 'S_PROMT_PROOFREAD', 'S_PROMT2',
-        'S_PROMT_IMAGES', 'S_PROMT3',
     ]
     with patch.dict(os.environ, {}, clear=False):
         for k in keys_to_clear:
@@ -92,9 +91,3 @@ class TestBoolEnvParsing:
         cfg = Config(env_path="/dev/null")
         assert cfg.sys_not_promt_proofread is False
 
-    def test_bool_images_false(self, clean_env):
-        """S_PROMT_IMAGES='0' should be False."""
-        os.environ['S_PROMT_IMAGES'] = '0'
-        from src.config import Config
-        cfg = Config(env_path="/dev/null")
-        assert cfg.sys_not_promt_images is False

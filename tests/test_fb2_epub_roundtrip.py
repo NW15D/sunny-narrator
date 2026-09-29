@@ -6,7 +6,8 @@ import xml.dom.minidom
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from src.epub_writer import fb2_to_epub
+sys.path.insert(0, os.path.dirname(__file__))
+from epub_checks import fb2_file_to_epub
 
 FB2 = '''<?xml version="1.0" encoding="UTF-8"?>
 <FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink">
@@ -28,7 +29,7 @@ FB2 = '''<?xml version="1.0" encoding="UTF-8"?>
 def test_fb2_epub_roundtrip(tmp_path):
     fb2_path = tmp_path / 'book.fb2'
     fb2_path.write_text(FB2, encoding='utf-8')
-    epub_path = fb2_to_epub(str(fb2_path), str(tmp_path / 'book'))
+    epub_path = fb2_file_to_epub(str(fb2_path), str(tmp_path / 'book'))
     assert os.path.exists(epub_path)
 
     with zipfile.ZipFile(epub_path) as zf:

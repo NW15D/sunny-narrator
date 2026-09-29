@@ -46,7 +46,7 @@ except ImportError:
     pypandoc = None
 
 # Import existing utilities
-from src.utils import split_text_smartly, config, validate_translation_length, translate_chunk, translate_metadata, length_calibration
+from src.utils import config, validate_translation_length, translate_chunk, translate_metadata, length_calibration
 from src.utils import _pipeline  # noqa: F401  (tests monkeypatch cp._pipeline.execute)
 from src.checkpoint_manager import CheckpointManager, compute_fingerprint
 from src import markdown_utils
@@ -1268,45 +1268,6 @@ def _split_into_chunks_md(text: str, max_chunk_size: int) -> list[str]:
     return markdown_utils.split_markdown_structured(text, target_size=max_chunk_size)
 
 
-def _split_into_chunks(text: str, max_chunk_size: int) -> list[str]:
-    """
-    Split text into chunks of approximately max_chunk_size.
-    
-    Uses split_text_smartly for respecting paragraph boundaries.
-    This is the ORIGINAL logic for backward compatibility with classic pipeline.
-    
-    Args:
-        text: Text to split
-        max_chunk_size: Maximum size per chunk
-        
-    Returns:
-        List of text chunks
-    """
-    if len(text) <= max_chunk_size:
-        return [text]
-    
-    chunks = []
-    current_chunk = text
-    
-    while len(current_chunk) > max_chunk_size:
-        # Try to split roughly in half
-        first, rest = split_text_smartly(current_chunk)
-        
-        if not first:
-            # Fallback: hard split at max_chunk_size
-            first = current_chunk[:max_chunk_size]
-            rest = current_chunk[max_chunk_size:]
-        
-        chunks.append(first)
-        current_chunk = rest
-    
-    # Add remaining text
-    if current_chunk:
-        chunks.append(current_chunk)
-    
-    return chunks
-
-
 def _markdown_to_html_file(
     markdown_text: str,
     html_path: str,
@@ -1709,26 +1670,6 @@ def _generate_title_page(metadata: dict) -> str:
     html += "</div>"
     
     return html
-
-
-def _add_toc_to_html(markdown_text: str) -> str:
-    """Add TOC to HTML after pandoc conversion."""
-    from bs4 import BeautifulSoup
-    
-    if not PANDOC_AVAILABLE:
-        raise ImportError("pypandoc is required for TOC generation")
-    
-    html_content = pypandoc.convert_text(markdown_text, 'html', format='markdown')
-    soup = BeautifulSoup(html_content, 'html.parser')
-    headings = markdown_utils.extract_headings(soup)
-    toc_html = markdown_utils.generate_toc_html(headings)
-    
-    if soup.body:
-        soup.body.insert(0, BeautifulSoup(toc_html, 'html.parser').nav)
-    elif soup.html:
-        soup.html.insert(0, BeautifulSoup(toc_html, 'html.parser').nav)
-    
-    return str(soup)
 
 
 # ---------------------------------------------------------------------------

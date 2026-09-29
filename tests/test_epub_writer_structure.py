@@ -10,8 +10,8 @@ from lxml import etree
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.dirname(__file__))
 
-from epub_checks import EPUB_NS, XHTML, check_epub
-from src.epub_writer import _fb2_to_html, create_epub_from_fb2, fb2_to_epub
+from epub_checks import EPUB_NS, XHTML, check_epub, fb2_file_to_epub, fragment_to_html
+from src.epub_writer import create_epub_from_fb2
 
 RICH = os.path.join(os.path.dirname(__file__), 'data', 'rich_book.fb2')
 OPF_NS = '{http://www.idpf.org/2007/opf}'
@@ -20,7 +20,7 @@ DC = '{http://purl.org/dc/elements/1.1/}'
 
 @pytest.fixture(scope='module')
 def rich_epub(tmp_path_factory):
-    return fb2_to_epub(RICH, str(tmp_path_factory.mktemp('epub') / 'rich'))
+    return fb2_file_to_epub(RICH, str(tmp_path_factory.mktemp('epub') / 'rich'))
 
 
 def _files(path):
@@ -164,7 +164,7 @@ def test_section_only_tree_without_titles_still_gets_a_toc(tmp_path):
 
 
 def test_fb2_to_html_titles_and_poem_titles():
-    out = _fb2_to_html('<title><p>A</p><p>B</p></title><section><title><p>Sub</p></title></section>'
+    out = fragment_to_html('<title><p>A</p><p>B</p></title><section><title><p>Sub</p></title></section>'
                        '<poem><title><p>PT</p></title><stanza><v>x</v></stanza></poem>')
     assert '<h1><span class="title-line">A</span><br/><span class="title-line">B</span></h1>' in out
     assert '<h2>' in out                              # title of a nested section

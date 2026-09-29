@@ -72,7 +72,6 @@ class SynopsisManager:
     def __init__(self, max_synopsis_chars: int = 500, character_registry: Optional[CharacterRegistry] = None):
         self.section_contexts: Dict[int, SectionContext] = {}
         self.max_synopsis_chars = max_synopsis_chars
-        self._synopsis_generator = None  # Lazy init
         
         # Character registry for gender tracking
         self.character_registry = character_registry or get_character_registry()
@@ -202,96 +201,7 @@ class SynopsisManager:
         
         return synopsis[:self.max_synopsis_chars]
     
-    def get_section_stats(self, section_idx: int) -> Dict:
-        """Get statistics for a section."""
-        section = self.section_contexts.get(section_idx)
-        if not section:
-            return {"chunks": 0, "total_synopsis_chars": 0}
-        
-        return {
-            "chunks": len(section.chunk_synopses),
-            "total_synopsis_chars": sum(len(s) for s in section.chunk_synopses),
-            "accumulated_synopsis_chars": len(section.accumulated_synopsis)
-        }
     
-    def reset_section(self, section_idx: int):
-        """Reset synopsis for a section (e.g., on retry)."""
-        if section_idx in self.section_contexts:
-            del self.section_contexts[section_idx]
-            if config.debug:
-                logger.debug(f"[Synopsis] Section {section_idx} reset")
-
-
-class SynopsisGenerator:
-    """
-    LLM-based synopsis generator.
-    
-    Generates focused synopsis that captures:
-    - Character names and gender (he/she/it)
-    - Key terminology
-    - Plot continuity markers
-    """
-    
-    SYSTEM_PROMPT = """You are a literary context extractor.
-Create a concise synopsis (max 80 words) that captures:
-1. Character names mentioned and their gender (he/she/it)
-2. Key terminology or proper nouns
-3. Current situation/location
-
-Output plain text only, no formatting."""
-    
-    USER_TEMPLATE = """<text>
-{text}
-</text>
-
-Extract context synopsis for translation continuity.
-Focus on: character names + gender, key terms, situation.
-
-Synopsis:"""
-    
-    def __init__(self):
-        self.llm_service = None  # Will be injected
-    
-    def generate(self, text: str) -> str:
-        """Generate synopsis using LLM."""
-        if not self.llm_service:
-            # Fallback to simple extraction
-            return self._fallback_extract(text)
-        
-        try:
-            # Truncate text if too long
-            truncated = text[:2000] if len(text) > 2000 else text
-            
-            user_prompt = self.USER_TEMPLATE.format(text=truncated)
-            
-            # Use translate LLM for synopsis (consistent with pipeline spec)
-            from src.utils import llm_service_compat, LLMRole
-            
-            result = llm_service_compat.complete(
-                role=LLMRole.TRANSLATE,
-                system_prompt=self.SYSTEM_PROMPT,
-                user_prompt=user_prompt,
-                max_tokens=150
-            )
-            
-            return result.strip()
-            
-        except Exception as e:
-            logger.warning(f"Synopsis generation failed: {e}, using fallback")
-            return self._fallback_extract(text)
-    
-    def _fallback_extract(self, text: str) -> str:
-        """Fallback extraction without LLM."""
-        import re
-        
-        # Remove XML tags
-        clean = re.sub(r'<[^>]+>', '', text)
-        
-        # Get first sentence or first 150 chars
-        sentences = clean.split('.')
-        first = sentences[0].strip() if sentences else clean
-        
-        return first[:150] + "..." if len(first) > 150 else first
 
 
 # Global manager instance

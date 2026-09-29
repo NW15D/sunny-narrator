@@ -210,10 +210,9 @@ class _Page:
 class _Converter:
     """Turns an FB2 body (bs4 tree) into XHTML pages plus a nested TOC."""
 
-    def __init__(self, soup: BeautifulSoup, images: Dict[str, dict], strict: bool = True):
+    def __init__(self, soup: BeautifulSoup, images: Dict[str, dict]):
         self.soup = soup
         self.images = images
-        self.strict = strict  # drop <image> whose binary is missing; else guess images/<id>
         self.pages: List[_Page] = []
         self._aliases: Dict[str, str] = {}
         self._used_ids: set = set()
@@ -387,11 +386,9 @@ class _Converter:
     def _convert_image(self, tag: Tag) -> None:
         href = _href(tag)
         info = self.images.get(href[1:]) if href.startswith('#') else None
-        if info is None:
-            if self.strict or not href.startswith('#'):
-                tag.decompose()
-                return
-            info = {'file_name': f'images/{href[1:]}'}
+        if info is None:  # no such <binary>: an image that would not load
+            tag.decompose()
+            return
         img = self.soup.new_tag('img')
         img['src'] = info['file_name']
         img['alt'] = tag.get('alt') or tag.get('title') or ''
@@ -586,51 +583,3 @@ def _adopt(soup: BeautifulSoup, roots: List[Tag]) -> List[Tag]:
     return adopted
 
 
-def _fb2_to_html(fb2_content: str, level: int = 1) -> str:
-    """
-    Convert an FB2 XML fragment to XHTML using a DOM parser (no regex on tags).
-
-    Maps FB2 semantics to HTML equivalents; titles directly under the fragment
-    root become <h{level}>, nested sections' titles get deeper levels.
-    """
-    soup, root = _xml_soup(fb2_content)
-    conv = _Converter(soup, {}, strict=False)
-    links: List[Tag] = []
-    conv._convert(root, level, links)
-    out: List[str] = []
-    for child in root.children:
-        _serialize(child, out)
-    return ''.join(out)
-
-
-def fb2_to_epub(fb2_path: str, output_path: str = None) -> str:
-    """
-    Convert an FB2 file to EPUB.
-
-    Args:
-        fb2_path: Path to FB2 file
-        output_path: Output path (without extension). If None, same as input.
-
-    Returns:
-        Path to created EPUB file
-    """
-    from src.fb2_handler import _read_file_with_encoding_fallback
-
-    if output_path is None:
-        output_path = fb2_path.rsplit('.', 1)[0]
-
-    content = _read_file_with_encoding_fallback(fb2_path)
-
-    start_body = content.find('<body')
-    end_body_tag = content.find('</body>')
-
-    if start_body == -1 or end_body_tag == -1:
-        raise ValueError("Invalid FB2 structure")
-
-    end_start_body = content.find('>', start_body) + 1
-
-    header = content[:start_body]
-    body = content[end_start_body:end_body_tag]
-    footer = content[end_body_tag + len('</body>'):]
-
-    return create_epub_from_fb2(header, body, footer, output_path)

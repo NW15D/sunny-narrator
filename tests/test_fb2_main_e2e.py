@@ -299,3 +299,9 @@ def test_book_without_a_cover_does_not_call_the_image_model(book, run_main, monk
     monkeypatch.setattr(app.ta, 'process_image_request', no_image_model)
     run_main(book, images_key='key')
     assert _outputs(book.parent, 'fb2')
+
+
+def test_unknown_arguments_are_reported(book, run_cli, capsys):
+    run_cli(book, '--pipeline', 'classic')
+    assert 'ignoring unknown arguments: --pipeline classic' in capsys.readouterr().out
+    assert _outputs(book.parent, 'fb2')

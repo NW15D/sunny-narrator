@@ -36,3 +36,14 @@ def test_config_accepts_all_pipeline_formats(monkeypatch):
         assert Config().output_format == fmt
     monkeypatch.setenv('OUTPUT_FORMAT', 'mobi')
     assert Config().output_format == 'fb2'
+
+
+def test_console_script_points_at_the_cli_not_at_main():
+    """`sunny-narrator` must route by file type and parse flags like `python app.py`."""
+    import tomllib
+    import app
+    with open(os.path.join(os.path.dirname(__file__), '..', 'pyproject.toml'), 'rb') as f:
+        target = tomllib.load(f)['project']['scripts']['sunny-narrator']
+    module, func = target.split(':')
+    assert (module, func) == ('app', 'cli')
+    assert callable(getattr(app, func))

@@ -8,8 +8,6 @@ Used by fb2_handler, epub_handler, txt_handler.
 import base64
 import binascii
 import re
-import os
-import tempfile
 from bs4 import BeautifulSoup
 from typing import Dict, Any, Optional, Tuple
 
@@ -58,36 +56,6 @@ def get_safe_xml_parser():
         huge_tree=False,
         recover=True,
     )
-
-
-def get_safe_bs4_features():
-    """Return bs4 features dict for XXE-safe XML parsing."""
-    return {'resolve_entities': False, 'no_network': True}
-
-
-def atomic_write(target_path: str, content: str, encoding: str = 'utf-8') -> None:
-    """Atomically write content to target_path using tmp+rename.
-
-    Writes to a temporary file in the same directory, then uses os.replace()
-    for an atomic rename. This prevents partial/corrupt files on crash.
-    """
-    target_dir = os.path.dirname(os.path.abspath(target_path))
-    fd = tempfile.NamedTemporaryFile(
-        mode='w', dir=target_dir, delete=False, suffix='.tmp', encoding=encoding
-    )
-    try:
-        fd.write(content)
-        fd.flush()
-        os.fsync(fd.fileno())
-        fd.close()
-        os.replace(fd.name, target_path)
-    except BaseException:
-        fd.close()
-        try:
-            os.unlink(fd.name)
-        except OSError:
-            pass
-        raise
 
 
 _AUTHOR_FIELD_ORDER = ['first-name', 'middle-name', 'last-name', 'nickname',

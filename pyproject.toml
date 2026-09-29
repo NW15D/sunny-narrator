@@ -75,4 +75,4 @@ addopts = "--ignore=tests/test_calibre_cleanup.py"
 include = ["src*"]
 
 [project.scripts]
-sunny-narrator = "app:main"
+sunny-narrator = "app:cli"

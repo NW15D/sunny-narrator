@@ -121,80 +121,6 @@ class DictionaryCreatedSignal(Exception):
         super().__init__(f"Dictionary created at {dict_path}. Review it, then re-run to start translation.")
 
 
-def validate_dictionary(dict_file: str) -> List[str]:
-    """
-    Validate CSV dictionary format.
-    
-    Expected format: source = target, category, gender, notes
-    Comment lines start with # and are ignored.
-    
-    Args:
-        dict_file: Path to .dic file
-        
-    Returns:
-        List of validation errors (empty if valid)
-    """
-    errors = []
-    
-    try:
-        if not os.path.exists(dict_file):
-            errors.append(f"Dictionary file not found: {dict_file}")
-            return errors
-        
-        with open(dict_file, 'r', encoding='utf-8-sig') as f:
-            lines = f.readlines()
-        
-        # Filter out comment lines and empty lines
-        entry_lines = []
-        for line_num, line in enumerate(lines, 1):
-            stripped = line.strip()
-            if stripped and not stripped.startswith('#'):
-                entry_lines.append((line_num, stripped))
-        
-        if not entry_lines:
-            errors.append("Dictionary file is empty (no entries found)")
-            return errors
-        
-        # CSV pattern: source = target, category, gender, notes
-        # At minimum: source = target
-        csv_pattern = re.compile(r'^[^=]+=\s*\S+')
-        
-        sources_seen = []
-        for line_num, line in entry_lines:
-            if not csv_pattern.match(line):
-                errors.append(f"Line {line_num}: does not match 'source = target' format: {line[:80]}")
-                continue
-
-            # Parse source for duplicate check
-            source = line.split('=', 1)[0].strip()
-
-            # Reject empty source/target after CSV parsing (consistent with loader)
-            rest = line.split('=', 1)[1].strip()
-            try:
-                row = next(csv.reader([rest]))
-                target = row[0].strip() if row else ""
-            except (StopIteration, csv.Error):
-                target = ""
-            if not source or not target:
-                errors.append(f"Line {line_num}: empty source or target: {line[:80]}")
-                continue
-
-            if source:
-                sources_seen.append(source.lower())
-        
-        # Check for duplicates
-        duplicates = set([s for s in sources_seen if sources_seen.count(s) > 1])
-        if duplicates:
-            errors.append(f"Duplicate source terms: {', '.join(duplicates)}")
-        
-    except FileNotFoundError:
-        errors.append(f"Dictionary file not found: {dict_file}")
-    except Exception as e:
-        errors.append(f"Unexpected error: {e}")
-    
-    return errors
-
-
 @dataclass
 class VocabEntry:
     """Single vocabulary entry."""
@@ -383,110 +309,7 @@ class VocabularyManager:
             # Create empty dictionary template
             self._create_template()
     
-    def _parse_and_save(self, vocab_text: str):
-        """Parse translated vocabulary and save to file."""
-        lines = vocab_text.strip().split('\n')
-        
-        content_lines = []
-        content_lines.append(f"# Vocabulary for {self.book_name}\n")
-        content_lines.append(f"# Format: source = target | category | gender | notes\n\n")
-        
-        for line in lines:
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
-            
-            # Parse "Source = Target" format
-            if '=' in line:
-                parts = line.split('=', 1)
-                source = parts[0].strip()
-                target = parts[1].strip()
-                
-                # Try to extract category from parentheses
-                category = ""
-                match = re.search(r'\(([^)]+)\)', source)
-                if match:
-                    category = match.group(1)
-                    source = re.sub(r'\s*\([^)]+\)', '', source).strip()
-                
-                # Build line with template for user editing
-                entry_line = f"{source} = {target}"
-                if category:
-                    entry_line += f" | {category}"
-                entry_line += " | | \n"  # gender | notes
-                content_lines.append(entry_line)
-                
-                # Add to memory
-                key = source.replace(' ', '_').lower()
-                self.vocab[key] = VocabEntry(
-                    source=source,
-                    target=target,
-                    category=category
-                )
-        
-        self._atomic_write(''.join(content_lines))
-        logger.info(f"Dictionary saved: {self.dict_file}")
     
-    def _parse_and_save_structured(self, vocab_text: str, extracted_terms: List[Tuple[str, str, str]]):
-        """
-        Parse translated vocabulary and save in JSON format.
-        
-        Args:
-            vocab_text: Translated terms from LLM (format: "source = target")
-            extracted_terms: Original extracted terms with categories [(term, category, notes), ...]
-        """
-        import json
-        
-        # Parse translated lines into source=target pairs
-        translations = {}
-        for line in vocab_text.strip().split('\n'):
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
-            
-            if '=' in line:
-                parts = line.split('=', 1)
-                source = parts[0].strip()
-                target = parts[1].strip()
-                translations[source.lower()] = target
-        
-        # Build vocabulary list
-        vocab_list = []
-        
-        for term, category, notes in extracted_terms:
-            term_lower = term.lower()
-            if term_lower in translations:
-                target = translations[term_lower]
-                entry = {
-                    "source": term,
-                    "target": target,
-                    "category": category if category in ['PERSON', 'LOC', 'ORG'] else 'TERM',
-                    "gender": "",
-                    "notes": notes
-                }
-                vocab_list.append(entry)
-                
-                # Add to memory
-                key = term.replace(' ', '_').lower()
-                self.vocab[key] = VocabEntry(
-                    source=term,
-                    target=target,
-                    category=entry["category"],
-                    gender="",
-                    notes=notes
-                )
-        
-        # Write dictionary in JSON format atomically
-        import io
-        buf = io.StringIO()
-        buf.write(f"# Vocabulary for {self.book_name}\n")
-        buf.write(f"# Format: JSON array of vocabulary entries\n")
-        buf.write(f"# Generated automatically by NER\n")
-        buf.write(f"# Please review and edit as needed\n\n")
-        json.dump(vocab_list, buf, indent=2, ensure_ascii=False)
-        self._atomic_write(buf.getvalue())
-        
-        logger.info(f"Dictionary saved: {self.dict_file} ({len(self.vocab)} entries)")
     
     def _parse_and_append_chunk(self, vocab_translated: str, chunk_num: int, total_chunks: int) -> int:
         """
@@ -504,7 +327,6 @@ class VocabularyManager:
             Number of entries parsed and written
         """
         import json
-        import re
         
         parsed = 0
         terms = []
@@ -968,114 +790,9 @@ class VocabularyManager:
         
         return "\n".join(lines)
     
-    def get_character_gender(self, name: str) -> str:
-        """Get character gender by name."""
-        key = name.replace(' ', '_').lower()
-        if key in self.characters:
-            return self.characters[key].gender
-        
-        # Try to find by alias
-        for char in self.characters.values():
-            if name.lower() in [a.lower() for a in char.aliases]:
-                return char.gender
-        
-        return ""
     
-    def update_character_mentions(self, name: str, section_idx: int, chunk_idx: int):
-        """Update character mention tracking."""
-        key = name.replace(' ', '_').lower()
-        if key in self.characters:
-            self.characters[key].mentions.append((section_idx, chunk_idx))
     
-    def get_series_vocab(self, previous_books: List[str]) -> Dict[str, VocabEntry]:
-        """
-        Load vocabulary from previous books in series.
-        
-        Args:
-            previous_books: List of paths to previous books' .dic files
-        
-        Returns:
-            Combined vocabulary from all books
-        """
-        series_vocab = {}
-        
-        for book_dic in previous_books:
-            if os.path.exists(book_dic):
-                book_vocab = self._load_from_file_with_path(book_dic)
-                for key, entry in book_vocab.items():
-                    if key not in series_vocab:
-                        entry.book_origin = Path(book_dic).stem
-                        series_vocab[key] = entry
-        
-        return series_vocab
     
-    def _load_from_file_with_path(self, file_path: str) -> Dict[str, VocabEntry]:
-        """Load vocabulary from specific file path using CSV format.
-        
-        Format: source = target, category, gender, notes
-        Fields separated by commas after the = sign.
-        """
-        import csv
-        
-        vocab = {}
-        
-        with open(file_path, 'r', encoding='utf-8-sig') as f:
-            # Skip comment lines
-            lines = []
-            for line in f:
-                stripped = line.strip()
-                if stripped and not stripped.startswith('#'):
-                    lines.append(stripped)
-            
-            if not lines:
-                return vocab
-            
-            for line_num, line in enumerate(lines, 1):
-                try:
-                    # Parse: source = target, category, gender, notes
-                    if '=' not in line:
-                        continue
-                    
-                    parts = line.split('=', 1)
-                    source = parts[0].strip()
-                    rest = parts[1].strip()
-                    
-                    if not source or not rest:
-                        continue
-                    
-                    # Parse comma-separated values: target, category, gender, notes
-                    csv_reader = csv.reader([rest])
-                    try:
-                        row = next(csv_reader)
-                    except StopIteration:
-                        continue
-                    
-                    if len(row) < 1:
-                        continue
-                    
-                    target = row[0].strip() if len(row) > 0 else ""
-                    category = row[1].strip() if len(row) > 1 else ""
-                    gender = row[2].strip() if len(row) > 2 else ""
-                    notes = row[3].strip() if len(row) > 3 else ""
-                    
-                    if not source or not target:
-                        continue
-                    
-                    # NO VALIDATION - allow any category and gender values (may be in any language)
-                    
-                    key = source.replace(' ', '_').lower()
-                    vocab[key] = VocabEntry(
-                        source=source,
-                        target=target,
-                        category=category,
-                        gender=gender,
-                        notes=notes
-                    )
-                    
-                except Exception as e:
-                    logger.warning(f"Error parsing line {line_num} in {file_path}: {e}")
-        
-        return vocab
 
 
 # Global manager instance (lazy initialization)

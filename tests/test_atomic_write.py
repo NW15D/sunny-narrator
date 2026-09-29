@@ -66,28 +66,6 @@ def test_vocab_atomic_write_success():
         assert content == new_content
 
 
-def test_parse_and_save_atomic():
-    """Verify _parse_and_save uses atomic write."""
-    from vocabulary_manager import VocabularyManager
-    
-    with tempfile.TemporaryDirectory() as tmpdir:
-        dict_file = os.path.join(tmpdir, 'test.dic')
-        
-        vm = VocabularyManager.__new__(VocabularyManager)
-        vm.dict_file = dict_file
-        vm.book_name = "Test Book"
-        vm.vocab = {}
-        
-        # Mock _atomic_write to verify it's called
-        with patch.object(vm, '_atomic_write') as mock_atomic:
-            vm._parse_and_save("Alice = Алиса (PERSON)")
-            mock_atomic.assert_called_once()
-            # Verify content passed to _atomic_write
-            content = mock_atomic.call_args[0][0]
-            assert "Alice = Алиса" in content
-            assert "# Vocabulary for Test Book" in content
-
-
 def test_create_template_atomic():
     """Verify _create_template uses atomic write."""
     from vocabulary_manager import VocabularyManager
@@ -110,6 +88,5 @@ def test_create_template_atomic():
 if __name__ == '__main__':
     test_vocab_atomic_write()
     test_vocab_atomic_write_success()
-    test_parse_and_save_atomic()
     test_create_template_atomic()
     print("All atomic write tests passed!")

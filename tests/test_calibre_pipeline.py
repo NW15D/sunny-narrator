@@ -152,29 +152,6 @@ Final text."""
     assert "Final text" in cleaned
 
 
-def test_split_into_chunks_short_text():
-    """Test chunk splitting for short text."""
-    from src.calibre_pipeline import _split_into_chunks
-    
-    text = "Short text"
-    chunks = _split_into_chunks(text, max_chunk_size=100)
-    
-    assert len(chunks) == 1
-    assert chunks[0] == "Short text"
-
-
-def test_split_into_chunks_long_text():
-    """Test chunk splitting for long text."""
-    from src.calibre_pipeline import _split_into_chunks
-    
-    # Create a long text that needs splitting
-    text = "Word " * 500  # ~2500 chars
-    chunks = _split_into_chunks(text, max_chunk_size=1000)
-    
-    # Should split into multiple chunks
-    assert len(chunks) >= 2
-
-
 def test_convert_to_markdown_not_installed():
     """Test convert_to_markdown raises FileNotFoundError when Calibre not installed."""
     from src.calibre_pipeline import convert_to_markdown
@@ -441,12 +418,11 @@ One day, a knight named Arthur came to visit the dragon."""
         return mock_state
     
     with patch('src.utils._pipeline.execute', side_effect=mock_execute):
-        with patch('src.calibre_pipeline.split_text_smartly', side_effect=lambda t: (t[:len(t)//2], t[len(t)//2:])):
-            result = translate_chunks(mock_markdown, max_chunk_size=150)
-            
-            assert call_count == 2
-            assert "Глава 1" in result
-            assert "дракон" in result
+        result = translate_chunks(mock_markdown, max_chunk_size=150)
+
+        assert call_count == 2
+        assert "Глава 1" in result
+        assert "дракон" in result
 
 
 def test_build_output_epub(tmp_path):
@@ -717,9 +693,7 @@ def test_translate_chunks_with_vocab_dict():
     mock_state.final_translation = "дракон рыцарь"
     mock_state.synopsis = "synopsis"
     
-    with patch('src.utils._pipeline.execute', return_value=mock_state) as mock_execute, \
-         patch('src.calibre_pipeline.split_text_smartly', return_value=("dragon knight", "")):
-        
+    with patch('src.utils._pipeline.execute', return_value=mock_state) as mock_execute:
         result = translate_chunks("dragon knight", vocab_dict=vocab)
         
         # Verify vocab_dict was passed to _pipeline.execute

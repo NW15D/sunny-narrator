@@ -64,7 +64,6 @@ S_PROMT_PROOFREAD=false   # false = раздельные сообщения
 |------------|----------|----------|
 | `S_PROMT_TRANSLATE` | Режим для Translate LLM | `true` / `false` |
 | `S_PROMT_PROOFREAD` | Режим для Proofread LLM | `true` / `false` |
-| `S_PROMT_IMAGES` | Режим для Image Generation | `true` / `false` |
 
 ---
 

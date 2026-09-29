@@ -143,39 +143,7 @@ class LLMLogger:
             # Don't let logging errors break the application
             logging.getLogger(__name__).error(f"Failed to write LLM log: {e}")
     
-    def get_today_log_path(self) -> Optional[Path]:
-        """Get path to today's log file."""
-        if not self.enabled:
-            return None
-        return self._get_log_file()
     
-    def get_recent_logs(self, days: int = 7) -> list:
-        """
-        Get list of recent log files.
-        
-        Args:
-            days: Number of days to look back
-            
-        Returns:
-            List of Path objects for log files
-        """
-        if not self.enabled or not self.log_dir.exists():
-            return []
-        
-        log_files = []
-        for file in self.log_dir.glob("llm_calls_*.log"):
-            try:
-                # Extract date from filename
-                date_str = file.stem.replace("llm_calls_", "")
-                file_date = datetime.strptime(date_str, "%Y-%m-%d")
-                
-                # Check if within requested range
-                if (datetime.now() - file_date).days <= days:
-                    log_files.append(file)
-            except ValueError:
-                continue
-        
-        return sorted(log_files, reverse=True)
 
 
 # Global logger instance
@@ -195,11 +163,6 @@ def init_llm_logger(log_dir: str = "logs", enabled: bool = True) -> LLMLogger:
     """
     global _llm_logger
     _llm_logger = LLMLogger(log_dir=log_dir, enabled=enabled)
-    return _llm_logger
-
-
-def get_llm_logger() -> Optional[LLMLogger]:
-    """Get global LLM logger instance."""
     return _llm_logger
 
 

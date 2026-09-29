@@ -31,7 +31,7 @@ def test_interrupt_resume_keeps_all_content(tmp_path, monkeypatch):
 
     # Run 1: translate first 2 chunks (section 0), then "crash"
     engine1 = TranslationEngine(tfile)
-    engine1.process_all_chunks(chunks[:2], [], {}, tfile, ckpt)
+    engine1.process_all_chunks(chunks[:2], {}, tfile, ckpt)
     assert os.path.exists(ckpt)
 
     # Run 2: fresh engine resumes exactly like app.py main() does
@@ -42,7 +42,7 @@ def test_interrupt_resume_keeps_all_content(tmp_path, monkeypatch):
 
     engine2 = TranslationEngine(tfile)
     engine2.restore_from_checkpoint(checkpoint)
-    new_content = engine2.process_all_chunks(chunks[resume_from_chunk:], [], {}, tfile, ckpt)
+    new_content = engine2.process_all_chunks(chunks[resume_from_chunk:], {}, tfile, ckpt)
     full = assemble_resume_content(new_content, resume_from_chunk, tfile)
 
     for s in range(2):

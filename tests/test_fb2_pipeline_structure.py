@@ -48,7 +48,7 @@ def _run(tmp_path, chunks, sections, meta, name='out', restore=None):
     engine = TranslationEngine(tfile)
     if restore:
         engine.restore_from_checkpoint(restore)
-    content = engine.process_all_chunks(chunks, sections, {}, tfile, ckpt, section_meta=meta)
+    content = engine.process_all_chunks(chunks, {}, tfile, ckpt, section_meta=meta)
     return engine, content, tfile, ckpt
 
 
@@ -82,7 +82,7 @@ def test_resume_from_every_possible_cut_gives_the_same_book(tmp_path):
         resume_from = checkpoint['last_chunk'] + 1
         engine2 = TranslationEngine(tfile)
         engine2.restore_from_checkpoint(checkpoint)
-        new = engine2.process_all_chunks(chunks[resume_from:], sections, {}, tfile, ckpt, section_meta=meta)
+        new = engine2.process_all_chunks(chunks[resume_from:], {}, tfile, ckpt, section_meta=meta)
         assert assemble_resume_content(new, resume_from, tfile) == full, f'cut after {cut} chunks'
 
 
@@ -98,7 +98,7 @@ def test_half_written_chunk_is_cut_off_on_resume(tmp_path):
 
     engine2 = TranslationEngine(tfile)
     engine2.restore_from_checkpoint(checkpoint)
-    new = engine2.process_all_chunks(chunks[5:], sections, {}, tfile, ckpt, section_meta=meta)
+    new = engine2.process_all_chunks(chunks[5:], {}, tfile, ckpt, section_meta=meta)
     assert assemble_resume_content(new, 5, tfile) == full
 
 
@@ -125,7 +125,7 @@ def test_without_section_meta_units_are_flat_sections(tmp_path):
               {'chunk': '<p>b</p>', 'section_idx': 0, 'chunk_idx': 1, 'global_id': 1},
               {'chunk': '<p>c</p>', 'section_idx': 1, 'chunk_idx': 0, 'global_id': 2}]
     tfile = str(tmp_path / 't.fb2')
-    content = TranslationEngine(tfile).process_all_chunks(chunks, [], {}, tfile)
+    content = TranslationEngine(tfile).process_all_chunks(chunks, {}, tfile)
     assert content == '<section>\n<p>a</p>\n<p>b</p>\n</section>\n<section>\n<p>c</p>\n</section>\n'
 
 
@@ -133,7 +133,7 @@ def test_trailing_units_without_text_are_still_emitted(tmp_path):
     meta = [{'open_tag': '<section id="a">', 'depth': 1}, {'open_tag': '<section id="e">', 'depth': 2}]
     chunks = [{'chunk': '<p>a</p>', 'section_idx': 0, 'chunk_idx': 0, 'global_id': 0}]
     tfile = str(tmp_path / 't.fb2')
-    content = TranslationEngine(tfile).process_all_chunks(chunks, [[ '<p>a</p>'], []], {}, tfile, section_meta=meta)
+    content = TranslationEngine(tfile).process_all_chunks(chunks, {}, tfile, section_meta=meta)
     assert content == '<section id="a">\n<p>a</p>\n<section id="e">\n</section>\n</section>\n'
 
 
@@ -189,12 +189,12 @@ def test_checkpoint_taken_mid_chunk_does_not_duplicate_text_on_resume(tmp_path):
 
     engine._append_tfile = append_then_signal
     with pytest.raises(Interrupted):
-        engine.process_all_chunks(chunks, sections, {}, tfile, None, section_meta=meta)
+        engine.process_all_chunks(chunks, {}, tfile, None, section_meta=meta)
 
     with open(ckpt, encoding='utf-8') as f:
         checkpoint = json.load(f)
     resume_from = checkpoint['last_chunk'] + 1
     engine2 = TranslationEngine(tfile)
     engine2.restore_from_checkpoint(checkpoint)
-    new = engine2.process_all_chunks(chunks[resume_from:], sections, {}, tfile, ckpt, section_meta=meta)
+    new = engine2.process_all_chunks(chunks[resume_from:], {}, tfile, ckpt, section_meta=meta)
     assert assemble_resume_content(new, resume_from, tfile) == full

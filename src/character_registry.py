@@ -74,10 +74,6 @@ class Character:
             parts.append(f"({self.gender})")
         return " ".join(parts)
     
-    def to_vocab_format(self) -> str:
-        """Format for vocabulary file (NEW comma-separated format)."""
-        metadata = [self.category, self.gender, self.notes]
-        return f"{self.name} = {self.target_name}, {', '.join(metadata)}"
 
 
 class CharacterRegistry:
@@ -118,40 +114,6 @@ class CharacterRegistry:
         for form in char.get_all_forms():
             self.name_index[form.lower()] = key
     
-    def load_from_vocab(self, vocab_entries: Dict, characters: Dict):
-        """
-        Load characters from VocabularyManager.
-        
-        Args:
-            vocab_entries: Dictionary of VocabEntry objects
-            characters: Dictionary of Character objects from VocabularyManager
-        """
-        for key, char in characters.items():
-            normalized_key = self._normalize_key(char.name)
-            
-            # Create or update character
-            if normalized_key not in self.characters:
-                self.characters[normalized_key] = Character(
-                    name=char.name,
-                    target_name=char.aliases[0] if char.aliases else "",
-                    gender=char.gender,
-                    category="PERSON"
-                )
-            else:
-                # Update gender from vocabulary (source of truth)
-                self.characters[normalized_key].gender = char.gender
-                if char.aliases:
-                    self.characters[normalized_key].target_name = char.aliases[0]
-            
-            # Index for lookup
-            self._index_character(self.characters[normalized_key])
-            
-            # Track gender stats
-            if char.gender:
-                self.gender_stats[char.gender] += 1
-        
-        if config.debug:
-            logger.debug(f"[CharacterRegistry] Loaded {len(self.characters)} characters from vocabulary")
     
     def add_character(self, name: str, target_name: str = "", gender: str = "", 
                       category: str = "PERSON", notes: str = "") -> Character:
@@ -190,23 +152,7 @@ class CharacterRegistry:
         
         return char
     
-    def get_character(self, name: str) -> Optional[Character]:
-        """Get character by name (any form)."""
-        # Try direct lookup
-        key = self._normalize_key(name)
-        if key in self.characters:
-            return self.characters[key]
-        
-        # Try via name index
-        if name.lower() in self.name_index:
-            return self.characters[self.name_index[name.lower()]]
-        
-        return None
     
-    def get_character_gender(self, name: str) -> str:
-        """Get gender for character (empty string if not found)."""
-        char = self.get_character(name)
-        return char.gender if char else ""
     
     def detect_mentions(self, text: str, section_idx: int, chunk_idx: int) -> List[Character]:
         """
@@ -298,69 +244,9 @@ class CharacterRegistry:
         char_strs = [c.to_synopsis_format() for c in chars]
         return f"Characters: {', '.join(char_strs)}"
     
-    def get_gender_for_pronoun(self, name: str, context_text: str = "") -> str:
-        """
-        Infer or get gender for pronoun resolution.
-        
-        1. Check registry (from vocabulary)
-        2. Try to infer from context (he/she/it nearby)
-        3. Return empty if unknown
-        """
-        # 1. Check registry
-        char = self.get_character(name)
-        if char and char.gender:
-            return char.gender
-        
-        # 2. Try to infer from context
-        if context_text:
-            return self._infer_gender_from_context(name, context_text)
-        
-        return ""
     
-    def _infer_gender_from_context(self, name: str, text: str) -> str:
-        """Infer gender by looking for pronouns near character mentions."""
-        text_lower = text.lower()
-        name_lower = name.lower()
-        
-        # Find sentences with character name
-        sentences = text_lower.split('.')
-        relevant = [s for s in sentences if name_lower in s]
-        
-        if not relevant:
-            return ""
-        
-        # Count pronouns in relevant sentences
-        pronouns = {"he": 0, "she": 0, "it": 0, "they": 0}
-        
-        for sent in relevant:
-            for pronoun in pronouns:
-                # Simple word-based check (could be improved with NER)
-                words = sent.split()
-                if pronoun in words:
-                    pronouns[pronoun] += 1
-        
-        # Return most frequent
-        if any(pronouns.values()):
-            return max(pronouns, key=pronouns.get)
-        
-        return ""
     
-    def get_stats(self) -> Dict:
-        """Get statistics about characters."""
-        return {
-            "total_characters": len(self.characters),
-            "with_gender": sum(1 for c in self.characters.values() if c.gender),
-            "gender_distribution": dict(self.gender_stats),
-            "most_mentioned": sorted(
-                [(c.name, c.get_mention_count()) for c in self.characters.values()],
-                key=lambda x: x[1],
-                reverse=True
-            )[:10]
-        }
     
-    def to_vocab_entries(self) -> List[str]:
-        """Export all characters as vocabulary entries."""
-        return [char.to_vocab_format() for char in self.characters.values()]
 
 
 # Global registry instance (lazy initialization)
