@@ -49,7 +49,7 @@ Implementation: `src/utils.py` — `validate_translation_length()`,
 | FB2/TXT, several blocks | between blocks (or stanzas), as close to the middle as possible — both halves stay well-formed |
 | FB2/TXT, one huge paragraph | at the sentence end nearest the middle, never inside `<emphasis>`/`<strong>`; the two translations are joined back into **one** paragraph |
 | FB2/TXT, one block that cannot be split (no sentence end, a table, ...) | not split; the translation is kept and a warning is logged |
-| Calibre (Markdown) | at the last `</p>` before 55% of the chunk; Markdown normally has none, so at 55% of its length (`split_text_smartly`) |
+| Calibre (Markdown) | nearest to the middle within the central half, preferring a paragraph break, then the end of a closing tag, a sentence end (incl. CJK `。！？`), a line break, a space between words; never inside a tag or a ``` code block. Only text with none of these is cut in the middle (`split_text_smartly`) |
 
 ### Per-book length calibration
 

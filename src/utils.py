@@ -1934,26 +1934,50 @@ def _detect_language_mismatch(text: str, expected_lang: str, source_text: str) -
     return False
 
 
+# Cut points for split_text_smartly, best first. Each pattern's match END is
+# the cut position, so the separator stays with the first half.
+_SPLIT_TIERS = (
+    re.compile(r'\n[ \t]*\n'),                                      # paragraph break
+    re.compile(r'</[A-Za-z][\w:-]*\s*>'),                            # end of a closing tag
+    re.compile(r'[.!?\u2026][\u00bb\u201d\u2019"\')\]]*\s+'           # sentence end ...
+               r'|[\u3002\uff01\uff1f][\u300d\u300f\u201d\uff09]*'),     # ... also CJK 。！？
+    re.compile(r'\n'),                                                # line break
+    re.compile(r'\s+'),                                               # between words
+)
+
+
 @log_entry
 def split_text_smartly(text: str) -> tuple:
     """
-    Split text roughly in half, respecting paragraph boundaries.
-    Used for rechunking when translation validation fails.
+    Split text roughly in half for rechunking (length validation failed).
+
+    The cut goes, in order of preference, after a paragraph break, after a
+    closing tag, after a sentence end (Latin/Cyrillic or CJK punctuation),
+    at a line break or between words — the candidate closest to the middle
+    within the central half of the text. Never inside a ``` code fence or
+    inside a tag. Falls back to the middle only for text without any of these
+    (e.g. one long CJK run without punctuation).
     """
     if not text:
         return "", ""
-    
+
     length = len(text)
-    mx = int((length // 2) * 1.1)
-    
-    # Try to find closing p tag
-    split_pos = text.rfind('</p>', 0, mx)
-    
-    if split_pos == -1:
-        split_pos = mx if mx < length else length // 2
-    else:
-        split_pos += 4  # Include the </p>
-    
+    low, high = length * 0.25, length * 0.75
+    fences = [m.start() for m in re.finditer(r'^[ \t]*```', text, re.MULTILINE)]
+    tags = [(m.start(), m.end()) for m in re.finditer(r'<[^<>]*>', text)]
+
+    def allowed(pos: int) -> bool:
+        if sum(1 for f in fences if f < pos) % 2:
+            return False  # inside a code fence
+        return not any(start < pos < end for start, end in tags)
+
+    for tier in _SPLIT_TIERS:
+        cuts = [m.end() for m in tier.finditer(text) if low <= m.end() <= high and allowed(m.end())]
+        if cuts:
+            split_pos = min(cuts, key=lambda c: abs(c - length / 2))
+            return text[:split_pos], text[split_pos:]
+
+    split_pos = length // 2
     return text[:split_pos], text[split_pos:]
 
 
