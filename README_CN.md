@@ -1,6 +1,6 @@
 # Sunny Narrator
 
-**版本:** 2.5  
+**版本:** 2.6  
 **基于术语表的 AI 书籍翻译器（AI book translator）**，支持 FB2/TXT/EPUB/DOCX/PDF —— 基于 LLM 的小说/文学翻译工具（fiction book translator），采用双 LLM 翻译系统与 5 阶段质量控制。
 
 🖥️ **命令行工具（CLI）** —— 无图形界面，需要一定的命令行使用经验。
@@ -39,7 +39,7 @@ flowchart LR
 2. **安装依赖** — `pip install -e .`（使用 `pyproject.toml`）；DOCX/EPUB/PDF 还需安装 `pandoc` 和 `calibre`
 3. **配置** — 从 `env.sample` 创建 `.env`，填写 API 密钥以及 `SOURCE_LANG`/`TARGET_LANG`
 4. **选择书籍** — `FILE=path/to/book.fb2`（或 `.txt`、`.epub`、`.docx`、`.pdf`）
-5. **创建词典** — `python app.py` 在书籍旁生成 `book.dic`（源语言的 spaCy 模型会自动下载）。FB2/TXT 在此停止以便检查词典；DOCX/EPUB/PDF 会直接继续翻译
+5. **创建词典** — `python app.py` 在书籍旁生成 `book.dic`（源语言的 spaCy 模型会自动下载）。运行在此停止以便检查词典（所有格式）
 6. **编辑词典** — 检查并清理 `book.dic`（删除错误、修正译名、标注性别）
 7. **翻译** — 再次运行 `python app.py`；结果保存在源文件旁，文件名中带有语言标记
 8. **阅读和校对** — 对译文进行最终检查
@@ -56,8 +56,7 @@ pip install -e .
 cp env.sample .env
 # 编辑 .env：API 密钥、SOURCE_LANG、TARGET_LANG
 
-# FB2/TXT：第一次运行生成词典，第二次运行开始翻译
-# DOCX/EPUB/PDF：一次运行完成词典和翻译
+# 任意格式：第一次运行生成词典，第二次运行开始翻译
 FILE=books/mybook.fb2 python app.py
 ```
 
@@ -129,8 +128,9 @@ OUTPUT_FORMAT=fb2
 Alice = Алиса, PERSON, she, 主角
 ```
 
-- 首次运行时通过 NER（命名实体 + 高频词）自动创建，然后由 LLM 翻译。
-- **角色性别**（`he`、`she`、`it`、`they`）：如果词典未注明性别，摘要阶段会根据文本判断并写入 `.dic`；词典中没有的角色会以 `名字 = 译名, PERSON, 性别` 追加到末尾。文件中已有的性别不会被覆盖——手动修改始终优先。
+- 首次运行时通过 NER（命名实体）自动创建，然后由 LLM 翻译。只有设置 `DICT_FREQUENT_WORDS=true`（或对 `--build-dict`/`--build-series-dict` 使用 `--frequent-words`）时才会加入高频普通词。
+- **角色性别**（`he`、`she`、`it`、`they`）：如果词典未注明性别，摘要阶段会根据文本判断并写入 `.dic`；词典中没有的角色会以 `名字 = 译名, PERSON, 性别` 追加到末尾——适用于所有格式，同一次运行中的后续分块会立即使用它们。文件中已有的性别不会被覆盖——手动修改始终优先。
+- **术语匹配：** 所有格式相同——只有在分块中找到的词典术语才会进入该分块的提示词。可以识别词形变化（`spidergun` → `spiderguns`，`wolf` → `wolves`），中文/日文/韩文术语按子串匹配，术语不会在其他单词内部被匹配（`Ann` / `Annoying`）。
 - **指定词典路径：** 默认在书籍旁查找词典（`books/MyBook.fb2` → `books/MyBook.dic`）。如需使用其他文件（例如系列共享词典），可在 `.env` 中设置 `DICTIONARY=path/to/file.dic`，或传入 `--dictionary path/to/file.dic`（命令行参数优先）。两个流程均支持；若文件不存在，将在该路径创建（目录必须已存在）。
 
 **格式指南：** [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md)
@@ -142,7 +142,8 @@ Alice = Алиса, PERSON, she, 主角
 可以借助词典将书籍从 CJK 语言直接翻译为任意语言：
 
 - **NER：** `ko_core_news_lg` 使用自己的 KLUE 标签体系（`PS`/`LC`/`OG`）——会被识别并统一为 `PERSON`/`LOC`/`ORG`。
-- **高频词：** 最小词长为 2 个字符而非 5 个（CJK 单词通常为 1-3 个字符）。
+- **词典匹配：** CJK 术语按子串查找——词与词之间没有空格，韩语助词与名词连写（`철수는`）。
+- **高频词**（仅在 `DICT_FREQUENT_WORDS=true` 时）：最小词长为 2 个字符而非 5 个（CJK 单词通常为 1-3 个字符）。
 - **长度检查：** 翻译为字母文字时，CJK 文本的字符数会增长 2-4 倍。预期比例从书籍本身学习——即已接受分块的中位数；前 3 个分块只检查严重失败（×0.25 … ×5）。
 
 ```bash
@@ -163,14 +164,15 @@ TARGET_LANG=russian
 python app.py --build-series-dict books/ --series-dict-output series.dic
 
 # 使用自定义阈值
-python app.py --build-series-dict books/ --series-dict-output series.dic --min-count-ner 3 --min-count-word 5
+python app.py --build-series-dict books/ --series-dict-output series.dic --min-count-ner 3 --frequent-words --min-count-word 5
 ```
 
 **参数：**
 - `--build-series-dict` — 包含 FB2/EPUB/TXT 书籍的文件夹
 - `--series-dict-output` — 输出词典文件（默认：`series.dic`）
 - `--min-count-ner` — NER 实体的最少出现次数（默认：2）
-- `--min-count-word` — 常用词的最少出现次数（默认：5）
+- `--frequent-words` — 除命名实体外，也加入高频普通词（默认关闭，`DICT_FREQUENT_WORDS`）
+- `--min-count-word` — 使用 `--frequent-words` 时常用词的最少出现次数（默认：5）
 
 单本书的词典可通过 `--build-dict path/to/book` 创建。
 
@@ -180,10 +182,10 @@ python app.py --build-series-dict books/ --series-dict-output series.dic --min-c
 3. 运行 NER 查找命名实体（PERSON、ORG、LOC、GPE、EVENT、FAC、PRODUCT）
 4. 汇总所有书籍的出现次数
 5. 按阈值过滤
-6. 通过 LLM 翻译术语
+6. 通过 proofread LLM 翻译术语
 7. 保存统一的 `.dic` 文件
 
-**输出：** 普通的 `.dic` 文件（`source = target, category, gender, notes`）。
+**输出：** 普通的 `.dic` 文件（`source = target, category, gender, notes`）。专有名词保留大写字母和全部单词（`John Smith`）。
 
 ---
 
@@ -249,6 +251,8 @@ Calibre 的内部标记（`calibre_link-*` 锚点、`.calibre` 类）会被自�
 > FB2 请使用**经典流程**（`.fb2` 和 `.txt` 的默认流程）：它直接处理 XML，
 > 保留书籍的全部结构。
 
+**FB2 → EPUB：** `FILE=books/mybook.fb2 python app.py --output-format epub`（或在 `.env` 中设置 `OUTPUT_FORMAT=epub`）。经典流程翻译 FB2 并直接由其生成 EPUB：嵌套目录、脚注、封面、图片、诗歌和题词。
+
 **完整指南：** [docs/INSTALLATION.md](docs/INSTALLATION.md#-calibre-pipeline-auto-detected)
 
 ---
@@ -288,20 +292,9 @@ Calibre 的内部标记（`calibre_link-*` 锚点、`.calibre` 类）会被自�
 
 ---
 
-## 📝 版本
+## 📝 更新日志
 
-- **v2.5** — 重写 FB2 流程：按章节树切分（嵌套章节，诗歌在诗节之间切分），在出错位置修复 LLM 标记，崩溃后可靠续传；通过 `--output-format epub` / `OUTPUT_FORMAT=epub` 实现 FB2 → EPUB（嵌套目录、脚注、封面、图片）；修复封面生成和 `sunny-narrator` 命令；`env.sample` 提供 Gemma 4 + Qwen 3.6 示例；删除未使用的选项（`CONCURRENT_LIMIT`、`COVER_PROMPT`、`S_PROMT_IMAGES`、`TEMP_IMAGES`、`SHORT`、`EXAMPLE`）；不再续传旧版本的检查点
-- **v2.4** — `DICTIONARY`（`.env`）/ `--dictionary`（命令行）：为两个流程指定 `.dic` 文件的路径
-- **v2.3** — README 更新：统一各语言版本内容、标注为无界面命令行工具、在所有语言版本中添加 Docker 镜像仓库链接、SEO 优化
-- **v2.2** — 判断角色性别并写回词典；按书自动校准译文长度检查；CJK（韩语、日语、中文）适配，支持从 CJK 直接翻译为任意语言
-- **v2.1** — 按文件扩展名自动选择流程（.docx/.epub/.pdf → Calibre；.fb2/.txt → 经典）；移除 `--pipeline` 参数
-- **v2.0** — 从 requirements.txt 迁移到 pyproject.toml；PyTorch CUDA 12.1 + cuPy
-- **v1.4** — 在 README 中添加通用工作流程图和分步说明
-- **v1.3** — 初始英文 README
-- **v1.11** — Checkpoint/resume, CPU Docker
-- **v1.10** — remove_tags 简化
-- **v1.9** — 5 阶段流程
-- **v1.0** — 初始版本
+版本历史：[CHANGELOG.md](CHANGELOG.md)
 
 ---
 

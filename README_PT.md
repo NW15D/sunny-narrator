@@ -1,6 +1,6 @@
 # Sunny Narrator
 
-**Versão:** 2.5  
+**Versão:** 2.6  
 **Tradutor de livros guiado por glossário (AI book translator)** para FB2/TXT/EPUB/DOCX/PDF — um tradutor de ficção baseado em LLM (LLM fiction book translator), com sistema de tradução em dois LLMs e controle de qualidade em 5 estágios.
 
 🖥️ **Utilitário de linha de comando (CLI)** — sem interface gráfica; recomenda-se experiência básica com terminal.
@@ -39,7 +39,7 @@ flowchart LR
 2. **Instalar dependências** — `pip install -e .` (usa `pyproject.toml`); para DOCX/EPUB/PDF instale também `pandoc` e `calibre`
 3. **Configurar** — crie `.env` a partir de `env.sample`, preencha as chaves de API e `SOURCE_LANG`/`TARGET_LANG`
 4. **Escolher o livro** — `FILE=path/to/book.fb2` (ou `.txt`, `.epub`, `.docx`, `.pdf`)
-5. **Criar o dicionário** — `python app.py` cria `book.dic` ao lado do livro (o modelo spaCy do idioma de origem é baixado automaticamente). Para FB2/TXT a execução para aqui para revisão; para DOCX/EPUB/PDF a tradução continua imediatamente
+5. **Criar o dicionário** — `python app.py` cria `book.dic` ao lado do livro (o modelo spaCy do idioma de origem é baixado automaticamente). A execução para aqui para revisão (todos os formatos)
 6. **Editar o dicionário** — revise e limpe `book.dic` (remova erros, corrija traduções, indique gêneros)
 7. **Traduzir** — execute `python app.py` novamente; o resultado é salvo ao lado do arquivo original, com um marcador de idioma no nome
 8. **Ler e revisar** — revisão final do livro traduzido
@@ -56,8 +56,7 @@ pip install -e .
 cp env.sample .env
 # Edite .env: chaves de API, SOURCE_LANG, TARGET_LANG
 
-# FB2/TXT: a primeira execução cria o dicionário, a segunda traduz
-# DOCX/EPUB/PDF: dicionário e tradução em uma execução
+# Qualquer formato: a primeira execução cria o dicionário, a segunda traduz
 FILE=books/mybook.fb2 python app.py
 ```
 
@@ -129,8 +128,9 @@ O arquivo de dicionário (`*.dic`) garante a consistência da terminologia:
 Alice = Алиса, PERSON, she, Personagem principal
 ```
 
-- Criado automaticamente na primeira execução via NER (entidades nomeadas + palavras frequentes) e depois traduzido pelo LLM.
-- **Gênero dos personagens** (`he`, `she`, `it`, `they`): se o dicionário não indica o gênero, o estágio de sinopse o determina pelo texto e grava no `.dic`; personagens ausentes do dicionário são adicionados ao final como `nome = tradução, PERSON, gênero`. Um gênero já presente no arquivo nunca é sobrescrito — edições manuais sempre prevalecem.
+- Criado automaticamente na primeira execução via NER (entidades nomeadas) e depois traduzido pelo LLM. Palavras comuns frequentes só são adicionadas com `DICT_FREQUENT_WORDS=true` (ou `--frequent-words` para `--build-dict`/`--build-series-dict`).
+- **Gênero dos personagens** (`he`, `she`, `it`, `they`): se o dicionário não indica o gênero, o estágio de sinopse o determina pelo texto e grava no `.dic`; personagens ausentes do dicionário são adicionados ao final como `nome = tradução, PERSON, gênero` — em todos os formatos, e os chunks seguintes da mesma execução já os usam. Um gênero já presente no arquivo nunca é sobrescrito — edições manuais sempre prevalecem.
+- **Busca de termos:** igual para todos os formatos — só os termos do dicionário encontrados num chunk entram no seu prompt. Formas flexionadas são encontradas (`spidergun` → `spiderguns`, `wolf` → `wolves`), termos em chinês/japonês/coreano são buscados como substrings, e um termo nunca é encontrado dentro de outra palavra (`Ann` / `Annoying`).
 - **Caminho explícito do dicionário:** por padrão o dicionário é procurado ao lado do livro (`books/MyBook.fb2` → `books/MyBook.dic`). Para usar outro arquivo, por exemplo um dicionário comum da série, defina `DICTIONARY=path/to/file.dic` no `.env` ou passe `--dictionary path/to/file.dic` (a flag da CLI tem prioridade). Funciona nos dois pipelines; um arquivo inexistente é criado nesse caminho (o diretório deve existir).
 
 **Guia de formato:** [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md)
@@ -142,7 +142,8 @@ Alice = Алиса, PERSON, she, Personagem principal
 Livros podem ser traduzidos diretamente de idiomas CJK para qualquer idioma, com dicionário:
 
 - **NER:** `ko_core_news_lg` usa seu próprio esquema de rótulos KLUE (`PS`/`LC`/`OG`) — ele é reconhecido e normalizado para `PERSON`/`LOC`/`ORG`.
-- **Palavras frequentes:** tamanho mínimo de palavra de 2 caracteres em vez de 5 (uma palavra CJK costuma ter 1-3 caracteres).
+- **Busca no dicionário:** termos CJK são encontrados como substrings — não há espaços entre as palavras, e as partículas coreanas são escritas junto ao substantivo (`철수는`).
+- **Palavras frequentes** (só com `DICT_FREQUENT_WORDS=true`): tamanho mínimo de palavra de 2 caracteres em vez de 5 (uma palavra CJK costuma ter 1-3 caracteres).
 - **Controle de tamanho:** traduzido para idiomas alfabéticos, um texto CJK cresce 2-4 vezes em caracteres. A proporção esperada é aprendida com o próprio livro — a mediana dos chunks aceitos; os 3 primeiros chunks são verificados apenas contra falhas grosseiras (×0,25 … ×5).
 
 ```bash
@@ -163,14 +164,15 @@ Crie um dicionário unificado para uma série de livros, garantindo terminologia
 python app.py --build-series-dict books/ --series-dict-output series.dic
 
 # Com limites personalizados
-python app.py --build-series-dict books/ --series-dict-output series.dic --min-count-ner 3 --min-count-word 5
+python app.py --build-series-dict books/ --series-dict-output series.dic --min-count-ner 3 --frequent-words --min-count-word 5
 ```
 
 **Parâmetros:**
 - `--build-series-dict` — pasta com livros FB2/EPUB/TXT
 - `--series-dict-output` — arquivo de dicionário de saída (padrão: `series.dic`)
 - `--min-count-ner` — ocorrências mínimas para entidades NER (padrão: 2)
-- `--min-count-word` — ocorrências mínimas para palavras comuns (padrão: 5)
+- `--frequent-words` — adicionar também palavras comuns frequentes, não só entidades nomeadas (padrão: desligado, `DICT_FREQUENT_WORDS`)
+- `--min-count-word` — ocorrências mínimas para palavras comuns com `--frequent-words` (padrão: 5)
 
 O dicionário de um único livro é criado com `--build-dict path/to/book`.
 
@@ -180,10 +182,10 @@ O dicionário de um único livro é criado com `--build-dict path/to/book`.
 3. Executar NER para encontrar entidades nomeadas (PERSON, ORG, LOC, GPE, EVENT, FAC, PRODUCT)
 4. Somar as contagens de todos os livros
 5. Filtrar pelos limites
-6. Traduzir os termos via LLM
+6. Traduzir os termos via LLM de revisão (proofread)
 7. Salvar um `.dic` unificado
 
-**Saída:** um arquivo `.dic` comum (`source = target, category, gender, notes`).
+**Saída:** um arquivo `.dic` comum (`source = target, category, gender, notes`). Nomes próprios mantêm as maiúsculas e todas as palavras (`John Smith`).
 
 ---
 
@@ -250,6 +252,8 @@ A marcação interna do Calibre (âncoras `calibre_link-*`, classes `.calibre`) 
 > (padrão para `.fb2` e `.txt`): ele manipula o XML diretamente e preserva
 > toda a estrutura do livro.
 
+**FB2 → EPUB:** `FILE=books/mybook.fb2 python app.py --output-format epub` (ou `OUTPUT_FORMAT=epub` no `.env`). O pipeline clássico traduz o FB2 e monta o EPUB diretamente a partir dele: sumário aninhado, notas, capa, imagens, poemas e epígrafes.
+
 **Guia completo:** [docs/INSTALLATION.md](docs/INSTALLATION.md#-calibre-pipeline-auto-detected)
 
 ---
@@ -289,20 +293,9 @@ O log do console mostra cada etapa da tradução: verificações de tamanho com 
 
 ---
 
-## 📝 Versões
+## 📝 Histórico de Mudanças
 
-- **v2.5** — Pipeline FB2 reformulado: os chunks seguem a árvore de seções (seções aninhadas, poemas divididos entre estrofes), a marcação do LLM é corrigida onde quebra, retomada segura após falhas; FB2 → EPUB via `--output-format epub` / `OUTPUT_FORMAT=epub` (sumário aninhado, notas, capa, imagens); geração de capa e o comando `sunny-narrator` corrigidos; `env.sample` com exemplos Gemma 4 + Qwen 3.6; opções não usadas removidas (`CONCURRENT_LIMIT`, `COVER_PROMPT`, `S_PROMT_IMAGES`, `TEMP_IMAGES`, `SHORT`, `EXAMPLE`); checkpoints de versões anteriores não são retomados
-- **v2.4** — `DICTIONARY` (`.env`) / `--dictionary` (CLI): caminho explícito do arquivo `.dic` para os dois pipelines
-- **v2.3** — Atualização do README: conteúdo unificado em todos os idiomas, nota sobre ferramenta CLI sem interface, links do registro Docker adicionados a todas as versões, melhorias de SEO
-- **v2.2** — Detecção do gênero dos personagens com gravação no dicionário; calibração do controle de tamanho da tradução por livro; adaptação para CJK (coreano, japonês, chinês) e tradução direta de CJK para qualquer idioma
-- **v2.1** — Detecção automática do pipeline pela extensão (.docx/.epub/.pdf → Calibre; .fb2/.txt → clássico); flag `--pipeline` removida
-- **v2.0** — Migração de requirements.txt para pyproject.toml; PyTorch CUDA 12.1 + cuPy
-- **v1.4** — Adicionado diagrama de workflow geral e instruções passo a passo ao README
-- **v1.3** — README em inglês inicial
-- **v1.11** — Checkpoint/resume, Docker CPU
-- **v1.10** — Simplificação remove_tags
-- **v1.9** — Pipeline de 5 estágios
-- **v1.0** — Lançamento inicial
+Histórico de versões: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 

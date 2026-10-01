@@ -9,7 +9,7 @@
 [![Last commit](https://img.shields.io/github/last-commit/NW15D/sunny-narrator)](https://github.com/NW15D/sunny-narrator/commits/main)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Version:** 2.5  
+**Version:** 2.6  
 **Glossary-Driven AI Book Translator** for FB2/TXT/EPUB/DOCX/PDF — an LLM-powered fiction book translator with dual-LLM translation and 5-stage quality control.
 
 🖥️ **Console app (CLI)** — no graphical interface; basic command-line experience is recommended.
@@ -139,6 +139,7 @@ Alice = Алиса, PERSON, she, Main character
 
 - Created automatically on the first run via NER (named entities), then translated by the LLM. Frequent ordinary words are added only with `DICT_FREQUENT_WORDS=true` (or `--frequent-words` for `--build-dict`/`--build-series-dict`).
 - **Character genders** (`he`, `she`, `it`, `they`): if the dictionary does not specify a gender, the synopsis stage determines it from the text and writes it into the `.dic`; characters missing from the dictionary are appended as `name = translation, PERSON, gender` — in every format, and the following chunks of the same run already use them. A gender already in the file is never overwritten, so manual edits always win.
+- **Term matching:** the same for every format — only the dictionary terms found in a chunk go into its prompt. Inflected forms are found (`spidergun` → `spiderguns`, `wolf` → `wolves`), Chinese/Japanese/Korean terms are matched as substrings, and a term never matches inside another word (`Ann` / `Annoying`).
 - **Explicit dictionary path:** by default the dictionary is looked up next to the book (`books/MyBook.fb2` → `books/MyBook.dic`). Set `DICTIONARY=path/to/file.dic` in `.env` or pass `--dictionary path/to/file.dic` (the CLI flag wins) to use another file, e.g. a shared series dictionary. Works in both pipelines; a missing file is created at that path (its directory must exist).
 
 **Format guide:** [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md)
@@ -150,7 +151,8 @@ Alice = Алиса, PERSON, she, Main character
 Books can be translated directly from CJK languages into any language, with a dictionary:
 
 - **NER:** `ko_core_news_lg` uses its own KLUE label scheme (`PS`/`LC`/`OG`) — it is recognized and normalized to `PERSON`/`LOC`/`ORG`.
-- **Frequent words:** minimum word length is 2 characters instead of 5 (a CJK word is usually 1-3 characters).
+- **Dictionary matching:** CJK terms are found as substrings — there are no spaces between words, and Korean particles are glued to nouns (`철수는`).
+- **Frequent words** (only with `DICT_FREQUENT_WORDS=true`): minimum word length is 2 characters instead of 5 (a CJK word is usually 1-3 characters).
 - **Length check:** a CJK text grows 2-4x in characters when translated into alphabetic languages. The expected ratio is learned from the book itself — the median of accepted chunks; the first 3 chunks are only checked for gross failures (×0.25 … ×5).
 
 ```bash
@@ -171,7 +173,7 @@ Create a unified dictionary for a series of books to ensure consistent terminolo
 python app.py --build-series-dict books/ --series-dict-output series.dic
 
 # With custom thresholds
-python app.py --build-series-dict books/ --series-dict-output series.dic --min-count-ner 3 --min-count-word 5
+python app.py --build-series-dict books/ --series-dict-output series.dic --min-count-ner 3 --frequent-words --min-count-word 5
 ```
 
 **Parameters:**
@@ -189,10 +191,10 @@ A dictionary for a single book can be built with `--build-dict path/to/book`.
 3. Run NER to find named entities (PERSON, ORG, LOC, GPE, EVENT, FAC, PRODUCT)
 4. Aggregate counts across all books
 5. Filter by threshold criteria
-6. Translate terms via LLM
+6. Translate terms via the proofread LLM
 7. Save unified `.dic` file
 
-**Output:** a regular `.dic` file (`source = target, category, gender, notes`).
+**Output:** a regular `.dic` file (`source = target, category, gender, notes`). Proper names keep their capitalization and all their words (`John Smith`).
 
 ---
 
@@ -300,20 +302,9 @@ The console log shows every step of the translation: length checks with the cali
 
 ---
 
-## 📝 Versions
+## 📝 Changelog
 
-- **v2.5** — Reworked FB2 pipeline: chunks follow the section tree (nested sections, poems split between stanzas), LLM markup is repaired where it breaks, crash-safe resume; FB2 → EPUB via `--output-format epub` / `OUTPUT_FORMAT=epub` (nested TOC, footnotes, cover, images); cover generation and the `sunny-narrator` command fixed; `env.sample` with Gemma 4 + Qwen 3.6 examples; unused options removed (`CONCURRENT_LIMIT`, `COVER_PROMPT`, `S_PROMT_IMAGES`, `TEMP_IMAGES`, `SHORT`, `EXAMPLE`); checkpoints from earlier versions are not resumed
-- **v2.4** — `DICTIONARY` (`.env`) / `--dictionary` (CLI): explicit path to the `.dic` file for both pipelines
-- **v2.3** — README overhaul: consolidated capabilities list, added CLI-only tool note, unified Docker registry links across all language versions, SEO improvements
-- **v2.2** — Character gender detection written back to the dictionary; per-book calibration of the translation length check; CJK adaptation (Korean, Japanese, Chinese) with direct translation from CJK into any language
-- **v2.1** — Auto-detect pipeline by file extension (.docx/.epub/.pdf → Calibre; .fb2/.txt → classic); removed `--pipeline` flag
-- **v2.0** — Migrated from pip requirements.txt to pyproject.toml; PyTorch CUDA 12.1 + cuPy
-- **v1.4** — Added general workflow diagram and step-by-step instructions to README
-- **v1.3** — Initial English README
-- **v1.11** — Checkpoint/resume, empty response fallback, CPU Docker
-- **v1.10** — remove_tags simplification, token stats fix
-- **v1.9** — 5-stage pipeline, stage-specific temperatures
-- **v1.0** — Initial release
+Release history: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
