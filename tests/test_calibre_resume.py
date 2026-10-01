@@ -39,6 +39,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import src.calibre_pipeline as cp
+import src.vocabulary_manager as vm
 from src.checkpoint_manager import CheckpointManager
 
 
@@ -47,7 +48,7 @@ def _install_mocks(monkeypatch, *, translate=None, build_output=None, validate_o
     dump/cleanup logic can be tested without real Calibre/pandoc/LLM calls."""
     monkeypatch.setattr(cp, 'convert_to_markdown',
                         lambda input_path: ("# Chapter\n\nSource text", {"title": "Book"}))
-    monkeypatch.setattr(cp, 'extract_dictionary_from_md', lambda *a, **kw: {})
+    monkeypatch.setattr(vm.VocabularyManager, 'initialize', lambda self, *a, **kw: {})
     # run_pipeline now translates title/author/etc. via translate_metadata
     # (see _translate_output_metadata) before dumping/building output. Stub
     # it out here too, same as the other three steps above, so these tests

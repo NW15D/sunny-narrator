@@ -583,6 +583,9 @@ def test_full_pipeline_integration(tmp_path):
         # (no global os.path.exists patch) — needs an actual file on disk.
         input_path = tmp_path / "book.epub"
         input_path.write_bytes(b"fake epub content")
+        # A reviewed dictionary already exists; a missing one would stop the
+        # run for review (DictionaryCreatedSignal) before translation.
+        (tmp_path / "book.dic").write_text("test = тест, TERM\n", encoding='utf-8')
 
         output = run_pipeline(
             input_path=str(input_path),
@@ -682,20 +685,28 @@ def test_pandoc_not_available():
                 assert "pypandoc" in str(e).lower()
 
 
-def test_translate_chunks_with_vocab_dict():
-    """Test translate_chunks with explicit vocabulary dictionary."""
+def test_translate_chunks_uses_book_dictionary(tmp_path, monkeypatch):
+    """translate_chunks matches the book's .dic per chunk via VocabularyManager
+    (same code as the classic pipeline), inflected forms included."""
     from src.calibre_pipeline import translate_chunks
-    
-    vocab = {"dragon": "дракон", "knight": "рыцарь"}
-    
-    # Mock _pipeline.execute to return a PipelineState-like object
+    import src.vocabulary_manager as vm
+
+    book = tmp_path / "book.epub"
+    book.write_bytes(b"fake")
+    (tmp_path / "book.dic").write_text(
+        "dragon = дракон, TERM\nknight = рыцарь, TERM\nelf = эльф, TERM\n", encoding='utf-8')
+    monkeypatch.setattr(vm, '_vocabulary_manager', None)
+    monkeypatch.setattr(vm.config, 'dictionary', None)
+    monkeypatch.setattr(vm.config, 'ner_opt', False)  # lexical matching only, no spaCy model
+    monkeypatch.setattr(vm.config, 'source_lang', 'english')
+
     mock_state = MagicMock()
-    mock_state.final_translation = "дракон рыцарь"
+    mock_state.final_translation = "драконы рыцарь"
     mock_state.synopsis = "synopsis"
-    
+
     with patch('src.utils._pipeline.execute', return_value=mock_state) as mock_execute:
-        result = translate_chunks("dragon knight", vocab_dict=vocab)
-        
-        # Verify vocab_dict was passed to _pipeline.execute
-        call_kwargs = mock_execute.call_args[1]
-        assert 'vocab_dict' in call_kwargs
+        translate_chunks("Dragons and a knight", book_path=str(book))
+
+    call_kwargs = mock_execute.call_args[1]
+    assert call_kwargs['vocab_dict'] == {"dragon": "дракон", "knight": "рыцарь"}
+    assert [e.source for e in call_kwargs['vocab_entries']] == ["dragon", "knight"]

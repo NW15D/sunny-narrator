@@ -29,6 +29,7 @@ from pathlib import Path
 
 from src.config import Config
 from src import ner as ner_module
+from src import lexicon
 from src.character_registry import get_character_registry, Character
 
 config = Config()
@@ -175,10 +176,14 @@ class VocabularyManager:
         self.characters: Dict[str, Character] = {}
         self.matched_terms_cache: Dict[Tuple[int, int], List[str]] = {}  # (s_idx, c_idx) -> terms
         
-    def initialize(self) -> Dict[str, VocabEntry]:
+    def initialize(self, source_text: Optional[str] = None) -> Dict[str, VocabEntry]:
         """
         Initialize vocabulary.
-        
+
+        Args:
+            source_text: Book text to build a missing dictionary from. When
+                None, the text is parsed from book_path (FB2/EPUB/TXT).
+
         Returns:
             Vocabulary dictionary
             
@@ -187,12 +192,10 @@ class VocabularyManager:
         """
         if os.path.exists(self.dict_file):
             logger.info(f"Loading vocabulary from {self.dict_file}")
-            self.vocab = self._load_from_file()
-            self._extract_characters()
-            return self.vocab
+            return self.load()
         else:
             logger.info(f"Dictionary not found. Creating: {self.dict_file}")
-            self._create_dictionary()
+            self.build_dictionary(source_text)
             # Check if auto-continue is enabled
             if getattr(config, 'auto_continue_after_dict', False):
                 logger.info("Auto-continue enabled, proceeding without manual review")
@@ -200,7 +203,26 @@ class VocabularyManager:
             else:
                 # Signal that dictionary was created and needs review
                 raise DictionaryCreatedSignal(self.dict_file)
-    
+
+    def load(self) -> Dict[str, VocabEntry]:
+        """Load the .dic file if it exists (empty vocabulary otherwise)."""
+        self.vocab = self._load_from_file() if os.path.exists(self.dict_file) else {}
+        self.matched_terms_cache.clear()
+        self._extract_characters()
+        return self.vocab
+
+    def build_dictionary(self, source_text: Optional[str] = None,
+                         min_count_ner: int = 5, min_count_word: int = 10,
+                         include_words: Optional[bool] = None):
+        """Create the .dic file from the book text with NER + LLM.
+
+        source_text: text to extract terms from (the Calibre pipeline passes
+        its Markdown); None parses book_path.
+        include_words: also add frequent ordinary words, not only named
+        entities. None = DICT_FREQUENT_WORDS (off by default).
+        """
+        self._create_dictionary(source_text, min_count_ner, min_count_word, include_words)
+
     def _atomic_write(self, content: str):
         """Write content to dict_file atomically (write to temp, then rename)."""
         dir_path = os.path.dirname(self.dict_file)
@@ -213,26 +235,30 @@ class VocabularyManager:
             os.unlink(tmp_path)
             raise
 
-    def _create_dictionary(self):
+    def _create_dictionary(self, source_text: Optional[str] = None,
+                           min_count_ner: int = 5, min_count_word: int = 10,
+                           include_words: Optional[bool] = None):
         """
         Create dictionary from book using NER.
         
         Workflow:
-        1. Parse book to extract text
+        1. Parse book to extract text (unless source_text is given)
         2. Run NER to find named entities and common words
         3. Translate terms using LLM
         4. Save to .dic file in standard format
         """
-        # Parse book to get text
-        from src import fb2_handler, epub_handler, txt_handler
-        
-        ext = Path(self.book_path).suffix.lower()
-        if ext == '.fb2':
-            body, header, footer = fb2_handler.parse_xml(self.book_path)
-        elif ext == '.epub':
-            body, header, footer = epub_handler.parse_epub(self.book_path)
+        if source_text is not None:
+            body = source_text
         else:
-            body, header, footer = txt_handler.parse_txt(self.book_path)
+            from src import fb2_handler, epub_handler, txt_handler
+
+            ext = Path(self.book_path).suffix.lower()
+            if ext == '.fb2':
+                body, header, footer = fb2_handler.parse_xml(self.book_path)
+            elif ext == '.epub':
+                body, header, footer = epub_handler.parse_epub(self.book_path)
+            else:
+                body, header, footer = txt_handler.parse_txt(self.book_path)
         
         # Run NER to extract entities
         if config.ner_opt and ner_module:
@@ -241,8 +267,9 @@ class VocabularyManager:
             # Use new structured dictionary creation
             extracted_terms = ner_module.create_dictionary_from_text(
                 body,
-                min_count_ner=5,          # Entities with >= 5 occurrences
-                min_count_word=10,        # Words with >= 10 occurrences
+                min_count_ner=min_count_ner,
+                min_count_word=min_count_word,
+                include_words=include_words,
                 min_word_length=min_word_length_for(config.source_lang)
             )
             
@@ -603,21 +630,28 @@ class VocabularyManager:
             logger.debug(f"[VocabularyManager] Extracted {len(self.characters)} characters, synced with registry")
 
     def record_character_genders(self, characters: List[Dict[str, str]]):
-        """Persist synopsis-reported genders to the .dic and reload it."""
+        """Grow the dictionary while the book is translated (every format).
+
+        Characters reported by the synopsis stage are written to the .dic
+        (gender filled in, unknown characters appended) and the in-memory
+        index is reloaded, so the following chunks already get them in the
+        prompt and the next run starts with them.
+        """
         if not characters or not os.path.exists(self.dict_file):
             return
         updated, added = apply_character_genders(self.dict_file, characters)
         if updated or added:
             logger.info(f"Dictionary {self.dict_file}: gender set for {updated}, added {added} character(s)")
-            self.vocab = self._load_from_file()
-            self._extract_characters()
+            self.load()
 
     def get_vocab_for_chunk(self, chunk_text: str, s_idx: int, c_idx: int) -> List[VocabEntry]:
         """
         Get vocabulary entries relevant to this chunk.
         
-        Uses cosine similarity matching to find terms present in chunk.
-        Automatically selects GPU or CPU mode based on availability.
+        Same matching for every input format (classic and Calibre pipelines):
+        lexical match incl. inflected forms (lexicon.find_terms), plus cosine
+        similarity of word vectors when NER/spaCy is enabled. GPU or CPU mode
+        is selected by availability.
         
         Args:
             chunk_text: Text to search for vocabulary terms
@@ -633,67 +667,34 @@ class VocabularyManager:
             matched_keys = self.matched_terms_cache[cache_key]
             return [self.vocab[k] for k in matched_keys if k in self.vocab]
         
+        key_by_source = {(entry.source or key.replace('_', ' ')): key for key, entry in self.vocab.items()}
+
         if not config.ner_opt or not ner_module:
-            if config.debug:
-                logger.debug(f"get_vocab_for_chunk: NER disabled, using text matching (ner_opt={config.ner_opt}, ner_module={ner_module is not None})")
-            # Fallback: simple text matching — find vocab terms present in chunk
-            chunk_lower = chunk_text.lower()
-            entries = []
-            matched_keys = []
-            for key, entry in self.vocab.items():
-                # Match by source term (with spaces instead of underscores)
-                source_lower = entry.source.lower() if entry.source else key.replace('_', ' ')
-                if source_lower in chunk_lower:
-                    entries.append(entry)
-                    matched_keys.append(key)
-            # Cache results
-            self.matched_terms_cache[cache_key] = matched_keys
-            if config.debug:
-                logger.debug(f"Chunk {s_idx}-{c_idx} (text match): {len(entries)}/{len(self.vocab)} vocab terms matched")
-            return entries
-        
-        # Check if GPU is available and select appropriate function
-        use_gpu = False
-        try:
-            import torch
-            use_gpu = torch.cuda.is_available()
-        except ImportError:
-            use_gpu = False
-        
-        # Select matching function based on GPU availability
-        if use_gpu:
-            # GPU-accelerated version (faster)
-            matched = ner_module.find_matching_words_with_cosine_similarity(
-                chunk_text, 
-                self._vocab_to_ner_format(), 
-                config.source_lang
-            )
+            # No spaCy: lexical match only (surface forms + Snowball stems,
+            # substring for CJK) — see lexicon.find_terms
+            matched = lexicon.find_terms(chunk_text, key_by_source, config.source_lang)
+            mode = "lexical"
         else:
-            # CPU-only version (slower but works everywhere)
-            matched = ner_module.find_matching_words_with_cosine_similarity_cpu(
-                chunk_text, 
-                self._vocab_to_ner_format(), 
-                config.source_lang
-            )
-        
-        # Convert to VocabEntry list
-        entries = []
-        matched_keys = []
-        
-        for term in matched:
-            key = term.replace(' ', '_').lower()
-            if key in self.vocab:
-                entries.append(self.vocab[key])
-                matched_keys.append(key)
-        
-        # Cache results
-        self.matched_terms_cache[cache_key] = matched_keys
-        
-        if config.debug:
+            # cupy is optional even on a CUDA machine (extra [gpu])
+            use_gpu = getattr(ner_module, 'CUPY_AVAILABLE', False)
+            if use_gpu:
+                try:
+                    import torch
+                    use_gpu = torch.cuda.is_available()
+                except ImportError:
+                    use_gpu = False
+            match_fn = (ner_module.find_matching_words_with_cosine_similarity if use_gpu
+                        else ner_module.find_matching_words_with_cosine_similarity_cpu)
+            matched = match_fn(chunk_text, self._vocab_to_ner_format(), config.source_lang)
             mode = "GPU" if use_gpu else "CPU"
-            logger.debug(f"Chunk {s_idx}-{c_idx} ({mode}): {len(entries)} vocab terms matched")
-        
-        return entries
+
+        matched_keys = [key_by_source[term] for term in matched if term in key_by_source]
+        self.matched_terms_cache[cache_key] = matched_keys
+
+        if config.debug:
+            logger.debug(f"Chunk {s_idx}-{c_idx} ({mode}): {len(matched_keys)}/{len(self.vocab)} vocab terms matched")
+
+        return [self.vocab[k] for k in matched_keys]
     
     def _vocab_to_ner_format(self) -> Dict:
         """Convert vocab to format expected by NER module."""

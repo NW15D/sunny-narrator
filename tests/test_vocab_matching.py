@@ -74,7 +74,7 @@ def test_no_match_for_missing_terms():
         "rabbit": {"en": "Rabbit"}
     }
     
-    text = "Alice went to a strange place. No rabbits here."
+    text = "Alice went to a strange place. No dogs here."
     
     # Use CPU version to avoid CUDA issues in test environment
     matched = find_matching_words_with_cosine_similarity_cpu(text, vocab, "en", threshold=0.8)
@@ -83,8 +83,24 @@ def test_no_match_for_missing_terms():
     assert "Alice" in matched
     # Wonderland NOT in text -> no match
     assert "Wonderland" not in matched
-    # Rabbit NOT in text (only "rabbits" with 's') -> no match
+    # Rabbit NOT in text -> no match
     assert "Rabbit" not in matched
+
+
+def test_inflected_forms_match():
+    """Plural/inflected forms in the chunk match the dictionary base form."""
+    vocab = {"spidergun": {"en": "spidergun"}, "rabbit": {"en": "Rabbit"}}
+    text = "Two spiderguns fired at the rabbits."
+    matched = find_matching_words_with_cosine_similarity_cpu(text, vocab, "en", threshold=0.8)
+    assert "spidergun" in matched
+    assert "Rabbit" in matched
+
+
+def test_no_match_inside_other_words():
+    """A short term must not match as a substring of an unrelated word."""
+    vocab = {"ann": {"en": "Ann"}}
+    matched = find_matching_words_with_cosine_similarity_cpu("Annoying noise.", vocab, "en", threshold=0.99)
+    assert "Ann" not in matched
 
 
 def test_format_standard_no_trailing_commas():

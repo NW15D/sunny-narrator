@@ -81,7 +81,7 @@ class Config:
 
         # DICTIONARY: explicit path to the .dic vocabulary file to use for
         # translation, overriding the automatic <book_name>.dic lookup next
-        # to the source file (VocabularyManager, calibre_pipeline._load_vocab_dict).
+        # to the source file (VocabularyManager — used by both pipelines).
         # Empty/unset keeps the default auto-detection. Also settable per run
         # via --dictionary (see app.py argparse block).
         self.dictionary = os.getenv('DICTIONARY', '') or None
@@ -118,6 +118,11 @@ class Config:
         
         # NER: on unless NER=false
         self.ner_opt = os.getenv('NER', 'True').lower() in ['true', '1', 't']
+        # DICT_FREQUENT_WORDS: also put frequent ordinary words (not named
+        # entities) into a new dictionary. Off by default: they flood the .dic
+        # with translations of common vocabulary and pin the LLM to one
+        # context-free translation of every such word.
+        self.dict_frequent_words = os.getenv('DICT_FREQUENT_WORDS', 'false').lower() in ['true', '1', 't', 'on', 'yes']
         self.country = os.getenv('COUNTRY', 'Россия')
         
         # Determine default model from mapping if not specified in ENV

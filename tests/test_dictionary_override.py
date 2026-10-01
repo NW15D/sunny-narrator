@@ -68,18 +68,23 @@ def test_classic_main_creates_dictionary_at_explicit_path(tmp_path, monkeypatch)
 
     monkeypatch.setattr(app.config, 'myfile', str(book))
     monkeypatch.setattr(app.config, 'dictionary', str(explicit))
-    monkeypatch.setattr(app.config, 'ner_opt', True)
+    monkeypatch.setattr(vm.config, 'dictionary', str(explicit))
+    monkeypatch.setattr(vm.config, 'ner_opt', True)
+    monkeypatch.setattr(vm.config, 'auto_continue_after_dict', False, raising=False)
+    monkeypatch.setattr(vm, '_vocabulary_manager', None)
     fake_ner = MagicMock()
-    fake_ner.make_vocab.return_value = "Alice [PERSON]\nBob [PERSON]"
-    monkeypatch.setattr(app, 'ner', fake_ner)
-    monkeypatch.setattr(app.ta, 'vocabulary',
-                        lambda *a, **kw: "Alice = Алиса\nBob = Боб")
+    fake_ner.create_dictionary_from_text.return_value = [("Alice", "PERSON", ""), ("Bob", "PERSON", "")]
+    monkeypatch.setattr(vm, 'ner_module', fake_ner)
+    monkeypatch.setattr('src.utils.vocabulary',
+                        lambda *a, **kw: '[{"source": "Alice", "target": "Алиса", "category": "PERSON"},'
+                                         ' {"source": "Bob", "target": "Боб", "category": "PERSON"}]')
 
     with pytest.raises(SystemExit) as exc:
         app.main()
 
     assert exc.value.code == 0  # "review and restart"
     assert explicit.exists(), "dictionary must be created at DICTIONARY path"
+    assert "Alice = Алиса" in explicit.read_text(encoding='utf-8')
     assert not (tmp_path / "book.dic").exists(), "auto path must stay untouched"
 
 
@@ -87,11 +92,21 @@ def test_classic_main_creates_dictionary_at_explicit_path(tmp_path, monkeypatch)
 # Calibre pipeline: Step 2, metadata glossary and translate_chunks
 # ---------------------------------------------------------------------------
 
-def _install_calibre_mocks(monkeypatch, extracted):
+def _install_calibre_mocks(monkeypatch, built_dic=None):
+    """Stub out conversion/LLM/Calibre steps. built_dic: .dic content that
+    VocabularyManager.build_dictionary writes (None = never expected to run)."""
+    monkeypatch.setattr(vm, '_vocabulary_manager', None)
     monkeypatch.setattr(cp, 'convert_to_markdown',
                         lambda input_path: ("# Chapter\n\nAlice text", {"title": "Alice"}))
-    extract_mock = MagicMock(return_value=extracted)
-    monkeypatch.setattr(cp, 'extract_dictionary_from_md', extract_mock)
+
+    def _build(self, source_text=None, **kw):
+        assert source_text == "# Chapter\n\nAlice text", "dictionary must be built from the Markdown"
+        with open(self.dict_file, 'w', encoding='utf-8') as f:
+            f.write(built_dic or "")
+
+    build_mock = MagicMock(side_effect=_build)
+    monkeypatch.setattr(vm.VocabularyManager, 'build_dictionary',
+                        lambda self, *a, **kw: build_mock(self, *a, **kw))
     metadata_mock = MagicMock()
     monkeypatch.setattr(cp, '_translate_output_metadata', metadata_mock)
     translate_mock = MagicMock(return_value="# Глава\n\nТекст про Алису")
@@ -107,27 +122,48 @@ def _install_calibre_mocks(monkeypatch, extracted):
     report = MagicMock(is_valid=True, issues=[])
     report.summary.return_value = "ok"
     monkeypatch.setattr(cp, 'validate_output', lambda *a, **kw: report)
-    return extract_mock, metadata_mock, translate_mock
+    return build_mock, metadata_mock, translate_mock
 
 
 def test_calibre_builds_missing_dictionary_at_explicit_path(tmp_path, monkeypatch):
+    """A missing dictionary is built at dict_file and the run stops for review
+    before translation — same as the classic pipeline."""
     book = tmp_path / "book.epub"
     book.write_bytes(b"fake")
     explicit = tmp_path / "shared.dic"
-    extracted = {"Alice": {"target": "Алиса", "category": "PERSON", "gender": "f", "notes": ""}}
-    extract_mock, metadata_mock, translate_mock = _install_calibre_mocks(monkeypatch, extracted)
-    monkeypatch.setattr(cp, 'save_dictionary',
-                        lambda d, path: open(path, 'w', encoding='utf-8').write("Alice = Алиса, PERSON, f,\n"))
+    build_mock, metadata_mock, translate_mock = _install_calibre_mocks(
+        monkeypatch, built_dic="Alice = Алиса, PERSON, f,\n")
+    monkeypatch.setattr(vm.config, 'auto_continue_after_dict', False, raising=False)
 
-    cp.run_pipeline(str(book), output_format="epub", target_lang="russian",
-                    skip_validation=True, dict_file=str(explicit))
+    with pytest.raises(vm.DictionaryCreatedSignal) as exc:
+        cp.run_pipeline(str(book), output_format="epub", target_lang="russian",
+                        skip_validation=True, dict_file=str(explicit))
 
-    assert extract_mock.call_count == 1
+    assert exc.value.dict_path == str(explicit)
+    assert build_mock.call_count == 1
     assert explicit.exists(), "Step 2 must write the dictionary to dict_file"
     assert not (tmp_path / "book.dic").exists()
-    assert translate_mock.call_args.kwargs['dict_file'] == str(explicit)
-    metadata_vocab = metadata_mock.call_args.args[4]
-    assert [e['source'] for e in metadata_vocab] == ["Alice"]
+    translate_mock.assert_not_called()
+    metadata_mock.assert_not_called()
+
+
+def test_cli_exits_cleanly_after_calibre_dictionary_creation(tmp_path, monkeypatch):
+    import app
+
+    book = tmp_path / "book.epub"
+    book.write_bytes(b"fake")
+    monkeypatch.setattr(app.config, 'myfile', str(book))
+    monkeypatch.setattr(app.config, 'output_format', 'epub')
+    monkeypatch.setattr(sys, 'argv', ['app.py'])
+    monkeypatch.setattr(cp, 'check_calibre_installed', lambda: True)
+
+    def _stop(**kw):
+        raise vm.DictionaryCreatedSignal(str(tmp_path / "book.dic"))
+    monkeypatch.setattr(cp, 'run_pipeline', _stop)
+
+    with pytest.raises(SystemExit) as exc:
+        app.cli()
+    assert exc.value.code == 0
 
 
 def test_calibre_skips_build_when_explicit_dictionary_exists(tmp_path, monkeypatch):
@@ -135,15 +171,15 @@ def test_calibre_skips_build_when_explicit_dictionary_exists(tmp_path, monkeypat
     book.write_bytes(b"fake")
     explicit = tmp_path / "shared.dic"
     explicit.write_text("Alice = Алиса, PERSON, f,\n", encoding='utf-8')
-    extract_mock, metadata_mock, _ = _install_calibre_mocks(monkeypatch, {})
+    build_mock, metadata_mock, _ = _install_calibre_mocks(monkeypatch)
 
     cp.run_pipeline(str(book), output_format="epub", target_lang="russian",
                     skip_validation=True, dict_file=str(explicit))
 
-    extract_mock.assert_not_called()
+    build_mock.assert_not_called()
     assert not (tmp_path / "book.dic").exists()
     metadata_vocab = metadata_mock.call_args.args[4]
-    assert [e['source'] for e in metadata_vocab] == ["Alice"]
+    assert [e.source for e in metadata_vocab] == ["Alice"]
 
 
 def test_calibre_uses_config_dictionary_by_default(tmp_path, monkeypatch):
@@ -151,7 +187,7 @@ def test_calibre_uses_config_dictionary_by_default(tmp_path, monkeypatch):
     book.write_bytes(b"fake")
     explicit = tmp_path / "env.dic"
     explicit.write_text("Alice = Алиса, PERSON, f,\n", encoding='utf-8')
-    _, _, translate_mock = _install_calibre_mocks(monkeypatch, {})
+    _, _, translate_mock = _install_calibre_mocks(monkeypatch)
     monkeypatch.setattr(cp.config, 'dictionary', str(explicit))
 
     cp.run_pipeline(str(book), output_format="epub", target_lang="russian",

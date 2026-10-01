@@ -18,7 +18,6 @@ import base64
 import logging
 import json
 from datetime import datetime
-from pathlib import Path
 from typing import Dict, List
 
 # Suppress FutureWarning from transformers/torch interaction.
@@ -37,7 +36,7 @@ import src.txt_handler as txt
 from src.config import Config
 from src.synopsis_manager import SynopsisManager
 from src.llm_logger import init_llm_logger
-from src.vocabulary_manager import get_vocabulary_manager, DictionaryCreatedSignal
+from src.vocabulary_manager import get_vocabulary_manager, DictionaryCreatedSignal, VocabularyManager
 from src.character_registry import get_character_registry, reset_character_registry
 from src.epub_writer import create_epub_from_fb2
 from src.xml_utils import IMAGE_EXTENSIONS, sniff_image_type
@@ -62,16 +61,6 @@ logger = logging.getLogger(__name__)
 if config.llm_logging_enabled:
     init_llm_logger(log_dir=config.llm_logging_dir, enabled=True)
     logger.info(f"LLM logging enabled. Logs will be written to: {config.llm_logging_dir}/")
-
-# Conditional import of NER module
-ner = None
-if config.ner_opt:
-    try:
-        import src.ner as ner_module
-        ner = ner_module
-    except ImportError as e:
-        logger.warning(f"NER module not available: {e}")
-
 
 # =============================================================================
 # Translation Engine
@@ -602,192 +591,6 @@ class TranslationEngine:
 # Utility Functions
 # =============================================================================
 
-def load_vocab_from_file(file_path: str) -> dict:
-    """Load vocabulary from .dic file."""
-    vocab = {}
-    with open(file_path, 'r', encoding='utf-8') as f:
-        for line in f:
-            line = line.strip()
-            if line and '=' in line and not line.startswith('#'):
-                # Format: source = target, category, gender, notes
-                parts = line.split('=', 1)
-                source = parts[0].strip()
-                rest = parts[1].strip()
-
-                # Parse comma-separated values: target, category, gender, notes
-                csv_parts = [p.strip() for p in rest.split(',')]
-                target = csv_parts[0] if len(csv_parts) > 0 else ''
-                category = csv_parts[1] if len(csv_parts) > 1 else ''
-                gender = csv_parts[2] if len(csv_parts) > 2 else ''
-                notes = csv_parts[3] if len(csv_parts) > 3 else ''
-
-                key = source.replace(' ', '_')
-                if key not in vocab:
-                    vocab[key] = {}
-                vocab[key][config.source_lang] = source
-                vocab[key][config.target_lang] = target
-                if category:
-                    vocab[key]['category'] = category
-                if gender:
-                    vocab[key]['gender'] = gender
-                if notes:
-                    vocab[key]['notes'] = notes
-    return vocab
-
-
-def _save_vocabulary_formatted(translated_text: str, dict_file: str, original_terms: str):
-    """
-    Save vocabulary in proper format according to docs/DICTIONARY_FORMAT.md
-
-    Format: source = target, category, gender, notes
-
-    Args:
-        translated_text: Translated terms from LLM (JSON or CSV format)
-        dict_file: Output file path
-        original_terms: Original NER output with categories
-    """
-    import json
-    import re
-    
-    # Parse original terms to extract categories
-    original_categories = {}
-    for line in original_terms.strip().split('\n'):
-        line = line.strip()
-        if not line:
-            continue
-
-        # Extract term and category from NER output
-        # Format: "Term [CATEGORY]" or "Term"
-        match = re.match(r'^(.+?)\s*\[([^\]]+)\]$', line)
-        if match:
-            term = match.group(1).strip().lower()
-            category = match.group(2).strip()
-            original_categories[term] = category
-        else:
-            # Common word without category - mark as empty
-            original_categories[line.lower()] = ''
-
-    # Robust JSON parsing with multiple strategies
-    translations = {}
-    categories_from_llm = {}
-
-    # Strategy 1: Full JSON object/array parsing
-    try:
-        data = json.loads(translated_text.strip())
-        if isinstance(data, dict) and 'terms' in data:
-            terms = data['terms']
-        elif isinstance(data, list):
-            terms = data
-        else:
-            raise ValueError("Invalid JSON structure")
-            
-        for term in terms:
-            if isinstance(term, dict):
-                source = term.get('source', '').strip()
-                target = term.get('target', '').strip()
-                category = term.get('category', '').strip()
-                if source and target:
-                    translations[source.lower()] = (source, target)
-                    if category:
-                        categories_from_llm[source.lower()] = category
-        print(f"Parsed {len(translations)} terms from JSON")
-    except (json.JSONDecodeError, ValueError, AttributeError):
-        # Strategy 2: Extract JSON array from response
-        array_match = re.search(r'\[.*\]', translated_text.strip(), re.DOTALL)
-        if array_match:
-            try:
-                terms = json.loads(array_match.group(0))
-                for term in terms:
-                    if isinstance(term, dict):
-                        source = term.get('source', '').strip()
-                        target = term.get('target', '').strip()
-                        category = term.get('category', '').strip()
-                        if source and target:
-                            translations[source.lower()] = (source, target)
-                            if category:
-                                categories_from_llm[source.lower()] = category
-                print(f"Parsed {len(translations)} terms from JSON array")
-            except (json.JSONDecodeError, AttributeError):
-                pass
-        
-        # Strategy 3: Extract individual JSON objects
-        if not translations:
-            term_pattern = r'\{\s*"source"\s*:\s*"([^"]*)"\s*,\s*"target"\s*:\s*"([^"]*)"(?:\s*,\s*"category"\s*:\s*"([^"]*)")?[^}]*\}'
-            matches = re.findall(term_pattern, translated_text, re.DOTALL)
-            for match in matches:
-                source = match[0].strip()
-                target = match[1].strip()
-                category = match[2].strip() if len(match) > 2 else ''
-                if source and target:
-                    translations[source.lower()] = (source, target)
-                    if category:
-                        categories_from_llm[source.lower()] = category
-            print(f"Parsed {len(translations)} terms from individual JSON objects")
-        
-        # Strategy 4: Fallback to line-based parsing
-        if not translations:
-            for line in translated_text.strip().split('\n'):
-                line = line.strip()
-                if not line or line.startswith('#'):
-                    continue
-
-                if '=' in line:
-                    parts = line.split('=', 1)
-                    source = parts[0].strip()
-                    target = parts[1].strip()
-                    # Extract target before any comma
-                    target_clean = target.split(',')[0].strip()
-                    translations[source.lower()] = (source, target_clean)
-            print(f"Parsed {len(translations)} terms from line-based fallback")
-
-    # Group by category (prefer LLM category, fallback to NER)
-    categories = {'PERSON': [], 'LOC': [], 'ORG': [], 'TERM': [], 'OTHER': []}
-
-    for term_key, (source, target) in translations.items():
-        # First try LLM-provided category
-        cat = categories_from_llm.get(term_key, '')
-
-        # Fallback to NER category if LLM didn't provide
-        if not cat:
-            cat = original_categories.get(term_key, '')
-            # Map NER categories to our format
-            if cat in ['PERSON', 'LOC', 'ORG']:
-                pass  # Keep as is
-            elif cat in ['GPE', 'GPE/LOC']:
-                cat = 'LOC'  # Map GPE to LOC
-            elif cat == 'TERM':
-                pass  # Keep as TERM
-            else:
-                cat = 'OTHER' if cat else 'TERM'  # Default to TERM if empty
-
-        # First guard ('OTHER'/'TERM') handles empty or unrecognized NER tags.
-        # Second guard catches any non-standard category string (e.g. free-form
-        # output from LLM) that is not a key in the categories dict. Both are needed.
-        if cat not in categories:
-            cat = 'OTHER'
-        categories[cat].append((source, target, cat))
-
-    # Write dictionary in proper format with commas
-    with open(dict_file, 'w', encoding='utf-8') as f:
-        f.write(f"# Vocabulary for {Path(dict_file).stem}\n")
-        f.write(f"# Format: source = target, category, gender, notes\n")
-        f.write(f"# Generated automatically by NER\n")
-        f.write(f"# Please review and edit as needed\n\n")
-
-        for cat_name in ['PERSON', 'LOC', 'ORG', 'TERM', 'OTHER']:
-            entries = categories[cat_name]
-            if not entries:
-                continue
-
-            f.write(f"# {cat_name} ({len(entries)} terms)\n")
-            for source, target, cat in entries:
-                # Format: source = target, category, gender, notes
-                # Empty gender and notes by default
-                f.write(f"{source} = {target}, {cat}, , \n")
-
-    logger.info(f"Dictionary saved: {dict_file} ({len(translations)} entries)")
-
-
 def write_to_file(data, output_file: str, auto_repair_fb2: bool = False,
                   known_errors: list = None):
     """Write data to file.
@@ -888,9 +691,6 @@ def main():
     # Prepare paths
     file_name, file_ext = os.path.splitext(os.path.basename(myfile))
     output_dir = os.path.dirname(myfile) or '.'
-    # DICTIONARY/--dictionary overrides the auto <book_name>.dic next to the book
-    dict_file = config.dictionary or f"{output_dir}/{file_name}.dic"
-
     if file_ext.lower() not in ['.fb2', '.txt']:
         print(f"Error: Unsupported format: {file_ext}")
         sys.exit(1)  # H8: error path must exit non-zero
@@ -910,37 +710,9 @@ def main():
     else:
         body, header, footer = txt.parse_txt(myfile)
 
-    # 2. Vocabulary Management
+    # 2. Vocabulary: created/loaded below by engine.vocab_manager.initialize()
+    # (VocabularyManager — the same code path as the Calibre pipeline).
     vocab = {}
-    if config.ner_opt and ner:
-        if not os.path.exists(dict_file):
-            print("Generating vocabulary...")
-            vb = ner.make_vocab(body)
-
-            # Check if NER returned any terms
-            if not vb or not vb.strip():
-                print("Warning: NER did not extract any terms. Creating empty dictionary.")
-                # Create empty dictionary template
-                with open(dict_file, 'w', encoding='utf-8') as f:
-                    f.write(f"# Vocabulary for {file_name}\n")
-                    f.write(f"# Format: source = target | category | gender | notes\n")
-                    f.write(f"# No terms extracted by NER - please add terms manually\n\n")
-                print(f"Empty dictionary created: {dict_file}")
-                print("Please edit the dictionary and restart.")
-                sys.exit(0)
-
-            # Translate vocabulary using proofread LLM with proper prompts
-            print(f"Translating {len(vb.strip().split(chr(10)))} terms using proofread LLM...")
-            vocab_raw = ta.vocabulary(config.source_lang, config.target_lang, vb, config.country, "proofread")
-
-            # Parse and save in proper format
-            _save_vocabulary_formatted(vocab_raw, dict_file, vb)
-
-            print(f"Vocabulary created: {dict_file}")
-            print("Please review and restart.")
-            sys.exit(0)
-        else:
-            vocab = load_vocab_from_file(dict_file)
 
     # 3. Prepare Chunks
     print("Preparing chunks...")
@@ -1153,7 +925,10 @@ def cli():
     parser.add_argument('--min-count-ner', type=int, default=2,
                        help='Minimum occurrences for NER entities')
     parser.add_argument('--min-count-word', type=int, default=5,
-                       help='Minimum occurrences for common words')
+                       help='Minimum occurrences for common words (only with --frequent-words)')
+    parser.add_argument('--frequent-words', action='store_true',
+                       help='--build-dict/--build-series-dict: also add frequent ordinary words, '
+                            'not only named entities (default: DICT_FREQUENT_WORDS, off)')
     parser.add_argument('--output-format', type=str, default=None,
                        help='Output format. FB2/TXT input: fb2 or epub; DOCX/EPUB/PDF input: '
                             'docx, epub or pdf (default: OUTPUT_FORMAT from config)')
@@ -1211,7 +986,8 @@ def cli():
                 books_folder, 
                 output_file,
                 min_count_ner=args.min_count_ner,
-                min_count_word=args.min_count_word
+                min_count_word=args.min_count_word,
+                include_words=args.frequent_words or None,
             )
             print(f"Done: {result}")
         except Exception as e:
@@ -1223,7 +999,6 @@ def cli():
 
     # Handle single book dictionary build
     if args.build_dict:
-        from src.ner import make_vocab
         book_path = args.build_dict
         if not os.path.exists(book_path):
             print(f"Error: Book file not found: {book_path}")
@@ -1250,38 +1025,11 @@ def cli():
             # DOCX/PDF are Calibre-pipeline formats with no body parser here
             print(f"Error: --build-dict does not support {file_ext}. Use FB2, EPUB or TXT.")
             sys.exit(1)
-        # Generate unverified NER terms first
-        vb = make_vocab(body, min_count_ner=args.min_count_ner, min_count_word=args.min_count_word)
-        # Write initial untranslated dictionary
-        with open(dict_path, 'w', encoding='utf-8') as f:
-            f.write(f"# Vocabulary for {os.path.basename(dict_path)}\n")
-            f.write("# Format: source = target, category, gender, notes\n")
-            # Write NER terms as initial entries
-            for term in vb.strip().split('\n'):
-                if term.strip():
-                    f.write(f"{term}\n")
-            # Add format metadata
-            f.write("# Format: source = target, category, gender, notes\n")
-
-        # Now translate and update dictionary
-        num_terms = len(vb.strip().splitlines())
-        print(f"Translating {num_terms} terms using proofread LLM...")
-        # Get translation results
-        vocab_raw = ta.vocabulary(config.source_lang, config.target_lang, vb, config.country, "proofread")
-        # Update dictionary with translations
-        updated_lines = []
-        for line in vocab_raw.split('\n'):
-            if line.strip() and '=' in line:
-                source, _, rest = line.partition('=')
-                target, *extra = rest.strip().split(',')
-                translated_target = target.strip()  # Already translated by LLM
-                updated_lines.append(f"{source} = {translated_target}\n")
-            else:
-                updated_lines.append(line)
-        # Write updated dictionary
-        with open(dict_path, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(updated_lines))
-        print(f"Dictionary updated with translations: {dict_path}")
+        # Same builder as a translation run (NER + LLM, VocabularyManager)
+        VocabularyManager(book_path, dict_file=dict_path).build_dictionary(
+            body, min_count_ner=args.min_count_ner, min_count_word=args.min_count_word,
+            include_words=args.frequent_words or None)
+        print(f"Dictionary created: {dict_path}")
         sys.exit(0)
     
     # Auto-detect pipeline by input file extension (format sets defined above)
@@ -1349,6 +1097,10 @@ def cli():
                 elapsed=elapsed,
                 output_path=output_path,
             )
+        except DictionaryCreatedSignal as e:
+            # Same as the classic pipeline: stop so the new .dic can be reviewed
+            print(f"\n📖 {e}")
+            sys.exit(0)
         except Exception as e:
             print(f"\n✗ Pipeline failed: {e}")
             import traceback

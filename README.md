@@ -48,7 +48,7 @@ flowchart LR
 2. **Install dependencies** — `pip install -e .` (uses `pyproject.toml`); for DOCX/EPUB/PDF also install `pandoc` and `calibre`
 3. **Configure** — create `.env` from `env.sample`, fill in API keys and `SOURCE_LANG`/`TARGET_LANG`
 4. **Choose the book** — set `FILE=path/to/book.fb2` (or `.txt`, `.epub`, `.docx`, `.pdf`)
-5. **Build the dictionary** — `python app.py` creates `book.dic` next to the book (the spaCy model for the source language is downloaded automatically). For FB2/TXT the run stops here for review; for DOCX/EPUB/PDF translation continues right away
+5. **Build the dictionary** — `python app.py` creates `book.dic` next to the book (the spaCy model for the source language is downloaded automatically). The run stops here so you can review it (all formats)
 6. **Edit dictionary** — review and clean up `book.dic` (remove errors, fix translations, set genders)
 7. **Translate** — run `python app.py` again; the result is written next to the source file with a language marker in its name
 8. **Read & proofread** — final review of the translated book
@@ -65,8 +65,7 @@ pip install -e .
 cp env.sample .env
 # Edit .env: API keys, SOURCE_LANG, TARGET_LANG
 
-# FB2/TXT: the first run builds the dictionary, the second one translates
-# DOCX/EPUB/PDF: dictionary and translation in one run
+# Any format: the first run builds the dictionary, the second one translates
 FILE=books/mybook.fb2 python app.py
 ```
 
@@ -138,8 +137,8 @@ Dictionary file (`*.dic`) ensures terminology consistency:
 Alice = Алиса, PERSON, she, Main character
 ```
 
-- Created automatically on the first run via NER (named entities + frequent words), then translated by the LLM.
-- **Character genders** (`he`, `she`, `it`, `they`): if the dictionary does not specify a gender, the synopsis stage determines it from the text and writes it into the `.dic`; characters missing from the dictionary are appended as `name = translation, PERSON, gender`. A gender already in the file is never overwritten, so manual edits always win.
+- Created automatically on the first run via NER (named entities), then translated by the LLM. Frequent ordinary words are added only with `DICT_FREQUENT_WORDS=true` (or `--frequent-words` for `--build-dict`/`--build-series-dict`).
+- **Character genders** (`he`, `she`, `it`, `they`): if the dictionary does not specify a gender, the synopsis stage determines it from the text and writes it into the `.dic`; characters missing from the dictionary are appended as `name = translation, PERSON, gender` — in every format, and the following chunks of the same run already use them. A gender already in the file is never overwritten, so manual edits always win.
 - **Explicit dictionary path:** by default the dictionary is looked up next to the book (`books/MyBook.fb2` → `books/MyBook.dic`). Set `DICTIONARY=path/to/file.dic` in `.env` or pass `--dictionary path/to/file.dic` (the CLI flag wins) to use another file, e.g. a shared series dictionary. Works in both pipelines; a missing file is created at that path (its directory must exist).
 
 **Format guide:** [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md)
@@ -179,7 +178,8 @@ python app.py --build-series-dict books/ --series-dict-output series.dic --min-c
 - `--build-series-dict` — Path to folder containing FB2/EPUB/TXT books
 - `--series-dict-output` — Output dictionary file (default: `series.dic`)
 - `--min-count-ner` — Minimum occurrences for NER entities (default: 2)
-- `--min-count-word` — Minimum occurrences for common words (default: 5)
+- `--frequent-words` — Also add frequent ordinary words, not only named entities (default: off, `DICT_FREQUENT_WORDS`)
+- `--min-count-word` — Minimum occurrences for common words with `--frequent-words` (default: 5)
 
 A dictionary for a single book can be built with `--build-dict path/to/book`.
 

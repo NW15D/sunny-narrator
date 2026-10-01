@@ -1,6 +1,7 @@
 from collections import Counter
 import logging
 import re
+from typing import Optional
 import spacy
 import spacy.cli
 import torch
@@ -14,6 +15,7 @@ except ImportError:
     CUPY_AVAILABLE = False
 
 from src.config import Config
+from src import lexicon
 
 logger = logging.getLogger(__name__)
 
@@ -72,13 +74,15 @@ def load_spacy_model(model_name):
             print(f"Model {model_name} downloaded. Loading...")
         return spacy.load(model_name)
 
-def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_word_length=5):
+def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_word_length=5,
+               include_words=None):
     """
     Extract named entities and common words from text using NER.
 
     This function:
     1. Finds named entities (PERSON, LOC, ORG, GPE) with count >= min_count_ner
-    2. Finds common words with count >= min_count_word and length >= min_word_length
+    2. Only with include_words: finds common words with count >= min_count_word
+       and length >= min_word_length
     3. Excludes stop words and XML tags
     4. Merges overlapping entities (keeps longest)
 
@@ -88,6 +92,8 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
         min_count_ner: Minimum occurrences for NER entities (default: 5)
         min_count_word: Minimum occurrences for common words (default: 10)
         min_word_length: Minimum word length for common words (default: 5)
+        include_words: Add frequent ordinary words besides named entities.
+            None = DICT_FREQUENT_WORDS (off by default).
 
     Returns:
         String with extracted terms (one per line), or None on error
@@ -98,6 +104,9 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
     """
     import gc
 
+    if include_words is None:
+        include_words = config.dict_frequent_words
+
     if config.debug:
         print("Starting Named Entity Recognition")
     if not text:
@@ -105,67 +114,11 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
             print("No text to process.")
         return
 
-    # Try to load NLTK stopwords (top ~200 words), fallback to manual list
-    # NLTK stopwords are high-frequency words that are usually not meaningful for vocabulary
-    default_stop_words = set()
-
-    try:
-        import nltk
-        try:
-            from nltk.corpus import stopwords
-            nltk.data.find('corpora/stopwords')
-        except LookupError:
-            nltk.download('stopwords', quiet=True)
-        default_stop_words = set(stopwords.words('english'))
-        if config.debug:
-            print(f"Loaded {len(default_stop_words)} NLTK stopwords")
-    except ImportError:
-        if config.debug:
-            print("NLTK not available, using manual stopwords list")
-        # Fallback manual list (NLTK english stopwords)
-        default_stop_words = set([
-            "i", "me", "my", "myself", "we", "our", "ours", "ourselves", "you", "your",
-            "yours", "yourself", "yourselves", "he", "him", "his", "himself", "she", "her",
-            "hers", "herself", "it", "its", "itself", "they", "them", "their", "theirs",
-            "themselves", "what", "which", "who", "whom", "this", "that", "these", "those",
-            "am", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
-            "having", "do", "does", "did", "doing", "a", "an", "the", "and", "but", "if",
-            "or", "because", "as", "until", "while", "of", "at", "by", "for", "with",
-            "about", "against", "between", "into", "through", "during", "before", "after",
-            "above", "below", "to", "from", "up", "down", "in", "out", "on", "off", "over",
-            "under", "again", "further", "then", "once", "here", "there", "when", "where",
-            "why", "how", "all", "any", "both", "each", "few", "more", "most", "other",
-            "some", "such", "no", "nor", "not", "only", "own", "same", "so", "than", "too",
-            "very", "s", "t", "can", "will", "just", "don", "should", "now",
-            # Additional common words from books
-            "d", "ll", "m", "re", "ve", "said", "would", "could", "upon", "must", "might",
-            "yet", "thing", "things", "way", "ways", "like", "even", "also", "back", "still",
-            "much", "get", "got", "go", "went", "come", "came", "see", "saw", "know", "knew",
-            "think", "thought", "want", "wanted", "take", "took", "give", "gave", "make", "made",
-            "first", "second", "one", "two", "time", "times", "new", "old", "great", "little",
-            # Book/format specific
-            "chapter", "part", "book", "volume", "section", "page", "p", "title", "author",
-            # Common verbs to filter
-            "said", "ask", "asked", "say", "tell", "told", "look", "looked", "seem", "seemed",
-            "feel", "felt", "leave", "left", "call", "called", "turn", "turned", "get", "got",
-            "inside", "emphasis",
-        ])
-
-    # Add custom stopwords that are common in books but not in NLTK list
-    custom_stop_words = {
-        "p", "section", "chapter", "part", "book", "volume", "title", "author", "name",
-        "emphasis", "inside", "asked", "would", "could", "shall", "may", "might", "must",
-        "every", "any", "another", "such", "however", "though", "although", "because",
-        "therefore", "since", "without", "within", "around", "toward", "towards", "upon",
-        "ever", "never", "always", "often", "sometimes", "usually", "again", "already",
-        "yet", "still", "perhaps", "maybe", "certainly", "exactly", "especially",
-    }
-    default_stop_words.update(custom_stop_words)
-
     if stop_words is None:
-        stop_words = default_stop_words
+        # NLTK + spaCy lists for the source language (see lexicon.get_stop_words)
+        stop_words = lexicon.get_stop_words(config.source_lang)
         if config.debug:
-            print(f"Using {len(stop_words)} total stopwords (NLTK + custom)")
+            print(f"Using {len(stop_words)} stopwords for {config.source_lang}")
     else:
         stop_words = set(stop_words)
 
@@ -250,9 +203,10 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
             print(f"Unique entities after merging: {len(final_merged_ents)}")
 
         # Find most common words with count > min_count_word and length >= min_word_length
-        # Sample first 5 chunks for word counting to save memory
+        # Sample first 5 chunks for word counting to save memory.
+        # Skipped unless frequent words are requested (DICT_FREQUENT_WORDS).
         word_counts = Counter()
-        for chunk in text_chunks[:5]:  # Sample first 5 chunks for word counting
+        for chunk in (text_chunks[:5] if include_words else []):
             try:
                 doc = nlp(chunk, disable=["ner", "parser", "lemmatizer", "attribute_ruler"])
 
@@ -359,7 +313,8 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
     return '\n'.join(result_list) + '\n'
 
 
-def create_dictionary_from_text(text, stop_words=None, min_count_ner=5, min_count_word=10, min_word_length=5):
+def create_dictionary_from_text(text, stop_words=None, min_count_ner=5, min_count_word=10, min_word_length=5,
+                                include_words=None):
     """
     Create dictionary from text using NER.
 
@@ -371,6 +326,7 @@ def create_dictionary_from_text(text, stop_words=None, min_count_ner=5, min_coun
         min_count_ner: Minimum occurrences for NER entities
         min_count_word: Minimum occurrences for common words
         min_word_length: Minimum word length for common words
+        include_words: Add frequent ordinary words (None = DICT_FREQUENT_WORDS, off by default)
 
     Returns:
         List of tuples: [(source_term, category, notes), ...]
@@ -381,7 +337,8 @@ def create_dictionary_from_text(text, stop_words=None, min_count_ner=5, min_coun
         return []
 
     # Use make_vocab to get extracted terms
-    extracted = make_vocab(text, stop_words, min_count_ner, min_count_word, min_word_length)
+    extracted = make_vocab(text, stop_words, min_count_ner, min_count_word, min_word_length,
+                           include_words=include_words)
 
     if not extracted:
         return []
@@ -427,16 +384,93 @@ def _get_phrase_vector(phrase, nlp):
     return vec
 
 
+def _lemma_map(doc):
+    """{normalized surface form: {normalized lemma, ...}} of a spaCy doc.
+
+    Feeds lexicon.find_terms, so an inflected form in the chunk ("spiderguns",
+    "паукопушками") matches the dictionary's base form. Empty when the
+    pipeline has no lemmatizer.
+    """
+    lemmas = {}
+    for token in doc:
+        lemma = token.lemma_
+        if not lemma or token.is_punct or token.is_space:
+            continue
+        surface, lemma = lexicon.normalize(token.text), lexicon.normalize(lemma)
+        if lemma != surface:
+            lemmas.setdefault(surface, set()).add(lemma)
+    return lemmas
+
+
+def _match_vocab_terms(text, vocab, lng, threshold, batch_size, xp):
+    """
+    Two-stage matching shared by the GPU (xp=cupy) and CPU (xp=numpy) entry points.
+
+    1. LEXICAL: lexicon.find_terms — word-sequence match on surface forms,
+       Snowball stems and spaCy lemmas (inflected forms), substring match for
+       CJK and other unspaced scripts.
+    2. COSINE: word vectors of the chunk vs. mean vectors of the terms not
+       found in stage 1 (semantically close words).
+    """
+    if not text or not vocab:
+        return []
+
+    terms = [entry[lng] for entry in vocab.values() if entry.get(lng)]
+
+    # One spaCy pass serves both stages: lemmas for stage 1, vectors for
+    # stage 2. Without a model, stage 1 still works on surface forms and stems.
+    nlp = doc = None
+    try:
+        if xp is not np:
+            spacy.prefer_gpu()
+        nlp = _get_nlp(config.nermodel, max_length=200000)
+        doc = nlp(text, disable=["ner", "parser"])
+    except Exception as e:
+        if config.debug:
+            print(f"Error running spaCy model: {e}")
+
+    matched = set(lexicon.find_terms(text, terms, lng, _lemma_map(doc) if doc is not None else None))
+    if config.debug:
+        print(f"  Lexical matches: {sorted(matched)}")
+
+    unmatched = [t for t in terms if t not in matched]
+    if doc is None or not unmatched:
+        return list(matched)
+
+    valid_vocab_words = []
+    vocab_vectors = []
+    for phrase in unmatched:
+        mean_vec = _get_phrase_vector(phrase, nlp)
+        if mean_vec is not None:
+            vocab_vectors.append(mean_vec)
+            valid_vocab_words.append(phrase)
+    if not vocab_vectors:
+        return list(matched)
+
+    vocab_matrix = xp.asarray(np.vstack(vocab_vectors))
+    vocab_matrix = vocab_matrix / xp.linalg.norm(vocab_matrix, axis=1, keepdims=True)
+
+    tokens = [t for t in doc if t.is_alpha and t.vector_norm != 0]
+    for i in range(0, len(tokens), batch_size):
+        token_vectors = xp.asarray(np.vstack([t.vector for t in tokens[i:i + batch_size]]))
+        token_vectors = token_vectors / xp.linalg.norm(token_vectors, axis=1, keepdims=True)
+        sims = xp.dot(token_vectors, vocab_matrix.T)
+        for _, vi in zip(*xp.where(sims > threshold)):
+            matched.add(valid_vocab_words[int(vi)])
+
+    if config.debug:
+        print(f"Found matching words: {matched}")
+    return list(matched)
+
+
 def find_matching_words_with_cosine_similarity(text, vocab, lng, threshold=0.8, batch_size=1024):
     """
-    Find vocabulary terms in text using cosine similarity (GPU-accelerated).
-
-    Uses CuPy for GPU acceleration when available.
+    Find vocabulary terms in text (GPU-accelerated cosine stage, needs CuPy).
 
     Args:
         text: Source text to search in
         vocab: Vocabulary dictionary {key: {lng: source_term, ...}}
-        lng: Language code for source terms
+        lng: Source language (name or code) — also the key of source terms
         threshold: Cosine similarity threshold (0.0-1.0)
         batch_size: Batch size for processing tokens
 
@@ -445,203 +479,12 @@ def find_matching_words_with_cosine_similarity(text, vocab, lng, threshold=0.8, 
     """
     if not CUPY_AVAILABLE:
         raise RuntimeError("CuPy is required for GPU processing. Use the CPU variant instead.")
-
-    if config.debug:
-        print("Starting cosine similarity matching (GPU)")
-
-    if not text or not vocab:
-        if config.debug:
-            print("No text or vocabulary to process.")
-        return []
-
-    matched_words_set = set()
-
-    # STAGE 1: TEXT SEARCH (exact match) — Problem 2 fix: pre-compile patterns
-    # ==================================
-    text_lower = text.lower()
-
-    compiled_patterns = [
-        (re.compile(r'\b' + re.escape(entry.get(lng, "").lower()) + r'\b'), entry.get(lng, ""))
-        for entry in vocab.values()
-        if entry.get(lng, "")
-    ]
-    for pattern, source_term in compiled_patterns:
-        if pattern.search(text_lower):
-            matched_words_set.add(source_term)
-            if config.debug:
-                print(f"  Text match: '{source_term}' found in chunk")
-
-    # STAGE 2: COSINE SEARCH (semantic)
-    # =================================
-    # Filter vocab: only terms NOT already matched by text search
-    unmatched_vocab = {
-        k: v for k, v in vocab.items() 
-        if v.get(lng, "") not in matched_words_set
-    }
-
-    if not unmatched_vocab:
-        if config.debug:
-            print(f"All terms matched by text search: {len(matched_words_set)}")
-        return list(matched_words_set)
-
-    try:
-        spacy.prefer_gpu()
-        nlp = _get_nlp(config.nermodel, max_length=200000)
-        # For cosine similarity, we only need vectors. Disable everything else to avoid W108 and other warnings.
-        doc = nlp(text, disable=["ner", "parser", "tagger", "lemmatizer", "attribute_ruler"])
-    except Exception as e:
-        if config.debug:
-            print(f"Error loading spaCy model: {e}")
-        # Fall back to Stage 1 (exact text search) results instead of losing them
-        return list(matched_words_set)
-
-    orig_values = [entry[lng] for entry in unmatched_vocab.values() if lng in entry]
-
-    valid_vocab_words = []
-    vocab_vectors = []
-
-    for phrase in orig_values:
-        mean_vec = _get_phrase_vector(phrase, nlp)
-        if mean_vec is not None:
-            vocab_vectors.append(mean_vec)
-            valid_vocab_words.append(phrase)
-
-    if not vocab_vectors:
-        if config.debug:
-            print("No valid vectors in vocab.")
-        return list(matched_words_set)  # Return Stage 1 matches
-
-    # numpy -> cupy (GPU acceleration)
-    vocab_matrix = cp.asarray(np.vstack(vocab_vectors))
-    vocab_matrix = vocab_matrix / cp.linalg.norm(vocab_matrix, axis=1, keepdims=True)
-
-    # Don't reset matched_words_set - keep Stage 1 matches
-    # matched_words_set = set()
-
-    tokens = [t for t in doc if t.is_alpha and t.vector_norm != 0]
-    for i in range(0, len(tokens), batch_size):
-        batch_tokens = tokens[i:i+batch_size]
-        token_vectors = np.vstack([t.vector for t in batch_tokens])
-        token_vectors = cp.asarray(token_vectors)
-        token_vectors = token_vectors / cp.linalg.norm(token_vectors, axis=1, keepdims=True)
-
-        sims = cp.dot(token_vectors, vocab_matrix.T)
-
-        best_matches = cp.where(sims > threshold)
-        for _, vi in zip(*best_matches):
-            matched_words_set.add(valid_vocab_words[int(vi)])
-
-    if config.debug:
-        print(f"Found matching words: {matched_words_set}")
-    return list(matched_words_set)
+    return _match_vocab_terms(text, vocab, lng, threshold, batch_size, cp)
 
 
 def find_matching_words_with_cosine_similarity_cpu(text, vocab, lng, threshold=0.8, batch_size=256):
-    """
-    Two-stage matching (CPU version):
-    1. TEXT SEARCH: Exact substring match (priority)
-    2. COSINE SEARCH: Semantic similarity for remaining terms
-    
-    Uses NumPy instead of CuPy for systems without GPU.
-
-    Args:
-        text: Source text to search in
-        vocab: Vocabulary dictionary {key: {lng: source_term, ...}}
-        lng: Language code for source terms
-        threshold: Cosine similarity threshold (0.0-1.0)
-        batch_size: Batch size for processing tokens (smaller for CPU)
-
-    Returns:
-        List of matched vocabulary terms
-    """
-    if config.debug:
-        print("Starting cosine similarity matching (CPU)")
-
-    if not text or not vocab:
-        if config.debug:
-            print("No text or vocabulary to process.")
-        return []
-
-    matched_words_set = set()
-
-    # STAGE 1: TEXT SEARCH (exact match) — Problem 2 fix: pre-compile patterns
-    # ==================================
-    text_lower = text.lower()
-
-    compiled_patterns = [
-        (re.compile(r'\b' + re.escape(entry.get(lng, "").lower()) + r'\b'), entry.get(lng, ""))
-        for entry in vocab.values()
-        if entry.get(lng, "")
-    ]
-    for pattern, source_term in compiled_patterns:
-        if pattern.search(text_lower):
-            matched_words_set.add(source_term)
-            if config.debug:
-                print(f"  Text match: '{source_term}' found in chunk")
-
-    # STAGE 2: COSINE SEARCH (semantic)
-    # =================================
-    # Filter vocab: only terms NOT already matched by text search
-    unmatched_vocab = {
-        k: v for k, v in vocab.items() 
-        if v.get(lng, "") not in matched_words_set
-    }
-
-    if not unmatched_vocab:
-        if config.debug:
-            print(f"All terms matched by text search: {len(matched_words_set)}")
-        return list(matched_words_set)
-
-    try:
-        # CPU mode - don't call spacy.prefer_gpu()
-        nlp = _get_nlp(config.nermodel, max_length=200000)
-        # For cosine similarity, we only need vectors
-        doc = nlp(text, disable=["ner", "parser", "tagger", "lemmatizer", "attribute_ruler"])
-    except Exception as e:
-        if config.debug:
-            print(f"Error loading spaCy model: {e}")
-        return list(matched_words_set)
-
-    orig_values = [entry[lng] for entry in unmatched_vocab.values() if lng in entry]
-
-    valid_vocab_words = []
-    vocab_vectors = []
-
-    for phrase in orig_values:
-        mean_vec = _get_phrase_vector(phrase, nlp)
-        if mean_vec is not None:
-            vocab_vectors.append(mean_vec)
-            valid_vocab_words.append(phrase)
-
-    if not vocab_vectors:
-        if config.debug:
-            print("No valid vectors in vocab.")
-        return list(matched_words_set)  # Return already matched terms from Stage 1
-
-    # NumPy only (CPU) - no CuPy
-    vocab_matrix = np.vstack(vocab_vectors)
-    vocab_matrix = vocab_matrix / np.linalg.norm(vocab_matrix, axis=1, keepdims=True)
-
-    # Don't reset matched_words_set - keep Stage 1 matches
-    # matched_words_set = set()
-
-    tokens = [t for t in doc if t.is_alpha and t.vector_norm != 0]
-    for i in range(0, len(tokens), batch_size):
-        batch_tokens = tokens[i:i+batch_size]
-        token_vectors = np.vstack([t.vector for t in batch_tokens])
-        token_vectors = token_vectors / np.linalg.norm(token_vectors, axis=1, keepdims=True)
-
-        # NumPy dot product (CPU)
-        sims = np.dot(token_vectors, vocab_matrix.T)
-
-        # Find matches above threshold
-        best_matches = np.where(sims > threshold)
-        for _, vi in zip(*best_matches):
-            matched_words_set.add(valid_vocab_words[int(vi)])
-
-    if config.debug:
-        print(f"Found matching words: {matched_words_set}")
-    return list(matched_words_set)
+    """CPU (NumPy) variant of find_matching_words_with_cosine_similarity."""
+    return _match_vocab_terms(text, vocab, lng, threshold, batch_size, np)
 
 
 def extract_text_from_book(book_path: str) -> str:
@@ -837,7 +680,8 @@ def create_series_vocab(
     output_file: str = "series.dic",
     min_count_ner: int = 2,
     min_count_word: int = 5,
-    min_word_length: int = 3
+    min_word_length: int = 3,
+    include_words: Optional[bool] = None
 ) -> str:
     """
     Create unified dictionary from all books in folder.
@@ -856,6 +700,7 @@ def create_series_vocab(
         min_count_ner: Minimum occurrences for NER entities
         min_count_word: Minimum occurrences for common words
         min_word_length: Minimum word length for common words
+        include_words: Add frequent ordinary words (None = DICT_FREQUENT_WORDS, off by default)
 
     Returns:
         Path to output file
@@ -865,56 +710,10 @@ def create_series_vocab(
     from pathlib import Path
     from collections import Counter
 
-    # Try to load NLTK stopwords (same as make_vocab)
-    default_stop_words = set()
-
-    try:
-        import nltk
-        try:
-            from nltk.corpus import stopwords
-            nltk.data.find('corpora/stopwords')
-        except LookupError:
-            nltk.download('stopwords', quiet=True)
-        default_stop_words = set(stopwords.words('english'))
-        print(f"Loaded {len(default_stop_words)} NLTK stopwords")
-    except ImportError:
-        default_stop_words = set([
-            "i", "me", "my", "myself", "we", "our", "ours", "ourselves", "you", "your",
-            "yours", "yourself", "yourselves", "he", "him", "his", "himself", "she", "her",
-            "hers", "herself", "it", "its", "itself", "they", "them", "their", "theirs",
-            "themselves", "what", "which", "who", "whom", "this", "that", "these", "those",
-            "am", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
-            "having", "do", "does", "did", "doing", "a", "an", "the", "and", "but", "if",
-            "or", "because", "as", "until", "while", "of", "at", "by", "for", "with",
-            "about", "against", "between", "into", "through", "during", "before", "after",
-            "above", "below", "to", "from", "up", "down", "in", "out", "on", "off", "over",
-            "under", "again", "further", "then", "once", "here", "there", "when", "where",
-            "why", "how", "all", "any", "both", "each", "few", "more", "most", "other",
-            "some", "such", "no", "nor", "not", "only", "own", "same", "so", "than", "too",
-            "very", "s", "t", "can", "will", "just", "don", "should", "now",
-            "d", "ll", "m", "re", "ve", "said", "would", "could", "upon", "must", "might",
-            "yet", "thing", "things", "way", "ways", "like", "even", "also", "back", "still",
-            "much", "get", "got", "go", "went", "come", "came", "see", "saw", "know", "knew",
-            "think", "thought", "want", "wanted", "take", "took", "give", "gave", "make", "made",
-            "first", "second", "one", "two", "time", "times", "new", "old", "great", "little",
-            "chapter", "part", "book", "volume", "section", "page", "p", "title", "author",
-            "said", "ask", "asked", "say", "tell", "told", "look", "looked", "seem", "seemed",
-            "feel", "felt", "leave", "left", "call", "called", "turn", "turned", "get", "got",
-            "inside", "emphasis",
-        ])
-
-    # Add custom stopwords
-    custom_stop_words = {
-        "p", "section", "chapter", "part", "book", "volume", "title", "author", "name",
-        "emphasis", "inside", "asked", "would", "could", "shall", "may", "might", "must",
-        "every", "any", "another", "such", "however", "though", "although", "because",
-        "therefore", "since", "without", "within", "around", "toward", "towards", "upon",
-        "ever", "never", "always", "often", "sometimes", "usually", "again", "already",
-        "yet", "still", "perhaps", "maybe", "certainly", "exactly", "especially",
-    }
-    default_stop_words.update(custom_stop_words)
-    stop_words = default_stop_words
+    stop_words = lexicon.get_stop_words(config.source_lang)
     print(f"Using {len(stop_words)} total stopwords")
+    if include_words is None:
+        include_words = config.dict_frequent_words
 
     # Resolve output_file relative to books_folder if it's just a filename
     if not os.path.dirname(output_file):
@@ -969,6 +768,10 @@ def create_series_vocab(
                 for ent in doc.ents:
                     if ent.label_ in NER_CATEGORIES:
                         all_raw_entities.append((ent.text.strip(), _normalize_label(ent.label_), book_name))
+
+                if not include_words:
+                    del doc
+                    continue
 
                 # Collect words (case-insensitive)
                 for token in doc:

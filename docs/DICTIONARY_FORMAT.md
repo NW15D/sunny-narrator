@@ -229,42 +229,13 @@ Alice = Алиса, PERSON, she, Main character
 
 ## Technical Details
 
-### Parsing code (app.py)
-```python
-def load_vocab_from_file(file_path: str) -> dict:
-    vocab = {}
-    with open(file_path, 'r', encoding='utf-8') as f:
-        for line in f:
-            line = line.strip()
-            if line and '=' in line and not line.startswith('#'):
-                # Format: source = target, category, gender, notes
-                parts = line.split('=', 1)
-                source = parts[0].strip()
-                rest = parts[1].strip()
-                
-                # Parse comma-separated values
-                csv_parts = [p.strip() for p in rest.split(',')]
-                target = csv_parts[0] if len(csv_parts) > 0 else ''
-                category = csv_parts[1] if len(csv_parts) > 1 else ''
-                gender = csv_parts[2] if len(csv_parts) > 2 else ''
-                notes = csv_parts[3] if len(csv_parts) > 3 else ''
-```
+All reading and writing of `.dic` files goes through
+`src/vocabulary_manager.py` (`VocabularyManager`) for every input format:
 
-### Saving code (app.py)
-```python
-def _save_vocabulary_formatted(translated_text: str, dict_file: str, original_terms: str):
-    # ... parse translations ...
-    
-    # Write dictionary in proper format with commas
-    with open(dict_file, 'w', encoding='utf-8') as f:
-        f.write(f"# Vocabulary for {Path(dict_file).stem}\n")
-        f.write(f"# Format: source = target, category, gender, notes\n")
-        f.write(f"# Generated automatically by NER\n\n")
-        
-        for source, target, cat in entries:
-            # Format: source = target, category, gender, notes
-            f.write(f"{source} = {target}, {cat}, , \n")
-```
+- `_load_from_file()` — parses `source = target, category, gender, notes`
+  (the part after `=` with `csv.reader`, so quoted values may contain commas).
+- `_parse_and_append_chunk()` — writes LLM-translated terms with CSV quoting.
+- `apply_character_genders()` — fills in genders reported by the synopsis stage.
 
 ---
 

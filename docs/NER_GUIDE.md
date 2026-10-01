@@ -13,8 +13,8 @@ Sunny Narrator uses **Named Entity Recognition (NER)** to automatically identify
 │                                                                 │
 │ 2. For each chunk:                                              │
 │    ├─ Extract text from chunk                                   │
-│    ├─ Run NER matching (GPU or CPU)                             │
-│    ├─ Find vocabulary terms using cosine similarity             │
+│    ├─ Lexical match: word forms / lemmas, substring for CJK     │
+│    ├─ Cosine similarity for the remaining terms (GPU or CPU)    │
 │    └─ Cache results for this chunk                              │
 │                                                                 │
 │ 3. Format matched terms for model                               │
@@ -63,8 +63,7 @@ Calibre (DOCX/EPUB/PDF) pipeline. The CLI flag takes precedence over the
 (built with `--build-series-dict`) or for keeping the `.dic` outside the
 book's own folder. If the file does not exist yet, both pipelines build it
 at that path, exactly as they would at the default `<book_name>.dic`
-location: the classic pipeline stops after creating it so you can review
-it, the Calibre pipeline creates it and continues. The directory of the
+location, and both pipelines stop after creating it so you can review it. The directory of the
 given path must already exist, otherwise `app.py` exits with an error.
 
 ### GPU vs CPU Mode
@@ -146,7 +145,32 @@ formatted = manager.format_for_model(entries, model="Hunyuan")
 # Automatically replaced with formatted vocabulary
 ```
 
-## 🧠 Cosine Similarity Matching
+## 🔤 Lexical Matching (stage 1)
+
+The same matcher runs for every input format — FB2/TXT (classic pipeline)
+and EPUB/DOCX/PDF (Calibre pipeline) both go through
+`VocabularyManager.get_vocab_for_chunk()`. Stage 1 is `lexicon.find_terms()`:
+
+- Words are split by Unicode category (letters/marks/digits), not by regex,
+  so it works for any script. A multi-word term must match consecutive words.
+- Two words match when they share a key: casefolded form, NLTK Snowball
+  stem (en, ru, de, fr, es, it, pt, nl, sv, da, nb, fi, ro, hu, ar) or the
+  spaCy lemma of the chunk word. `spidergun` finds `spiderguns`,
+  `паукопушка` finds `паукопушками`, `wolf` finds `wolves` (lemma).
+- Terms in scripts without spaces between words (Chinese, Japanese, Thai,
+  …) and Korean (particles glued to nouns: `철수는`) are matched as
+  substrings.
+- A term never matches inside an unrelated word (`Ann` ≠ `Annoying`).
+
+With `NER=false` only stage 1 runs (no spaCy lemmas: surface forms + stems).
+
+Stop words used when building a dictionary come from `lexicon.get_stop_words()`:
+NLTK list (≈30 languages) ∪ spaCy list (every spaCy language, incl. ja, ko,
+pl, uk, hr, lt, mk) for `SOURCE_LANG`, plus fiction-specific extras for English.
+
+## 🧠 Cosine Similarity Matching (stage 2)
+
+Terms not found in stage 1 are compared by word vectors.
 
 ### How It Works
 
@@ -411,6 +435,7 @@ grep "vocab terms matched" logs/*.log
 
 ## 📝 Changelog
 
+- **2026-10-01:** One matcher for all formats (Calibre pipeline now uses `VocabularyManager`); lexical stage matches inflected forms and CJK without regex; stop words for the source language instead of English only
 - **2026-03-29:** Added CPU fallback mode (`find_matching_words_with_cosine_similarity_cpu()`)
 - **2026-03-29:** Automatic GPU/CPU detection in `get_vocab_for_chunk()`
 - **Previous:** Initial NER implementation with GPU support

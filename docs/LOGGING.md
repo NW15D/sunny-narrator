@@ -40,7 +40,7 @@ What the screenshot shows (Korean → Russian, `DEBUG=on`):
 | `Chunk 1 (depth 0): 8075 → 16619 chars (105.8%)` | Chunk summary: source → translation length. `depth` > 0 means the chunk was split (rechunking) |
 | `[CharacterRegistry] Detected 12 characters …` / `[Synopsis] … added 430 chars synopsis` | Characters found in the chunk and the synopsis carried to the next chunk |
 | `Checkpoint saved: …/weed_ru.checkpoint.json` | Progress saved — a restart resumes from here ([RESUME.md](RESUME.md)) |
-| `Text match: '위드가' found in chunk` | Dictionary terms found in the next chunk by exact text match; the rest are searched by cosine similarity ([NER_GUIDE.md](NER_GUIDE.md)) |
+| `Lexical matches: [...]` | Dictionary terms found in the next chunk by word forms (surface, stem, lemma; substring for CJK); the rest are searched by cosine similarity ([NER_GUIDE.md](NER_GUIDE.md)) |
 | `Chunk 0-2 (GPU): 26 vocab terms matched` | Number of dictionary entries passed to the translation prompt |
 
 ### Messages worth attention

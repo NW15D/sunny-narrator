@@ -114,6 +114,7 @@ authentication any non-empty API key will do.
 |-----------|---------|-------------|
 | `NER` | `true` | Build the dictionary from named entities on the first run |
 | `NERMODEL` | by `SOURCE_LANG` | spaCy model; empty = chosen from `SOURCE_LANG` and downloaded automatically (`en` → `en_core_web_lg`, `ko` → `ko_core_news_lg`, ...; full map in `src/config.py`) |
+| `DICT_FREQUENT_WORDS` | `false` | Also add frequent ordinary words (not named entities) to a new dictionary. Off: they fill the `.dic` with translations of common vocabulary. Per run for `--build-dict`/`--build-series-dict`: `--frequent-words` |
 | `DICTIONARY` | empty | Explicit path to the `.dic` file instead of `<book>.dic` next to the book. CLI: `--dictionary <path>` (wins over `.env`). Both pipelines |
 
 **Details:** [NER_GUIDE.md](NER_GUIDE.md), [DICTIONARY_FORMAT.md](DICTIONARY_FORMAT.md)

@@ -20,8 +20,6 @@ __all__ = [
     'validate_epub',
     'validate_fb2',
     'validate_output',
-    'extract_dictionary_from_md',
-    'save_dictionary',
 ]
 
 import json
@@ -35,7 +33,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Optional
 from datetime import datetime
 
 try:
@@ -712,112 +710,6 @@ def _clean_calibre_markers(text: str) -> str:
     return text.strip()
 
 
-def _load_vocab_dict(book_path: str, dict_file: Optional[str] = None) -> dict:
-    """
-    Load vocabulary dictionary from .dic file.
-
-    Parses the .dic file (format: source = target, category, gender, notes)
-    and returns a simple source->target mapping.
-
-    Args:
-        book_path: Path to the book file (used to find corresponding .dic)
-        dict_file: Explicit .dic path (DICTIONARY env/--dictionary override).
-            Takes precedence over the auto <book_name>.dic lookup.
-
-    Returns:
-        Dictionary mapping source terms to target translations
-    """
-    from pathlib import Path
-
-    if dict_file:
-        dic_path = Path(dict_file)
-    else:
-        book_dir = Path(book_path).parent
-        book_name = Path(book_path).stem
-        dic_path = book_dir / f"{book_name}.dic"
-
-    if not dic_path.exists():
-        return {}
-    
-    vocab = {}
-    with open(dic_path, 'r', encoding='utf-8') as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
-            if '=' not in line:
-                continue
-            source, _, rest = line.partition('=')
-            source = source.strip()
-            rest = rest.strip()
-            if not source or not rest:
-                continue
-            # Extract target (first field before comma)
-            target = rest.split(',')[0].strip()
-            if target:
-                vocab[source] = target
-    
-    return vocab
-
-
-def _load_vocab_entries(book_path: str, dict_file: Optional[str] = None) -> list:
-    """
-    Load vocabulary entries from .dic file as dict objects with full metadata.
-
-    Parses the .dic file (format: source = target, category, gender, notes)
-    and returns a list of dict objects with keys: source, target, category, gender, notes.
-
-    Args:
-        book_path: Path to the book file (used to find corresponding .dic)
-        dict_file: Explicit .dic path (DICTIONARY env/--dictionary override).
-            Takes precedence over the auto <book_name>.dic lookup.
-
-    Returns:
-        List of dict objects with vocabulary entry metadata
-    """
-    from pathlib import Path
-
-    if dict_file:
-        dic_path = Path(dict_file)
-    else:
-        book_dir = Path(book_path).parent
-        book_name = Path(book_path).stem
-        dic_path = book_dir / f"{book_name}.dic"
-
-    if not dic_path.exists():
-        return []
-    
-    entries = []
-    with open(dic_path, 'r', encoding='utf-8') as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
-            if '=' not in line:
-                continue
-            source, _, rest = line.partition('=')
-            source = source.strip()
-            rest = rest.strip()
-            if not source or not rest:
-                continue
-            # Extract fields: target, category, gender, notes
-            parts = rest.split(',')
-            target = parts[0].strip() if parts else ""
-            category = parts[1].strip() if len(parts) > 1 else ""
-            gender = parts[2].strip() if len(parts) > 2 else ""
-            notes = parts[3].strip() if len(parts) > 3 else ""
-            
-            entries.append({
-                'source': source,
-                'target': target,
-                'category': category,
-                'gender': gender,
-                'notes': notes
-            })
-    
-    return entries
-
-
 def _protect_markdown_images(markdown_text: str) -> tuple[str, list[str]]:
     """Replace markdown image references with placeholder tokens before the
     text is sent to the translation LLM.
@@ -946,7 +838,6 @@ def translate_chunks(
     country: str = "Russia",
     style: str = "text",
     fast_mode: bool = False,
-    vocab_dict: Optional[dict] = None,
     book_path: Optional[str] = None,
     dict_file: Optional[str] = None,
     checkpoint_file: Optional[str] = None,
@@ -970,9 +861,9 @@ def translate_chunks(
         country: Target country for cultural context (default "Russia")
         style: Translation style - "text" or "xml" (default "text")
         fast_mode: Skip reflection/improve stages (default False)
-        vocab_dict: Optional vocabulary dictionary. If None and book_path is provided,
-                    will be loaded from book's .dic file
-        book_path: Optional path to the book file (used to load vocabulary)
+        book_path: Optional path to the book file. Its glossary (.dic) is
+            loaded and matched per chunk by VocabularyManager — the same
+            code the classic FB2/TXT pipeline uses.
         dict_file: Optional explicit .dic path (DICTIONARY env/--dictionary
             override). Takes precedence over the auto <book_name>.dic lookup
             derived from book_path.
@@ -1029,7 +920,6 @@ def translate_chunks(
     
     translated_parts = []
     outline_text = ""  # Context for next chunk
-    vocab_entries = []  # Full metadata entries for 5-stage translation
     failed_chunks = 0  # Track chunks that failed translation
 
     # D5: checkpoint/resume support (per-chunk persistence)
@@ -1063,30 +953,24 @@ def translate_chunks(
             logger.warning("Checkpoint belongs to another book, starting fresh")
             checkpoint_mgr.remove()
 
-    # Load vocabulary if book_path provided and no explicit vocab_dict
-    vocab_from_file = False
-    if vocab_dict is None and book_path:
+    # Glossary: one VocabularyManager for all formats, so loading, per-chunk
+    # matching (inflected forms, CJK, word-vector similarity) and gender
+    # write-back behave exactly as in the classic pipeline.
+    vocab_manager = None
+    if book_path:
+        from src.vocabulary_manager import get_vocabulary_manager
         try:
-            vocab_dict = _load_vocab_dict(book_path, dict_file)
-            vocab_from_file = os.path.exists(Path(dict_file) if dict_file
-                                              else Path(book_path).parent / f"{Path(book_path).stem}.dic")
-            if vocab_dict and logger:
-                logger.info(f"Loaded vocabulary: {len(vocab_dict)} terms")
-            # Also load vocab_entries for 5-stage translation
-            vocab_entries = _load_vocab_entries(book_path, dict_file)
-            if vocab_entries and logger:
-                logger.info(f"Loaded vocab_entries: {len(vocab_entries)} entries")
+            vocab_manager = get_vocabulary_manager(book_path, dict_file=dict_file)
+            vocab_manager.load()
+            if vocab_manager.vocab and logger:
+                logger.info(f"Loaded vocabulary: {len(vocab_manager.vocab)} terms from {vocab_manager.dict_file}")
         except Exception as e:
             if logger:
                 logger.warning(f"Failed to load vocabulary: {e}")
             else:
                 print(f"Warning: Failed to load vocabulary: {e}")
-            vocab_dict = {}
-            vocab_entries = []
-            vocab_from_file = False
-    elif vocab_dict is None:
-        vocab_dict = {}
-    
+            vocab_manager = None
+
     for i, chunk in enumerate(chunks):
         if i < start_idx:
             continue  # already translated before the checkpoint
@@ -1102,14 +986,11 @@ def translate_chunks(
         # the same _pipeline.execute but adds retry-on-empty, rechunking and the
         # MAX_LLM_CALLS_PER_CHUNK guard. The outer retry loop below additionally
         # catches exceptions that propagate out of translate_chunk.
-        # M4: filter vocabulary to only terms appearing in current chunk
-        chunk_vocab_dict = {}
+        # Only the glossary terms present in this chunk go into the prompt
         chunk_vocab_entries = []
-        chunk_lower = chunk.lower()
-        if vocab_dict:
-            chunk_vocab_dict = {k: v for k, v in vocab_dict.items() if k.lower() in chunk_lower}
-        if vocab_entries:
-            chunk_vocab_entries = [e for e in vocab_entries if e.get('source', '').lower() in chunk_lower]
+        if vocab_manager is not None and vocab_manager.vocab:
+            chunk_vocab_entries = vocab_manager.get_vocab_for_chunk(chunk, 0, i)
+        chunk_vocab_dict = {e.source: e.target for e in chunk_vocab_entries}
         translation = None
         characters = []
         for attempt in range(3):  # Up to 3 attempts
@@ -1168,15 +1049,9 @@ def translate_chunks(
             failed_chunks += 1
             chunk_failed = True
 
-        if characters and not chunk_failed and vocab_from_file:
-            from src.vocabulary_manager import apply_character_genders
-            dic_path = dict_file or str(Path(book_path).parent / f"{Path(book_path).stem}.dic")
+        if characters and not chunk_failed and vocab_manager is not None:
             try:
-                updated, added = apply_character_genders(dic_path, characters)
-                if updated or added:
-                    logger.info(f"Dictionary {dic_path}: gender set for {updated}, added {added} character(s)")
-                    vocab_dict = _load_vocab_dict(book_path, dict_file)
-                    vocab_entries = _load_vocab_entries(book_path, dict_file)
+                vocab_manager.record_character_genders(characters)
             except OSError as e:
                 logger.warning(f"Could not update dictionary with character genders: {e}")
 
@@ -1961,267 +1836,6 @@ def validate_output(output_path: str, output_format: str) -> ValidationReport:
         return report
 
 
-# --- Dictionary Builder ---
-
-def extract_dictionary_from_md(
-    source_md: str,
-    source_lang: str = "en",
-    target_lang: str = "ru",
-    country: str = "Russia",
-    min_count_ner: int = 5,
-    min_count_word: int = 10,
-    min_word_length: int = 5
-) -> List[Dict]:
-    """
-    Extract dictionary entries from source markdown using NER.
-
-    Algorithm:
-    1. Use NER (spaCy) to identify named entities (PERSON, LOC, ORG)
-    2. Extract frequent words (filtered by min_count_word, min_word_length)
-    3. Translate extracted terms via LLM (utils.vocabulary)
-    4. Parse LLM response into structured dictionary entries
-
-    Args:
-        source_md: Source (untranslated) markdown text
-        source_lang: Source language code (default "en")
-        target_lang: Target language code (default "ru")
-        country: Target country for cultural context (default "Russia")
-        min_count_ner: Minimum occurrences for NER entities (default 5)
-        min_count_word: Minimum occurrences for common words (default 10)
-        min_word_length: Minimum word length for common words (default 5)
-
-    Returns:
-        List of dictionary entries: [{'source': ..., 'target': ..., 'category': ..., 'gender': '', 'notes': ...}, ...]
-    """
-    _init_logger()
-
-    if not source_md or not source_md.strip():
-        logger.warning("extract_dictionary_from_md: empty source text")
-        return []
-
-    # Step 1: Extract terms using NER (reuses existing ner.create_dictionary_from_text)
-    from src import ner as ner_module
-
-    logger.info(
-        f"Extracting dictionary terms via NER "
-        f"(min_count_ner={min_count_ner}, min_count_word={min_count_word}, "
-        f"min_word_length={min_word_length})..."
-    )
-
-    extracted_terms = ner_module.create_dictionary_from_text(
-        source_md,
-        min_count_ner=min_count_ner,
-        min_count_word=min_count_word,
-        min_word_length=min_word_length
-    )
-
-    if not extracted_terms:
-        logger.info("No terms extracted by NER")
-        return []
-
-    logger.info(f"Extracted {len(extracted_terms)} terms from source text")
-
-    # Step 2: Format terms for LLM translation
-    terms_text = '\n'.join([term for term, cat, notes in extracted_terms])
-
-    # Split into chunks for LLM (respect max_len_chunk)
-    chunk_size = int(config.max_len_chunk) if hasattr(config, 'max_len_chunk') else 16384
-    lines = terms_text.split('\n')
-    chunks = []
-    current: list = []
-    current_len = 0
-    for line in lines:
-        current.append(line)
-        current_len += len(line) + 1
-        if current_len >= chunk_size:
-            chunks.append('\n'.join(current))
-            current = []
-            current_len = 0
-    if current:
-        chunks.append('\n'.join(current))
-
-    logger.info(f"Split {len(terms_text)} chars into {len(chunks)} chunk(s) for translation")
-
-    # Step 3: Translate each chunk via LLM
-    from src import utils as ta
-
-    all_translations: Dict[str, str] = {}  # source_lower -> target
-
-    for idx, chunk in enumerate(chunks):
-        logger.info(f"Translating dictionary chunk {idx + 1}/{len(chunks)} ({len(chunk)} chars)...")
-        try:
-            vocab_translated = ta.vocabulary(
-                source_lang, target_lang, chunk, country, "translate"
-            )
-            # Parse translations from LLM response
-            chunk_translations = _parse_dictionary_llm_response(vocab_translated)
-            all_translations.update(chunk_translations)
-            logger.info(f"  Chunk {idx + 1}: parsed {len(chunk_translations)} translations")
-        except Exception as e:
-            logger.error(f"  Chunk {idx + 1} translation failed: {e}")
-
-    # Step 4: Build structured dictionary entries
-    dictionary: List[Dict] = []
-    valid_categories = {'PERSON', 'LOC', 'ORG', 'GPE', 'TERM'}
-
-    for term, category, notes in extracted_terms:
-        term_lower = term.lower()
-        target = all_translations.get(term_lower, "")
-
-        if not target:
-            # Try case-insensitive lookup
-            for src_key, tgt_val in all_translations.items():
-                if src_key == term_lower:
-                    target = tgt_val
-                    break
-
-        if not target:
-            logger.debug(f"No translation found for term '{term}', skipping")
-            continue
-
-        # Normalize category
-        if category.upper() not in valid_categories:
-            category = "TERM"
-        else:
-            category = category.upper()
-
-        dictionary.append({
-            'source': term,
-            'target': target,
-            'category': category,
-            'gender': '',
-            'notes': notes or 'auto-extracted from source markdown'
-        })
-
-    logger.info(f"Dictionary built: {len(dictionary)} entries (from {len(extracted_terms)} extracted terms)")
-    return dictionary
-
-
-def _parse_dictionary_llm_response(vocab_translated: str) -> Dict[str, str]:
-    """
-    Parse LLM vocabulary response into source->target mapping.
-
-    Handles multiple response formats:
-    - JSON array: [{"source": "...", "target": "..."}, ...]
-    - Markdown table: | source | target | category |
-    - Key-value: source = target / source: target / source → target
-
-    Args:
-        vocab_translated: Raw LLM response text
-
-    Returns:
-        Dict mapping source_lower -> target
-    """
-    import json as _json
-
-    translations: Dict[str, str] = {}
-    if not vocab_translated or not vocab_translated.strip():
-        return translations
-
-    # Strategy 1: JSON array
-    try:
-        json_array_match = re.search(r'\[\s*\{.*?\}\s*\]', vocab_translated, re.DOTALL)
-        if json_array_match:
-            terms = _json.loads(json_array_match.group(0))
-            if isinstance(terms, list):
-                for item in terms:
-                    if isinstance(item, dict):
-                        src = str(item.get('source', '')).strip()
-                        tgt = str(item.get('target', '')).strip()
-                        if src and tgt:
-                            translations[src.lower()] = tgt
-                if translations:
-                    return translations
-    except (_json.JSONDecodeError, ValueError):
-        pass
-
-    # Strategy 2: Markdown table
-    table_pattern = r'\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|\s*([^|]*)\s*\|'
-    matches = re.findall(table_pattern, vocab_translated)
-    if matches:
-        for match in matches:
-            source = match[0].strip()
-            target = match[1].strip()
-            if (source and target
-                    and not source.startswith('-')
-                    and not target.startswith('-')
-                    and source.lower() not in ('source', 'term', 'english')):
-                translations[source.lower()] = target
-        if translations:
-            return translations
-
-    # Strategy 3: Key-value patterns
-    kv_patterns = [
-        r'"([^"]+)"\s*:\s*"([^"]+)"',   # "source": "target"
-        r'([^:=\n]+)[=:]\s*([^\n]+)',      # source = target / source: target
-        r'([^→\n]+)→\s*([^\n]+)',          # source → target
-    ]
-    for pattern in kv_patterns:
-        matches = re.findall(pattern, vocab_translated)
-        if matches:
-            for match in matches:
-                source = match[0].strip()
-                target = match[1].strip()
-                if (source and target
-                        and len(source) > 1
-                        and len(target) > 1
-                        and source.lower() not in ('source', 'terms', 'translation', 'note')):
-                    translations[source.lower()] = target
-            if translations:
-                return translations
-
-    return translations
-
-
-def save_dictionary(dictionary: List[Dict], output_path: str) -> None:
-    """
-    Save dictionary entries in .dic format.
-
-    Format (compatible with _load_vocab_dict / _load_vocab_entries):
-        # Vocabulary header
-        source = target, category, gender, notes
-
-    Args:
-        dictionary: List of dictionary entries from extract_dictionary_from_md()
-        output_path: Output .dic file path
-    """
-    _init_logger()
-
-    if not dictionary:
-        logger.warning("save_dictionary: empty dictionary, nothing to save")
-        return
-
-    # Ensure parent directory exists
-    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-
-    with open(output_path, 'w', encoding='utf-8') as f:
-        f.write(f"# Vocabulary dictionary\n")
-        f.write(f"# Format: source = target, category, gender, notes\n")
-        f.write(f"# Generated automatically from source markdown by NER + LLM\n")
-        f.write(f"# Entries: {len(dictionary)}\n\n")
-
-        for entry in dictionary:
-            source = entry.get('source', '')
-            target = entry.get('target', '')
-            category = entry.get('category', '')
-            gender = entry.get('gender', '')
-            notes = entry.get('notes', '')
-
-            if not source or not target:
-                continue
-
-            line = f"{source} = {target}"
-            if category:
-                line += f", {category}"
-            if gender:
-                line += f", {gender}"
-            if notes:
-                line += f", {notes}"
-            f.write(line + '\n')
-
-    logger.info(f"Dictionary saved: {output_path} ({len(dictionary)} entries)")
-
-
 def _enforce_validation(validation, allow_invalid: bool) -> None:
     """C10: raise when validation found errors unless explicitly allowed."""
     if validation.is_valid or allow_invalid:
@@ -2442,29 +2056,17 @@ def run_pipeline(
         logger.info(f"Step 1/5: Converting {input_path} to Markdown...")
         markdown_text, metadata = convert_to_markdown(input_path)
 
-        # Step 2: Build dictionary if .dic doesn't exist (M6: build BEFORE translation
-        # so the first run has vocabulary terms available)
-        dic_path = Path(dict_file) if dict_file else Path(input_path).with_suffix('.dic')
-        if not dic_path.exists():
-            logger.info("Step 2/5: Building dictionary from source markdown...")
-            try:
-                from src.vocabulary_manager import min_word_length_for
-                dictionary = extract_dictionary_from_md(
-                    markdown_text,
-                    source_lang=source_lang,
-                    target_lang=target_lang,
-                    country=country,
-                    min_word_length=min_word_length_for(source_lang)
-                )
-                if dictionary:
-                    save_dictionary(dictionary, str(dic_path))
-                    logger.info(f"  Dictionary created: {dic_path} ({len(dictionary)} entries)")
-                else:
-                    logger.info("  No dictionary terms extracted")
-            except Exception as e:
-                logger.warning(f"  Dictionary building failed (non-fatal): {e}")
+        # Step 2: Dictionary. Same VocabularyManager.initialize() as the classic
+        # pipeline, fed with the converted Markdown: an existing .dic is loaded;
+        # a missing one is built (NER + LLM) and DictionaryCreatedSignal stops
+        # the run so the user can review it before anything is translated.
+        from src.vocabulary_manager import get_vocabulary_manager
+        vocab_manager = get_vocabulary_manager(input_path, dict_file=dict_file)
+        if os.path.exists(vocab_manager.dict_file):
+            logger.info(f"Step 2/5: Dictionary already exists: {vocab_manager.dict_file}")
         else:
-            logger.info(f"Step 2/5: Dictionary already exists: {dic_path} (skipped)")
+            logger.info("Step 2/5: Building dictionary from source markdown...")
+        vocab_manager.initialize(source_text=markdown_text)
 
         # Translate title/author/publisher/description so the output
         # file's own metadata (and title page) match the target language
@@ -2472,11 +2074,7 @@ def run_pipeline(
         # classic-pipeline call to the same translate_metadata().
         # Done after Step 2 so the glossary exists and the title and
         # description use the same names as the translated body.
-        try:
-            metadata_vocab = _load_vocab_entries(input_path, dict_file)
-        except Exception as e:
-            logger.warning(f"Failed to load vocabulary for metadata (non-fatal): {e}")
-            metadata_vocab = []
+        metadata_vocab = list(vocab_manager.vocab.values())
         _translate_output_metadata(metadata, source_lang, target_lang, country, metadata_vocab)
 
         # Step 3: Translate
