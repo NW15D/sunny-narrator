@@ -379,10 +379,11 @@ def _match_vocab_terms(text, vocab, lng, threshold, batch_size, xp):
     """
     Two-stage matching shared by the GPU (xp=cupy) and CPU (xp=numpy) entry points.
 
-    1. LEXICAL: lexicon.find_terms — word-sequence match on surface forms and
-       Snowball stems, substring match for CJK and other unspaced scripts.
-       Only if terms remain unmatched: spaCy runs once on the chunk and the
-       remaining terms are retried with its lemmas (wolves -> wolf).
+    spaCy runs once on the chunk and serves both stages:
+    1. LEXICAL: lexicon.find_terms — word-sequence match on surface forms,
+       Snowball stems and spaCy lemmas (wolves -> wolf), substring match for
+       CJK and other unspaced scripts. Without a usable spaCy model the same
+       search runs on surface forms and stems only.
     2. COSINE: word vectors of the chunk vs. mean vectors of the terms still
        unmatched (semantically close words).
     """
@@ -390,15 +391,10 @@ def _match_vocab_terms(text, vocab, lng, threshold, batch_size, xp):
         return []
 
     terms = [entry[lng] for entry in vocab.values() if entry.get(lng)]
-    matched = set(lexicon.find_terms(text, terms, lng))
-    unmatched = [t for t in terms if t not in matched]
-    if not unmatched:
-        return list(matched)
 
-    # One spaCy pass serves the lemma retry and the vectors of stage 2.
     # SystemExit: spacy.cli.download exits the interpreter when it fails.
     if config.nermodel in _UNUSABLE_MATCH_MODELS:
-        return list(matched)
+        return lexicon.find_terms(text, terms, lng)
     try:
         if xp is not np:
             spacy.prefer_gpu()
@@ -409,12 +405,12 @@ def _match_vocab_terms(text, vocab, lng, threshold, batch_size, xp):
         _UNUSABLE_MATCH_MODELS.add(config.nermodel)
         logger.warning(f"spaCy model {config.nermodel} unavailable, dictionary matching "
                        f"continues without lemmas/word vectors: {e}")
-        return list(matched)
+        return lexicon.find_terms(text, terms, lng)
 
-    matched.update(lexicon.find_terms(text, unmatched, lng, _lemma_map(doc)))
+    matched = set(lexicon.find_terms(text, terms, lng, _lemma_map(doc)))
     if config.debug:
         print(f"  Lexical matches: {sorted(matched)}")
-    unmatched = [t for t in unmatched if t not in matched]
+    unmatched = [t for t in terms if t not in matched]
     if not unmatched:
         return list(matched)
 

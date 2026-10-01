@@ -166,10 +166,11 @@ and EPUB/DOCX/PDF (Calibre pipeline) both go through
   Rare stem collisions remain possible (`universe`/`university`); they only
   add an extra glossary line to the prompt.
 
-Stage 1 first runs without spaCy (surface forms + stems). spaCy is loaded and
-run on the chunk only when some terms are still unmatched: those are retried
-with its lemmas, then go to stage 2. With `NER=false`, or if the spaCy model
-cannot be loaded, only the spaCy-free part runs.
+spaCy runs once on the chunk; its lemmas feed stage 1 (a single
+`find_terms` pass over surface forms, stems and lemmas), and its word vectors
+feed stage 2 for the terms still unmatched. With `NER=false`, or if the spaCy
+model cannot be loaded, only the spaCy-free search runs (surface forms +
+stems).
 
 Stop words used when building a dictionary come from `lexicon.get_stop_words()`:
 NLTK list (≈30 languages) ∪ spaCy list (every spaCy language, incl. ja, ko,
