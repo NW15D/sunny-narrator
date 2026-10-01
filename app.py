@@ -809,7 +809,8 @@ def main():
     # translated without dictionary terms (silent quality loss).
     if engine.vocab_manager:
         try:
-            vocab = engine.vocab_manager.initialize()
+            # body is already parsed: a missing dictionary is built from it
+            vocab = engine.vocab_manager.initialize(source_text=body)
             print(f"Vocabulary loaded: {len(vocab)} entries")
         except DictionaryCreatedSignal as e:
             print(f"\n📖 {e}")
@@ -1026,9 +1027,10 @@ def cli():
             print(f"Error: --build-dict does not support {file_ext}. Use FB2, EPUB or TXT.")
             sys.exit(1)
         # Same builder as a translation run (NER + LLM, VocabularyManager)
+        # use_ner=True: an explicit --build-dict runs NER even with NER=false
         VocabularyManager(book_path, dict_file=dict_path).build_dictionary(
             body, min_count_ner=args.min_count_ner, min_count_word=args.min_count_word,
-            include_words=args.frequent_words or None)
+            include_words=args.frequent_words or None, use_ner=True)
         print(f"Dictionary created: {dict_path}")
         sys.exit(0)
     

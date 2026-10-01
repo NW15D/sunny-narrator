@@ -39,11 +39,11 @@ logger = logging.getLogger(__name__)
 # 1-3 characters (Hangul syllable blocks / CJK ideographs). A min_word_length
 # tuned for space-separated alphabetic languages (default 5) would discard
 # almost every frequent word in these languages.
-_CJK_LANGUAGES = {"korean", "ko", "japanese", "ja", "chinese", "zh"}
+_CJK_LANGUAGES = {"ko", "ja", "zh"}
 
 
 def min_word_length_for(source_lang: str) -> int:
-    return 2 if source_lang.lower() in _CJK_LANGUAGES else 5
+    return 2 if lexicon.lang_code(source_lang) in _CJK_LANGUAGES else 5
 
 
 def _dic_field(value: str) -> str:
@@ -164,8 +164,16 @@ class VocabularyManager:
         formatted = manager.format_for_model(chunk_vocab, model="Hunyuan")
     """
     
-    def __init__(self, book_path: str, dict_file: Optional[str] = None):
+    def __init__(self, book_path: str, dict_file: Optional[str] = None,
+                 source_lang: Optional[str] = None, target_lang: Optional[str] = None,
+                 country: Optional[str] = None):
         self.book_path = book_path
+        # Languages of this book; default to SOURCE_LANG/TARGET_LANG/COUNTRY.
+        # The Calibre pipeline passes its run_pipeline() arguments so the
+        # dictionary is built and matched for the languages actually translated.
+        self.source_lang = source_lang or config.source_lang
+        self.target_lang = target_lang or config.target_lang
+        self.country = country or config.country
         self.book_dir = os.path.dirname(book_path)
         self.book_name = Path(book_path).stem
         # Explicit dict_file argument > DICTIONARY env/config > auto lookup
@@ -196,6 +204,7 @@ class VocabularyManager:
         else:
             logger.info(f"Dictionary not found. Creating: {self.dict_file}")
             self.build_dictionary(source_text)
+            self._extract_characters()
             # Check if auto-continue is enabled
             if getattr(config, 'auto_continue_after_dict', False):
                 logger.info("Auto-continue enabled, proceeding without manual review")
@@ -211,18 +220,6 @@ class VocabularyManager:
         self._extract_characters()
         return self.vocab
 
-    def build_dictionary(self, source_text: Optional[str] = None,
-                         min_count_ner: int = 5, min_count_word: int = 10,
-                         include_words: Optional[bool] = None):
-        """Create the .dic file from the book text with NER + LLM.
-
-        source_text: text to extract terms from (the Calibre pipeline passes
-        its Markdown); None parses book_path.
-        include_words: also add frequent ordinary words, not only named
-        entities. None = DICT_FREQUENT_WORDS (off by default).
-        """
-        self._create_dictionary(source_text, min_count_ner, min_count_word, include_words)
-
     def _atomic_write(self, content: str):
         """Write content to dict_file atomically (write to temp, then rename)."""
         dir_path = os.path.dirname(self.dict_file)
@@ -235,17 +232,27 @@ class VocabularyManager:
             os.unlink(tmp_path)
             raise
 
-    def _create_dictionary(self, source_text: Optional[str] = None,
-                           min_count_ner: int = 5, min_count_word: int = 10,
-                           include_words: Optional[bool] = None):
+    def build_dictionary(self, source_text: Optional[str] = None,
+                         min_count_ner: int = 5, min_count_word: int = 10,
+                         include_words: Optional[bool] = None,
+                         use_ner: Optional[bool] = None):
         """
-        Create dictionary from book using NER.
-        
+        Create the .dic file from the book text with NER + LLM.
+
         Workflow:
-        1. Parse book to extract text (unless source_text is given)
-        2. Run NER to find named entities and common words
-        3. Translate terms using LLM
+        1. Parse book to extract text (unless source_text is given — the
+           Calibre pipeline passes its Markdown, main() the parsed FB2/TXT)
+        2. Run NER to find named entities (and, with include_words, frequent
+           ordinary words; None = DICT_FREQUENT_WORDS, off by default)
+        3. Translate terms with the proofread LLM
         4. Save to .dic file in standard format
+
+        use_ner: None = NER setting; --build-dict passes True because an
+        explicit build request must not silently produce an empty template.
+
+        The file is assembled next to dict_file and only renamed into place
+        when every chunk is translated: an LLM error or Ctrl-C must not leave
+        a partial .dic that the next run would load as a reviewed dictionary.
         """
         if source_text is not None:
             body = source_text
@@ -260,8 +267,13 @@ class VocabularyManager:
             else:
                 body, header, footer = txt_handler.parse_txt(self.book_path)
         
+        if use_ner is None:
+            use_ner = config.ner_opt
+        if use_ner and not ner_module:
+            raise RuntimeError("NER module (spaCy) is not available, cannot build the dictionary")
+
         # Run NER to extract entities
-        if config.ner_opt and ner_module:
+        if use_ner:
             logger.info("Running NER to extract entities and common words...")
             
             # Use new structured dictionary creation
@@ -270,7 +282,8 @@ class VocabularyManager:
                 min_count_ner=min_count_ner,
                 min_count_word=min_count_word,
                 include_words=include_words,
-                min_word_length=min_word_length_for(config.source_lang)
+                min_word_length=min_word_length_for(self.source_lang),
+                lang=self.source_lang,
             )
             
             logger.info(f"Extracted {len(extracted_terms)} terms from text")
@@ -301,33 +314,37 @@ class VocabularyManager:
                 
                 from src import utils as ta
                 
-                # Write header once (atomic, consistent with the rest of the writer)
-                self._atomic_write(
-                    f"# Vocabulary for {self.book_name}\n"
-                    f"# Format: source = target, category, gender, notes\n"
-                    f"# Generated automatically by NER\n\n"
-                )
-                
-                # Clear existing vocab to avoid duplicates
-                self.vocab.clear()
-                
-                total_parsed = 0
-                for idx, chunk in enumerate(chunks):
-                    logger.info(f"Translating chunk {idx + 1}/{len(chunks)} ({len(chunk)} chars)...")
-                    
-                    vocab_translated = ta.vocabulary(
-                        config.source_lang,
-                        config.target_lang,
-                        chunk,
-                        config.country,
-                        "translate"
+                building_path = f"{self.dict_file}.building"
+                with open(building_path, 'w', encoding='utf-8') as f:
+                    f.write(
+                        f"# Vocabulary for {self.book_name}\n"
+                        f"# Format: source = target, category, gender, notes\n"
+                        f"# Generated automatically by NER\n\n"
                     )
-                    
-                    # Parse JSON response and write immediately
-                    parsed = self._parse_and_append_chunk(vocab_translated, idx + 1, len(chunks))
-                    total_parsed += parsed
-                    logger.info(f"Chunk {idx + 1}: wrote {parsed} entries")
-                
+
+                self.vocab.clear()
+                total_parsed = 0
+                try:
+                    for idx, chunk in enumerate(chunks):
+                        logger.info(f"Translating chunk {idx + 1}/{len(chunks)} ({len(chunk)} chars)...")
+                        vocab_translated = ta.vocabulary(
+                            self.source_lang,
+                            self.target_lang,
+                            chunk,
+                            self.country,
+                            "proofread"
+                        )
+                        parsed = self._parse_and_append_chunk(vocab_translated, idx + 1, len(chunks),
+                                                              out_path=building_path)
+                        total_parsed += parsed
+                        logger.info(f"Chunk {idx + 1}: wrote {parsed} entries")
+                    os.replace(building_path, self.dict_file)
+                except BaseException:
+                    self.vocab.clear()
+                    if os.path.exists(building_path):
+                        os.unlink(building_path)
+                    raise
+
                 logger.info(f"Dictionary saved: {self.dict_file} ({total_parsed} total entries)")
             else:
                 logger.warning("No terms extracted by NER")
@@ -336,9 +353,12 @@ class VocabularyManager:
             # Create empty dictionary template
             self._create_template()
 
-    def _parse_and_append_chunk(self, vocab_translated: str, chunk_num: int, total_chunks: int) -> int:
+    def _parse_and_append_chunk(self, vocab_translated: str, chunk_num: int, total_chunks: int,
+                                out_path: Optional[str] = None) -> int:
         """
         Parse LLM response and append entries to the dictionary file in consistent CSV format.
+        out_path: file to append to (default dict_file; build_dictionary passes
+        its temporary file).
         
         This method handles various LLM response formats but expects structured data
         with source, target, and optional category fields.
@@ -496,7 +516,7 @@ class VocabularyManager:
             parsed += 1
         
         # Append with file lock to prevent lost updates from concurrent access
-        self._locked_append(self.dict_file, ''.join(new_lines))
+        self._locked_append(out_path or self.dict_file, ''.join(new_lines))
         return parsed
     
     def _create_template(self):
@@ -672,7 +692,7 @@ class VocabularyManager:
         if not config.ner_opt or not ner_module:
             # No spaCy: lexical match only (surface forms + Snowball stems,
             # substring for CJK) — see lexicon.find_terms
-            matched = lexicon.find_terms(chunk_text, key_by_source, config.source_lang)
+            matched = lexicon.find_terms(chunk_text, key_by_source, self.source_lang)
             mode = "lexical"
         else:
             # cupy is optional even on a CUDA machine (extra [gpu])
@@ -685,7 +705,7 @@ class VocabularyManager:
                     use_gpu = False
             match_fn = (ner_module.find_matching_words_with_cosine_similarity if use_gpu
                         else ner_module.find_matching_words_with_cosine_similarity_cpu)
-            matched = match_fn(chunk_text, self._vocab_to_ner_format(), config.source_lang)
+            matched = match_fn(chunk_text, self._vocab_to_ner_format(), self.source_lang)
             mode = "GPU" if use_gpu else "CPU"
 
         matched_keys = [key_by_source[term] for term in matched if term in key_by_source]
@@ -701,8 +721,8 @@ class VocabularyManager:
         result = {}
         for key, entry in self.vocab.items():
             result[key] = {
-                config.source_lang: entry.source,
-                config.target_lang: entry.target
+                self.source_lang: entry.source,
+                self.target_lang: entry.target
             }
         return result
     
@@ -797,16 +817,23 @@ class VocabularyManager:
 # Global manager instance (lazy initialization)
 _vocabulary_manager: Optional[VocabularyManager] = None
 
-def get_vocabulary_manager(book_path: str, dict_file: Optional[str] = None) -> VocabularyManager:
+def get_vocabulary_manager(book_path: str, dict_file: Optional[str] = None,
+                           source_lang: Optional[str] = None, target_lang: Optional[str] = None,
+                           country: Optional[str] = None) -> VocabularyManager:
     """Get or create vocabulary manager for book.
 
     dict_file: explicit .dic path (DICTIONARY env/--dictionary CLI override).
-    See VocabularyManager.__init__ for precedence.
+    See VocabularyManager.__init__ for precedence and the language arguments.
+    The cached instance is reused only for the same book, .dic and languages.
     """
     global _vocabulary_manager
-    candidate = VocabularyManager(book_path, dict_file=dict_file)
-    if (_vocabulary_manager is None
-            or _vocabulary_manager.book_path != book_path
-            or _vocabulary_manager.dict_file != candidate.dict_file):
+    candidate = VocabularyManager(book_path, dict_file=dict_file, source_lang=source_lang,
+                                  target_lang=target_lang, country=country)
+    current = _vocabulary_manager
+    if (current is None
+            or current.book_path != book_path
+            or current.dict_file != candidate.dict_file
+            or (current.source_lang, current.target_lang, current.country)
+            != (candidate.source_lang, candidate.target_lang, candidate.country)):
         _vocabulary_manager = candidate
     return _vocabulary_manager

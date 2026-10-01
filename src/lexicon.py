@@ -14,9 +14,10 @@ words are matched as substrings.
 
 Inflected forms are matched by comparing normalized keys of each word:
 casefolded surface form, NLTK Snowball stem (when the language has one)
-and, when the caller passes a lemma map built by spaCy, the lemma. A
-Snowball stem can merge a few unrelated words ("universe"/"university"),
-which only puts an extra glossary line into the prompt.
+and, when the caller passes a lemma map built by spaCy, the lemma. Stems
+and lemmas that are stop words are ignored, so "Ares" does not match "are".
+A Snowball stem can still merge a few unrelated words ("universe"/
+"university"), which only puts an extra glossary line into the prompt.
 """
 from functools import lru_cache
 import importlib
@@ -24,19 +25,10 @@ import logging
 import unicodedata
 from typing import Dict, FrozenSet, Iterable, List, Optional, Set
 
+from src.config import LANG_CODE_MAP
+
 logger = logging.getLogger(__name__)
 
-# Language name (as in SOURCE_LANG) -> ISO 639-1 code. Codes map to themselves.
-_LANG_CODES = {
-    'russian': 'ru', 'english': 'en', 'french': 'fr', 'german': 'de',
-    'spanish': 'es', 'italian': 'it', 'chinese': 'zh', 'japanese': 'ja',
-    'dutch': 'nl', 'portuguese': 'pt', 'polish': 'pl', 'ukrainian': 'uk',
-    'catalan': 'ca', 'danish': 'da', 'finnish': 'fi', 'swedish': 'sv',
-    'norwegian': 'nb', 'korean': 'ko', 'romanian': 'ro', 'greek': 'el',
-    'lithuanian': 'lt', 'macedonian': 'mk', 'croatian': 'hr', 'slovenian': 'sl',
-    'arabic': 'ar', 'hungarian': 'hu', 'turkish': 'tr', 'indonesian': 'id',
-    'hebrew': 'he', 'czech': 'cs', 'no': 'nb',
-}
 
 # ISO code -> NLTK stopwords corpus file. NLTK has no list for ja, ko, pl,
 # uk, lt, mk, hr, cs — spaCy covers those.
@@ -92,13 +84,15 @@ _UNSPACED_SCRIPTS = (
 def lang_code(lang: str) -> str:
     """'english'/'English'/'en' -> 'en'."""
     lang = (lang or '').strip().lower()
-    return _LANG_CODES.get(lang, lang)
+    return LANG_CODE_MAP.get(lang, lang)
 
 
 @lru_cache(maxsize=None)
 def get_stop_words(lang: str) -> FrozenSet[str]:
     """Stop words for `lang`: NLTK list ∪ spaCy list ∪ markup words
-    (∪ fiction-specific extras for English).
+    (∪ fiction-specific extras for English), normalized with normalize().
+    Look words up with is_stop_word() (or normalize() them first): a plain
+    .lower() misses casefold-only forms such as German "daß" -> "dass".
 
     Either source may be missing (NLTK corpus not downloadable offline,
     language unknown to one of the libraries) — the other one still applies.
@@ -116,19 +110,29 @@ def get_stop_words(lang: str) -> FrozenSet[str]:
             except LookupError:
                 nltk.download('stopwords', quiet=True)
             if nltk_name in stopwords.fileids():
-                words.update(w.casefold() for w in stopwords.words(nltk_name))
+                words.update(normalize(w) for w in stopwords.words(nltk_name))
         except Exception as e:  # ImportError, offline download, broken corpus
             logger.debug(f"NLTK stop words unavailable for {code}: {e}")
 
     try:
         module = importlib.import_module(f"spacy.lang.{code}.stop_words")
-        words.update(w.casefold() for w in module.STOP_WORDS)
+        words.update(normalize(w) for w in module.STOP_WORDS)
     except Exception as e:
         logger.debug(f"spaCy stop words unavailable for {code}: {e}")
 
     if code == 'en':
         words.update(_ENGLISH_BOOK_STOP_WORDS)
     return frozenset(words)
+
+
+def is_stop_word(word: str, stop_words: Iterable[str]) -> bool:
+    """`word` in a set produced by get_stop_words()/normalize_words()."""
+    return normalize(word).strip() in stop_words
+
+
+def normalize_words(words: Iterable[str]) -> FrozenSet[str]:
+    """Normalize a caller-supplied stop-word list the same way."""
+    return frozenset(normalize(w).strip() for w in words)
 
 
 @lru_cache(maxsize=None)
@@ -193,12 +197,22 @@ def tokenize(text: str) -> List[str]:
     return tokens
 
 
-def _keys(word: str, code: str, lemma_map: Optional[Dict[str, Set[str]]]) -> Set[str]:
-    keys = {word, _stem(code, word)}
-    if lemma_map:
-        for lemma in lemma_map.get(word, ()):
-            keys.add(lemma)
-            keys.add(_stem(code, lemma))
+def _keys(word: str, code: str, lemma_map: Optional[Dict[str, Set[str]]],
+          stop_words: FrozenSet[str]) -> Set[str]:
+    """Match keys of one word: its surface form, plus stem and lemma forms.
+
+    A stop word, or a stem/lemma that is a stop word, contributes only its
+    surface form: otherwise a name ending in -s collapses onto a common word
+    (stem("Ares") == "are", "Wells" -> "well") and lands in every chunk.
+    """
+    keys = {word}
+    if word in stop_words:
+        return keys
+    forms = [word, *(lemma_map.get(word, ()) if lemma_map else ())]
+    for form in forms:
+        for key in (form, _stem(code, form)):
+            if key not in stop_words:
+                keys.add(key)
     return keys
 
 
@@ -217,6 +231,7 @@ def find_terms(text: str, terms: Iterable[str], lang: str,
     if not text or not terms:
         return []
 
+    stop_words = get_stop_words(code)
     normalized_text = None
     text_keys = None
     index: Dict[str, Set[int]] = {}
@@ -234,12 +249,12 @@ def find_terms(text: str, terms: Iterable[str], lang: str,
         if not term_words:
             continue
         if text_keys is None:
-            text_keys = [_keys(w, code, lemma_map) for w in tokenize(text)]
+            text_keys = [_keys(w, code, lemma_map, stop_words) for w in tokenize(text)]
             for pos, keys in enumerate(text_keys):
                 for key in keys:
                     index.setdefault(key, set()).add(pos)
 
-        term_keys = [_keys(w, code, lemma_map) for w in term_words]
+        term_keys = [_keys(w, code, lemma_map, stop_words) for w in term_words]
         starts = set()
         for key in term_keys[0]:
             starts |= index.get(key, set())

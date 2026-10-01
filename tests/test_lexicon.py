@@ -65,3 +65,10 @@ def test_stop_words_for_non_english_languages():
     # English fiction extras stay English-only
     assert "said" in lexicon.get_stop_words("english")
     assert "said" not in lexicon.get_stop_words("russian")
+
+
+def test_names_ending_in_s_do_not_match_common_words():
+    # stem("Ares") == "are", "Wells" -> "well": a stop-word stem must not match
+    assert lexicon.find_terms("They are here", ["Ares"], "english") == []
+    assert lexicon.find_terms("All is well, he went down", ["Wells", "Downs"], "en") == []
+    assert lexicon.find_terms("Ares and Wells came", ["Ares", "Wells"], "en") == ["Ares", "Wells"]

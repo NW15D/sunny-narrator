@@ -161,12 +161,40 @@ and EPUB/DOCX/PDF (Calibre pipeline) both go through
   …) and Korean (particles glued to nouns: `철수는`) are matched as
   substrings.
 - A term never matches inside an unrelated word (`Ann` ≠ `Annoying`).
+- Stems and lemmas that are stop words are ignored, so a name ending in -s
+  does not collapse onto a common word (`Ares` ≠ `are`, `Wells` ≠ `well`).
+  Rare stem collisions remain possible (`universe`/`university`); they only
+  add an extra glossary line to the prompt.
 
-With `NER=false` only stage 1 runs (no spaCy lemmas: surface forms + stems).
+Stage 1 first runs without spaCy (surface forms + stems). spaCy is loaded and
+run on the chunk only when some terms are still unmatched: those are retried
+with its lemmas, then go to stage 2. With `NER=false`, or if the spaCy model
+cannot be loaded, only the spaCy-free part runs.
 
 Stop words used when building a dictionary come from `lexicon.get_stop_words()`:
 NLTK list (≈30 languages) ∪ spaCy list (every spaCy language, incl. ja, ko,
-pl, uk, hr, lt, mk) for `SOURCE_LANG`, plus fiction-specific extras for English.
+pl, uk, hr, lt, mk) for the source language, plus fiction-specific extras for
+English. They are casefolded, so look words up with `lexicon.is_stop_word()`
+(German `daß` → `dass`).
+
+## 🏗 Building a Dictionary
+
+`VocabularyManager.build_dictionary()` builds every dictionary — a translation
+run of any format and `--build-dict`; `--build-series-dict` uses
+`ner.create_series_vocab()`. Both:
+
+- extract named entities with NER (frequent ordinary words only with
+  `DICT_FREQUENT_WORDS=true` / `--frequent-words`);
+- translate the terms with the **proofread** LLM;
+- write the `.dic` atomically once every chunk is translated, so a failed or
+  interrupted build leaves no half-written dictionary for the next run.
+
+The book's own languages are used (the Calibre pipeline passes the languages
+of `run_pipeline()`; default `SOURCE_LANG`/`TARGET_LANG`/`COUNTRY`).
+`--build-dict` runs NER even with `NER=false`. The series dictionary groups
+entity forms by the lemmas of all their words and writes the form that is its
+own lemma (else the most frequent one) with its original capitalization:
+`John Smith`, `Иван` — not `john`.
 
 ## 🧠 Cosine Similarity Matching (stage 2)
 

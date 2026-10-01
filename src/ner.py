@@ -75,7 +75,7 @@ def load_spacy_model(model_name):
         return spacy.load(model_name)
 
 def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_word_length=5,
-               include_words=None):
+               include_words=None, lang=None):
     """
     Extract named entities and common words from text using NER.
 
@@ -88,12 +88,13 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
 
     Args:
         text: Source text to analyze
-        stop_words: Set of stop words to exclude (default: common English + XML tags)
+        stop_words: Set of stop words to exclude (default: stop words of `lang`)
         min_count_ner: Minimum occurrences for NER entities (default: 5)
         min_count_word: Minimum occurrences for common words (default: 10)
         min_word_length: Minimum word length for common words (default: 5)
         include_words: Add frequent ordinary words besides named entities.
             None = DICT_FREQUENT_WORDS (off by default).
+        lang: Source language for the default stop words (None = SOURCE_LANG)
 
     Returns:
         String with extracted terms (one per line), or None on error
@@ -114,13 +115,14 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
             print("No text to process.")
         return
 
+    lang = lang or config.source_lang
     if stop_words is None:
         # NLTK + spaCy lists for the source language (see lexicon.get_stop_words)
-        stop_words = lexicon.get_stop_words(config.source_lang)
+        stop_words = lexicon.get_stop_words(lang)
         if config.debug:
-            print(f"Using {len(stop_words)} stopwords for {config.source_lang}")
+            print(f"Using {len(stop_words)} stopwords for {lang}")
     else:
-        stop_words = set(stop_words)
+        stop_words = lexicon.normalize_words(stop_words)
 
     try:
         # Ensure PyTorch is using CUDA
@@ -212,7 +214,7 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
 
                 # Regular words
                 word_counts.update(
-                    token.text.lower() for token in doc if token.is_alpha and token.text.lower() not in stop_words
+                    token.text.lower() for token in doc if token.is_alpha and not lexicon.is_stop_word(token.text, stop_words)
                 )
 
                 # Keywords by frequency: not stop words, alphabetic
@@ -234,44 +236,10 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
             print(f"Error loading spaCy model: {e}")
         return
 
-    # Filter words with count > min_count_word and length >= min_word_length
-    filtered_words_with_counts = [(word, count) for word, count in word_counts.items() if count > min_count_word and len(word) >= min_word_length]
-
-    sorted_common_words_with_counts = sorted(filtered_words_with_counts, key=lambda x: x[1], reverse=True)
-    top_common_words = [word for word, count in sorted_common_words_with_counts]
-
-    if config.debug:
-        print(f"Top common words with counts (min={min_count_word}, len>={min_word_length}): {sorted_common_words_with_counts[:20]}")
-
-    # Normalize final_merged_ents
-    seen_entities = set()
-    normalized_final_merged_ents = []
-    for ent in final_merged_ents:
-        normalized_text = ent[0].strip().lower()
-        if normalized_text not in seen_entities and normalized_text not in stop_words:
-            seen_entities.add(normalized_text)
-            normalized_final_merged_ents.append((ent[0], ent[1]))
-
-    # Normalize top_common_words
-    seen_words = set()
-    normalized_top_common_words = []
-    for word in top_common_words:
-        normalized_word = word.strip().lower()
-        if normalized_word not in seen_entities and normalized_word not in stop_words:
-            seen_words.add(normalized_word)
-            normalized_top_common_words.append(word)
-
-    # Remove words from top_common_words that are substrings of entities
-    for ent in final_merged_ents:
-        words_in_ent = ent[0].strip().lower().split()
-        for word in words_in_ent:
-            if word in seen_words and word not in stop_words:
-                seen_words.remove(word)
-
-    # Filter words with count > min_count_word, length >= min_word_length, and not in stop_words
+    # Frequent words: count > min_count_word, length >= min_word_length, not a stop word
     filtered_words_with_counts = [(word, count) for word, count in word_counts.items()
                                    if count > min_count_word and len(word) >= min_word_length
-                                   and word.lower() not in stop_words]
+                                   and not lexicon.is_stop_word(word, stop_words)]
 
     sorted_common_words_with_counts = sorted(filtered_words_with_counts, key=lambda x: x[1], reverse=True)
     top_common_words = [word for word, count in sorted_common_words_with_counts]
@@ -284,7 +252,7 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
     normalized_final_merged_ents = []
     for ent in final_merged_ents:
         normalized_text = ent[0].strip().lower()
-        if normalized_text not in seen_entities and normalized_text not in stop_words:
+        if normalized_text not in seen_entities and not lexicon.is_stop_word(normalized_text, stop_words):
             seen_entities.add(normalized_text)
             normalized_final_merged_ents.append((ent[0], ent[1]))
 
@@ -293,7 +261,7 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
     normalized_top_common_words = []
     for word in top_common_words:
         normalized_word = word.strip().lower()
-        if normalized_word not in seen_entities and normalized_word not in stop_words:
+        if normalized_word not in seen_entities and not lexicon.is_stop_word(normalized_word, stop_words):
             seen_words.add(normalized_word)
             normalized_top_common_words.append(word)
 
@@ -301,7 +269,7 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
     for ent in final_merged_ents:
         words_in_ent = ent[0].strip().lower().split()
         for word in words_in_ent:
-            if word in seen_words and word not in stop_words:
+            if word in seen_words and not lexicon.is_stop_word(word, stop_words):
                 seen_words.remove(word)
 
     unique_top_common_words = [word for word in normalized_top_common_words if word.lower() in seen_words]
@@ -314,7 +282,7 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
 
 
 def create_dictionary_from_text(text, stop_words=None, min_count_ner=5, min_count_word=10, min_word_length=5,
-                                include_words=None):
+                                include_words=None, lang=None):
     """
     Create dictionary from text using NER.
 
@@ -327,6 +295,7 @@ def create_dictionary_from_text(text, stop_words=None, min_count_ner=5, min_coun
         min_count_word: Minimum occurrences for common words
         min_word_length: Minimum word length for common words
         include_words: Add frequent ordinary words (None = DICT_FREQUENT_WORDS, off by default)
+        lang: Source language for the default stop words (None = SOURCE_LANG)
 
     Returns:
         List of tuples: [(source_term, category, notes), ...]
@@ -338,7 +307,7 @@ def create_dictionary_from_text(text, stop_words=None, min_count_ner=5, min_coun
 
     # Use make_vocab to get extracted terms
     extracted = make_vocab(text, stop_words, min_count_ner, min_count_word, min_word_length,
-                           include_words=include_words)
+                           include_words=include_words, lang=lang)
 
     if not extracted:
         return []
@@ -402,39 +371,51 @@ def _lemma_map(doc):
     return lemmas
 
 
+# spaCy models that failed to load/run during matching (not retried per chunk)
+_UNUSABLE_MATCH_MODELS = set()
+
+
 def _match_vocab_terms(text, vocab, lng, threshold, batch_size, xp):
     """
     Two-stage matching shared by the GPU (xp=cupy) and CPU (xp=numpy) entry points.
 
-    1. LEXICAL: lexicon.find_terms — word-sequence match on surface forms,
-       Snowball stems and spaCy lemmas (inflected forms), substring match for
-       CJK and other unspaced scripts.
-    2. COSINE: word vectors of the chunk vs. mean vectors of the terms not
-       found in stage 1 (semantically close words).
+    1. LEXICAL: lexicon.find_terms — word-sequence match on surface forms and
+       Snowball stems, substring match for CJK and other unspaced scripts.
+       Only if terms remain unmatched: spaCy runs once on the chunk and the
+       remaining terms are retried with its lemmas (wolves -> wolf).
+    2. COSINE: word vectors of the chunk vs. mean vectors of the terms still
+       unmatched (semantically close words).
     """
     if not text or not vocab:
         return []
 
     terms = [entry[lng] for entry in vocab.values() if entry.get(lng)]
+    matched = set(lexicon.find_terms(text, terms, lng))
+    unmatched = [t for t in terms if t not in matched]
+    if not unmatched:
+        return list(matched)
 
-    # One spaCy pass serves both stages: lemmas for stage 1, vectors for
-    # stage 2. Without a model, stage 1 still works on surface forms and stems.
-    nlp = doc = None
+    # One spaCy pass serves the lemma retry and the vectors of stage 2.
+    # SystemExit: spacy.cli.download exits the interpreter when it fails.
+    if config.nermodel in _UNUSABLE_MATCH_MODELS:
+        return list(matched)
     try:
         if xp is not np:
             spacy.prefer_gpu()
         nlp = _get_nlp(config.nermodel, max_length=200000)
         doc = nlp(text, disable=["ner", "parser"])
-    except Exception as e:
-        if config.debug:
-            print(f"Error running spaCy model: {e}")
+    except (Exception, SystemExit) as e:
+        # Reported once; later chunks go straight to the lexical result
+        _UNUSABLE_MATCH_MODELS.add(config.nermodel)
+        logger.warning(f"spaCy model {config.nermodel} unavailable, dictionary matching "
+                       f"continues without lemmas/word vectors: {e}")
+        return list(matched)
 
-    matched = set(lexicon.find_terms(text, terms, lng, _lemma_map(doc) if doc is not None else None))
+    matched.update(lexicon.find_terms(text, unmatched, lng, _lemma_map(doc)))
     if config.debug:
         print(f"  Lexical matches: {sorted(matched)}")
-
-    unmatched = [t for t in terms if t not in matched]
-    if doc is None or not unmatched:
+    unmatched = [t for t in unmatched if t not in matched]
+    if not unmatched:
         return list(matched)
 
     valid_vocab_words = []
@@ -675,6 +656,27 @@ def _parse_vocabulary_response(vocab_translated: str, original_terms: str = "") 
     return {}
 
 
+def _lemma_keys(nlp, terms):
+    """{term: normalized lemmas of all its tokens joined by spaces}.
+
+    Batch lemmatization via nlp.pipe(). Uses every token, not just the first
+    one — keying "John Smith" by "john" merged it with "John" and dropped the
+    surname.
+    """
+    keys = {}
+    for doc in nlp.pipe(list(terms), batch_size=256, disable=["ner", "parser"]):
+        lemmas = [lexicon.normalize(t.lemma_ or t.text).strip() for t in doc if not t.is_space]
+        keys[doc.text] = ' '.join(l for l in lemmas if l)
+    return keys
+
+
+def _preferred_form(forms, lemma_key):
+    """Surface form to write into the .dic, with its original capitalization:
+    the form that is its own lemma (nominative "Иван" over a more frequent
+    "Ивана"), else the most frequent one ("Wells", whose lemma is "well")."""
+    return max(forms, key=lambda f: (lexicon.normalize(f) == lemma_key, forms[f]))
+
+
 def create_series_vocab(
     books_folder: str,
     output_file: str = "series.dic",
@@ -775,7 +777,7 @@ def create_series_vocab(
 
                 # Collect words (case-insensitive)
                 for token in doc:
-                    if token.is_alpha and token.text.lower() not in stop_words:
+                    if token.is_alpha and not lexicon.is_stop_word(token.text, stop_words):
                         word_key = token.text.lower()
                         all_words[word_key] += 1
 
@@ -806,35 +808,23 @@ def create_series_vocab(
     # PHASE 1: NORMALIZE & MERGE ENTITIES (by lemma only, keep FIRST category)
     # ============================================================
 
-    # Re-process raw entities with lemmatization enabled
-    # Group by lemma ONLY, keep first encountered category (ignore later categories)
-    entity_lemmas = {}  # lemma -> (first_category, [(term, count), ...])
-
-    # Problem 4 fix: batch lemmatization using nlp.pipe()
-    unique_terms = list(set(term for term, _, _ in all_raw_entities))
-    term_to_lemma = {}
-    for doc in nlp.pipe(unique_terms, batch_size=256, disable=["ner", "parser", "attribute_ruler"]):
-        term_to_lemma[doc.text] = doc[0].lemma_.lower().strip() if doc else doc.text.lower().strip()
+    # Group surface forms of an entity by the lemmas of ALL its tokens
+    # ("Ивана"/"Иван" together, "John Smith" stays "John Smith"), keep the
+    # first category seen, and write the most frequent surface form: proper
+    # names keep their capital letters in the .dic.
+    entity_groups = {}  # lemma key -> (first_category, Counter(surface form))
+    term_to_key = _lemma_keys(nlp, {term for term, _, _ in all_raw_entities})
 
     for term, cat, book in all_raw_entities:
-        lemma = term_to_lemma.get(term, term.lower().strip())
+        key = term_to_key.get(term) or lexicon.normalize(term)
+        if key not in entity_groups:
+            entity_groups[key] = (cat, Counter())
+        entity_groups[key][1][term] += 1
 
-        if lemma not in entity_lemmas:
-            # First encounter - store category
-            entity_lemmas[lemma] = (cat, [(term, 1)])
-        else:
-            # Already seen - append term but keep first category
-            first_cat, entries = entity_lemmas[lemma]
-            entries.append((term, 1))
-
-    # Aggregate counts per lemma, keep first category
-    # Output lemma in lowercase (infinitive form) - e.g. "dragon" not "Dragon"
     aggregated_entities = []
-    for lemma, (first_cat, entries) in entity_lemmas.items():
-        total_count = sum(e[1] for e in entries)
-        # Use lowercase lemma as output term (normalized form)
-        output_term = lemma.lower()
-        aggregated_entities.append((output_term, first_cat, total_count))
+    for key, (first_cat, forms) in entity_groups.items():
+        output_term = _preferred_form(forms, key)
+        aggregated_entities.append((output_term, first_cat, sum(forms.values())))
 
     print(f"\nEntities after lemma-based merge (first category): {len(aggregated_entities)}")
 
@@ -845,14 +835,10 @@ def create_series_vocab(
     # Re-process words with lemmatization
     word_groups = {}  # lemma -> [(word, count), ...]
 
-    # Problem 4 fix: batch lemmatization using nlp.pipe()
-    unique_words = list(all_words.keys())
-    word_to_lemma = {}
-    for doc in nlp.pipe(unique_words, batch_size=256, disable=["ner", "parser", "attribute_ruler"]):
-        word_to_lemma[doc.text] = doc[0].lemma_.lower().strip() if doc else doc.text.lower().strip()
+    word_to_lemma = _lemma_keys(nlp, all_words.keys())
 
     for word, count in all_words.items():
-        lemma = word_to_lemma.get(word, word.lower().strip())
+        lemma = word_to_lemma.get(word) or word.lower().strip()
 
         if lemma not in word_groups:
             word_groups[lemma] = []
@@ -979,13 +965,15 @@ def create_series_vocab(
             print(f"  Robust parse error: {e}")
             return 0
 
-    # Write header once
-    with open(output_file, 'w', encoding='utf-8') as f:
-        f.write("# Vocabulary for series\n")
-        f.write("# Format: source = target, category, gender, notes\n")
-        f.write("# Generated by create_series_vocab\n\n")
+    # Collected in memory and written in one atomic step at the end: a failure
+    # mid-way (LLM error, Ctrl-C) must not leave a half-written .dic that a
+    # later run would take for a finished dictionary.
+    out_lines = [
+        "# Vocabulary for series\n",
+        "# Format: source = target, category, gender, notes\n",
+        "# Generated by create_series_vocab\n\n",
+    ]
 
-    # Translate each chunk and write immediately
     for idx, chunk in enumerate(chunks):
         print(f"Translating chunk {idx + 1}/{len(chunks)} ({len(chunk)} chars)...")
 
@@ -994,7 +982,7 @@ def create_series_vocab(
             config.target_lang,
             chunk,
             config.country,
-            "translate"
+            "proofread"
         )
 
         if config.debug:
@@ -1003,32 +991,29 @@ def create_series_vocab(
         chunk_parsed = parse_chunk_response(vocab_translated, all_translations, all_categories, chunk)
         total_parsed += chunk_parsed
 
-        # Write this chunk's entries to file immediately (append)
-        with open(output_file, 'a', encoding='utf-8') as f:
-            f.write(f"\n# --- Chunk {idx + 1}/{len(chunks)} ---\n")
-            for term_text in chunk.split('\n'):
-                term_text = term_text.strip()
-                if not term_text:
-                    continue
-                # Extract term and NER category from format "term [CATEGORY]"
-                import re as _re
-                ner_cat = ""
-                m = _re.match(r'^(.+?)\s+\[([A-Z]+)\]$', term_text)
-                if m:
-                    term_text = m.group(1).strip()
-                    ner_cat = m.group(2)
+        out_lines.append(f"\n# --- Chunk {idx + 1}/{len(chunks)} ---\n")
+        for term_text in chunk.split('\n'):
+            term_text = term_text.strip()
+            if not term_text:
+                continue
+            # Extract term and NER category from format "term [CATEGORY]"
+            ner_cat = ""
+            m = re.match(r'^(.+?)\s+\[([A-Z]+)\]$', term_text)
+            if m:
+                term_text = m.group(1).strip()
+                ner_cat = m.group(2)
 
-                term_lower = term_text.lower()
-                target = all_translations.get(term_lower, "")
-                category = all_categories.get(term_lower, ner_cat)
+            term_lower = term_text.lower()
+            target = all_translations.get(term_lower, "")
+            category = all_categories.get(term_lower, ner_cat)
+            out_lines.append(f"{term_text} = {target}, {category}, , \n")
 
-                if category:
-                    gender = ""
-                    f.write(f"{term_text} = {target}, {category}, {gender}, \n")
-                else:
-                    f.write(f"{term_text} = {target}, , , \n")
+        print(f"  Chunk {idx + 1} translated ({chunk_parsed} terms)")
 
-        print(f"  Chunk {idx + 1} written to file ({chunk_parsed} terms)")
+    tmp_path = f"{output_file}.tmp"
+    with open(tmp_path, 'w', encoding='utf-8') as f:
+        f.writelines(out_lines)
+    os.replace(tmp_path, output_file)
 
     print(f"Total parsed: {total_parsed} terms across {len(chunks)} chunk(s)")
     print(f"Dictionary saved to: {output_file}")

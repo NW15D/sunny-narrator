@@ -21,6 +21,20 @@ def _parse_numeric_env(name, default, cast=float):
         return default
 
 
+# Language name (as written in SOURCE_LANG/TARGET_LANG) -> ISO 639-1 code.
+# Module-level so src/lexicon.py can use it without building a Config.
+LANG_CODE_MAP = {
+    'russian': 'ru', 'english': 'en', 'french': 'fr', 'german': 'de',
+    'spanish': 'es', 'italian': 'it', 'chinese': 'zh', 'japanese': 'ja',
+    'dutch': 'nl', 'portuguese': 'pt', 'polish': 'pl', 'ukrainian': 'uk',
+    'catalan': 'ca', 'danish': 'da', 'finnish': 'fi', 'swedish': 'sv',
+    'norwegian': 'nb', 'korean': 'ko', 'romanian': 'ro', 'greek': 'el',
+    'lithuanian': 'lt', 'macedonian': 'mk', 'croatian': 'hr', 'slovenian': 'sl',
+    'arabic': 'ar', 'hungarian': 'hu', 'turkish': 'tr', 'indonesian': 'id',
+    'hebrew': 'he', 'czech': 'cs', 'no': 'nb',
+}
+
+
 class Config:
     def __init__(self, env_path: str = None):
         if env_path:
@@ -175,15 +189,8 @@ class Config:
         # from double-logging (it attaches its own handler and propagates).
         self.debug_http = os.getenv('DEBUG_HTTP', 'off').lower() in ['true', '1', 't', 'on', 'yes']
 
-        # Language code mapping for metadata
-        self.lang_code_map = {
-            'russian': 'ru', 'english': 'en', 'french': 'fr', 'german': 'de',
-            'spanish': 'es', 'italian': 'it', 'chinese': 'zh', 'japanese': 'ja',
-            'dutch': 'nl', 'portuguese': 'pt', 'polish': 'pl', 'ukrainian': 'uk',
-            'catalan': 'ca', 'danish': 'da', 'finnish': 'fi', 'swedish': 'sv',
-            'norwegian': 'nb', 'korean': 'ko', 'romanian': 'ro', 'greek': 'el',
-            'lithuanian': 'lt', 'macedonian': 'mk', 'croatian': 'hr', 'slovenian': 'sl',
-        }
+        # Language name -> ISO 639-1 code (metadata, output-file marker, src/lexicon.py)
+        self.lang_code_map = dict(LANG_CODE_MAP)
 
         # Validate API keys
         if not self.api_key_translate:

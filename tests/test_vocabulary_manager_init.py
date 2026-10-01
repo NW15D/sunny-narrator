@@ -13,6 +13,6 @@ def test_initialize_new_dictionary_no_attribute_error(tmp_path):
     book = tmp_path / "TestBook.fb2"
     book.write_text("<FictionBook></FictionBook>", encoding="utf-8")
     vm = VocabularyManager(str(book))
-    vm._create_dictionary = lambda *a, **kw: None
+    vm.build_dictionary = lambda *a, **kw: None
     with pytest.raises(DictionaryCreatedSignal):
         vm.initialize()

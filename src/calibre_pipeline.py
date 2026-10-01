@@ -842,7 +842,8 @@ def translate_chunks(
     dict_file: Optional[str] = None,
     checkpoint_file: Optional[str] = None,
     remove_on_success: bool = True,
-    stats_out: Optional['TranslationStats'] = None
+    stats_out: Optional['TranslationStats'] = None,
+    vocab_manager=None,
 ) -> str:
     """
     Translate Markdown text in chunks using existing translate_chunk.
@@ -877,6 +878,8 @@ def translate_chunks(
             aggregate counters (source/target chars, chunk counts). Lets
             callers print a statistics report even though this function
             itself only returns the translated text.
+        vocab_manager: Already loaded VocabularyManager (run_pipeline passes
+            the one it initialized). None: one is created for book_path.
 
     Returns:
         Translated markdown text
@@ -956,11 +959,11 @@ def translate_chunks(
     # Glossary: one VocabularyManager for all formats, so loading, per-chunk
     # matching (inflected forms, CJK, word-vector similarity) and gender
     # write-back behave exactly as in the classic pipeline.
-    vocab_manager = None
-    if book_path:
+    if vocab_manager is None and book_path:
         from src.vocabulary_manager import get_vocabulary_manager
         try:
-            vocab_manager = get_vocabulary_manager(book_path, dict_file=dict_file)
+            vocab_manager = get_vocabulary_manager(book_path, dict_file=dict_file, source_lang=source_lang,
+                                                   target_lang=target_lang, country=country)
             vocab_manager.load()
             if vocab_manager.vocab and logger:
                 logger.info(f"Loaded vocabulary: {len(vocab_manager.vocab)} terms from {vocab_manager.dict_file}")
@@ -2060,12 +2063,10 @@ def run_pipeline(
         # pipeline, fed with the converted Markdown: an existing .dic is loaded;
         # a missing one is built (NER + LLM) and DictionaryCreatedSignal stops
         # the run so the user can review it before anything is translated.
+        logger.info("Step 2/5: Dictionary...")
         from src.vocabulary_manager import get_vocabulary_manager
-        vocab_manager = get_vocabulary_manager(input_path, dict_file=dict_file)
-        if os.path.exists(vocab_manager.dict_file):
-            logger.info(f"Step 2/5: Dictionary already exists: {vocab_manager.dict_file}")
-        else:
-            logger.info("Step 2/5: Building dictionary from source markdown...")
+        vocab_manager = get_vocabulary_manager(input_path, dict_file=dict_file, source_lang=source_lang,
+                                               target_lang=target_lang, country=country)
         vocab_manager.initialize(source_text=markdown_text)
 
         # Translate title/author/publisher/description so the output
@@ -2120,6 +2121,7 @@ def run_pipeline(
             # discard a finished translation.
             remove_on_success=False,
             stats_out=translate_stats,
+            vocab_manager=vocab_manager,
         )
         # Unprotect in reverse order of protection.
         translated_md = _restore_markdown_html(translated_md, html_refs)
