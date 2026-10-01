@@ -34,6 +34,7 @@ import tiktoken
 from src.config import Config
 from src.llm_logger import log_llm_call
 from src.p_tags_processor import post_process_p_tags
+from src import lexicon
 from src.fb2_structure import join_paragraph_halves, split_in_two, split_paragraph_in_two
 
 # LLMService, TranslationPipeline, translate_chunk are defined in this module
@@ -258,37 +259,70 @@ def build_synopsis_characters(vocab_entries, translation: str) -> str:
     return "<characters>\n" + "\n".join(lines) + "\n</characters>\n\n"
 
 
-_GENDERS_BLOCK_RE = re.compile(r'<genders>(.*?)(?:</genders>|$)', re.DOTALL | re.IGNORECASE)
+# A block whose closing tag is missing ends where the other block starts
+_GENDERS_BLOCK_RE = re.compile(r'<genders>(.*?)(?:</genders>|(?=<terms>)|$)', re.DOTALL | re.IGNORECASE)
+_TERMS_BLOCK_RE = re.compile(r'<terms>(.*?)(?:</terms>|(?=<genders>)|$)', re.DOTALL | re.IGNORECASE)
+_MARKUP_TAG_RE = re.compile(r'<[^<>]*>')
 _VALID_GENDERS = {'he', 'she', 'it', 'they'}
 
 
-def extract_synopsis_genders(text: str, source_text: str) -> Tuple[str, List[Dict[str, str]]]:
-    """
-    Split the synopsis response into the synopsis itself and the characters
-    listed in its <genders> block ("source | target | gender" per line).
+def _min_term_length(term: str) -> int:
+    # Two CJK/Hangul/Thai characters already make a word
+    return 2 if lexicon.is_unspaced(term) else 4
 
-    A character is kept only if its source name really occurs in the source
-    chunk: that name becomes a .dic key, so a hallucinated or re-transliterated
-    one would never match later chunks.
+
+def extract_dictionary_candidates(text: str, source_text: str,
+                                  source_lang: str = "") -> Tuple[str, List[Dict[str, str]]]:
     """
-    match = _GENDERS_BLOCK_RE.search(text or "")
-    if not match:
+    Split the synopsis response into the synopsis itself and the dictionary
+    candidates of its <genders> block ("source | target | gender" per line,
+    category PERSON) and <terms> block ("source | target" per line, category
+    TERM: coined words like "spidergun").
+
+    A candidate is kept only if its source really occurs in the source chunk
+    (markup stripped): it becomes a .dic key, so a hallucinated or
+    re-transliterated one would never match later chunks. A term may stand
+    there inflected (the prompt asks for its base form), so terms are looked
+    up with lexicon.find_terms (stems) instead of as a substring.
+    """
+    synopsis = text or ""
+    blocks = []
+    for block_re in (_GENDERS_BLOCK_RE, _TERMS_BLOCK_RE):
+        match = block_re.search(synopsis)
+        blocks.append(match.group(1) if match else None)
+        if match:
+            synopsis = synopsis[:match.start()] + synopsis[match.end():]
+    if blocks == [None, None]:
         return text, []
-    synopsis = (text[:match.start()] + text[match.end():]).strip()
-    source_lower = (source_text or "").lower()
-    characters, seen = [], set()
-    for line in match.group(1).splitlines():
-        parts = [p.strip().strip('"\'*-').strip() for p in line.split('|')]
-        if len(parts) != 3:
-            continue
-        source, target, gender = parts[0], parts[1], parts[2].lower()
-        if not source or not target or gender not in _VALID_GENDERS:
-            continue
-        if source.lower() not in source_lower or source.lower() in seen:
-            continue
-        seen.add(source.lower())
-        characters.append({'source': source, 'target': target, 'gender': gender})
-    return synopsis, characters
+    synopsis = synopsis.strip()
+    plain_source = _MARKUP_TAG_RE.sub(' ', source_text or "")
+    source_lower = plain_source.lower()
+    stop_words = lexicon.get_stop_words(source_lang) if source_lang else frozenset()
+    candidates, seen = [], set()
+    for category, block in zip(('PERSON', 'TERM'), blocks):
+        for line in (block or "").splitlines():
+            parts = [p.strip().strip('"\'*-').strip() for p in line.split('|')]
+            if len(parts) != (3 if category == 'PERSON' else 2):
+                continue
+            source, target = parts[0], parts[1]
+            gender = parts[2].lower() if category == 'PERSON' else ''
+            if not source or not target or source.lower() in seen:
+                continue
+            if category == 'PERSON':
+                if gender not in _VALID_GENDERS or source.lower() not in source_lower:
+                    continue
+            else:
+                if (len(source) < _min_term_length(source)
+                        or lexicon.is_stop_word(source, stop_words)
+                        or source.lower() == target.lower()):
+                    continue
+                found = (lexicon.find_terms(plain_source, [source], source_lang) if source_lang
+                         else source.lower() in source_lower)
+                if not found:
+                    continue
+            seen.add(source.lower())
+            candidates.append({'source': source, 'target': target, 'gender': gender, 'category': category})
+    return synopsis, candidates
 
 
 def replace_vocab_in_text(
@@ -402,7 +436,7 @@ class PipelineState:
     context: TranslationContext
     initial_translation: Optional[str] = None
     synopsis: Optional[str] = None
-    synopsis_characters: List[Dict[str, str]] = field(default_factory=list)
+    synopsis_candidates: List[Dict[str, str]] = field(default_factory=list)
     reflection: Optional[str] = None       # Merged quality + nuances
     final_translation: Optional[str] = None
     
@@ -420,7 +454,7 @@ class PipelineState:
             self.initial_translation = result.text
         elif result.stage == TranslationStage.SYNOPSIS:
             self.synopsis = result.text
-            self.synopsis_characters = result.metadata.get("characters", [])
+            self.synopsis_candidates = result.metadata.get("dictionary_candidates", [])
         elif result.stage == TranslationStage.REFLECTION:
             self.reflection = result.text
         elif result.stage == TranslationStage.IMPROVE:
@@ -982,7 +1016,8 @@ class TranslationPipeline:
             target_lang=context.target_lang,
             source_text=context.source_text,
             final_translation=translation,
-            characters_block=build_synopsis_characters(context.vocab_entries, translation)
+            characters_block=build_synopsis_characters(context.vocab_entries, translation),
+            dictionary_rules=config.get_prompt("synopsis", "dictionary_rules")
         )
         system_prompt = config.get_prompt("synopsis", "system")
         
@@ -995,11 +1030,11 @@ class TranslationPipeline:
             allow_empty=True  # Synopsis can be empty - no retry needed
         )
         
-        # Cut the <genders> block out before tag cleanup, which could otherwise
-        # pick the block's content as "the" answer instead of the synopsis.
-        text, characters = extract_synopsis_genders(text, context.source_text)
-        if characters:
-            logger.info(f"[synopsis] Genders reported for {len(characters)} character(s)")
+        # Cut the <genders>/<terms> blocks out before tag cleanup, which could
+        # otherwise pick a block's content as "the" answer instead of the synopsis.
+        text, candidates = extract_dictionary_candidates(text, context.source_text, context.source_lang)
+        if candidates:
+            logger.info(f"[synopsis] Dictionary candidates reported: {len(candidates)}")
 
         text = remove_tags_with_check(text, "generate_synopsis", LLMRole.TRANSLATE)
 
@@ -1012,7 +1047,7 @@ class TranslationPipeline:
             stage=TranslationStage.SYNOPSIS,
             llm_role=LLMRole.TRANSLATE,
             text=text,
-            metadata={"characters": characters},
+            metadata={"dictionary_candidates": candidates},
             tokens_used=tokens_used
         )
     
@@ -1406,7 +1441,7 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
                     outline_text: str, vocab_dict: dict, vocab_entries: list = None,
                     country: str = "", style: str = "text", fast_mode: bool = False,
                     depth: int = 0, _llm_call_count: list = None,
-                    character_sink: list = None) -> tuple:
+                    candidate_sink: list = None) -> tuple:
     """
     Translate a single chunk using the dual-LLM pipeline.
     
@@ -1423,8 +1458,10 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
         style: "xml" or "text"
         fast_mode: Skip reflection/improve stages
         depth: Current recursion depth (for rechunking)
-        character_sink: If given, extended with the {source, target, gender}
-            dicts the synopsis stage reported, so the caller can update the .dic
+        candidate_sink: If given, extended with the dictionary candidates
+            ({source, target, gender, category} dicts: named characters and
+            coined terms) the synopsis stage reported, so the caller can
+            update the .dic
     
     Returns:
         Tuple of (final_translation, synopsis)
@@ -1474,7 +1511,7 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
             return translate_chunk(
                 source_lang, target_lang, source_text, outline_text,
                 vocab_dict, vocab_entries, country, style, fast_mode, depth + 1,
-                _llm_call_count=_llm_call_count, character_sink=character_sink
+                _llm_call_count=_llm_call_count, candidate_sink=candidate_sink
             )
         if _llm_call_count[0] >= MAX_LLM_CALLS_PER_CHUNK:
             logger.warning(f"LLM call cap ({MAX_LLM_CALLS_PER_CHUNK}) reached, stopping recursion")
@@ -1507,12 +1544,12 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
         result1, syn1 = translate_chunk(
             source_lang, target_lang, part1, outline_text,
             vocab_dict, vocab_entries, country, style, fast_mode, depth + 1,
-            _llm_call_count=_llm_call_count, character_sink=character_sink
+            _llm_call_count=_llm_call_count, candidate_sink=candidate_sink
         )
         result2, syn2 = translate_chunk(
             source_lang, target_lang, part2, outline_text,
             vocab_dict, vocab_entries, country, style, fast_mode, depth + 1,
-            _llm_call_count=_llm_call_count, character_sink=character_sink
+            _llm_call_count=_llm_call_count, candidate_sink=candidate_sink
         )
         
         # Combine results (C4: fail-fast — an empty half means lost content)
@@ -1528,8 +1565,8 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
         
         return combined_translation, combined_synopsis
     
-    if character_sink is not None:
-        character_sink.extend(state.synopsis_characters)
+    if candidate_sink is not None:
+        candidate_sink.extend(state.synopsis_candidates)
 
     # Also reached when splitting is exhausted (MAX_DEPTH): such an outlier
     # must not shift the expected ratio.

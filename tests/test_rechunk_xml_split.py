@@ -17,7 +17,7 @@ def _run(monkeypatch, source, style):
         text = kw['source_text']
         # first call: absurdly long translation to force a split; halves: identity
         out = text * 10 if len(seen) == 1 else text
-        return SimpleNamespace(final_translation=out, synopsis='', synopsis_characters=[], total_tokens=0)
+        return SimpleNamespace(final_translation=out, synopsis='', synopsis_candidates=[], total_tokens=0)
 
     monkeypatch.setattr(utils._pipeline, 'execute', fake_execute)
     result, _ = utils.translate_chunk('en', 'ru', source, '', {}, style=style)

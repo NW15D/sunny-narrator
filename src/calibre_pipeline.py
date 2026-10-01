@@ -995,10 +995,10 @@ def translate_chunks(
             chunk_vocab_entries = vocab_manager.get_vocab_for_chunk(chunk, 0, i)
         chunk_vocab_dict = {e.source: e.target for e in chunk_vocab_entries}
         translation = None
-        characters = []
+        candidates = []
         for attempt in range(3):  # Up to 3 attempts
             try:
-                characters = []
+                candidates = []
                 translation, synopsis = translate_chunk(
                     source_lang=source_lang,
                     target_lang=target_lang,
@@ -1009,7 +1009,7 @@ def translate_chunks(
                     country=country,
                     style=style,
                     fast_mode=fast_mode,
-                    character_sink=characters
+                    candidate_sink=candidates
                 )
 
                 outline_text = synopsis or ""
@@ -1052,11 +1052,11 @@ def translate_chunks(
             failed_chunks += 1
             chunk_failed = True
 
-        if characters and not chunk_failed and vocab_manager is not None:
+        if candidates and not chunk_failed and vocab_manager is not None:
             try:
-                vocab_manager.record_character_genders(characters)
+                vocab_manager.record_dictionary_candidates(candidates)
             except OSError as e:
-                logger.warning(f"Could not update dictionary with character genders: {e}")
+                logger.warning(f"Could not update dictionary with synopsis candidates: {e}")
 
         # Sanitize surrogates before storing
         translation = sanitize_surrogates(translation)

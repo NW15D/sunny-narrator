@@ -440,6 +440,28 @@ def _match_vocab_terms(text, vocab, lng, threshold, batch_size, xp):
     return list(matched)
 
 
+def known_words(words):
+    """The one-word entries of `words` the spaCy model has a word vector for.
+
+    A coined word ("spidergun") has none, an ordinary one ("starship") does,
+    so this filters dictionary candidates. Empty when the model has no
+    vectors (*_sm) or cannot be loaded: nothing is filtered then.
+    """
+    if config.nermodel in _UNUSABLE_MATCH_MODELS:
+        return set()
+    try:
+        vocab = _get_nlp(config.nermodel, max_length=200000).vocab
+    except (Exception, SystemExit) as e:
+        _UNUSABLE_MATCH_MODELS.add(config.nermodel)
+        logger.warning(f"spaCy model {config.nermodel} unavailable, dictionary terms are not "
+                       f"checked against its vocabulary: {e}")
+        return set()
+    if not len(vocab.vectors):
+        return set()
+    return {w for w in words
+            if len(w.split()) == 1 and (vocab.has_vector(w) or vocab.has_vector(w.lower()))}
+
+
 def find_matching_words_with_cosine_similarity(text, vocab, lng, threshold=0.8, batch_size=1024):
     """
     Find vocabulary terms in text (GPU-accelerated cosine stage, needs CuPy).

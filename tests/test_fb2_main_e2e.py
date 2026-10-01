@@ -37,7 +37,7 @@ def _fake_translate(fail_on=None):
 
     def translate(source_lang, target_lang, source_text, outline_text, vocab_dict,
                   vocab_entries=None, country='', style='text', fast_mode=False,
-                  depth=0, _llm_call_count=None, character_sink=None):
+                  depth=0, _llm_call_count=None, candidate_sink=None):
         calls['n'] += 1
         if fail_on is not None and calls['n'] == fail_on:
             raise Interrupted

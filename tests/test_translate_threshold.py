@@ -28,7 +28,7 @@ def test_single_failed_chunk_aborts(monkeypatch):
         def __init__(self, text):
             self.final_translation = text
             self.synopsis = ''
-            self.synopsis_characters = []
+            self.synopsis_candidates = []
             self.total_tokens = 0
 
     def _execute(**kwargs):

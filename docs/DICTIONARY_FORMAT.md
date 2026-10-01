@@ -235,7 +235,7 @@ All reading and writing of `.dic` files goes through
 - `_load_from_file()` — parses `source = target, category, gender, notes`
   (the part after `=` with `csv.reader`, so quoted values may contain commas).
 - `_parse_and_append_chunk()` — writes LLM-translated terms with CSV quoting.
-- `apply_character_genders()` — fills in genders reported by the synopsis stage.
+- `apply_dictionary_candidates()` — writes what the synopsis stage reported: fills in genders, appends new named characters (PERSON) and coined terms (TERM, e.g. `spidergun`).
 
 ---
 
