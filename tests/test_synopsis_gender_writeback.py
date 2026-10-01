@@ -122,3 +122,24 @@ def test_vocabulary_manager_reloads_after_recording(tmp_path):
     assert vm.vocab['이영희'].target == 'Ли Ёнхи'
     assert vm.vocab['이영희'].category == 'PERSON'
     assert vm.vocab['이영희'].gender == 'she'
+
+
+def test_common_nouns_are_not_added_to_dictionary(tmp_path):
+    from src.vocabulary_manager import apply_character_genders, looks_like_proper_name
+
+    assert looks_like_proper_name("Ares") and looks_like_proper_name("Runcible AI")
+    assert looks_like_proper_name("Ludwig von Mises") and looks_like_proper_name("김철수")
+    assert not looks_like_proper_name("Jain soldier")
+    assert not looks_like_proper_name("submind") and not looks_like_proper_name("worm fragment")
+
+    dic = tmp_path / "b.dic"
+    dic.write_text("Ares = Арес, PERSON, , \n", encoding="utf-8")
+    chars = [
+        {'source': 'Jain soldier', 'target': 'солдат Джайнов', 'gender': 'he'},
+        {'source': 'submind', 'target': 'субразум', 'gender': 'it'},
+        {'source': 'Ares', 'target': 'Арес', 'gender': 'he'},
+        {'source': 'Orlandine', 'target': 'Орландина', 'gender': 'she'},
+    ]
+    assert apply_character_genders(str(dic), chars) == (1, 1)
+    text = dic.read_text(encoding="utf-8")
+    assert "Orlandine" in text and "soldier" not in text and "submind" not in text

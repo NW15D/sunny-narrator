@@ -52,6 +52,28 @@ def _dic_field(value: str) -> str:
     return f'"{value}"' if ',' in value else value
 
 
+_NAME_PARTICLES = {
+    'of', 'the', 'de', 'del', 'della', 'di', 'da', 'von', 'van', 'der', 'den', 'la', 'le',
+    'el', 'al', 'bin', 'ibn', 'du', 'des', 'af', 'zu',
+}
+
+
+def looks_like_proper_name(source: str) -> bool:
+    """
+    True when `source` can be a proper name: every word starts with a capital
+    (name particles like "of"/"von" excepted), so "Jain soldier", "submind"
+    and "worm fragment" are rejected. Scripts without letter case (CJK, Thai,
+    Arabic, ...) have no such signal and always pass.
+    """
+    words = source.split()
+    if not words or not any(c.isupper() or c.islower() for c in source):
+        return bool(words)
+    named = [w for w in words if w.casefold() not in _NAME_PARTICLES]
+    return bool(named) and all(
+        not w[0].isalpha() or w[0].isupper() for w in named
+    )
+
+
 def apply_character_genders(dict_file: str, characters: List[Dict[str, str]]) -> Tuple[int, int]:
     """
     Write genders reported by the synopsis stage into a .dic file.
@@ -83,6 +105,8 @@ def apply_character_genders(dict_file: str, characters: List[Dict[str, str]]) ->
     for char in characters:
         hit = index.get(char['source'].lower()) or index.get(char['target'].lower())
         if hit is None:
+            if not looks_like_proper_name(char['source']):
+                continue  # synopsis LLM reported a common noun, not a named character
             appended.append(f"{char['source']} = {_dic_field(char['target'])}, PERSON, {char['gender']}, ")
             entry = (None, char['source'], [char['target'], 'PERSON', char['gender'], ''])
             index[char['source'].lower()] = entry
@@ -653,7 +677,7 @@ class VocabularyManager:
         """Grow the dictionary while the book is translated (every format).
 
         Characters reported by the synopsis stage are written to the .dic
-        (gender filled in, unknown characters appended) and the in-memory
+        (gender filled in, unknown characters with a proper name appended) and the in-memory
         index is reloaded, so the following chunks already get them in the
         prompt and the next run starts with them.
         """
