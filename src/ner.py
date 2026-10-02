@@ -45,6 +45,32 @@ _LABEL_NORMALIZATION = {"PS": "PERSON", "LC": "LOC", "OG": "ORG"}
 def _normalize_label(label):
     return _LABEL_NORMALIZATION.get(label, label)
 
+def _ner_disabled_pipes(lang=None):
+    """spaCy components NER does not need. Korean keeps the lemmatizer:
+    entity_text() reads the particle of "철수는" from the lemma "철수+는"."""
+    keep_lemmatizer = lexicon.lang_code(lang or config.source_lang) == 'ko'
+    return ["parser", "attribute_ruler"] + ([] if keep_lemmatizer else ["lemmatizer"])
+
+
+def entity_text(ent):
+    """Entity text without the grammatical particle (josa) glued to its last
+    word. Korean writes "철수는", "서울에서", "영희가" for 철수, 서울, 영희, and
+    the .dic term must be the bare name or it matches one form only. The
+    morphology comes from the model: tag "ncn+jxt", lemma "철수+는"; particle
+    tags start with "j". Other languages have no such tags and pass unchanged."""
+    text = ent.text.strip()
+    tags, lemmas = ent[-1].tag_.split('+'), ent[-1].lemma_.split('+')
+    if len(tags) < 2 or len(tags) != len(lemmas):
+        return text
+    particle = ''
+    while len(tags) > 1 and tags[-1].startswith('j'):
+        tags.pop()
+        particle = lemmas.pop() + particle
+    if particle and text.endswith(particle) and len(text) > len(particle):
+        return text[:-len(particle)]
+    return text
+
+
 def _get_nlp(model_name, max_length=200000):
     """Get or create a cached spaCy model instance."""
     if model_name not in _nlp_cache:
@@ -151,13 +177,13 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
         for i, chunk in enumerate(text_chunks):
             try:
                 # We only need NER here, so we can disable parser and lemmatizer to save time and avoid warnings
-                doc = nlp(chunk, disable=["parser", "lemmatizer", "attribute_ruler"])
+                doc = nlp(chunk, disable=_ner_disabled_pipes(lang))
                 # No vector_norm filter here: languages with sparse word-vector
                 # coverage (e.g. Korean, where particles attach to the entity
                 # surface form) would have every entity's vector_norm come out
                 # at 0, silently dropping the entire NER result.
                 ents.extend([
-                    (ent.text.strip(), _normalize_label(ent.label_))
+                    (entity_text(ent), _normalize_label(ent.label_))
                     for ent in doc.ents if ent.label_ in NER_CATEGORIES
                 ])
 
@@ -783,14 +809,14 @@ def create_series_vocab(
         for chunk_idx, chunk in enumerate(text_chunks):
             try:
                 # Direct NER without make_vocab's merging
-                doc = nlp(chunk, disable=["parser", "lemmatizer", "attribute_ruler"])
+                doc = nlp(chunk, disable=_ner_disabled_pipes())
 
                 # Collect raw entities with their labels (see make_vocab() for
                 # why vector_norm is not used to filter entities, and
                 # NER_CATEGORIES for why the label list isn't OntoNotes-only)
                 for ent in doc.ents:
                     if ent.label_ in NER_CATEGORIES:
-                        all_raw_entities.append((ent.text.strip(), _normalize_label(ent.label_), book_name))
+                        all_raw_entities.append((entity_text(ent), _normalize_label(ent.label_), book_name))
 
                 if not include_words:
                     del doc

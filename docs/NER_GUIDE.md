@@ -506,3 +506,28 @@ serialized FB2: terms are looked up and targets inserted XML-escaped
 (`AT&amp;T`, `Б&amp;К`). Inflected forms (`Hatters`) are not substituted —
 the model gets them through the glossary lines of the prompt. Stages 2–4
 see the original.
+
+## CJK sources
+
+- **Models** (`SOURCE_LANG` picks them, `NERMODEL` overrides): `ko_core_news_lg`,
+  `ja_core_news_lg`, `zh_core_web_lg`. Japanese and Chinese need their
+  tokenizers (`pip install -e ".[cjk]"`: sudachipy, sudachidict-core,
+  spacy-pkuseg); Korean uses spaCy's own tokenizer. Checked with all three
+  models: lexical match, lemmas, cosine stage, entity extraction and
+  substitution.
+- **Stop words:** NLTK (Chinese) ∪ spaCy lists of the language, so Chinese
+  has ~1800 entries, Japanese ~160, Korean ~65, Thai 7. Terms in unspaced
+  scripts are matched as substrings and are not filtered by stop words
+  (the dictionary is what the user reviewed); stop words only filter NER
+  output and candidates.
+- **Korean particles:** the Korean model tags `철수는` as `ncn+jxt` with the
+  lemma `철수+는`. `ner.entity_text` cuts the trailing particle (tag `j*`)
+  of the entity's last word, so the `.dic` gets `철수`, `서울`, `영희` and
+  not one inflected form. The lemmatizer stays enabled for Korean only.
+  A short name still matches inside a longer one (`철수` in `김철수`): that
+  is the price of substring matching for glued particles.
+- **Priority** works the same: `魔王城` beats `魔王` where they overlap, and a
+  line break inside a term is not skipped (`魔王⏎城` is not `魔王城`).
+- **Known limits:** NER quality depends on the model (`韩梅梅` may come out as
+  `韩梅`); `ner.known_words` filters coined one-word terms by word vectors,
+  so a word the model knows (`거미총` in ko) is treated as an ordinary word.

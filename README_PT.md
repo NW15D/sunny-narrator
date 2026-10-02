@@ -143,6 +143,9 @@ Livros podem ser traduzidos diretamente de idiomas CJK para qualquer idioma, com
 
 - **NER:** `ko_core_news_lg` usa seu próprio esquema de rótulos KLUE (`PS`/`LC`/`OG`) — ele é reconhecido e normalizado para `PERSON`/`LOC`/`ORG`.
 - **Busca no dicionário:** termos CJK são encontrados como substrings — não há espaços entre as palavras, e as partículas coreanas são escritas junto ao substantivo (`철수는`).
+- **Modelos:** `python -m spacy download ko_core_news_lg` (nada extra); `ja_core_news_lg` e `zh_core_web_lg` precisam de tokenizadores: `pip install -e ".[cjk]"`.
+- **Partículas coreanas:** as entidades vão para o dicionário sem a partícula colada (`철수는` → `철수`, `서울에서` → `서울`), então o termo encontra todas as formas da palavra. Pela busca por substring, um nome curto também é encontrado dentro de um mais longo (`철수` em `김철수`) — confira esses termos no `.dic` gerado.
+- **Prioridade:** o termo mais longo vence (`魔王城` sobre `魔王`); um termo latino dentro de texto CJK (`ABC社`, inclusive o `ＡＢＣ` de largura total) é substituído como palavra própria.
 - **Palavras frequentes** (só com `DICT_FREQUENT_WORDS=true`): tamanho mínimo de palavra de 2 caracteres em vez de 5 (uma palavra CJK costuma ter 1-3 caracteres).
 - **Controle de tamanho:** traduzido para idiomas alfabéticos, um texto CJK cresce 2-4 vezes em caracteres. A proporção esperada é aprendida com o próprio livro — a mediana dos chunks aceitos; os 3 primeiros chunks são verificados apenas contra falhas grosseiras (×0,25 … ×5).
 

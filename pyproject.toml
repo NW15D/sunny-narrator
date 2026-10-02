@@ -57,6 +57,14 @@ dependencies = [
 gpu = [
     "cupy-cuda12x==14.1.1",
 ]
+# Tokenizers that the Japanese and Chinese spaCy models need
+# (`python -m spacy download ja_core_news_lg zh_core_web_lg`). Korean
+# (ko_core_news_lg) uses spaCy's own tokenizer and needs nothing extra.
+cjk = [
+    "sudachipy==0.7.0",
+    "sudachidict-core==20260723.1",
+    "spacy-pkuseg==1.0.1",
+]
 dev = [
     "pytest",
     "pytest-timeout",

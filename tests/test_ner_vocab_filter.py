@@ -11,6 +11,13 @@ class _FakeEnt:
         self.label_ = label
         self.vector_norm = 1.0
 
+    def __getitem__(self, index):
+        # like a spaCy Span: its last token carries the morphology
+        class _Token:
+            tag_ = ""
+            lemma_ = ""
+        return _Token()
+
 
 class _FakeDoc:
     def __init__(self, ents):

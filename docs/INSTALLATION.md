@@ -29,6 +29,13 @@ pip install -e .
 # Download spaCy model
 python -m spacy download en_core_web_lg
 
+# CJK sources: the model for SOURCE_LANG (picked and downloaded automatically
+# on first use, or by hand) and, for Japanese/Chinese, their tokenizers
+pip install -e ".[cjk]"        # sudachipy + sudachidict-core (ja), spacy-pkuseg (zh)
+python -m spacy download ko_core_news_lg   # Korean needs nothing extra
+python -m spacy download ja_core_news_lg
+python -m spacy download zh_core_web_lg
+
 # Configure
 cp .env.example .env
 # Edit .env with your settings
