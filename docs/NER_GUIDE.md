@@ -149,10 +149,16 @@ formatted = manager.format_for_model(entries, model="Hunyuan")
 
 The same matcher runs for every input format — FB2/TXT (classic pipeline)
 and EPUB/DOCX/PDF (Calibre pipeline) both go through
-`VocabularyManager.get_vocab_for_chunk()`. Stage 1 is `lexicon.find_terms()`:
+`VocabularyManager.get_vocab_for_chunk()`. Stage 1 is `lexicon.find_terms()` / `resolve_terms()`:
 
 - Words are split by Unicode category (letters/marks/digits), not by regex,
   so it works for any script. A multi-word term must match consecutive words.
+- **Priority:** a multi-word term beats the shorter terms it contains
+  (`Mad Hatter` over `Hatter`), then the longer one, then the leftmost. A
+  term whose every occurrence is covered this way is dropped from the chunk
+  (`lexicon.resolve_terms` also reports it as *shadowed*, so the cosine stage
+  does not bring it back) and multi-word entries are listed first in the
+  prompt. Markup tags are not text: tag names never match a term.
 - Two words match when they share a key: casefolded form, NLTK Snowball
   stem (en, ru, de, fr, es, it, pt, nl, sv, da, nb, fi, ro, hu, ar) or the
   spaCy lemma of the chunk word. `spidergun` finds `spiderguns`,
@@ -468,3 +474,16 @@ grep "vocab terms matched" logs/*.log
 - **2026-03-29:** Added CPU fallback mode (`find_matching_words_with_cosine_similarity_cpu()`)
 - **2026-03-29:** Automatic GPU/CPU detection in `get_vocab_for_chunk()`
 - **Previous:** Initial NER implementation with GPU support
+
+
+## Substitution before the first stage
+
+`src/term_substitution.py` (`replace_vocab_in_text`) replaces the terms of
+the chunk in the source text before Stage 1, so the model cannot skip them.
+Same priority as above, occurrences never overlap. Markup is never touched
+(`<title>`, `l:href="#..."`), words may be separated by any whitespace,
+apostrophes may be typographic, CJK terms need no word boundaries. A
+lowercase term matches in any case (the target takes over the capital), a
+term with capitals matches as written or in ALL CAPS (`Will` is not replaced
+in "will"). Inflected forms (`Hatters`) are not substituted — the model gets
+them through the glossary lines of the prompt. Stages 2–4 see the original.

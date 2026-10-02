@@ -18,16 +18,29 @@ and, when the caller passes a lemma map built by spaCy, the lemma. Stems
 and lemmas that are stop words are ignored, so "Ares" does not match "are".
 A Snowball stem can still merge a few unrelated words ("universe"/
 "university"), which only puts an extra glossary line into the prompt.
+
+Overlapping terms are resolved by priority: a term made of more words wins
+over the shorter ones it contains ("Mad Hatter" over "Hatter"), then the
+longer one, then the leftmost. A term whose every occurrence is covered by
+a winner is "shadowed" and not reported as found, so the prompt never lists
+"Hatter = Шляпник" next to "Mad Hatter = Безумный Шляпник" for a chunk
+that only has the latter. term_substitution.py applies the same priority
+to the actual replacement.
 """
 from functools import lru_cache
 import importlib
 import logging
+import re
 import unicodedata
-from typing import Dict, FrozenSet, Iterable, List, Optional, Set
+from typing import Dict, FrozenSet, Iterable, List, Optional, Set, Tuple
 
 from src.config import LANG_CODE_MAP
 
 logger = logging.getLogger(__name__)
+
+# FB2/HTML tag: tag names ("title", "emphasis") are not text of the book. A
+# "<" followed by a non-letter ("a < b") is text and stays.
+MARKUP_TAG_RE = re.compile(r'</?[A-Za-z][\w:.-]*(?:\s[^<>]*)?/?>')
 
 
 # ISO code -> NLTK stopwords corpus file. NLTK has no list for ja, ko, pl,
@@ -216,33 +229,54 @@ def _keys(word: str, code: str, lemma_map: Optional[Dict[str, Set[str]]],
     return keys
 
 
-def find_terms(text: str, terms: Iterable[str], lang: str,
-               lemma_map: Optional[Dict[str, Set[str]]] = None) -> List[str]:
-    """Return the terms (as given) that occur in `text`.
+def _pick(spans: List[Tuple[str, int, int, Tuple[int, int]]], size: int) -> Set[str]:
+    """Greedy non-overlapping selection: higher rank first, then leftmost.
+    Returns the terms that kept at least one occurrence."""
+    taken = bytearray(size)
+    kept: Set[str] = set()
+    for term, start, end, _ in sorted(spans, key=lambda s: (-s[3][0], -s[3][1], s[1])):
+        if not any(taken[start:end]):
+            taken[start:end] = b'\x01' * (end - start)
+            kept.add(term)
+    return kept
+
+
+def resolve_terms(text: str, terms: Iterable[str], lang: str,
+                  lemma_map: Optional[Dict[str, Set[str]]] = None) -> Tuple[List[str], List[str]]:
+    """Return (found, shadowed): the terms (as given) that occur in `text`
+    and the ones that occur only inside a higher-priority term.
 
     A multi-word term matches a run of consecutive words. Each word matches
     when the two share a key: the surface form, its Snowball stem or a lemma
     from `lemma_map` ({normalized surface form: {normalized lemma, ...}},
     usually built from the spaCy doc of the chunk). Terms in unspaced
-    scripts are matched as substrings of the normalized text.
+    scripts are matched as substrings of the normalized text. Markup tags
+    are not text: inline tags do not break a multi-word term and tag names
+    never match.
     """
     code = lang_code(lang)
     terms = [t for t in dict.fromkeys(terms) if t and t.strip()]
     if not text or not terms:
-        return []
+        return [], []
+    text = MARKUP_TAG_RE.sub(' ', text)
 
     stop_words = get_stop_words(code)
     normalized_text = None
     text_keys = None
     index: Dict[str, Set[int]] = {}
-    matched = []
+    word_spans = []   # (term, first word, end word, rank) in word positions
+    char_spans = []   # same for unspaced terms, in characters of normalized_text
+    seen = set()
 
     for term in terms:
         if is_unspaced(term):
             if normalized_text is None:
                 normalized_text = normalize(text)
-            if normalize(term).strip() in normalized_text:
-                matched.append(term)
+            needle = normalize(term).strip()
+            pos = normalized_text.find(needle) if needle else -1
+            while pos != -1:
+                char_spans.append((term, pos, pos + len(needle), (1, len(needle))))
+                pos = normalized_text.find(needle, pos + 1)
             continue
 
         term_words = tokenize(term)
@@ -259,9 +293,25 @@ def find_terms(text: str, terms: Iterable[str], lang: str,
         for key in term_keys[0]:
             starts |= index.get(key, set())
         n = len(term_keys)
+        rank = (n, len(normalize(term)))
         for start in starts:
             if start + n <= len(text_keys) and all(
                     term_keys[j] & text_keys[start + j] for j in range(1, n)):
-                matched.append(term)
-                break
-    return matched
+                word_spans.append((term, start, start + n, rank))
+
+    kept = set()
+    if word_spans:
+        kept |= _pick(word_spans, len(text_keys))
+    if char_spans:
+        kept |= _pick(char_spans, len(normalized_text))
+    occurring = {s[0] for s in word_spans} | {s[0] for s in char_spans}
+    found = [t for t in terms if t in kept]
+    shadowed = [t for t in terms if t in occurring and t not in kept]
+    return found, shadowed
+
+
+def find_terms(text: str, terms: Iterable[str], lang: str,
+               lemma_map: Optional[Dict[str, Set[str]]] = None) -> List[str]:
+    """Return the terms (as given) that occur in `text` and are not shadowed
+    by a higher-priority overlapping term. See resolve_terms."""
+    return resolve_terms(text, terms, lang, lemma_map)[0]

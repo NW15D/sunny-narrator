@@ -35,6 +35,7 @@ from src.config import Config
 from src.llm_logger import log_llm_call
 from src.p_tags_processor import post_process_p_tags
 from src import lexicon
+from src.term_substitution import replace_vocab_in_text
 from src.fb2_structure import join_paragraph_halves, split_in_two, split_paragraph_in_two
 
 # LLMService, TranslationPipeline, translate_chunk are defined in this module
@@ -323,52 +324,6 @@ def extract_dictionary_candidates(text: str, source_text: str,
             seen.add(source.lower())
             candidates.append({'source': source, 'target': target, 'gender': gender, 'category': category})
     return synopsis, candidates
-
-
-def replace_vocab_in_text(
-    source_text: str,
-    vocab_dict: Dict[str, str],
-    source_lang: str = None
-) -> str:
-    """
-    Replace dictionary words in source_text with their translations.
-    Uses word boundary matching for exact matches only.
-    
-    This function is called BEFORE Stage 1 (INITIAL) translation to ensure
-    the LLM sees translated terms from the dictionary in context.
-    
-    Stages 2-4 (reflection, improve, final_edit) see the ORIGINAL source_text
-    without substitutions, allowing quality verification.
-    
-    Args:
-        source_text: Original text to translate
-        vocab_dict: Dictionary mapping source words → target translations
-        source_lang: Source language (reserved for future tokenizer use)
-    
-    Returns:
-        Text with dictionary words replaced (e.g., "everytime dragon fly" → "everytime драккар fly")
-    
-    Examples:
-        >>> replace_vocab_in_text("dragon fly", {"dragon": "драккар"})
-        'драккар fly'
-        >>> replace_vocab_in_text("dragonfly is dragon", {"dragon": "драккар"})
-        'dragonfly is драккар'  # only full word match
-        >>> replace_vocab_in_text("", {})
-        ''
-    """
-    if not vocab_dict or not source_text:
-        return source_text
-    
-    # Sort by length desc to replace longer matches first (avoids partial replacements)
-    sorted_keys = sorted(vocab_dict.keys(), key=len, reverse=True)
-    escaped_keys = [re.escape(k) for k in sorted_keys]
-    pattern = r'\b(' + '|'.join(escaped_keys) + r')\b'
-    
-    def replace_func(match):
-        word = match.group(1)
-        return vocab_dict.get(word, word)
-    
-    return re.sub(pattern, replace_func, source_text)
 
 
 # =============================================================================

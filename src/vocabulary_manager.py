@@ -753,7 +753,12 @@ class VocabularyManager:
             matched = match_fn(chunk_text, self._vocab_to_ner_format(), self.source_lang)
             mode = "GPU" if use_gpu else "CPU"
 
-        matched_keys = [key_by_source[term] for term in matched if term in key_by_source]
+        # Multi-word entries first: they take priority over the one-word ones
+        # (lexicon.resolve_terms drops the shadowed ones; the prompt lists the
+        # specific entry before the general one)
+        matched = sorted((t for t in matched if t in key_by_source),
+                         key=lambda t: -len(t.split()))
+        matched_keys = [key_by_source[term] for term in matched]
         self.matched_terms_cache[cache_key] = matched_keys
 
         if config.debug:

@@ -380,7 +380,7 @@ def _match_vocab_terms(text, vocab, lng, threshold, batch_size, xp):
     Two-stage matching shared by the GPU (xp=cupy) and CPU (xp=numpy) entry points.
 
     spaCy runs once on the chunk and serves both stages:
-    1. LEXICAL: lexicon.find_terms — word-sequence match on surface forms,
+    1. LEXICAL: lexicon.resolve_terms — word-sequence match on surface forms,
        Snowball stems and spaCy lemmas (wolves -> wolf), substring match for
        CJK and other unspaced scripts. Without a usable spaCy model the same
        search runs on surface forms and stems only.
@@ -407,10 +407,13 @@ def _match_vocab_terms(text, vocab, lng, threshold, batch_size, xp):
                        f"continues without lemmas/word vectors: {e}")
         return lexicon.find_terms(text, terms, lng)
 
-    matched = set(lexicon.find_terms(text, terms, lng, _lemma_map(doc)))
+    found, shadowed = lexicon.resolve_terms(text, terms, lng, _lemma_map(doc))
+    matched = set(found)
     if config.debug:
         print(f"  Lexical matches: {sorted(matched)}")
-    unmatched = [t for t in terms if t not in matched]
+    # A term covered by a longer one ("Hatter" inside "Mad Hatter") must not
+    # come back through word vectors: the token "hatter" is its own best match
+    unmatched = [t for t in terms if t not in matched and t not in shadowed]
     if not unmatched:
         return list(matched)
 
