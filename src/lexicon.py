@@ -2,15 +2,17 @@
 Language-aware lexical helpers shared by every dictionary code path.
 
 - get_stop_words(lang): stop words for the source language (NLTK + spaCy).
-- find_terms(text, terms, lang): which glossary terms occur in a text chunk,
-  including inflected forms (spidergun -> spiderguns, паукопушка ->
-  паукопушками).
+- resolve_terms / find_terms(text, terms, lang): which glossary terms occur
+  in a text chunk, including inflected forms (spidergun -> spiderguns,
+  паукопушка -> паукопушками).
+- non_text_spans / text_segments: markup that is not text of the book.
+- term_rank: priority of overlapping terms.
 
-No regular expressions on purpose: \\b and \\w-based patterns assume
-space-separated words and silently fail on CJK, where a term is a run of
-characters inside an unbroken sentence. Words are split by Unicode
-category instead, and terms written in a script without spaces between
-words are matched as substrings.
+No regular expressions for word matching on purpose: \\b and \\w-based
+patterns assume space-separated words and silently fail on CJK, where a term
+is a run of characters inside an unbroken sentence. Words are split by
+Unicode category instead, and terms written in a script without spaces
+between words are matched as substrings.
 
 Inflected forms are matched by comparing normalized keys of each word:
 casefolded surface form, NLTK Snowball stem (when the language has one)
@@ -19,13 +21,17 @@ and lemmas that are stop words are ignored, so "Ares" does not match "are".
 A Snowball stem can still merge a few unrelated words ("universe"/
 "university"), which only puts an extra glossary line into the prompt.
 
-Overlapping terms are resolved by priority: a term made of more words wins
-over the shorter ones it contains ("Mad Hatter" over "Hatter"), then the
-longer one, then the leftmost. A term whose every occurrence is covered by
-a winner is "shadowed" and not reported as found, so the prompt never lists
-"Hatter = Шляпник" next to "Mad Hatter = Безумный Шляпник" for a chunk
-that only has the latter. term_substitution.py applies the same priority
-to the actual replacement.
+Overlapping terms are resolved by priority (term_rank): a term made of more
+words wins over the shorter ones it contains ("Mad Hatter" over "Hatter"),
+then the longer one, then the leftmost. A term whose every occurrence is
+covered by a winner is "shadowed" and not reported as found, so the prompt
+never lists "Hatter = Шляпник" next to "Mad Hatter = Безумный Шляпник" for
+a chunk that only has the latter. term_substitution.py replaces terms with
+the same priority, and both obey the same limits:
+- markup (non_text_spans) is not text and breaks a multi-word term, so
+  "Mad</p><p>Hatter" is two words of two paragraphs, not the phrase;
+- only an occurrence in the term's case (or ALL CAPS) can shadow another
+  term: "the mad Hatter" is not "Mad Hatter", so "Hatter" stays found.
 """
 from functools import lru_cache
 import importlib
@@ -35,12 +41,41 @@ import unicodedata
 from typing import Dict, FrozenSet, Iterable, List, Optional, Set, Tuple
 
 from src.config import LANG_CODE_MAP
+from src.fb2_structure import markup_tags
 
 logger = logging.getLogger(__name__)
 
-# FB2/HTML tag: tag names ("title", "emphasis") are not text of the book. A
-# "<" followed by a non-letter ("a < b") is text and stays.
-MARKUP_TAG_RE = re.compile(r'</?[A-Za-z][\w:.-]*(?:\s[^<>]*)?/?>')
+# Markdown that is not text (Calibre-pipeline chunks): link and image targets
+# ](url "title") and ](<url>), reference definitions "[id]: url", attribute
+# blocks {#id .class} / {width="50%"}, autolinks <https://...>, bare URLs.
+_MARKDOWN_NON_TEXT_RE = re.compile(
+    r'\]\(<[^<>\n]*>(?:\s+"[^"\n]*")?\)'
+    r'|\]\([^()\s]*(?:\([^()\s]*\)[^()\s]*)*(?:\s+"[^"\n]*")?\)'
+    r'|^ {0,3}\[[^\]\n]+\]:[^\n]*'
+    r'|\{[#.][^{}\n]*\}|\{[A-Za-z][\w-]*="[^"\n]*"[^{}\n]*\}'
+    r'|<(?:https?|ftp|mailto):[^<>\s]*>'
+    r'|(?:https?|ftp)://[^\s<>()\[\]]+',
+    re.MULTILINE)
+
+
+def non_text_spans(text: str) -> List[Tuple[int, int]]:
+    """Sorted (start, end) spans of `text` that are markup, not text of the
+    book: FB2/HTML tags (fb2_structure.markup_tags, so "a<b and c>d" and a
+    pandoc-escaped "\\<Skill acquired\\>" stay text) and the markdown above."""
+    spans = [m.span() for m in markup_tags(text)]
+    spans += [m.span() for m in _MARKDOWN_NON_TEXT_RE.finditer(text)]
+    return sorted(spans)
+
+
+def text_segments(text: str) -> List[str]:
+    """The pieces of `text` between its non_text_spans."""
+    pieces, pos = [], 0
+    for start, end in non_text_spans(text):
+        if start >= pos:
+            pieces.append(text[pos:start])
+        pos = max(pos, end)
+    pieces.append(text[pos:])
+    return pieces
 
 
 # ISO code -> NLTK stopwords corpus file. NLTK has no list for ja, ko, pl,
@@ -186,14 +221,9 @@ def is_unspaced(term: str) -> bool:
     return any(_is_unspaced_char(ch) for ch in term)
 
 
-def tokenize(text: str) -> List[str]:
-    """Split normalized text into words: maximal runs of letters, marks and
-    digits. Apostrophes, hyphens and punctuation separate words, so
-    "spider-gun's" -> ["spider", "gun", "s"]. A switch between an unspaced
-    script and any other one also ends a word, so a Latin name inside
-    Japanese text stays a word of its own ("ABC社の製品" -> ["abc", "社の製品"])."""
+def _split_words(text: str) -> List[str]:
     tokens, current, current_unspaced = [], [], False
-    for ch in normalize(text):
+    for ch in text:
         if not _is_word_char(ch):
             if current:
                 tokens.append(''.join(current))
@@ -208,6 +238,49 @@ def tokenize(text: str) -> List[str]:
     if current:
         tokens.append(''.join(current))
     return tokens
+
+
+def tokenize(text: str) -> List[str]:
+    """Split normalized text into words: maximal runs of letters, marks and
+    digits. Apostrophes, hyphens and punctuation separate words, so
+    "spider-gun's" -> ["spider", "gun", "s"]. A switch between an unspaced
+    script and any other one also ends a word, so a Latin name inside
+    Japanese text stays a word of its own ("ABC社の製品" -> ["abc", "社の製品"])."""
+    return _split_words(normalize(text))
+
+
+def _surface_words(text: str) -> Optional[List[str]]:
+    """The words of tokenize(text) with their case kept; None in the rare
+    case casefolding changed the word count."""
+    words = _split_words(unicodedata.normalize("NFKC", text))
+    return words if len(words) == len(tokenize(text)) else None
+
+
+def term_rank(term: str) -> Tuple[int, int]:
+    """Priority of a glossary term among overlapping ones, higher wins:
+    (number of words, length). Shared by matching, substitution and the
+    order of glossary lines in the prompt."""
+    folded = normalize(term).strip()
+    return (1 if is_unspaced(term) else len(tokenize(term)), len(folded))
+
+
+def _case_shape(word: str) -> str:
+    if len(word) > 1 and word.isupper():
+        return 'upper'
+    return 'title' if word[:1].isupper() else 'lower'
+
+
+def _case_fits(term: str, term_words: Optional[List[str]], found: List[Optional[str]]) -> bool:
+    """Whether an occurrence may shadow other terms: a lowercase term fits
+    any case; a term with capitals fits the same capitalisation of every
+    word (inflection allowed: "Mad Hatters") or ALL CAPS, like
+    term_substitution accepts it."""
+    if term == term.lower() or term_words is None or None in found:
+        return True
+    joined = ' '.join(found)
+    if len(joined) > 1 and joined.isupper():
+        return True
+    return all(_case_shape(t) == _case_shape(w) for t, w in zip(term_words, found))
 
 
 def _keys(word: str, code: str, lemma_map: Optional[Dict[str, Set[str]]],
@@ -250,32 +323,35 @@ def resolve_terms(text: str, terms: Iterable[str], lang: str,
     when the two share a key: the surface form, its Snowball stem or a lemma
     from `lemma_map` ({normalized surface form: {normalized lemma, ...}},
     usually built from the spaCy doc of the chunk). Terms in unspaced
-    scripts are matched as substrings of the normalized text. Markup tags
-    are not text: inline tags do not break a multi-word term and tag names
-    never match.
+    scripts are matched as substrings of the normalized text. Markup
+    (non_text_spans) never matches and no term spans across it. An
+    occurrence in another case than the term's (_case_fits) counts as found
+    but does not shadow anything.
     """
     code = lang_code(lang)
     terms = [t for t in dict.fromkeys(terms) if t and t.strip()]
     if not text or not terms:
         return [], []
-    text = MARKUP_TAG_RE.sub(' ', text)
+    segments = text_segments(text)
 
     stop_words = get_stop_words(code)
     normalized_text = None
     text_keys = None
+    text_words: List[Optional[str]] = []
     index: Dict[str, Set[int]] = {}
-    word_spans = []   # (term, first word, end word, rank) in word positions
-    char_spans = []   # same for unspaced terms, in characters of normalized_text
-    seen = set()
+    spans = {False: [], True: []}  # unspaced? -> [(term, start, end, rank)]
+    weak = set()  # terms with an occurrence that cannot shadow
 
     for term in terms:
+        rank = term_rank(term)
         if is_unspaced(term):
             if normalized_text is None:
-                normalized_text = normalize(text)
+                # \x00 never occurs in a term: no match across markup
+                normalized_text = '\x00'.join(normalize(seg) for seg in segments)
             needle = normalize(term).strip()
             pos = normalized_text.find(needle) if needle else -1
             while pos != -1:
-                char_spans.append((term, pos, pos + len(needle), (1, len(needle))))
+                spans[True].append((term, pos, pos + len(needle), rank))
                 pos = normalized_text.find(needle, pos + 1)
             continue
 
@@ -283,30 +359,41 @@ def resolve_terms(text: str, terms: Iterable[str], lang: str,
         if not term_words:
             continue
         if text_keys is None:
-            text_keys = [_keys(w, code, lemma_map, stop_words) for w in tokenize(text)]
+            text_keys = []
+            for seg in segments:
+                if text_keys:
+                    # a boundary that matches no word: no term across markup
+                    text_keys.append(frozenset())
+                    text_words.append(None)
+                words = tokenize(seg)
+                text_keys += [_keys(w, code, lemma_map, stop_words) for w in words]
+                text_words += _surface_words(seg) or [None] * len(words)
             for pos, keys in enumerate(text_keys):
                 for key in keys:
                     index.setdefault(key, set()).add(pos)
 
         term_keys = [_keys(w, code, lemma_map, stop_words) for w in term_words]
+        term_surface = _surface_words(term)
         starts = set()
         for key in term_keys[0]:
             starts |= index.get(key, set())
         n = len(term_keys)
-        rank = (n, len(normalize(term)))
         for start in starts:
             if start + n <= len(text_keys) and all(
                     term_keys[j] & text_keys[start + j] for j in range(1, n)):
-                word_spans.append((term, start, start + n, rank))
+                if _case_fits(term, term_surface, text_words[start:start + n]):
+                    spans[False].append((term, start, start + n, rank))
+                else:
+                    weak.add(term)
 
-    kept = set()
-    if word_spans:
-        kept |= _pick(word_spans, len(text_keys))
-    if char_spans:
-        kept |= _pick(char_spans, len(normalized_text))
-    occurring = {s[0] for s in word_spans} | {s[0] for s in char_spans}
-    found = [t for t in terms if t in kept]
-    shadowed = [t for t in terms if t in occurring and t not in kept]
+    found_set = set(weak)
+    if spans[False]:
+        found_set |= _pick(spans[False], len(text_keys))
+    if spans[True]:
+        found_set |= _pick(spans[True], len(normalized_text))
+    occurring = {s[0] for group in spans.values() for s in group}
+    found = [t for t in terms if t in found_set]
+    shadowed = [t for t in terms if t in occurring and t not in found_set]
     return found, shadowed
 
 

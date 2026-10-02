@@ -51,7 +51,65 @@ def test_markup_is_untouched():
 
 def test_markup_does_not_match_terms():
     assert lexicon.find_terms("<title>Hello</title>", ["title"], "en") == []
-    assert lexicon.find_terms("Mad <emphasis>Hatter</emphasis>", ["Mad Hatter"], "en") == ["Mad Hatter"]
+
+
+def test_no_term_across_markup_in_matching_and_substitution():
+    # Two paragraphs are not the phrase; "Hatter" must not be shadowed by it
+    for text in ("Mad</p><p>Hatter", "Mad <emphasis>Hatter</emphasis>"):
+        assert lexicon.resolve_terms(text, list(V), "en") == (["Hatter"], [])
+        assert "Шляпник" in sub(text, V) and "Безумный" not in sub(text, V)
+
+
+def test_case_variant_does_not_shadow():
+    # lexicon finds "mad Hatter" casefolded, substitution rejects it: "Hatter" must survive
+    found, shadowed = lexicon.resolve_terms("the mad Hatter came", list(V), "en")
+    assert "Hatter" in found and shadowed == []
+    assert sub("the mad Hatter came", V) == "the mad Шляпник came"
+    # an inflected occurrence in the term's case still shadows
+    assert lexicon.resolve_terms("The Mad Hatters came", list(V), "en") == (["Mad Hatter"], ["Hatter"])
+    assert lexicon.resolve_terms("THE MAD HATTER", list(V), "en") == (["Mad Hatter"], ["Hatter"])
+
+
+def test_rank_counts_words_like_lexicon():
+    # "Jean-Luc-Marie" is three words for both modules, so it beats "Marie Curie"
+    v = {"Jean-Luc-Marie": "Жан-Люк-Мари", "Marie Curie": "Мария Кюри"}
+    text = "Jean-Luc-Marie Curie came; Jean-Luc-Marie and Marie Curie."
+    assert lexicon.term_rank("Jean-Luc-Marie") == (3, 14)
+    assert sub(text, v) == "Жан-Люк-Мари Curie came; Жан-Люк-Мари and Мария Кюри."
+    assert lexicon.resolve_terms(text, list(v), "en") == (list(v), [])
+
+
+def test_escaped_angle_brackets_are_text():
+    text = "\\<Skill acquired: Spidergun\\>"
+    assert lexicon.find_terms(text, ["spidergun"], "en") == ["spidergun"]
+    assert sub(text, {"spidergun": "паукопушка"}) == "\\<Skill acquired: Паукопушка\\>"
+
+
+def test_markdown_targets_are_untouched():
+    v = {"spidergun": "паукопушка"}
+    cases = {
+        "[Spidergun](https://x.org/spidergun)": "[Паукопушка](https://x.org/spidergun)",
+        '[a](<sp ider/spidergun> "spidergun")': '[a](<sp ider/spidergun> "spidergun")',
+        "# Spidergun {#spidergun .spidergun}": "# Паукопушка {#spidergun .spidergun}",
+        "see <https://x.org/spidergun> or https://x.org/spidergun.": "see <https://x.org/spidergun> or https://x.org/spidergun.",
+        "[spidergun]: https://x.org/spidergun": "[spidergun]: https://x.org/spidergun",
+        "![](sn-imgref-0) spidergun": "![](sn-imgref-0) паукопушка",
+    }
+    for text, expected in cases.items():
+        assert sub(text, v) == expected
+    assert lexicon.find_terms("[a](https://x.org/spidergun)", ["spidergun"], "en") == []
+
+
+def test_xml_targets_and_sources_are_escaped():
+    assert sub("<p>Tom met Jerry</p>", {"Tom": "Б&К"}, xml=True) == "<p>Б&amp;К met Jerry</p>"
+    assert sub("<p>AT&amp;T won</p>", {"AT&T": "ЭйТиЭндТи"}, xml=True) == "<p>ЭйТиЭндТи won</p>"
+    assert sub("Tom met Jerry", {"Tom": "Б&К"}) == "Б&К met Jerry"
+
+
+def test_prompt_order_follows_rank():
+    terms = ["Gun", "spider-gun", "Big Gun Tower", "Big Gun"]
+    assert sorted(terms, key=lexicon.term_rank, reverse=True) == \
+        ["Big Gun Tower", "spider-gun", "Big Gun", "Gun"]
 
 
 def test_case_rules():

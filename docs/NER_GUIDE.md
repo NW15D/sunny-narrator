@@ -153,12 +153,24 @@ and EPUB/DOCX/PDF (Calibre pipeline) both go through
 
 - Words are split by Unicode category (letters/marks/digits), not by regex,
   so it works for any script. A multi-word term must match consecutive words.
-- **Priority:** a multi-word term beats the shorter terms it contains
-  (`Mad Hatter` over `Hatter`), then the longer one, then the leftmost. A
-  term whose every occurrence is covered this way is dropped from the chunk
-  (`lexicon.resolve_terms` also reports it as *shadowed*, so the cosine stage
-  does not bring it back) and multi-word entries are listed first in the
-  prompt. Markup tags are not text: tag names never match a term.
+- **Priority** (`lexicon.term_rank`): a term of more words beats the shorter
+  terms it contains (`Mad Hatter` over `Hatter`), then the longer one, then
+  the leftmost. Words are counted as the matcher splits them, so
+  `Jean-Luc-Marie` is three words. A term whose every occurrence is covered
+  this way is dropped from the chunk (`lexicon.resolve_terms` also reports it
+  as *shadowed*, so the cosine stage does not bring it back), and the prompt
+  lists entries in priority order.
+- **Case:** only an occurrence in the term's capitalisation (inflection
+  allowed: `Mad Hatters`) or in ALL CAPS shadows other terms. In "the mad
+  Hatter" both `Mad Hatter` and `Hatter` stay in the prompt and `Hatter` is
+  substituted. A lowercase term (`spidergun`) fits any case.
+- **Markup is not text** (`lexicon.non_text_spans`): FB2/HTML tags, markdown
+  link and image targets, reference definitions, attribute blocks
+  (`{#id .class}`) and URLs never match, and no term spans across them, so
+  `Mad</p><p>Hatter` (two paragraphs) and `Mad <emphasis>Hatter</emphasis>`
+  are not the phrase. A tag must have well-formed attributes to count
+  (`fb2_structure.markup_tags`): `a<b and c>d` and pandoc-escaped
+  `\<Skill acquired: Spidergun\>` are text.
 - Two words match when they share a key: casefolded form, NLTK Snowball
   stem (en, ru, de, fr, es, it, pt, nl, sv, da, nb, fi, ro, hu, ar) or the
   spaCy lemma of the chunk word. `spidergun` finds `spiderguns`,
@@ -480,10 +492,14 @@ grep "vocab terms matched" logs/*.log
 
 `src/term_substitution.py` (`replace_vocab_in_text`) replaces the terms of
 the chunk in the source text before Stage 1, so the model cannot skip them.
-Same priority as above, occurrences never overlap. Markup is never touched
-(`<title>`, `l:href="#..."`), words may be separated by any whitespace,
-apostrophes may be typographic, CJK terms need no word boundaries. A
-lowercase term matches in any case (the target takes over the capital), a
-term with capitals matches as written or in ALL CAPS (`Will` is not replaced
-in "will"). Inflected forms (`Hatters`) are not substituted — the model gets
-them through the glossary lines of the prompt. Stages 2–4 see the original.
+It follows the matching rules above: the same priority, the same notion of
+markup (tags, link targets, URLs and attribute blocks are never touched, no
+term across them); occurrences never overlap. Words may be separated by any
+whitespace, apostrophes may be typographic, CJK terms need no word
+boundaries. A lowercase term matches in any case (the target takes over the
+capital), a term with capitals matches as written or in ALL CAPS (`Will` is
+not replaced in "will"). In the classic pipeline (`style='xml'`) the chunk is
+serialized FB2: terms are looked up and targets inserted XML-escaped
+(`AT&amp;T`, `Б&amp;К`). Inflected forms (`Hatters`) are not substituted —
+the model gets them through the glossary lines of the prompt. Stages 2–4
+see the original.

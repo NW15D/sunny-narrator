@@ -408,7 +408,7 @@ def _match_vocab_terms(text, vocab, lng, threshold, batch_size, xp):
         return lexicon.find_terms(text, terms, lng)
 
     found, shadowed = lexicon.resolve_terms(text, terms, lng, _lemma_map(doc))
-    matched = set(found)
+    matched, shadowed = set(found), set(shadowed)
     if config.debug:
         print(f"  Lexical matches: {sorted(matched)}")
     # A term covered by a longer one ("Hatter" inside "Mad Hatter") must not

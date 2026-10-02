@@ -132,99 +132,27 @@ metrics = TranslationMetrics()
 
 
 # =============================================================================
-# Vocabulary Auto-Substitution (before Stage 1 translation)
+# Vocabulary formatting for prompts (substitution: src/term_substitution.py)
 # =============================================================================
 
 def _format_vocab_for_prompt(
     vocab_dict: Optional[Dict[str, str]] = None,
-    vocab_entries: Optional[List[Any]] = None,
-    model: str = ""
+    vocab_entries: Optional[List[Any]] = None
 ) -> str:
     """
-    Format vocabulary for prompt injection.
-    
-    Two modes:
-    1. Dict mode: {"source": "target"} → "source = target" (original format)
-    2. Entries mode: List[VocabEntry] → "source = target, category, gender, notes"
-    
-    Args:
-        vocab_dict: Dictionary mapping source words → target translations (deprecated)
-        vocab_entries: List of VocabEntry objects with full metadata
-        model: Model name for formatting (e.g., "Hunyuan", "Gemma")
-        
-    Returns:
-        Formatted string for prompt injection
+    Glossary lines for the prompt: "source = target, category, gender, notes"
+    per VocabEntry (empty fields omitted), or "source = target" per vocab_dict
+    item when there are no entries.
     """
-    # Prefer entries mode if available
-    if vocab_entries and len(vocab_entries) > 0:
-        # Check if entries have required attributes
-        try:
-            # Try to use format_for_model from vocab_manager if available
-            if hasattr(vocab_entries[0], 'source') and hasattr(vocab_entries[0], 'target'):
-                # Import lazily to avoid circular dependency
-                try:
-                    from src.vocabulary_manager import VocabularyManager
-                    vm = VocabularyManager()
-                    # Use standard format with full metadata
-                    return vm._format_standard(vocab_entries)
-                except Exception:
-                    # Fallback: format manually
-                    return _format_entries_standard(vocab_entries)
-        except Exception:
-            pass
-    
-    # Fallback to dict mode (original behavior)
-    if not vocab_dict:
-        return ""
-    
-    lines = []
-    for source, target in vocab_dict.items():
-        line = f"{source} = {target}"
-        lines.append(line)
-    
-    return "\n".join(lines)
-
-
-def _format_entries_standard(entries: List[Any]) -> str:
-    """
-    Format VocabEntry list to standard format: source = target, category, gender, notes
-    """
-    if not entries:
-        return ""
-    
-    lines = []
-    for entry in entries:
-        # Use to_dict() if available (VocabEntry)
-        if hasattr(entry, 'to_dict'):
-            d = entry.to_dict()
-            source = d.get('source', entry.source if hasattr(entry, 'source') else '')
-            target = d.get('target', entry.target if hasattr(entry, 'target') else '')
-            category = d.get('category', '')
-            gender = d.get('gender', '')
-            notes = d.get('notes', '')
-        else:
-            # Fallback: direct attribute access
-            source = getattr(entry, 'source', '')
-            target = getattr(entry, 'target', '')
-            category = getattr(entry, 'category', '')
-            gender = getattr(entry, 'gender', '')
-            notes = getattr(entry, 'notes', '')
-        
-        line = f"{source} = {target}"
-        parts = []
-        if category:
-            parts.append(category)
-        if gender:
-            parts.append(gender)
-        if notes:
-            parts.append(notes)
-        
-        if parts:
-            line += ", " + ", ".join(parts)
-        
-        lines.append(line)
-    
-    return "\n".join(lines)
+    if vocab_entries:
+        lines = []
+        for entry in vocab_entries:
+            extra = [v for v in (getattr(entry, 'category', ''), getattr(entry, 'gender', ''),
+                                 getattr(entry, 'notes', '')) if v]
+            line = f"{entry.source} = {entry.target}"
+            lines.append(line + ", " + ", ".join(extra) if extra else line)
+        return "\n".join(lines)
+    return "\n".join(f"{source} = {target}" for source, target in (vocab_dict or {}).items())
 
 
 _GENDER_LABELS = {
@@ -263,7 +191,6 @@ def build_synopsis_characters(vocab_entries, translation: str) -> str:
 # A block whose closing tag is missing ends where the other block starts
 _GENDERS_BLOCK_RE = re.compile(r'<genders>(.*?)(?:</genders>|(?=<terms>)|$)', re.DOTALL | re.IGNORECASE)
 _TERMS_BLOCK_RE = re.compile(r'<terms>(.*?)(?:</terms>|(?=<genders>)|$)', re.DOTALL | re.IGNORECASE)
-_MARKUP_TAG_RE = re.compile(r'<[^<>]*>')
 _VALID_GENDERS = {'he', 'she', 'it', 'they'}
 
 
@@ -296,7 +223,7 @@ def extract_dictionary_candidates(text: str, source_text: str,
     if blocks == [None, None]:
         return text, []
     synopsis = synopsis.strip()
-    plain_source = _MARKUP_TAG_RE.sub(' ', source_text or "")
+    plain_source = ' '.join(lexicon.text_segments(source_text or ""))
     source_lower = plain_source.lower()
     stop_words = lexicon.get_stop_words(source_lang) if source_lang else frozenset()
     candidates, seen = [], set()
@@ -812,7 +739,7 @@ class TranslationPipeline:
                 source_text=replace_vocab_in_text(
                     context.source_text,
                     context.vocab_dict,
-                    context.source_lang
+                    xml=context.style == 'xml'
                 )
             )
         
@@ -852,8 +779,7 @@ class TranslationPipeline:
             # Format vocab for prompt: prefer vocab_entries, fallback to vocab_dict
             vocab_str = _format_vocab_for_prompt(
                 vocab_dict=context.vocab_dict,
-                vocab_entries=context.vocab_entries,
-                model=config.model_translate
+                vocab_entries=context.vocab_entries
             )
             user_prompt = config.get_prompt(
                 "initial_translation", "user_xml",
@@ -867,8 +793,7 @@ class TranslationPipeline:
             # Format vocab for prompt: prefer vocab_entries, fallback to vocab_dict
             vocab_str = _format_vocab_for_prompt(
                 vocab_dict=context.vocab_dict,
-                vocab_entries=context.vocab_entries,
-                model=config.model_translate
+                vocab_entries=context.vocab_entries
             )
             user_prompt = config.get_prompt(
                 "initial_translation", "user_hunyuan",
@@ -882,8 +807,7 @@ class TranslationPipeline:
             # Format vocab for prompt: prefer vocab_entries, fallback to vocab_dict
             vocab_str = _format_vocab_for_prompt(
                 vocab_dict=context.vocab_dict,
-                vocab_entries=context.vocab_entries,
-                model=config.model_translate
+                vocab_entries=context.vocab_entries
             )
             user_prompt = config.get_prompt(
                 "initial_translation", "user_text",
@@ -1038,8 +962,7 @@ class TranslationPipeline:
             # Format vocab for prompt: prefer vocab_entries, fallback to vocab_dict
             vocab_str = _format_vocab_for_prompt(
                 vocab_dict=context.vocab_dict,
-                vocab_entries=context.vocab_entries,
-                model=config.model_translate
+                vocab_entries=context.vocab_entries
             )
             user_prompt = config.get_prompt(
                 "reflection", f"user_{context.style}",
@@ -1100,8 +1023,7 @@ class TranslationPipeline:
             # Format vocab for prompt: prefer vocab_entries, fallback to vocab_dict
             vocab_str = _format_vocab_for_prompt(
                 vocab_dict=context.vocab_dict,
-                vocab_entries=context.vocab_entries,
-                model=config.model_translate
+                vocab_entries=context.vocab_entries
             )
             user_prompt = config.get_prompt(
                 "improve", f"user_{context.style}",

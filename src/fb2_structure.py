@@ -17,12 +17,19 @@ Everything here works locally instead:
 import html
 import html.entities
 import re
-from typing import Dict, List, NamedTuple, Optional, Tuple
+from typing import Dict, Iterator, List, NamedTuple, Optional, Tuple
 
 _TAG_RE = re.compile(r'<(/?)([A-Za-z][\w:.-]*)((?:[^>"\']|"[^"]*"|\'[^\']*\')*?)(/?)>')
 # A match of _TAG_RE is markup only if its attribute part is well formed;
 # "a<b and c>d" in translated prose is text, not a <b> element.
 _ATTRS_RE = re.compile(r'(?:\s+[A-Za-z_:][\w:.-]*\s*=\s*(?:"[^"]*"|\'[^\']*\'))*\s*')
+
+
+def markup_tags(text: str) -> Iterator["re.Match[str]"]:
+    """The tags of `text` that are markup, not text (see _ATTRS_RE)."""
+    return (m for m in _TAG_RE.finditer(text) if _ATTRS_RE.fullmatch(m.group(3)))
+
+
 _SECTION_TAG_RE = re.compile(
     r'<(/?)section\b((?:[^>"\']|"[^"]*"|\'[^\']*\')*?)(/?)>', re.IGNORECASE)
 
@@ -471,9 +478,8 @@ def repair_fragment(text: str, *, keep_sections: bool = False,
         out.append(' ')
 
     pos = 0
-    for m in _TAG_RE.finditer(text):
-        if not _ATTRS_RE.fullmatch(m.group(3)):
-            continue  # not markup: stays part of the next text run and gets escaped
+    # a tag that is not markup stays part of the next text run and gets escaped
+    for m in markup_tags(text):
         emit_text(text[pos:m.start()])
         pos = m.end()
         closing, raw_name, attrs, selfclose = m.groups()

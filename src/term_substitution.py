@@ -3,11 +3,12 @@ Substitution of glossary terms into the source chunk before the first
 translation stage (the model used to skip glossary words otherwise).
 
 Rules, in line with lexicon.resolve_terms:
-- Priority: a term of more words wins over the shorter ones it contains
-  ("Mad Hatter" over "Hatter"), then the longer one, then the leftmost.
-  Occurrences never overlap.
-- Markup is not touched: tag names and attributes ("<title>",
-  l:href="#spidergun") stay as they are.
+- Priority (lexicon.term_rank): a term of more words wins over the shorter
+  ones it contains ("Mad Hatter" over "Hatter"), then the longer one, then
+  the leftmost. Occurrences never overlap.
+- Markup is not touched and no term spans across it (lexicon.non_text_spans):
+  tag names and attributes ("<title>", l:href="#spidergun"), markdown link
+  targets, attribute blocks and URLs stay as they are.
 - Words are separated by any whitespace (a line break inside "Mad\\nHatter"),
   apostrophes may be typographic ("Queen’s Court"). Terms in unspaced
   scripts (CJK, Thai) are matched without word boundaries.
@@ -15,7 +16,10 @@ Rules, in line with lexicon.resolve_terms:
   target takes over the capital ("Spidergun" -> "Паукопушка"). A term with
   capitals (a proper name) matches as written or in ALL CAPS, so "Will" is
   not replaced in "will".
+- Inflected forms ("Hatters") are not replaced: the model gets them through
+  the glossary lines of the prompt.
 """
+import html
 import re
 from typing import Dict, List, Optional, Tuple
 
@@ -55,11 +59,7 @@ def _adapt(source: str, found: str, target: str) -> Optional[str]:
     return target[:1].upper() + target[1:] if found[:1].isupper() else target
 
 
-def replace_vocab_in_text(
-    source_text: str,
-    vocab_dict: Dict[str, str],
-    source_lang: str = None
-) -> str:
+def replace_vocab_in_text(source_text: str, vocab_dict: Dict[str, str], xml: bool = False) -> str:
     """
     Replace glossary terms in source_text with their translations.
 
@@ -70,7 +70,8 @@ def replace_vocab_in_text(
     Args:
         source_text: Original text to translate
         vocab_dict: Glossary terms of this chunk, source -> target
-        source_lang: Source language (reserved)
+        xml: source_text is serialized FB2 (classic pipeline): terms are
+            looked up and targets inserted with &, <, > escaped
 
     Examples:
         >>> replace_vocab_in_text("Mad Hatter and a hatter", {"Hatter": "Шляпник", "Mad Hatter": "Безумный Шляпник"})
@@ -83,25 +84,29 @@ def replace_vocab_in_text(
 
     # taken[i] != 0: character i is markup or already replaced
     taken = bytearray(len(source_text))
-    for tag in lexicon.MARKUP_TAG_RE.finditer(source_text):
-        taken[tag.start():tag.end()] = b'\x01' * (tag.end() - tag.start())
+    for start, end in lexicon.non_text_spans(source_text):
+        taken[start:end] = b'\x01' * (end - start)
 
-    # (words, length, start, end, replacement)
-    candidates: List[Tuple[int, int, int, int, str]] = []
+    # (rank, start, end, replacement)
+    candidates: List[Tuple[Tuple[int, int], int, int, str]] = []
     for source, target in vocab_dict.items():
-        if not source or not source.strip() or not target:
+        source = (source or '').strip()
+        if not source or not target:
             continue
-        source = source.strip()
-        words, length = len(source.split()), len(source)
-        for match in _term_pattern(source).finditer(source_text):
+        rank = lexicon.term_rank(source)
+        pattern = _term_pattern(html.escape(source, quote=False) if xml else source)
+        for match in pattern.finditer(source_text):
             if any(taken[match.start():match.end()]):
                 continue
-            replacement = _adapt(source, match.group(0), target)
+            found = html.unescape(match.group(0)) if xml else match.group(0)
+            replacement = _adapt(source, found, target)
             if replacement is not None:
-                candidates.append((words, length, match.start(), match.end(), replacement))
+                if xml:
+                    replacement = html.escape(replacement, quote=False)
+                candidates.append((rank, match.start(), match.end(), replacement))
 
     accepted = []
-    for words, length, start, end, replacement in sorted(candidates, key=lambda c: (-c[0], -c[1], c[2])):
+    for rank, start, end, replacement in sorted(candidates, key=lambda c: (-c[0][0], -c[0][1], c[1])):
         if not any(taken[start:end]):
             taken[start:end] = b'\x01' * (end - start)
             accepted.append((start, end, replacement))

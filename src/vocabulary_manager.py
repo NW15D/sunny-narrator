@@ -714,7 +714,7 @@ class VocabularyManager:
         Get vocabulary entries relevant to this chunk.
         
         Same matching for every input format (classic and Calibre pipelines):
-        lexical match incl. inflected forms (lexicon.find_terms), plus cosine
+        lexical match incl. inflected forms (lexicon.resolve_terms), plus cosine
         similarity of word vectors when NER/spaCy is enabled. GPU or CPU mode
         is selected by availability.
         
@@ -753,11 +753,11 @@ class VocabularyManager:
             matched = match_fn(chunk_text, self._vocab_to_ner_format(), self.source_lang)
             mode = "GPU" if use_gpu else "CPU"
 
-        # Multi-word entries first: they take priority over the one-word ones
-        # (lexicon.resolve_terms drops the shadowed ones; the prompt lists the
-        # specific entry before the general one)
+        # Higher-priority entries first (lexicon.term_rank: more words, then
+        # longer), so the prompt lists the specific entry before the general
+        # one; lexicon.resolve_terms already dropped the shadowed ones
         matched = sorted((t for t in matched if t in key_by_source),
-                         key=lambda t: -len(t.split()))
+                         key=lexicon.term_rank, reverse=True)
         matched_keys = [key_by_source[term] for term in matched]
         self.matched_terms_cache[cache_key] = matched_keys
 
