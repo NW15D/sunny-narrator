@@ -2,6 +2,20 @@
 
 All notable changes to Sunny Narrator.
 
+## v2.7
+
+### Dictionary: priority and substitution
+- A multi-word term takes priority over the shorter terms it contains (`Mad Hatter` over `Hatter`), then the longer one wins. A term that occurs only inside a longer one is no longer put into the prompt nor brought back by the cosine stage; the prompt lists the specific entries first.
+- Substitution of terms into the source text before the first stage (`src/term_substitution.py`) follows the same priority and rules as matching. Tags, attributes, XML entities, markdown link targets, URLs and attribute blocks are never touched; a term does not span markup; whitespace and typographic apostrophes inside a term are tolerated; targets are XML-escaped in FB2. A lowercase term matches in any case (the target takes the capital), a name as written or in ALL CAPS (`Will` is not replaced in "will"); only an occurrence in the term's case shadows other terms.
+- Fixed: substitution used to rewrite `<title>` and `l:href="#..."`, skipped `MAD HATTER`, `Queen’s Court`, `Mad⏎Hatter` and every CJK term, and missed a Latin term inside CJK text (`ABC社`, full-width `ＡＢＣ`).
+- Coined words (`spidergun`) reported by the synopsis stage are appended to the `.dic` as `TERM`; only characters with a proper name are added as `PERSON`.
+- One lexical pass per chunk with spaCy lemmas.
+- `scripts/convert_dic.py`: convert a `.dic` to other target languages.
+
+### CJK
+- Korean entities go into the dictionary without the glued particle (`철수는` → `철수`, `서울에서` → `서울`), so a term matches every form of the word.
+- New `cjk` extra (`pip install -e ".[cjk]"`): tokenizers for the Japanese (`sudachipy`, `sudachidict-core`) and Chinese (`spacy-pkuseg`) spaCy models; Korean needs nothing extra. Verified with `ko_core_news_lg`, `ja_core_news_lg`, `zh_core_web_lg`.
+
 ## v2.6
 
 ### Dictionary: one pipeline for all formats

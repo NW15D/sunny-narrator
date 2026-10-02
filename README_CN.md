@@ -1,6 +1,6 @@
 # Sunny Narrator
 
-**版本:** 2.6  
+**版本:** 2.7  
 **基于术语表的 AI 书籍翻译器（AI book translator）**，支持 FB2/TXT/EPUB/DOCX/PDF —— 基于 LLM 的小说/文学翻译工具（fiction book translator），采用双 LLM 翻译系统与 5 阶段质量控制。
 
 🖥️ **命令行工具（CLI）** —— 无图形界面，需要一定的命令行使用经验。
@@ -131,6 +131,10 @@ Alice = Алиса, PERSON, she, 主角
 - 首次运行时通过 NER（命名实体）自动创建，然后由 LLM 翻译。只有设置 `DICT_FREQUENT_WORDS=true`（或对 `--build-dict`/`--build-series-dict` 使用 `--frequent-words`）时才会加入高频普通词。
 - **角色性别**（`he`、`she`、`it`、`they`）：如果词典未注明性别，摘要阶段会根据文本判断并写入 `.dic`；词典中没有的角色会以 `名字 = 译名, PERSON, 性别` 追加到末尾——适用于所有格式，同一次运行中的后续分块会立即使用它们。文件中已有的性别不会被覆盖——手动修改始终优先。
 - **术语匹配：** 所有格式相同——只有在分块中找到的词典术语才会进入该分块的提示词。可以识别词形变化（`spidergun` → `spiderguns`，`wolf` → `wolves`），中文/日文/韩文术语按子串匹配，术语不会在其他单词内部被匹配（`Ann` / `Annoying`）。
+- **多词术语优先：** 词数更多的术语优先于它所包含的较短术语（`Mad Hatter` 优先于 `Hatter`），其次是更长的术语。只出现在较长术语内部的短术语不会进入提示词，模型不会得到同一短语的两种译法。
+- **翻译前替换术语：** 分块中找到的词典术语的译名会在第一阶段之前替换进原文，避免模型漏掉它们（后续阶段看到的是原文）。标记、链接和 URL 不会被改动；小写术语不区分大小写匹配，人名按原样或全大写匹配。
+- **自造词：** 除角色外，摘要阶段还会报告没有常规译法的自造词（`spidergun`）；它们以 `TERM` 追加到词典，并供后续分块使用。spaCy 模型已认识的词会被丢弃。
+- **其他目标语言：** `python scripts/convert_dic.py books/MyBook.dic fr es zh` 将现成的词典转换为其他语言（`MyBook_fr.dic` 等），以现有译名作为提示。
 - **指定词典路径：** 默认在书籍旁查找词典（`books/MyBook.fb2` → `books/MyBook.dic`）。如需使用其他文件（例如系列共享词典），可在 `.env` 中设置 `DICTIONARY=path/to/file.dic`，或传入 `--dictionary path/to/file.dic`（命令行参数优先）。两个流程均支持；若文件不存在，将在该路径创建（目录必须已存在）。
 
 **格式指南：** [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md)

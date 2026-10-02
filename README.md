@@ -9,7 +9,7 @@
 [![Last commit](https://img.shields.io/github/last-commit/NW15D/sunny-narrator)](https://github.com/NW15D/sunny-narrator/commits/main)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Version:** 2.6  
+**Version:** 2.7  
 **Glossary-Driven AI Book Translator** for FB2/TXT/EPUB/DOCX/PDF — an LLM-powered fiction book translator with dual-LLM translation and 5-stage quality control.
 
 🖥️ **Console app (CLI)** — no graphical interface; basic command-line experience is recommended.
@@ -140,6 +140,10 @@ Alice = Алиса, PERSON, she, Main character
 - Created automatically on the first run via NER (named entities), then translated by the LLM. Frequent ordinary words are added only with `DICT_FREQUENT_WORDS=true` (or `--frequent-words` for `--build-dict`/`--build-series-dict`).
 - **Character genders** (`he`, `she`, `it`, `they`): if the dictionary does not specify a gender, the synopsis stage determines it from the text and writes it into the `.dic`; characters missing from the dictionary are appended as `name = translation, PERSON, gender` — in every format, and the following chunks of the same run already use them. A gender already in the file is never overwritten, so manual edits always win.
 - **Term matching:** the same for every format — only the dictionary terms found in a chunk go into its prompt. Inflected forms are found (`spidergun` → `spiderguns`, `wolf` → `wolves`), Chinese/Japanese/Korean terms are matched as substrings, and a term never matches inside another word (`Ann` / `Annoying`).
+- **Multi-word terms first:** a term of more words beats the shorter ones it contains (`Mad Hatter` over `Hatter`), then the longer one wins. A shorter term that occurs only inside a longer one is not put into the prompt, so the model never gets two translations of one phrase.
+- **Terms are substituted before translation:** the translations of the dictionary terms found in a chunk are put into the source text before the first stage, so the model cannot skip them (the later stages see the original). Markup, links and URLs are never touched; a lowercase term matches in any case, a name as written or in ALL CAPS.
+- **Coined words:** besides characters, the synopsis stage reports invented words with no ordinary translation (`spidergun`); they are appended as `TERM` and used by the following chunks. Words the spaCy model already knows are dropped.
+- **Other target language:** `python scripts/convert_dic.py books/MyBook.dic fr es zh` converts a finished dictionary to other languages (`MyBook_fr.dic`, …) using the existing translation as a hint.
 - **Explicit dictionary path:** by default the dictionary is looked up next to the book (`books/MyBook.fb2` → `books/MyBook.dic`). Set `DICTIONARY=path/to/file.dic` in `.env` or pass `--dictionary path/to/file.dic` (the CLI flag wins) to use another file, e.g. a shared series dictionary. Works in both pipelines; a missing file is created at that path (its directory must exist).
 
 **Format guide:** [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md)

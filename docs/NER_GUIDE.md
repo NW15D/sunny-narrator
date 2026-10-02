@@ -484,6 +484,7 @@ grep "vocab terms matched" logs/*.log
 
 ## 📝 Changelog
 
+- **2026-10-02:** Multi-word terms take priority (`lexicon.resolve_terms`, `term_rank`); substitution into the source rewritten (`term_substitution.py`); Korean particles stripped from entities; `[cjk]` extra
 - **2026-10-01:** One matcher for all formats (Calibre pipeline now uses `VocabularyManager`); lexical stage matches inflected forms and CJK without regex; stop words for the source language instead of English only
 - **2026-03-29:** Added CPU fallback mode (`find_matching_words_with_cosine_similarity_cpu()`)
 - **2026-03-29:** Automatic GPU/CPU detection in `get_vocab_for_chunk()`

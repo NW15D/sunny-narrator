@@ -1,7 +1,7 @@
 # Rechunking Guide — Chunking and Length Validation
 
-**Version:** 2.6  
-**Updated:** 2026-09-29
+**Version:** 2.7  
+**Updated:** 2026-10-02
 
 ## 📋 Overview
 
