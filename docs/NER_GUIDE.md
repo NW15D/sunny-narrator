@@ -170,7 +170,9 @@ and EPUB/DOCX/PDF (Calibre pipeline) both go through
   `Mad</p><p>Hatter` (two paragraphs) and `Mad <emphasis>Hatter</emphasis>`
   are not the phrase. A tag must have well-formed attributes to count
   (`fb2_structure.markup_tags`): `a<b and c>d` and pandoc-escaped
-  `\<Skill acquired: Spidergun\>` are text.
+  `\<Skill acquired: Spidergun\>` are text. XML entities (`&amp;`, `&#38;`) are not
+  words (a term `amp` never matches inside `&amp;`), and a markdown
+  reference definition needs a URL-like target: `[Level]: 5 Hatter` is text.
 - Two words match when they share a key: casefolded form, NLTK Snowball
   stem (en, ru, de, fr, es, it, pt, nl, sv, da, nb, fi, ro, hu, ar) or the
   spaCy lemma of the chunk word. `spidergun` finds `spiderguns`,

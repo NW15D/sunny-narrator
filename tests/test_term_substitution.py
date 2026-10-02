@@ -130,3 +130,17 @@ def test_whole_words_only_and_no_chained_replacement():
 def test_empty_inputs():
     assert sub("", V) == ""
     assert sub("text", {}) == "text"
+
+
+def test_xml_entities_are_not_terms():
+    assert sub("<p>Tom &amp; Jerry &#38; &lt;x&gt;</p>", {"amp": "X", "lt": "Y", "38": "Z"}, xml=True) == \
+        "<p>Tom &amp; Jerry &#38; &lt;x&gt;</p>"
+    assert sub("<p>amp lt</p>", {"amp": "X", "lt": "Y"}, xml=True) == "<p>X Y</p>"
+    assert lexicon.find_terms("<p>Tom &amp; Jerry</p>", ["amp"], "en") == []
+
+
+def test_status_line_is_not_a_reference_definition():
+    v = {"Hatter": "Шляпник"}
+    assert sub("[Level]: 5 Hatter", v) == "[Level]: 5 Шляпник"
+    assert lexicon.find_terms("[Level]: 5 Hatter", ["Hatter"], "en") == ["Hatter"]
+    assert sub("[Hatter]: https://x.org/Hatter", v) == "[Hatter]: https://x.org/Hatter"

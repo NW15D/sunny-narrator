@@ -29,7 +29,7 @@ _APOSTROPHES = "'’‘ʼ`"
 _APOSTROPHE_TABLE = str.maketrans({c: "'" for c in _APOSTROPHES})
 
 
-def _term_pattern(source: str) -> "re.Pattern[str]":
+def _term_pattern(source: str, xml: bool = False) -> "re.Pattern[str]":
     unspaced = lexicon.is_unspaced(source)
     words = []
     for word in source.split():
@@ -38,7 +38,9 @@ def _term_pattern(source: str) -> "re.Pattern[str]":
     body = (r'\s*' if unspaced else r'\s+').join(words)
     if not unspaced:
         # lookarounds instead of \b: terms may start or end with a non-word character
-        body = rf'(?<!\w){body}(?!\w)'
+        # in FB2 "amp" must not match inside the entity &amp; or &#38;
+        before = r'(?<![\w&])(?<!&#)' if xml else r'(?<!\w)'
+        body = rf'{before}{body}(?!\w)'
     return re.compile(body, re.IGNORECASE)
 
 
@@ -84,7 +86,7 @@ def replace_vocab_in_text(source_text: str, vocab_dict: Dict[str, str], xml: boo
 
     # taken[i] != 0: character i is markup or already replaced
     taken = bytearray(len(source_text))
-    for start, end in lexicon.non_text_spans(source_text):
+    for start, end in lexicon.non_text_spans(source_text, entities=False):
         taken[start:end] = b'\x01' * (end - start)
 
     # (rank, start, end, replacement)
@@ -94,7 +96,7 @@ def replace_vocab_in_text(source_text: str, vocab_dict: Dict[str, str], xml: boo
         if not source or not target:
             continue
         rank = lexicon.term_rank(source)
-        pattern = _term_pattern(html.escape(source, quote=False) if xml else source)
+        pattern = _term_pattern(html.escape(source, quote=False) if xml else source, xml)
         for match in pattern.finditer(source_text):
             if any(taken[match.start():match.end()]):
                 continue

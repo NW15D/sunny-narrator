@@ -48,21 +48,31 @@ logger = logging.getLogger(__name__)
 # Markdown that is not text (Calibre-pipeline chunks): link and image targets
 # ](url "title") and ](<url>), reference definitions "[id]: url", attribute
 # blocks {#id .class} / {width="50%"}, autolinks <https://...>, bare URLs.
+# A reference definition needs a URL-like target: "[Level]: 5 Hatter" is text.
 _MARKDOWN_NON_TEXT_RE = re.compile(
     r'\]\(<[^<>\n]*>(?:\s+"[^"\n]*")?\)'
     r'|\]\([^()\s]*(?:\([^()\s]*\)[^()\s]*)*(?:\s+"[^"\n]*")?\)'
-    r'|^ {0,3}\[[^\]\n]+\]:[^\n]*'
+    r'|^ {0,3}\[[^\]\n]+\]:[ \t]*(?:(?:https?|ftp)://|mailto:|<|#|/|\.{1,2}/)[^\n]*'
     r'|\{[#.][^{}\n]*\}|\{[A-Za-z][\w-]*="[^"\n]*"[^{}\n]*\}'
     r'|<(?:https?|ftp|mailto):[^<>\s]*>'
     r'|(?:https?|ftp)://[^\s<>()\[\]]+',
     re.MULTILINE)
 
 
-def non_text_spans(text: str) -> List[Tuple[int, int]]:
+# &amp; &lt; &#38; &#x26; — "amp" is not a word of the book
+_ENTITY_RE = re.compile(r'&(?:[A-Za-z][A-Za-z0-9]*|#\d+|#[xX][0-9A-Fa-f]+);')
+
+
+def non_text_spans(text: str, entities: bool = True) -> List[Tuple[int, int]]:
     """Sorted (start, end) spans of `text` that are markup, not text of the
     book: FB2/HTML tags (fb2_structure.markup_tags, so "a<b and c>d" and a
-    pandoc-escaped "\\<Skill acquired\\>" stay text) and the markdown above."""
+    pandoc-escaped "\\<Skill acquired\\>" stay text), the markdown above
+    and, unless `entities` is False, XML entities. term_substitution passes
+    False: a term may itself contain one ("AT&amp;T") and guards the entity
+    names in its own pattern."""
     spans = [m.span() for m in markup_tags(text)]
+    if entities:
+        spans += [m.span() for m in _ENTITY_RE.finditer(text)]
     spans += [m.span() for m in _MARKDOWN_NON_TEXT_RE.finditer(text)]
     return sorted(spans)
 
