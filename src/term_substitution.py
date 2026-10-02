@@ -21,31 +21,50 @@ Rules, in line with lexicon.resolve_terms:
 """
 import html
 import re
+import unicodedata
 from typing import Dict, List, Optional, Tuple
 
 from src import lexicon
 
+# Scripts written without spaces (mirrors lexicon._UNSPACED_SCRIPTS): their
+# letters do not make a word boundary, so "ABC" is a word in "ABC社の製品".
+_UNSPACED_RANGES = (
+    '\u0e00-\u0eff\u0f00-\u0fff\u1000-\u109f\u1100-\u11ff\u1780-\u17ff'
+    '\u2e80-\u2fdf\u3040-\u30ff\u3130-\u318f\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff'
+    '\uac00-\ud7af\uf900-\ufaff\uff66-\uffdc\U00020000-\U0002fa1f'
+)
+_WORD_BEFORE = rf'(?<![^\W{_UNSPACED_RANGES}])'
+_WORD_AFTER = rf'(?![^\W{_UNSPACED_RANGES}])'
+
 _APOSTROPHES = "'’‘ʼ`"
 _APOSTROPHE_TABLE = str.maketrans({c: "'" for c in _APOSTROPHES})
+
+
+def _char_pattern(ch: str) -> str:
+    if ch in _APOSTROPHES:
+        return f"[{_APOSTROPHES}]"
+    if '!' <= ch <= '~':
+        # the full-width form too: lexicon matches "ＡＢＣ" for "ABC" (NFKC)
+        return f"[{re.escape(ch)}{chr(ord(ch) + 0xFEE0)}]"
+    return re.escape(ch)
 
 
 def _term_pattern(source: str, xml: bool = False) -> "re.Pattern[str]":
     unspaced = lexicon.is_unspaced(source)
     words = []
     for word in source.split():
-        words.append(''.join(f"[{_APOSTROPHES}]" if ch in _APOSTROPHES else re.escape(ch)
-                             for ch in word))
+        words.append(''.join(_char_pattern(ch) for ch in word))
     body = (r'\s*' if unspaced else r'\s+').join(words)
     if not unspaced:
-        # lookarounds instead of \b: terms may start or end with a non-word character
-        # in FB2 "amp" must not match inside the entity &amp; or &#38;
-        before = r'(?<![\w&])(?<!&#)' if xml else r'(?<!\w)'
-        body = rf'{before}{body}(?!\w)'
+        # lookarounds instead of \b: terms may start or end with a non-word
+        # character. In FB2 "amp" must not match inside the entity &amp; or &#38;
+        before = rf'{_WORD_BEFORE}(?<!&)(?<!&#)' if xml else _WORD_BEFORE
+        body = rf'{before}{body}{_WORD_AFTER}'
     return re.compile(body, re.IGNORECASE)
 
 
 def _canon(text: str) -> str:
-    return re.sub(r'\s+', ' ', text).translate(_APOSTROPHE_TABLE)
+    return re.sub(r'\s+', ' ', unicodedata.normalize('NFKC', text)).translate(_APOSTROPHE_TABLE)
 
 
 def _adapt(source: str, found: str, target: str) -> Optional[str]:

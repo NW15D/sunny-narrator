@@ -1,6 +1,7 @@
 """Priority of multi-word glossary terms and safe substitution into the chunk
 (src/term_substitution.py, lexicon.resolve_terms)."""
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -144,3 +145,36 @@ def test_status_line_is_not_a_reference_definition():
     assert sub("[Level]: 5 Hatter", v) == "[Level]: 5 Шляпник"
     assert lexicon.find_terms("[Level]: 5 Hatter", ["Hatter"], "en") == ["Hatter"]
     assert sub("[Hatter]: https://x.org/Hatter", v) == "[Hatter]: https://x.org/Hatter"
+
+
+def test_latin_term_inside_cjk_text():
+    v = {"ABC": "АБС"}
+    assert sub("ABC社の製品", v) == "АБС社の製品"
+    assert sub("ＡＢＣ社の製品", v) == "АБС社の製品"
+    assert sub("ABCD社", v) == "ABCD社"
+    assert lexicon.find_terms("ABC社の製品", ["ABC"], "ja") == ["ABC"]
+
+
+def test_korean_particle_stays_after_replacement():
+    assert sub("철수는 집에 갔다", {"철수": "Чхольсу"}) == "Чхольсу는 집에 갔다"
+
+
+def test_cjk_priority_longest_term_wins():
+    v = {"魔王": "Маō", "魔王城": "Замок демона"}
+    assert sub("彼は魔王城で魔王を倒した", v) == "彼はЗамок демонаでМаōを倒した"
+    assert lexicon.resolve_terms("魔王城", list(v), "ja") == (["魔王城"], ["魔王"])
+
+
+def test_unspaced_ranges_match_lexicon():
+    from src import term_substitution as ts
+    pattern = re.compile(f"[{ts._UNSPACED_RANGES}]")
+    for ch in "漢字かなカナ한글ｶﾅ์ไทยລາວខ្មែរမြန်မာབོད":
+        assert lexicon._is_unspaced_char(ch) == bool(pattern.match(ch)), ch
+    for ch in "AzÀж1":
+        assert not pattern.match(ch)
+
+
+def test_cjk_stop_words_are_available():
+    assert "的" in lexicon.get_stop_words("chinese")
+    assert "は" in lexicon.get_stop_words("japanese")
+    assert lexicon.is_stop_word("这", lexicon.get_stop_words("zh"))

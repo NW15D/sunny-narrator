@@ -498,7 +498,8 @@ It follows the matching rules above: the same priority, the same notion of
 markup (tags, link targets, URLs and attribute blocks are never touched, no
 term across them); occurrences never overlap. Words may be separated by any
 whitespace, apostrophes may be typographic, CJK terms need no word
-boundaries. A lowercase term matches in any case (the target takes over the
+boundaries; a Latin term inside CJK text (`ABC社の製品`, also full-width
+`ＡＢＣ`) is a word of its own. A lowercase term matches in any case (the target takes over the
 capital), a term with capitals matches as written or in ALL CAPS (`Will` is
 not replaced in "will"). In the classic pipeline (`style='xml'`) the chunk is
 serialized FB2: terms are looked up and targets inserted XML-escaped
