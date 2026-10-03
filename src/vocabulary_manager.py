@@ -74,28 +74,100 @@ def looks_like_proper_name(source: str) -> bool:
     )
 
 
-def apply_dictionary_candidates(dict_file: str, candidates: List[Dict[str, str]]) -> Tuple[int, int]:
+class CandidateMatcher:
+    """
+    Decides what a dictionary candidate reported by the synopsis stage is
+    with respect to the entries already known (the .dic file in
+    apply_dictionary_candidates, the in-memory vocabulary in
+    VocabularyManager.record_dictionary_candidates — both use this class).
+
+    match() returns one of:
+    - ('same', ref): the candidate IS an existing entry, written in another
+      case or inflected ("Jain nodes" = "Jain node", "Gabbleducks" =
+      "gabbleduck"; a name only inflected: "Jains" is "Jain", "Marie" is
+      not "Mary");
+      a PERSON also by its translated name
+      ("김철수 | Чхольсу" = "철수 = Чхольсу");
+    - ('covered', terms): the candidate contains existing terms ("Jain node",
+      "jain shriek" contain "Jain"): the glossary already translates it, a
+      separate entry would only shadow "Jain" with another translation;
+    - ('new', None): nothing of it is in the dictionary.
+
+    A hyphen, a space or no separator make different entries: "Jain-tech" is
+    not "Jain tech", "gabble-duck" is not "gabbleduck" (lexicon.separators).
+
+    The containment test is lexicon.covering_terms, the same matching rules
+    the chunk lookup and the substitution use.
+    """
+
+    def __init__(self, source_lang: str):
+        self.source_lang = source_lang
+        self._by_words: Dict[str, object] = {}
+        self._by_target: Dict[str, object] = {}
+        self._by_source: Dict[str, object] = {}
+
+    def add(self, source: str, target: str, ref) -> None:
+        key = lexicon.word_key(source)
+        if key:
+            self._by_words.setdefault(key, ref)
+        self._by_source.setdefault(source, ref)
+        if target:
+            self._by_target.setdefault(lexicon.normalize(target).strip(), ref)
+
+    def match(self, cand: Dict[str, str]):
+        source = cand['source']
+        key = lexicon.word_key(source)
+        if key in self._by_words:
+            return 'same', self._by_words[key]
+        person = cand.get('category', 'PERSON') == 'PERSON'
+        # names by inflection only: "Jains" is "Jain", but "Marie" is not
+        # "Mary", though both stem to "mari"
+        covering = lexicon.covering_terms(source, self._by_source, self.source_lang, exact=person)
+        if not lexicon.is_unspaced(source):
+            # a term as long as the candidate is the candidate itself. In CJK
+            # a shorter word inside a longer one is not the same entry, but
+            # still covers it below (龙 covers 龙骑士)
+            words, seps = len(lexicon.tokenize(source)), lexicon.separators(source)
+            for term in covering:
+                if len(lexicon.tokenize(term)) == words and lexicon.separators(term) == seps:
+                    return 'same', self._by_source[term]
+        if person and cand.get('target'):
+            ref = self._by_target.get(lexicon.normalize(cand['target']).strip())
+            if ref is not None:
+                return 'same', ref
+        if covering:
+            return 'covered', covering
+        return 'new', None
+
+
+def _by_priority(candidates: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    # The shorter candidate first: "Jain" reported together with "Jain node"
+    # is added, and then covers "Jain node"
+    return sorted(candidates, key=lambda c: lexicon.term_rank(c['source']))
+
+
+def apply_dictionary_candidates(dict_file: str, candidates: List[Dict[str, str]],
+                                source_lang: Optional[str] = None) -> Tuple[int, int]:
     """
     Write the dictionary candidates reported by the synopsis stage into a .dic.
 
-    PERSON: a character found in the file (by source, else by target name)
-    gets its gender filled in only when the gender field is empty: a gender
-    already in the file was set by the user or an earlier chunk and wins.
-    An entry without a category, or one an earlier chunk added as TERM, then
-    becomes PERSON. An unknown character with a proper name is appended as
-    "source = target, PERSON, gender, ".
-
-    TERM (coined word, no gender): appended as "source = target, TERM, , "
-    unless its source is already in the file — never over an existing line.
-    Terms are looked up by source only: another word sharing the translation
-    ("duck = утка" vs "gubbleduck | утка") is a different entry.
+    What a candidate is decides CandidateMatcher:
+    - an existing entry (PERSON): its gender is filled in only when the gender
+      field is empty — a gender already in the file was set by the user or an
+      earlier chunk and wins. An entry without a category, or one an earlier
+      chunk added as TERM, then becomes PERSON. A TERM never touches an
+      existing line;
+    - covered by existing terms: skipped;
+    - new: appended as "source = target, PERSON, gender, " (only a proper
+      name, see looks_like_proper_name) or "source = target, TERM, , ".
 
     Returns (updated, added) counts.
     """
     with open(dict_file, 'r', encoding='utf-8-sig') as f:
         lines = f.read().split('\n')
 
-    by_source, by_target = {}, {}  # lowercased -> (line_idx, source, fields)
+    matcher = CandidateMatcher(source_lang or config.source_lang)
+    rows = {}  # line_idx -> (source, fields)
     for i, line in enumerate(lines):
         stripped = line.strip()
         if not stripped or stripped.startswith('#') or '=' not in stripped:
@@ -104,34 +176,35 @@ def apply_dictionary_candidates(dict_file: str, candidates: List[Dict[str, str]]
         fields = [f.strip() for f in next(csv.reader([rest]), [])]
         if not source or not fields:
             continue
-        by_source.setdefault(source.lower(), (i, source, fields))
-        if fields[0]:
-            by_target.setdefault(fields[0].lower(), (i, source, fields))
+        rows[i] = (source, fields)
+        matcher.add(source, fields[0], i)
 
     updated, appended = 0, []
-    for cand in candidates:
+    for cand in _by_priority(candidates):
         category = cand.get('category', 'PERSON')
-        hit = by_source.get(cand['source'].lower())
-        if hit is None and category == 'PERSON':
-            hit = by_target.get(cand['target'].lower())
-        if hit is None:
+        verdict, ref = matcher.match(cand)
+        if verdict == 'covered':
+            logger.info(f"Dictionary {dict_file}: '{cand['source']}' not added, "
+                        f"already covered by {ref}")
+            continue
+        if verdict == 'new':
             if category == 'PERSON' and not looks_like_proper_name(cand['source']):
                 continue  # synopsis LLM reported a common noun, not a named character
             line = f"{cand['source']} = {_dic_field(cand['target'])}, {category}, {cand['gender']}, "
             appended.append(line)
             logger.info(f"Dictionary {dict_file}: added {line.rstrip(', ')}")
-            entry = (None, cand['source'], [cand['target'], category, cand['gender'], ''])
-            by_source[cand['source'].lower()] = entry
-            by_target.setdefault(cand['target'].lower(), entry)
+            matcher.add(cand['source'], cand['target'], None)
             continue
-        line_idx, source, fields = hit
+        if ref is None or category != 'PERSON':
+            continue
+        source, fields = rows[ref]
         fields += [''] * (4 - len(fields))
-        if line_idx is None or category != 'PERSON' or fields[2]:
+        if fields[2]:
             continue
         fields[2] = cand['gender']
         if fields[1] in ('', 'TERM'):
             fields[1] = 'PERSON'
-        lines[line_idx] = f"{source} = {_dic_field(fields[0])}, " + ", ".join(fields[1:])
+        lines[ref] = f"{source} = {_dic_field(fields[0])}, " + ", ".join(fields[1:])
         updated += 1
 
     if not updated and not appended:
@@ -219,6 +292,10 @@ class VocabularyManager:
         self.vocab: Dict[str, VocabEntry] = {}
         self.characters: Dict[str, Character] = {}
         self.matched_terms_cache: Dict[Tuple[int, int], List[str]] = {}  # (s_idx, c_idx) -> terms
+        # Candidates the synopsis stage added during this run (checkpointed)
+        self.session_candidates: List[Dict[str, str]] = []
+        # CandidateMatcher over self.vocab, built on first use, reset by load()
+        self._matcher: Optional[CandidateMatcher] = None
         
     def initialize(self, source_text: Optional[str] = None) -> Dict[str, VocabEntry]:
         """
@@ -253,6 +330,7 @@ class VocabularyManager:
         """Load the .dic file if it exists (empty vocabulary otherwise)."""
         self.vocab = self._load_from_file() if os.path.exists(self.dict_file) else {}
         self.matched_terms_cache.clear()
+        self._matcher = None
         self._extract_characters()
         return self.vocab
 
@@ -578,7 +656,8 @@ class VocabularyManager:
         import csv
         
         vocab = {}
-        
+        seen_words: Dict[str, str] = {}
+
         with open(self.dict_file, 'r', encoding='utf-8-sig') as f:
             # Skip comment lines at the beginning
             lines = []
@@ -631,6 +710,16 @@ class VocabularyManager:
                     # NO VALIDATION - allow any category and gender values (may be in any language)
                     # category and gender are passed as-is to prompts
                     
+                    # "Jain tech" and "jain tech" are one entry ("Jain-tech"
+                    # is another one, lexicon.word_key): the first line wins
+                    # (the top of the file is usually the reviewed part), the
+                    # others are reported
+                    words = lexicon.word_key(source)
+                    if words and words in seen_words:
+                        logger.warning(f"Line {line_num}: '{source}' duplicates "
+                                       f"'{seen_words[words]}', skipping")
+                        continue
+                    seen_words[words] = source
                     key = source.replace(' ', '_').lower()
                     vocab[key] = VocabEntry(
                         source=source,
@@ -688,14 +777,19 @@ class VocabularyManager:
     def record_dictionary_candidates(self, candidates: List[Dict[str, str]]):
         """Grow the dictionary while the book is translated (every format).
 
-        Candidates reported by the synopsis stage are written to the .dic
-        (apply_dictionary_candidates: genders filled in, new named characters
-        and coined terms appended) and the in-memory index is reloaded, so the
-        following chunks already get them in the prompt and the next run
-        starts with them. With spaCy, a one-word term the model has a word
-        vector for is an ordinary word of the language and is dropped.
+        Candidates reported by the synopsis stage go into the in-memory
+        vocabulary right away, so the following chunks already get them in
+        the prompt and in the substitution. A candidate the dictionary
+        already covers is dropped (CandidateMatcher: the same entry in another
+        form, or a phrase containing a known term). With spaCy, a one-word
+        term the model has a word vector for is an ordinary word of the
+        language and is dropped too.
+
+        The .dic file is written only with DICT_AUTO_SAVE (off by default);
+        the accepted candidates are kept in session_candidates for the
+        checkpoint, so a resumed run keeps them either way.
         """
-        if not candidates or not os.path.exists(self.dict_file):
+        if not candidates:
             return
         terms = [c['source'] for c in candidates if c.get('category') == 'TERM']
         if terms and config.ner_opt and ner_module:
@@ -704,10 +798,56 @@ class VocabularyManager:
                 logger.info(f"Dictionary: ordinary words not added as terms: {sorted(known)}")
                 candidates = [c for c in candidates
                               if not (c.get('category') == 'TERM' and c['source'] in known)]
-        updated, added = apply_dictionary_candidates(self.dict_file, candidates)
-        if updated or added:
-            logger.info(f"Dictionary {self.dict_file}: gender set for {updated}, added {added} entr(y/ies)")
-            self.load()
+        accepted = self._merge_candidates(candidates)
+        if accepted and config.dict_auto_save and os.path.exists(self.dict_file):
+            updated, added = apply_dictionary_candidates(self.dict_file, accepted, self.source_lang)
+            if updated or added:
+                logger.info(f"Dictionary {self.dict_file}: gender set for {updated}, added {added} entr(y/ies)")
+
+    def restore_session_candidates(self, candidates: Optional[List[Dict[str, str]]]):
+        """Put the candidates of an interrupted run (from its checkpoint)
+        back into the in-memory vocabulary. The file is not written: with
+        DICT_AUTO_SAVE they are there already, without it they never go."""
+        if candidates:
+            self._merge_candidates(candidates)
+
+    def _merge_candidates(self, candidates: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """Apply the candidates to self.vocab by the rules of
+        apply_dictionary_candidates; return the ones that changed it."""
+        if self._matcher is None:
+            self._matcher = CandidateMatcher(self.source_lang)
+            for key, entry in self.vocab.items():
+                self._matcher.add(entry.source, entry.target, key)
+        matcher = self._matcher
+        accepted = []
+        for cand in _by_priority(candidates):
+            category = cand.get('category', 'PERSON')
+            verdict, ref = matcher.match(cand)
+            if verdict == 'covered':
+                logger.info(f"Dictionary: '{cand['source']}' not added, already covered by {ref}")
+                continue
+            if verdict == 'new':
+                if category == 'PERSON' and not looks_like_proper_name(cand['source']):
+                    continue  # synopsis LLM reported a common noun, not a named character
+                key = cand['source'].replace(' ', '_').lower()
+                self.vocab[key] = VocabEntry(source=cand['source'], target=cand['target'],
+                                             category=category, gender=cand.get('gender', ''))
+                matcher.add(cand['source'], cand['target'], key)
+                logger.info(f"Dictionary: added {cand['source']} = {cand['target']}, {category}")
+                accepted.append(cand)
+                continue
+            entry = self.vocab.get(ref)
+            if entry is None or category != 'PERSON' or entry.gender:
+                continue
+            entry.gender = cand['gender']
+            if entry.category in ('', 'TERM'):
+                entry.category = 'PERSON'
+            accepted.append(cand)
+        if accepted:
+            self.session_candidates.extend(accepted)
+            self.matched_terms_cache.clear()
+            self._extract_characters()
+        return accepted
 
     def get_vocab_for_chunk(self, chunk_text: str, s_idx: int, c_idx: int) -> List[VocabEntry]:
         """

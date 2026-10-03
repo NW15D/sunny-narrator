@@ -7,6 +7,9 @@ Language-aware lexical helpers shared by every dictionary code path.
   паукопушка -> паукопушками).
 - non_text_spans / text_segments: markup that is not text of the book.
 - term_rank: priority of overlapping terms.
+- covering_terms / word_key / separators: whether a new dictionary candidate is already
+  covered by the glossary (vocabulary_manager.CandidateMatcher).
+- is_article: articles NER takes into an entity ("a Jain", "l'Empire").
 
 No regular expressions for word matching on purpose: \\b and \\w-based
 patterns assume space-separated words and silently fail on CJK, where a term
@@ -183,6 +186,34 @@ def get_stop_words(lang: str) -> FrozenSet[str]:
     return frozenset(words)
 
 
+# Articles that NER sometimes takes into an entity span ("a Jain",
+# "l'Empire", "der Kaiser"). Only articles: a stop-word list would also cut
+# the name particles "de la Vega", "da Silva", "du Bellay" — so French "de",
+# "du", "des" are left out. Elided forms are listed without the apostrophe
+# ("l'" -> "l"). Chinese has no articles, but a numeral or demonstrative
+# with a measure word plays their part (一个吉恩人, 那位将军); there a whole
+# token is compared. Japanese and Korean have none (Korean particles are
+# cut by ner.entity_text).
+_ARTICLES = {
+    'en': {'a', 'an', 'the'},
+    'fr': {'le', 'la', 'les', 'l', 'un', 'une'},
+    'de': {'der', 'die', 'das', 'den', 'dem', 'des',
+           'ein', 'eine', 'einen', 'einem', 'einer', 'eines'},
+    'es': {'el', 'la', 'los', 'las', 'lo', 'un', 'una', 'unos', 'unas'},
+    'pt': {'o', 'a', 'os', 'as', 'um', 'uma', 'uns', 'umas'},
+    'it': {'il', 'lo', 'la', 'i', 'gli', 'le', 'l', 'un', 'uno', 'una'},
+    'zh': {'一个', '一位', '一名', '一只', '一些', '这个', '那个', '这位', '那位', '这些', '那些'},
+}
+_APOSTROPHE_CHARS = "'’‘ʼ`"
+_APOSTROPHE_TABLE = str.maketrans({c: "'" for c in _APOSTROPHE_CHARS})
+
+
+def is_article(word: str, lang: str) -> bool:
+    """`word` (one token, any case) is an article of `lang`; "l'" and "un'"
+    count as "l" and "un"."""
+    return normalize(word).strip().rstrip(_APOSTROPHE_CHARS) in _ARTICLES.get(lang_code(lang), ())
+
+
 def is_stop_word(word: str, stop_words: Iterable[str]) -> bool:
     """`word` in a set produced by get_stop_words()/normalize_words()."""
     return normalize(word).strip() in stop_words
@@ -314,12 +345,19 @@ def _keys(word: str, code: str, lemma_map: Optional[Dict[str, Set[str]]],
 
 def _pick(spans: List[Tuple[str, int, int, Tuple[int, int]]], size: int) -> Set[str]:
     """Greedy non-overlapping selection: higher rank first, then leftmost.
-    Returns the terms that kept at least one occurrence."""
+    Returns the terms that kept at least one occurrence. Terms of equal rank
+    on exactly the same words are all kept: "Jain tech" and "Jain-tech" are
+    two entries (the words match either spelling), and which one applies is
+    up to term_substitution, which replaces only the literal spelling."""
     taken = bytearray(size)
     kept: Set[str] = set()
-    for term, start, end, _ in sorted(spans, key=lambda s: (-s[3][0], -s[3][1], s[1])):
+    winners: Dict[Tuple[int, int], Tuple[int, int]] = {}  # (start, end) -> rank
+    for term, start, end, rank in sorted(spans, key=lambda s: (-s[3][0], -s[3][1], s[1])):
         if not any(taken[start:end]):
             taken[start:end] = b'\x01' * (end - start)
+            winners[(start, end)] = rank
+            kept.add(term)
+        elif winners.get((start, end)) == rank:
             kept.add(term)
     return kept
 
@@ -412,3 +450,71 @@ def find_terms(text: str, terms: Iterable[str], lang: str,
     """Return the terms (as given) that occur in `text` and are not shadowed
     by a higher-priority overlapping term. See resolve_terms."""
     return resolve_terms(text, terms, lang, lemma_map)[0]
+
+
+def word_key(term: str) -> str:
+    """`term` casefolded (NFKC) with whitespace runs collapsed: "Jain tech"
+    and "JAIN  tech" share a key, "Jain-tech" and "gabble-duck" do not —
+    spellings with a hyphen, a space or none are different entries."""
+    return ' '.join(normalize(term).translate(_APOSTROPHE_TABLE).split())
+
+
+def separators(term: str) -> Tuple[str, ...]:
+    """What stands between the words of word_key(term): ("-",) for
+    "Jain-tech", (" ",) for "Jain tech", () for "gabbleduck". Two terms
+    whose words match by form are one entry only with the same separators."""
+    seps, current, seen_word = [], [], False
+    for ch in word_key(term):
+        if _is_word_char(ch):
+            if current and seen_word:
+                seps.append(''.join(current))
+            current, seen_word = [], True
+        else:
+            current.append(ch)
+    return tuple(seps)
+
+
+def covering_terms(candidate: str, terms: Iterable[str], lang: str,
+                   exact: bool = False) -> List[str]:
+    """The glossary terms that occur inside `candidate`, by the rules of
+    resolve_terms (inflected forms) but in any case, shadowed ones included,
+    highest priority first: "Jain node", "Jain-tech" and "jain shriek"
+    contain "Jain", "Jain nodes" contains "Jain node" and "Jain". A
+    multi-word term covers only with the same separators ("Jain-tech" does
+    not cover "Jain tech"). A term that is a stop word ("A", "Will") is
+    ignored: it would cover half the language.
+
+    exact: for names. A word must be equal (casefolded) or an inflection of
+    the term's word — the same stem AND one word extends the other ("Jains"
+    is "Jain"). A shared stem alone is not enough: "Marie" and "Mary" (stem
+    "mari") are different people.
+    """
+    stop_words = get_stop_words(lang_code(lang))
+    terms = [t for t in terms if t and not is_stop_word(t, stop_words)]
+    found, shadowed = resolve_terms(candidate, terms, lang)
+    # resolve_terms splits words at a hyphen; here "Jain-tech" must not cover
+    # "Jain tech": a multi-word term needs its separators in the candidate
+    own = separators(candidate)
+
+    def separators_fit(term: str) -> bool:
+        seps = separators(term)
+        return not seps or any(own[i:i + len(seps)] == seps
+                               for i in range(len(own) - len(seps) + 1))
+
+    words = tokenize(candidate)
+    code = lang_code(lang)
+
+    def same_word(word: str, term_word: str) -> bool:
+        return word == term_word or (
+            (word.startswith(term_word) or term_word.startswith(word))
+            and _stem(code, word) == _stem(code, term_word))
+
+    def words_fit(term: str) -> bool:
+        if not exact or is_unspaced(term):  # unspaced: already an exact substring
+            return True
+        own = tokenize(term)
+        return any(all(same_word(w, t) for w, t in zip(words[i:i + len(own)], own))
+                   for i in range(len(words) - len(own) + 1))
+
+    return sorted((t for t in found + shadowed if separators_fit(t) and words_fit(t)),
+                  key=term_rank, reverse=True)

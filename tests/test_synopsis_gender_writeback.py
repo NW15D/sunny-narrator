@@ -214,5 +214,5 @@ def test_dictionary_rules_are_shared_by_both_prompts_and_ask_for_base_form():
     for key in ("user", "user_hunyuan"):
         prompt = u.config.get_prompt("synopsis", key, target_lang="russian", source_text="s",
                                      final_translation="t", characters_block="",
-                                     dictionary_rules=rules)
+                                     glossary_block="", dictionary_rules=rules)
         assert prompt.endswith(rules)

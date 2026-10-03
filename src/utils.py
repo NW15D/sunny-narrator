@@ -188,6 +188,26 @@ def build_synopsis_characters(vocab_entries, translation: str) -> str:
     return "<characters>\n" + "\n".join(lines) + "\n</characters>\n\n"
 
 
+def build_synopsis_glossary(vocab_entries) -> str:
+    """
+    The dictionary entries of this chunk as "source = target" lines for the
+    synopsis prompt: the model must not report them, their forms or phrases
+    built on them ("Jain node" when "Jain" is listed) as new terms or names.
+    Returns "" without entries.
+    """
+    lines, seen = [], set()
+    for entry in vocab_entries or []:
+        get = entry.get if isinstance(entry, dict) else lambda k, d="": getattr(entry, k, d)
+        source = (get('source', '') or '').strip()
+        target = (get('target', '') or '').strip()
+        if source and target and source not in seen:
+            seen.add(source)
+            lines.append(f"{source} = {target}")
+    if not lines:
+        return ""
+    return "<glossary>\n" + "\n".join(lines) + "\n</glossary>\n\n"
+
+
 # A block whose closing tag is missing ends where the other block starts
 _GENDERS_BLOCK_RE = re.compile(r'<genders>(.*?)(?:</genders>|(?=<terms>)|$)', re.DOTALL | re.IGNORECASE)
 _TERMS_BLOCK_RE = re.compile(r'<terms>(.*?)(?:</terms>|(?=<genders>)|$)', re.DOTALL | re.IGNORECASE)
@@ -896,6 +916,7 @@ class TranslationPipeline:
             source_text=context.source_text,
             final_translation=translation,
             characters_block=build_synopsis_characters(context.vocab_entries, translation),
+            glossary_block=build_synopsis_glossary(context.vocab_entries),
             dictionary_rules=config.get_prompt("synopsis", "dictionary_rules")
         )
         system_prompt = config.get_prompt("synopsis", "system")

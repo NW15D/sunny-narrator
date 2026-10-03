@@ -2,7 +2,8 @@
 The dictionary grows while a book is translated, in every format.
 
 Characters reported by the synopsis stage (translate_chunk's candidate_sink)
-are written to the .dic file AND put into the in-memory index, so the very
+are put into the in-memory index AND, with DICT_AUTO_SAVE, written to the
+.dic file (tests/test_dictionary_coverage.py covers the default, memory only), so the very
 next chunk already gets them in its prompt. Both pipelines go through
 VocabularyManager.record_dictionary_candidates for this.
 """
@@ -25,6 +26,7 @@ def _setup(tmp_path, monkeypatch, book_name):
     monkeypatch.setattr(vm.config, 'dictionary', None)
     monkeypatch.setattr(vm.config, 'ner_opt', False)  # lexical matching, no spaCy model
     monkeypatch.setattr(vm.config, 'source_lang', 'english')
+    monkeypatch.setattr(vm.config, 'dict_auto_save', True)
     return book, dic
 
 

@@ -105,6 +105,8 @@ class TranslationEngine:
         # handler) never claims a chunk it does not list as processed.
         self._tfile_size = 0
         self._tfile_committed = 0
+        # Dictionary entries of the interrupted run (restore_from_checkpoint)
+        self.pending_session_terms = []
 
         # Statistics counters
         self.stats = {
@@ -530,6 +532,9 @@ class TranslationEngine:
                 "total_target_len": self.total_target_len
             },
             "synopsis_history": self.synopsis_manager.synopsis_cache,
+            # Dictionary entries found during the run: with DICT_AUTO_SAVE off
+            # they live only in memory, a resume must not lose them
+            "session_terms": self.vocab_manager.session_candidates if self.vocab_manager else [],
             "created_at": self.start_time.isoformat(),
             "updated_at": datetime.now().isoformat()
         }
@@ -582,6 +587,10 @@ class TranslationEngine:
         synopsis_history = checkpoint.get("synopsis_history", {})
         if synopsis_history:
             self.synopsis_manager.synopsis_cache = synopsis_history
+
+        # Applied by vocab_manager.restore_session_candidates() in main()
+        # once the dictionary is loaded
+        self.pending_session_terms = checkpoint.get("session_terms", [])
 
         logger.info(f"Restored from checkpoint: chunk {self.last_processed_chunk + 1}, "
                    f"successful: {self.stats['successful']}, failed: {self.stats['failed']}")
@@ -811,6 +820,7 @@ def main():
         try:
             # body is already parsed: a missing dictionary is built from it
             vocab = engine.vocab_manager.initialize(source_text=body)
+            engine.vocab_manager.restore_session_candidates(engine.pending_session_terms)
             print(f"Vocabulary loaded: {len(vocab)} entries")
         except DictionaryCreatedSignal as e:
             print(f"\n📖 {e}")

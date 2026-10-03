@@ -2,6 +2,16 @@
 
 All notable changes to Sunny Narrator.
 
+## Unreleased
+
+### Dictionary: growth without duplicates
+- A name or coined term reported by the synopsis stage is added only when nothing of it is in the dictionary yet. Another case or inflected form of an entry is that entry (`Jain nodes` = `Jain node`, `Gabbleducks` = `gabbleduck`; a name by inflection only — `Jains` is `Jain`, `Marie` is not `Mary`); a phrase containing a known term is skipped (`Jain node`, `Jain-tech`, `jain shriek`, `Jason Williams` when `Jain` / `Jason` are there). A hyphen, a space or no separator make different entries (`gabble-duck` / `gabbleduck`), so it no longer shadows the base entry with another translation. Of one batch the shorter candidate is taken first.
+- The synopsis prompt gets the chunk's glossary (`<glossary>`) and is told not to report its terms, their forms or phrases built on them.
+- New `DICT_AUTO_SAVE` (default `false`): found entries join the in-memory dictionary for the rest of the run and are kept in the checkpoint for a resume; the `.dic` file is written only when it is on. Previously every entry went into the file.
+- Duplicate lines of one entry in a `.dic` (`Jain tech` / `jain tech`) are reported on load and the first one is kept (previously the last one silently won). When both `Jain tech` and `Jain-tech` are in the dictionary, both reach the prompt for a chunk with either spelling, and the substitution uses the literal one.
+- Fixed: with CuPy installed (extra `[gpu]`) per-chunk term matching crashed (`Implicit conversion to a NumPy array is not allowed`) in both the GPU and the CPU variant, because the spaCy model keeps its vectors on the GPU after `prefer_gpu()`. A test now checks that both variants give the same result.
+- NER no longer puts a leading article into an entity (`a Jain` → `Jain`, `l'Empire`, `der Kaiser`, `los Jain`, `一个吉恩人`) for English, French, German, Spanish, Portuguese, Italian and Chinese; a capitalized article (`The Warship`, `El Greco`) and name particles (`de la Vega`, `da Silva`) stay.
+
 ## v2.7
 
 ### Dictionary: priority and substitution

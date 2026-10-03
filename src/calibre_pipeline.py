@@ -940,6 +940,7 @@ def translate_chunks(
         source_lang=source_lang,
         target_lang=target_lang,
     )
+    session_terms = []  # dictionary entries found by an interrupted run
     if checkpoint_mgr is not None:
         saved = checkpoint_mgr.load(expected_fingerprint=fingerprint)
         if saved is not None and os.path.realpath(saved.get("book_path", "")) == os.path.realpath(book_path or ""):
@@ -948,6 +949,7 @@ def translate_chunks(
             translated_parts = list(extra.get("translated_parts", []))
             outline_text = extra.get("outline_text", "")
             failed_chunks = int(extra.get("failed_chunks", 0))
+            session_terms = list(extra.get("session_terms", []))
             total_source_len = saved.get("lengths", {}).get("total_source_len", 0)
             total_target_len = saved.get("lengths", {}).get("total_target_len", 0)
             start_time_iso = saved.get("created_at", start_time_iso)
@@ -973,6 +975,8 @@ def translate_chunks(
             else:
                 print(f"Warning: Failed to load vocabulary: {e}")
             vocab_manager = None
+    if vocab_manager is not None:
+        vocab_manager.restore_session_candidates(session_terms)
 
     for i, chunk in enumerate(chunks):
         if i < start_idx:
@@ -1092,6 +1096,8 @@ def translate_chunks(
                     'translated_parts': translated_parts,
                     'outline_text': outline_text,
                     'failed_chunks': failed_chunks,
+                    # with DICT_AUTO_SAVE off they live only in memory
+                    'session_terms': vocab_manager.session_candidates if vocab_manager is not None else [],
                 },
             )
     

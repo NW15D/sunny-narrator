@@ -137,6 +137,11 @@ class Config:
         # with translations of common vocabulary and pin the LLM to one
         # context-free translation of every such word.
         self.dict_frequent_words = os.getenv('DICT_FREQUENT_WORDS', 'false').lower() in ['true', '1', 't', 'on', 'yes']
+        # DICT_AUTO_SAVE: write the names and coined terms found while
+        # translating into the .dic file. Off by default: they still join the
+        # in-memory dictionary for the rest of the run (and its resume), but
+        # the reviewed .dic stays as the user left it.
+        self.dict_auto_save = os.getenv('DICT_AUTO_SAVE', 'false').lower() in ['true', '1', 't', 'on', 'yes']
         self.country = os.getenv('COUNTRY', 'Россия')
         
         # Determine default model from mapping if not specified in ENV

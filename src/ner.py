@@ -52,13 +52,39 @@ def _ner_disabled_pipes(lang=None):
     return ["parser", "attribute_ruler"] + ([] if keep_lemmatizer else ["lemmatizer"])
 
 
-def entity_text(ent):
-    """Entity text without the grammatical particle (josa) glued to its last
-    word. Korean writes "철수는", "서울에서", "영희가" for 철수, 서울, 영희, and
-    the .dic term must be the bare name or it matches one form only. The
-    morphology comes from the model: tag "ncn+jxt", lemma "철수+는"; particle
-    tags start with "j". Other languages have no such tags and pass unchanged."""
+def _without_leading_articles(ent) -> str:
+    """ent.text without the articles spaCy sometimes takes into the span
+    ("a Jain", "the platform AI", "l'Empire", "der Kaiser", 一个吉恩人): the
+    .dic term must be the name, or "a Jain" lands next to "Jain" as a second
+    entry. Articles per language: lexicon.is_article (the language of the
+    doc, SOURCE_LANG as fallback). A capitalized article stays ("The
+    Warship", "El Greco" may be the name itself), the last token always does.
+    """
     text = ent.text.strip()
+    if not hasattr(type(ent), '__iter__'):
+        return text
+    tokens = list(ent)
+    lang = getattr(getattr(ent, 'doc', None), 'lang_', '') or config.source_lang
+    cut = 0
+    for token in tokens[:-1]:
+        word = token.text
+        cased = any(c.isupper() or c.islower() for c in word)
+        if not lexicon.is_article(word, lang) or (cased and word != word.lower()):
+            break
+        cut += 1
+    if not cut:
+        return text
+    return ent.text[tokens[cut].idx - tokens[0].idx:].strip()
+
+
+def entity_text(ent):
+    """Entity text without a leading article (_without_leading_articles) and
+    without the grammatical particle (josa) glued to its last word. Korean
+    writes "철수는", "서울에서", "영희가" for 철수, 서울, 영희, and the .dic
+    term must be the bare name or it matches one form only. The morphology
+    comes from the model: tag "ncn+jxt", lemma "철수+는"; particle tags start
+    with "j". Other languages have no such tags and pass unchanged."""
+    text = _without_leading_articles(ent)
     tags, lemmas = ent[-1].tag_.split('+'), ent[-1].lemma_.split('+')
     if len(tags) < 2 or len(tags) != len(lemmas):
         return text
@@ -364,6 +390,14 @@ def create_dictionary_from_text(text, stop_words=None, min_count_ner=5, min_coun
 _PHRASE_VECTOR_CACHE = {}
 
 
+def _to_numpy(vector):
+    """A NumPy copy of a spaCy vector. Once load_spacy_model() has called
+    spacy.prefer_gpu() with CuPy installed (extra [gpu]), the model keeps its
+    vectors on the GPU and NumPy refuses to convert them implicitly — in the
+    CPU matcher too."""
+    return vector.get() if CUPY_AVAILABLE and isinstance(vector, cp.ndarray) else np.asarray(vector)
+
+
 def _get_phrase_vector(phrase, nlp):
     """Mean vector of the phrase words (cached).
 
@@ -373,7 +407,7 @@ def _get_phrase_vector(phrase, nlp):
         return _PHRASE_VECTOR_CACHE[phrase]
     sub_words = phrase.split()
     sub_docs = list(nlp.pipe(sub_words, disable=["ner", "parser", "tagger", "lemmatizer", "attribute_ruler"]))
-    sub_vecs = [d.vector for d in sub_docs if d.vector_norm != 0]
+    sub_vecs = [_to_numpy(d.vector) for d in sub_docs if d.vector_norm != 0]
     vec = np.mean(np.vstack(sub_vecs), axis=0) if sub_vecs else None
     _PHRASE_VECTOR_CACHE[phrase] = vec
     return vec
@@ -458,7 +492,7 @@ def _match_vocab_terms(text, vocab, lng, threshold, batch_size, xp):
 
     tokens = [t for t in doc if t.is_alpha and t.vector_norm != 0]
     for i in range(0, len(tokens), batch_size):
-        token_vectors = xp.asarray(np.vstack([t.vector for t in tokens[i:i + batch_size]]))
+        token_vectors = xp.asarray(np.vstack([_to_numpy(t.vector) for t in tokens[i:i + batch_size]]))
         token_vectors = token_vectors / xp.linalg.norm(token_vectors, axis=1, keepdims=True)
         sims = xp.dot(token_vectors, vocab_matrix.T)
         for _, vi in zip(*xp.where(sims > threshold)):
