@@ -90,8 +90,8 @@ authentication any non-empty API key will do.
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `FILE` | `books/Cargo.fb2` | The book. `.fb2`/`.txt` → classic pipeline, `.epub`/`.docx`/`.pdf` → Calibre pipeline |
-| `SOURCE_LANG` | `english` | Full name or ISO code (`korean`/`ko`, `english`/`en`, ...). Also selects the spaCy model and the CJK adaptations |
-| `TARGET_LANG` | `russian` | Full name or ISO code |
+| `SOURCE_LANG` | `english` | Full name or ISO code (`korean`/`ko`, `english`/`en`, ...). Also selects the spaCy model and the CJK adaptations. Verified languages: [LANGUAGES.md](LANGUAGES.md) |
+| `TARGET_LANG` | `russian` | Full name or ISO code. Verified languages: [LANGUAGES.md](LANGUAGES.md) |
 | `COUNTRY` | by `TARGET_LANG` | Country for localization context in prompts; empty = derived from the target language (`ru` → Россия, `tr` → Türkiye, `de` → Deutschland, …; a language without one country → `<Language>-speaking countries`) |
 
 ---

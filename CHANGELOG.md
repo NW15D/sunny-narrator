@@ -14,6 +14,7 @@ All notable changes to Sunny Narrator.
 - TXT chapter headings are recognized in more languages (`Bölüm 3`, `3. Bölüm`, `Kapitel`, `Chapitre`, `Capítulo`, `第3章`, …).
 - `scripts/convert_dic.py` is no longer tied to an English→Russian dictionary: `--source-lang` / `--hint-lang` (defaults `SOURCE_LANG` / `TARGET_LANG`).
 - README in Turkish (`README_TR.md`).
+- Tested languages listed in every README and in `docs/LANGUAGES.md`: real book translations (English → Russian, Korean → Russian); source languages verified on real spaCy models by `tests/test_languages_real_models.py` (English, Korean, Japanese, Chinese, Russian, German, French, Spanish, Portuguese, Italian; Turkish limited); target languages covered by automated tests (Russian, Turkish, German, Chinese).
 
 ### Prompts
 - `prompts.json` rewritten: 21.7 KB → 12.6 KB, no repeated rule blocks, one directive per rule.

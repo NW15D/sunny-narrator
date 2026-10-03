@@ -171,6 +171,21 @@ TARGET_LANG=russian
 
 ---
 
+## 🌍 Tested Languages
+
+Any language the LLM can write works as a target; the dictionary code is language-aware. Verified so far:
+
+| | Languages |
+|---|---|
+| **Real book translations** | English → Russian, Korean → Russian |
+| **Source, real spaCy model** (NER, term forms, article/particle cleanup) | English, Korean, Japanese, Chinese, Russian, German, French, Spanish, Portuguese, Italian |
+| **Source, limited** | Turkish (multilingual NER; a term is found only in the form written in the `.dic`) |
+| **Target, automated tests** | Russian, Turkish (all five stages with a faked LLM), German, Chinese |
+
+**Details and limits:** [docs/LANGUAGES.md](docs/LANGUAGES.md)
+
+---
+
 ## 📖 Glossary-Driven Translation (Series of Books)
 
 Create a unified dictionary for a series of books to ensure consistent terminology across all volumes.
@@ -308,6 +323,7 @@ The console log shows every step of the translation: length checks with the cali
 | **Docker (GPU)** | [docs/GPU_DOCKER.md](docs/GPU_DOCKER.md) |
 | **JSON Mode** | [docs/JSON_MODE_ANALYSIS.md](docs/JSON_MODE_ANALYSIS.md) |
 | **Prompts Guide** | [docs/PROMPTS_GUIDE.md](docs/PROMPTS_GUIDE.md) |
+| **Tested Languages** | [docs/LANGUAGES.md](docs/LANGUAGES.md) |
 
 ---
 

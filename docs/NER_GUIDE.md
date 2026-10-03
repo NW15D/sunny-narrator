@@ -4,6 +4,9 @@
 
 Sunny Narrator uses **Named Entity Recognition (NER)** to automatically identify and match vocabulary terms in each chunk before translation.
 
+Languages verified on real spaCy models (NER, term forms, article/particle
+cleanup) and their limits: [LANGUAGES.md](LANGUAGES.md).
+
 ## 🎯 How It Works
 
 ```

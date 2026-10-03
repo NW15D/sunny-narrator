@@ -162,6 +162,21 @@ TARGET_LANG=russian
 
 ---
 
+## 🌍 已测试的语言
+
+LLM 能写的任何语言都可作为目标语言；词典代码会考虑语言差异。目前已验证：
+
+| | 语言 |
+|---|---|
+| **真实图书翻译** | 英语 → 俄语，韩语 → 俄语 |
+| **源语言，真实 spaCy 模型**（NER、术语词形、冠词/助词清理） | 英语、韩语、日语、中文、俄语、德语、法语、西班牙语、葡萄牙语、意大利语 |
+| **源语言，有限支持** | 土耳其语（多语言 NER；术语只能按 `.dic` 中写的形式找到） |
+| **目标语言，自动化测试** | 俄语、土耳其语（用模拟 LLM 跑完五个阶段）、德语、中文 |
+
+**详情与限制：** [docs/LANGUAGES.md](docs/LANGUAGES.md)
+
+---
+
 ## 📖 基于术语表的翻译（系列图书）
 
 为系列图书创建统一词典，确保所有卷中术语一致。
@@ -298,6 +313,7 @@ Calibre 的内部标记（`calibre_link-*` 锚点、`.calibre` 类）会被自�
 | **Docker（GPU）** | [docs/GPU_DOCKER.md](docs/GPU_DOCKER.md) |
 | **JSON 模式** | [docs/JSON_MODE_ANALYSIS.md](docs/JSON_MODE_ANALYSIS.md) |
 | **提示词指南** | [docs/PROMPTS_GUIDE.md](docs/PROMPTS_GUIDE.md) |
+| **已测试的语言** | [docs/LANGUAGES.md](docs/LANGUAGES.md) |
 
 ---
 

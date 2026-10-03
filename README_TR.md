@@ -172,6 +172,21 @@ TARGET_LANG=turkish
 
 ---
 
+## 🌍 Test Edilen Diller
+
+LLM'in yazabildiği her dil hedef olarak çalışır; sözlük kodu dili hesaba katar. Şimdiye kadar doğrulananlar:
+
+| | Diller |
+|---|---|
+| **Gerçek kitap çevirileri** | İngilizce → Rusça, Korece → Rusça |
+| **Kaynak, gerçek spaCy modeli** (NER, terim biçimleri, tanımlık/ek temizliği) | İngilizce, Korece, Japonca, Çince, Rusça, Almanca, Fransızca, İspanyolca, Portekizce, İtalyanca |
+| **Kaynak, sınırlı** | Türkçe (çok dilli NER; terim yalnızca `.dic` dosyasında yazılı biçimiyle bulunur) |
+| **Hedef, otomatik testler** | Rusça, Türkçe (beş aşamanın tamamı, taklit LLM ile), Almanca, Çince |
+
+**Ayrıntılar ve sınırlar:** [docs/LANGUAGES.md](docs/LANGUAGES.md)
+
+---
+
 ## 📖 Sözlük Güdümlü Çeviri (Kitap Serileri)
 
 Tüm ciltlerde tutarlı terminoloji için bir kitap serisine ortak sözlük oluşturun.
@@ -309,6 +324,7 @@ Konsol günlüğü çevirinin her adımını gösterir: kalibre edilmiş oranla 
 | **Docker (GPU)** | [docs/GPU_DOCKER.md](docs/GPU_DOCKER.md) |
 | **JSON Modu** | [docs/JSON_MODE_ANALYSIS.md](docs/JSON_MODE_ANALYSIS.md) |
 | **Prompt Kılavuzu** | [docs/PROMPTS_GUIDE.md](docs/PROMPTS_GUIDE.md) |
+| **Test Edilen Diller** | [docs/LANGUAGES.md](docs/LANGUAGES.md) |
 
 Belgeler İngilizce ve Rusçadır.
 

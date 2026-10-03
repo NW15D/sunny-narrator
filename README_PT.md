@@ -162,6 +162,21 @@ TARGET_LANG=russian
 
 ---
 
+## 🌍 Idiomas Testados
+
+Qualquer idioma que o LLM escreva funciona como destino; o código do dicionário leva o idioma em conta. Verificado até agora:
+
+| | Idiomas |
+|---|---|
+| **Traduções reais de livros** | inglês → russo, coreano → russo |
+| **Origem, modelo spaCy real** (NER, formas dos termos, limpeza de artigos/partículas) | inglês, coreano, japonês, chinês, russo, alemão, francês, espanhol, português, italiano |
+| **Origem, limitado** | turco (NER multilíngue; um termo só é encontrado na forma escrita no `.dic`) |
+| **Destino, testes automatizados** | russo, turco (os cinco estágios com um LLM simulado), alemão, chinês |
+
+**Detalhes e limites:** [docs/LANGUAGES.md](docs/LANGUAGES.md)
+
+---
+
 ## 📖 Tradução Guiada por Glossário (Série de Livros)
 
 Crie um dicionário unificado para uma série de livros, garantindo terminologia consistente em todos os volumes.
@@ -299,6 +314,7 @@ O log do console mostra cada etapa da tradução: verificações de tamanho com 
 | **Docker (GPU)** | [docs/GPU_DOCKER.md](docs/GPU_DOCKER.md) |
 | **Modo JSON** | [docs/JSON_MODE_ANALYSIS.md](docs/JSON_MODE_ANALYSIS.md) |
 | **Guia de prompts** | [docs/PROMPTS_GUIDE.md](docs/PROMPTS_GUIDE.md) |
+| **Idiomas testados** | [docs/LANGUAGES.md](docs/LANGUAGES.md) |
 
 ---
 
