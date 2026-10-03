@@ -148,6 +148,37 @@ def lang_code(lang: str) -> str:
     return LANG_CODE_MAP.get(lang, lang)
 
 
+def language_name(lang: str) -> str:
+    """English name of a language for prompts: 'tr' / 'turkish' -> 'Turkish'."""
+    code = lang_code(lang)
+    for name, c in LANG_CODE_MAP.items():
+        if c == code and len(name) > 3:
+            return name.capitalize()
+    return (lang or '').strip().capitalize()
+
+
+# Languages written in the Latin alphabet. For them "the output is still
+# mostly Latin letters" says nothing about whether it was translated.
+_LATIN_SCRIPT = {
+    'en', 'fr', 'de', 'es', 'it', 'pt', 'nl', 'pl', 'ca', 'da', 'fi', 'sv', 'nb', 'ro',
+    'lt', 'lv', 'et', 'hr', 'sl', 'sk', 'cs', 'hu', 'tr', 'az', 'id', 'ms', 'vi', 'sq',
+    'eu', 'gl', 'is', 'ga', 'cy', 'af', 'sw', 'tl', 'uz',
+}
+
+
+def is_latin_script(lang: str) -> bool:
+    return lang_code(lang) in _LATIN_SCRIPT
+
+
+def latin_share(text: str) -> float:
+    """Share of ASCII Latin letters among all letters of `text`, markup
+    (tags, entities, markdown links) not counted; 0.0 without letters."""
+    letters = [ch for seg in text_segments(text or "") for ch in seg if ch.isalpha()]
+    if not letters:
+        return 0.0
+    return sum(1 for ch in letters if ch.isascii()) / len(letters)
+
+
 @lru_cache(maxsize=None)
 def get_stop_words(lang: str) -> FrozenSet[str]:
     """Stop words for `lang`: NLTK list ∪ spaCy list ∪ markup words
@@ -206,6 +237,18 @@ _ARTICLES = {
 }
 _APOSTROPHE_CHARS = "'’‘ʼ`"
 _APOSTROPHE_TABLE = str.maketrans({c: "'" for c in _APOSTROPHE_CHARS})
+
+
+# Turkish and Azerbaijani write dotted İ/i and dotless I/ı: Python's
+# locale-free str.upper() turns "iksir" into "Iksir" instead of "İksir"
+_DOTTED_I_LANGUAGES = {'tr', 'az'}
+
+
+def upper(text: str, lang: str = "") -> str:
+    """str.upper() with the casing rules of `lang` (Turkish i -> İ)."""
+    if lang_code(lang) in _DOTTED_I_LANGUAGES:
+        text = text.replace('i', 'İ')
+    return text.upper()
 
 
 def is_article(word: str, lang: str) -> bool:

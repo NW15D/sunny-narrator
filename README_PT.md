@@ -129,11 +129,13 @@ Alice = Алиса, PERSON, she, Personagem principal
 ```
 
 - Criado automaticamente na primeira execução via NER (entidades nomeadas) e depois traduzido pelo LLM. Palavras comuns frequentes só são adicionadas com `DICT_FREQUENT_WORDS=true` (ou `--frequent-words` para `--build-dict`/`--build-series-dict`).
-- **Gênero dos personagens** (`he`, `she`, `it`, `they`): se o dicionário não indica o gênero, o estágio de sinopse o determina pelo texto e grava no `.dic`; personagens ausentes do dicionário são adicionados ao final como `nome = tradução, PERSON, gênero` — em todos os formatos, e os chunks seguintes da mesma execução já os usam. Um gênero já presente no arquivo nunca é sobrescrito — edições manuais sempre prevalecem.
+- **Gênero dos personagens** (`he`, `she`, `it`, `they`): se o dicionário não indica o gênero, o estágio de sinopse o determina pelo texto; personagens com nome próprio ausentes do dicionário são adicionados. Um gênero já presente no arquivo nunca é sobrescrito — edições manuais sempre prevalecem.
+- **Palavras inventadas:** além dos personagens, a etapa de sinopse informa palavras inventadas sem tradução comum (`spidergun`); elas são adicionadas como `TERM`. Palavras que o modelo spaCy já conhece são descartadas.
+- **Sem duplicatas:** um candidato que o dicionário já cobre não é adicionado — outra caixa ou forma flexionada de uma entrada (`Jain nodes` = `Jain node`, `Gabbleducks` = `gabbleduck`; um nome só pela flexão: `Jains` = `Jain`, mas `Marie` ≠ `Mary`) ou uma frase com um termo conhecido (`Jain node`, `Jain-tech` quando `Jain` existe). Hífen, espaço ou escrita junta são entradas diferentes (`gabble-duck` ≠ `gabbleduck`); uma sigla em MAIÚSCULAS só corresponde a si mesma (`ECS` ≠ `EC`).
+- **Para onde vão as entradas encontradas:** novos nomes e termos entram logo no dicionário em memória — os chunks seguintes da execução os usam, e uma execução retomada os restaura do checkpoint. Só são gravados no `.dic` com `DICT_AUTO_SAVE=true` (padrão `false`: o dicionário revisado fica como está).
 - **Busca de termos:** igual para todos os formatos — só os termos do dicionário encontrados num chunk entram no seu prompt. Formas flexionadas são encontradas (`spidergun` → `spiderguns`, `wolf` → `wolves`), termos em chinês/japonês/coreano são buscados como substrings, e um termo nunca é encontrado dentro de outra palavra (`Ann` / `Annoying`).
 - **Termos de várias palavras primeiro:** um termo com mais palavras vence os mais curtos que ele contém (`Mad Hatter` sobre `Hatter`); depois vence o mais longo. Um termo curto que aparece só dentro de um longo não entra no prompt, e o modelo não recebe duas traduções da mesma expressão.
 - **Termos substituídos antes da tradução:** as traduções dos termos do dicionário encontrados no trecho são colocadas no texto de origem antes da primeira etapa, para o modelo não os ignorar (as etapas seguintes veem o original). Marcação, links e URLs nunca são alterados; um termo em minúsculas é encontrado em qualquer caixa, um nome como escrito ou em MAIÚSCULAS.
-- **Palavras inventadas:** além dos personagens, a etapa de sinopse informa palavras inventadas sem tradução comum (`spidergun`); elas são acrescentadas como `TERM` e usadas nos trechos seguintes. Palavras que o modelo spaCy já conhece são descartadas.
 - **Outro idioma de destino:** `python scripts/convert_dic.py books/MyBook.dic fr es zh` converte um dicionário pronto para outros idiomas (`MyBook_fr.dic`, …), usando a tradução existente como dica.
 - **Caminho explícito do dicionário:** por padrão o dicionário é procurado ao lado do livro (`books/MyBook.fb2` → `books/MyBook.dic`). Para usar outro arquivo, por exemplo um dicionário comum da série, defina `DICTIONARY=path/to/file.dic` no `.env` ou passe `--dictionary path/to/file.dic` (a flag da CLI tem prioridade). Funciona nos dois pipelines; um arquivo inexistente é criado nesse caminho (o diretório deve existir).
 
@@ -306,4 +308,4 @@ Histórico de versões: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
-[English](README.md) | [Русский](README_RU.md) | [中文](README_CN.md)
+[English](README.md) | [Русский](README_RU.md) | [中文](README_CN.md) | [Türkçe](README_TR.md)

@@ -92,7 +92,7 @@ authentication any non-empty API key will do.
 | `FILE` | `books/Cargo.fb2` | The book. `.fb2`/`.txt` → classic pipeline, `.epub`/`.docx`/`.pdf` → Calibre pipeline |
 | `SOURCE_LANG` | `english` | Full name or ISO code (`korean`/`ko`, `english`/`en`, ...). Also selects the spaCy model and the CJK adaptations |
 | `TARGET_LANG` | `russian` | Full name or ISO code |
-| `COUNTRY` | `Россия` | Country for localization context in prompts |
+| `COUNTRY` | by `TARGET_LANG` | Country for localization context in prompts; empty = derived from the target language (`ru` → Россия, `tr` → Türkiye, `de` → Deutschland, …; a language without one country → `<Language>-speaking countries`) |
 
 ---
 
@@ -113,7 +113,7 @@ authentication any non-empty API key will do.
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `NER` | `true` | Build the dictionary from named entities on the first run (every format; the run then stops for review). Off: an empty template is created and terms are matched without spaCy. `--build-dict` runs NER regardless |
-| `NERMODEL` | by `SOURCE_LANG` | spaCy model; empty = chosen from `SOURCE_LANG` and downloaded automatically (`en` → `en_core_web_lg`, `ko` → `ko_core_news_lg`, ...; full map in `src/config.py`) |
+| `NERMODEL` | by `SOURCE_LANG` | spaCy model; empty = chosen from `SOURCE_LANG` and downloaded automatically (`en` → `en_core_web_lg`, `ko` → `ko_core_news_lg`, ...; full map in `src/config.py`); a language without its own spaCy pipeline (Turkish, Hungarian, Arabic, …) → multilingual `xx_ent_wiki_sm` |
 | `DICT_FREQUENT_WORDS` | `false` | Also add frequent ordinary words (not named entities) to a new dictionary. Off: they fill the `.dic` with translations of common vocabulary. Per run for `--build-dict`/`--build-series-dict`: `--frequent-words` |
 | `DICT_AUTO_SAVE` | `false` | Write the names and coined terms the synopsis stage finds while translating into the `.dic`. Off: they join the in-memory dictionary for the rest of the run (and its resume, via the checkpoint), but the file stays as you reviewed it. A candidate already covered by the dictionary is never added — neither another case or inflected form of an entry (`Jain nodes`, `Gabbleducks`) nor a phrase containing a known term (`Jain node`, `Jain-tech` when `Jain` is there). A hyphen, a space or no separator make different entries (`gabble-duck` is not `gabbleduck`) |
 | `DICTIONARY` | empty | Explicit path to the `.dic` file instead of `<book>.dic` next to the book. CLI: `--dictionary <path>` (wins over `.env`). Both pipelines |

@@ -47,7 +47,8 @@ except ImportError:
 from src.utils import config, validate_translation_length, translate_chunk, translate_metadata, length_calibration
 from src.utils import _pipeline  # noqa: F401  (tests monkeypatch cp._pipeline.execute)
 from src.checkpoint_manager import CheckpointManager, compute_fingerprint
-from src import markdown_utils
+from src import lexicon, markdown_utils
+from src.config import default_country
 from src.markdown_utils import sanitize_surrogates
 
 # Precompiled Calibre-specific cleanup patterns (narrowed to avoid removing valid Pandoc attributes)
@@ -833,9 +834,9 @@ def _restore_markdown_html(text: str, html_bits: list[str]) -> str:
 def translate_chunks(
     markdown_text: str,
     max_chunk_size: int = 6000,
-    source_lang: str = "en",
-    target_lang: str = "ru",
-    country: str = "Russia",
+    source_lang: Optional[str] = None,
+    target_lang: Optional[str] = None,
+    country: Optional[str] = None,
     style: str = "text",
     fast_mode: bool = False,
     book_path: Optional[str] = None,
@@ -857,9 +858,10 @@ def translate_chunks(
     Args:
         markdown_text: Markdown content to translate
         max_chunk_size: Maximum chunk size in characters (default 6000)
-        source_lang: Source language code (default "en")
-        target_lang: Target language code (default "ru")
-        country: Target country for cultural context (default "Russia")
+        source_lang: Source language (default SOURCE_LANG)
+        target_lang: Target language (default TARGET_LANG)
+        country: Target country for cultural context (default COUNTRY, else
+            derived from the target language: config.default_country)
         style: Translation style - "text" or "xml" (default "text")
         fast_mode: Skip reflection/improve stages (default False)
         book_path: Optional path to the book file. Its glossary (.dic) is
@@ -885,6 +887,10 @@ def translate_chunks(
         Translated markdown text
     """
     _init_logger()
+    source_lang = source_lang or config.source_lang
+    target_lang = target_lang or config.target_lang
+    country = country or (config.country if target_lang == config.target_lang
+                          else default_country(target_lang))
     
     if not markdown_text or not markdown_text.strip():
         if logger:
@@ -1287,20 +1293,14 @@ def build_output(
     if not translated_md or not translated_md.strip():
         raise ValueError("Translated markdown is empty or whitespace")
     
-    # Check if markdown looks like it hasn't been translated (still mostly English)
-    # Simple heuristic: if more than 85% of letters are ASCII (Latin), the text
-    # likely wasn't translated into Cyrillic/other non-Latin target languages.
-    # NOTE: compare ASCII letters against total Latin+Cyrillic letters only,
-    # so punctuation/digits/markup don't skew the ratio.
-    import re
-    ascii_letters = len(re.findall(r'[a-zA-Z]', translated_md))
-    cyrillic_letters = len(re.findall(r'[\u0400-\u04FF]', translated_md))
-    total_letters = ascii_letters + cyrillic_letters
-    ascii_ratio = ascii_letters / total_letters if total_letters > 0 else 0
-    
-    if ascii_ratio > 0.85 and config.target_lang.lower() != 'english':
-        logger.warning(f"High ASCII ratio ({ascii_ratio:.1%}) in translated markdown. "
-                      f"May indicate translation failed or output not replaced properly.")
+    # Untranslated output: mostly Latin letters for a target with its own
+    # script (Cyrillic, CJK, Greek, Arabic, ...). Says nothing for a
+    # Latin-script target such as Turkish or French, so it is skipped there.
+    check_lang = target_lang or config.target_lang
+    ascii_ratio = lexicon.latin_share(translated_md)
+    if ascii_ratio > 0.85 and not lexicon.is_latin_script(check_lang):
+        logger.warning(f"{ascii_ratio:.0%} of the letters in the translated markdown are Latin for "
+                       f"target {check_lang}: the translation may have failed.")
     
     output_format = output_format.lower()
     valid_formats = {'docx', 'epub', 'pdf'}
@@ -1945,9 +1945,9 @@ def run_pipeline(
     input_path: str,
     output_format: str = "epub",
     max_chunk_size: int = None,  # None = use MAX_LEN_CHUNK from config
-    source_lang: str = "en",
-    target_lang: str = "ru",
-    country: str = "Russia",
+    source_lang: Optional[str] = None,
+    target_lang: Optional[str] = None,
+    country: Optional[str] = None,
     fast_mode: bool = False,
     skip_validation: bool = False,
     allow_invalid: bool = False,
@@ -1987,6 +1987,10 @@ def run_pipeline(
         Path to the generated output file
     """
     _init_logger()
+    source_lang = source_lang or config.source_lang
+    target_lang = target_lang or config.target_lang
+    country = country or (config.country if target_lang == config.target_lang
+                          else default_country(target_lang))
 
     # dict_file precedence: explicit argument > DICTIONARY env/config
     dict_file = dict_file or getattr(config, 'dictionary', None)

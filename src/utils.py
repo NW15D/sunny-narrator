@@ -759,7 +759,8 @@ class TranslationPipeline:
                 source_text=replace_vocab_in_text(
                     context.source_text,
                     context.vocab_dict,
-                    xml=context.style == 'xml'
+                    xml=context.style == 'xml',
+                    target_lang=context.target_lang
                 )
             )
         
@@ -1825,48 +1826,33 @@ def remove_tags_with_check(text: str, stage_name: str = "", role: LLMRole = None
     return cleaned
 
 
+_CYRILLIC_TARGETS = {'ru', 'uk', 'be', 'bg', 'sr', 'mk', 'kk'}
+
+
 def _detect_language_mismatch(text: str, expected_lang: str, source_text: str) -> bool:
     """
-    Detect if translation is in wrong language (e.g., English instead of Russian).
-    
-    Args:
-        text: Translated text to check
-        expected_lang: Expected target language (e.g., 'russian', 'ru')
-        source_text: Original source text
-        
-    Returns:
-        True if language mismatch detected
+    Whether the "translation" is still the source text (the model echoed or
+    skipped it), for any target language: more than half of its distinct
+    words also occur in the source. Markup is not counted (lexicon.
+    text_segments), so shared FB2 tags do not look like shared words.
+    A Cyrillic target with Cyrillic letters in the text counts as
+    translated. Too short texts (under 8 words) are not judged: names alone
+    could make them overlap.
     """
     if not text or not source_text:
         return False
-    
-    # Common Russian characters that shouldn't be in English
-    russian_chars = set('абвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ')
-    
-    # Common English characters
-    english_chars = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ')
-    
-    # Count characters
-    text_chars = set(text)
-    
-    # If expected Russian but no Cyrillic characters
-    if 'ru' in expected_lang.lower() or 'russian' in expected_lang.lower():
-        has_cyrillic = bool(text_chars & russian_chars)
-        has_english = bool(text_chars & english_chars)
-        
-        # If text is mostly English (no Cyrillic), it's likely not translated
-        if not has_cyrillic and has_english:
-            # Check if text is similar to source (not translated)
-            if len(text) > 50 and len(source_text) > 50:
-                # Simple similarity check
-                text_words = set(text.lower().split())
-                source_words = set(source_text.lower().split())
-                overlap = len(text_words & source_words) / min(len(text_words), len(source_words))
-                
-                if overlap > 0.5:  # More than 50% word overlap
-                    logger.warning(f"Language mismatch detected: expected {expected_lang}, got English. Overlap: {overlap:.1%}")
-                    return True
-    
+    code = lexicon.lang_code(expected_lang)
+    if code in _CYRILLIC_TARGETS and any('\u0400' <= ch <= '\u04ff' for ch in text):
+        return False
+    text_words = set(lexicon.tokenize(' '.join(lexicon.text_segments(text))))
+    source_words = set(lexicon.tokenize(' '.join(lexicon.text_segments(source_text))))
+    if min(len(text_words), len(source_words)) < 8:
+        return False
+    overlap = len(text_words & source_words) / min(len(text_words), len(source_words))
+    if overlap > 0.5:
+        logger.warning(f"Language mismatch detected: expected {expected_lang}, "
+                       f"{overlap:.0%} of the words are the source's")
+        return True
     return False
 
 

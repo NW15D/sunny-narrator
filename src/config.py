@@ -35,6 +35,26 @@ LANG_CODE_MAP = {
 }
 
 
+# COUNTRY default by target language: the prompts say "for readers in
+# {country}", and a fixed "Россия" turned an English->Turkish run into a
+# translation "for readers in Russia". Languages spoken in many countries
+# get a neutral "<Language>-speaking countries" (default_country).
+_DEFAULT_COUNTRY = {
+    'ru': 'Россия', 'tr': 'Türkiye', 'de': 'Deutschland', 'fr': 'France', 'es': 'España',
+    'it': 'Italia', 'pt': 'Portugal', 'pl': 'Polska', 'uk': 'Україна', 'nl': 'Nederland',
+    'ja': '日本', 'ko': '대한민국', 'zh': '中国', 'cs': 'Česko', 'hu': 'Magyarország',
+    'ro': 'România', 'el': 'Ελλάδα', 'fi': 'Suomi', 'sv': 'Sverige', 'da': 'Danmark',
+    'nb': 'Norge', 'lt': 'Lietuva', 'hr': 'Hrvatska', 'sl': 'Slovenija', 'mk': 'Северна Македонија',
+    'he': 'ישראל', 'id': 'Indonesia', 'ca': 'Catalunya',
+}
+
+
+def default_country(target_lang: str) -> str:
+    lang = (target_lang or '').strip().lower()
+    code = LANG_CODE_MAP.get(lang, lang)
+    return _DEFAULT_COUNTRY.get(code) or f"{lang.capitalize()}-speaking countries"
+
+
 class Config:
     def __init__(self, env_path: str = None):
         if env_path:
@@ -142,11 +162,13 @@ class Config:
         # in-memory dictionary for the rest of the run (and its resume), but
         # the reviewed .dic stays as the user left it.
         self.dict_auto_save = os.getenv('DICT_AUTO_SAVE', 'false').lower() in ['true', '1', 't', 'on', 'yes']
-        self.country = os.getenv('COUNTRY', 'Россия')
+        self.country = os.getenv('COUNTRY') or default_country(self.target_lang)
         
         # Determine default model from mapping if not specified in ENV
-        default_model = self.lang_model_map.get(self.source_lang.lower(), 'en_core_web_lg')
-        self.nermodel = os.getenv('NERMODEL', default_model)
+        # A language without its own spaCy pipeline (Turkish, Hungarian,
+        # Arabic, ...) gets the multilingual NER model, not the English one
+        default_model = self.lang_model_map.get(self.source_lang.lower(), 'xx_ent_wiki_sm')
+        self.nermodel = os.getenv('NERMODEL') or default_model  # empty = by SOURCE_LANG
         self.fast_trans = os.getenv('FAST_TRANS', 'on').lower() in ['true', '1', 'on', 'yes']
         self.max_len_chunk = _parse_numeric_env('MAX_LEN_CHUNK', 8192, cast=int)
         self.length_check_threshold = _parse_numeric_env('LENGTH_CHECK_THRESHOLD', 20, cast=int)

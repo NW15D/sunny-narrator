@@ -39,7 +39,8 @@ NER_CATEGORIES = ["ORG", "LOC", "GPE", "PERSON", "EVENT", "FAC", "PRODUCT", "PS"
 # Normalize scheme-specific labels to their OntoNotes-style equivalent so
 # .dic output categories stay consistent regardless of which model produced
 # them.
-_LABEL_NORMALIZATION = {"PS": "PERSON", "LC": "LOC", "OG": "ORG"}
+# KLUE labels of ko_core_news_lg and the PER of the multilingual xx_ent_wiki_sm
+_LABEL_NORMALIZATION = {"PS": "PERSON", "LC": "LOC", "OG": "ORG", "PER": "PERSON"}
 
 
 def _normalize_label(label):
@@ -64,7 +65,7 @@ def _without_leading_articles(ent) -> str:
     if not hasattr(type(ent), '__iter__'):
         return text
     tokens = list(ent)
-    lang = getattr(getattr(ent, 'doc', None), 'lang_', '') or config.source_lang
+    lang = _ent_lang(ent)
     cut = 0
     for token in tokens[:-1]:
         word = token.text
@@ -77,14 +78,33 @@ def _without_leading_articles(ent) -> str:
     return ent.text[tokens[cut].idx - tokens[0].idx:].strip()
 
 
+# Turkish and Azerbaijani attach case suffixes to a proper name after an
+# apostrophe: "Ankara'ya", "İstanbul'da", "Ayşe'nin" are Ankara, İstanbul, Ayşe
+_APOSTROPHE_SUFFIX_LANGUAGES = {'tr', 'az'}
+_APOSTROPHE_SUFFIX_RE = re.compile(r"['’]\w+$")
+
+
+def _ent_lang(ent) -> str:
+    """Language of the entity's doc; SOURCE_LANG for the multilingual
+    model ("xx") or a doc without one."""
+    lang = getattr(getattr(ent, 'doc', None), 'lang_', '')
+    return config.source_lang if lang in ('', 'xx') else lang
+
+
 def entity_text(ent):
-    """Entity text without a leading article (_without_leading_articles) and
+    """Entity text without a leading article (_without_leading_articles),
+    without a Turkish/Azerbaijani case suffix after an apostrophe
+    ("Ankara'ya" -> "Ankara"; "O'Brien" in other languages stays) and
     without the grammatical particle (josa) glued to its last word. Korean
     writes "철수는", "서울에서", "영희가" for 철수, 서울, 영희, and the .dic
     term must be the bare name or it matches one form only. The morphology
     comes from the model: tag "ncn+jxt", lemma "철수+는"; particle tags start
     with "j". Other languages have no such tags and pass unchanged."""
     text = _without_leading_articles(ent)
+    if lexicon.lang_code(_ent_lang(ent)) in _APOSTROPHE_SUFFIX_LANGUAGES:
+        stem = _APOSTROPHE_SUFFIX_RE.sub('', text)
+        if stem:
+            return stem
     tags, lemmas = ent[-1].tag_.split('+'), ent[-1].lemma_.split('+')
     if len(tags) < 2 or len(tags) != len(lemmas):
         return text

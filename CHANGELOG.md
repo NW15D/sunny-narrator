@@ -4,6 +4,17 @@ All notable changes to Sunny Narrator.
 
 ## Unreleased
 
+### Internationalization (checked with English → Turkish)
+- `COUNTRY` defaults from `TARGET_LANG` (`tr` → Türkiye); it was "Россия" for every target. Calibre pipeline functions take languages and country from the settings instead of `en`/`ru`/`Russia` defaults.
+- The wrong-language retry works for every target: it compares the words of the output with the source (markup not counted). It only knew Russian, so an untranslated chunk passed as Turkish, French, German.
+- The "translation may have failed" warning (EPUB writer, Calibre output) runs only for targets with their own script and counts all letters; it fired for every Latin-script target and for every translated Chinese/Japanese/Greek book.
+- Turkish/Azerbaijani capitals in term substitution: `iksir` → `İksir`, not `Iksir`.
+- The EPUB footnotes chapter is titled in the target language (`Notlar`, `Примечания`, …) instead of "Notes"; the EPUB language falls back to the target, not `en`.
+- NER for a source language without a spaCy pipeline uses the multilingual `xx_ent_wiki_sm` (was the English model); its `PER` label is normalized; Turkish case suffixes after an apostrophe are cut (`Ankara'ya` → `Ankara`). An empty `NERMODEL=` now means "by `SOURCE_LANG`" as documented.
+- TXT chapter headings are recognized in more languages (`Bölüm 3`, `3. Bölüm`, `Kapitel`, `Chapitre`, `Capítulo`, `第3章`, …).
+- `scripts/convert_dic.py` is no longer tied to an English→Russian dictionary: `--source-lang` / `--hint-lang` (defaults `SOURCE_LANG` / `TARGET_LANG`).
+- README in Turkish (`README_TR.md`).
+
 ### Prompts
 - `prompts.json` rewritten: 21.7 KB → 12.6 KB, no repeated rule blocks, one directive per rule.
 - Fixed: the reflection system prompt reached the model unformatted (literal `{target_lang} ({country})`): it used `{source_lang}`, which the caller never passed. `get_prompt` now logs every unformatted prompt, and `tests/test_prompts.py` checks each template against the variables of its call site.

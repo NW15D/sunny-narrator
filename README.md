@@ -138,11 +138,13 @@ Alice = Алиса, PERSON, she, Main character
 ```
 
 - Created automatically on the first run via NER (named entities), then translated by the LLM. Frequent ordinary words are added only with `DICT_FREQUENT_WORDS=true` (or `--frequent-words` for `--build-dict`/`--build-series-dict`).
-- **Character genders** (`he`, `she`, `it`, `they`): if the dictionary does not specify a gender, the synopsis stage determines it from the text and writes it into the `.dic`; characters missing from the dictionary are appended as `name = translation, PERSON, gender` — in every format, and the following chunks of the same run already use them. A gender already in the file is never overwritten, so manual edits always win.
+- **Character genders** (`he`, `she`, `it`, `they`): if the dictionary does not specify a gender, the synopsis stage determines it from the text; characters with a proper name missing from the dictionary are added. A gender already in the file is never overwritten, so manual edits always win.
+- **Coined words:** besides characters, the synopsis stage reports invented words with no ordinary translation (`spidergun`); they are added as `TERM`. Words the spaCy model already knows are dropped.
+- **No duplicates:** a candidate the dictionary already covers is not added — another case or inflected form of an entry (`Jain nodes` = `Jain node`, `Gabbleducks` = `gabbleduck`; a name only by inflection: `Jains` = `Jain`, but `Marie` ≠ `Mary`) or a phrase containing a known term (`Jain node`, `Jain-tech` when `Jain` is there). A hyphen, a space or no separator make different entries (`gabble-duck` ≠ `gabbleduck`); an ALL-CAPS acronym matches only itself (`ECS` ≠ `EC`).
+- **Where found entries go:** new names and terms join the in-memory dictionary at once — the following chunks of the run use them, and a resumed run restores them from the checkpoint. They are written to the `.dic` only with `DICT_AUTO_SAVE=true` (default `false`: the reviewed dictionary stays as it is).
 - **Term matching:** the same for every format — only the dictionary terms found in a chunk go into its prompt. Inflected forms are found (`spidergun` → `spiderguns`, `wolf` → `wolves`), Chinese/Japanese/Korean terms are matched as substrings, and a term never matches inside another word (`Ann` / `Annoying`).
 - **Multi-word terms first:** a term of more words beats the shorter ones it contains (`Mad Hatter` over `Hatter`), then the longer one wins. A shorter term that occurs only inside a longer one is not put into the prompt, so the model never gets two translations of one phrase.
 - **Terms are substituted before translation:** the translations of the dictionary terms found in a chunk are put into the source text before the first stage, so the model cannot skip them (the later stages see the original). Markup, links and URLs are never touched; a lowercase term matches in any case, a name as written or in ALL CAPS.
-- **Coined words:** besides characters, the synopsis stage reports invented words with no ordinary translation (`spidergun`); they are appended as `TERM` and used by the following chunks. Words the spaCy model already knows are dropped.
 - **Other target language:** `python scripts/convert_dic.py books/MyBook.dic fr es zh` converts a finished dictionary to other languages (`MyBook_fr.dic`, …) using the existing translation as a hint.
 - **Explicit dictionary path:** by default the dictionary is looked up next to the book (`books/MyBook.fb2` → `books/MyBook.dic`). Set `DICTIONARY=path/to/file.dic` in `.env` or pass `--dictionary path/to/file.dic` (the CLI flag wins) to use another file, e.g. a shared series dictionary. Works in both pipelines; a missing file is created at that path (its directory must exist).
 
@@ -315,4 +317,4 @@ Release history: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
-[Русский](README_RU.md) | [中文](README_CN.md) | [Português](README_PT.md)
+[Русский](README_RU.md) | [中文](README_CN.md) | [Português](README_PT.md) | [Türkçe](README_TR.md)

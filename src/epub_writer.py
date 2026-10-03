@@ -20,10 +20,26 @@ from typing import Dict, List, Optional, Tuple
 from bs4 import BeautifulSoup, Comment, NavigableString, Tag
 from ebooklib import epub
 
+from src import lexicon
 from src.config import Config
 from src.xml_utils import IMAGE_EXTENSIONS, sniff_image_type
 
 config = Config()
+
+# Title of the footnotes chapter when the FB2 notes body has none: it is
+# read in the translated book, so in the target language
+_NOTES_TITLE = {
+    'ru': 'Примечания', 'uk': 'Примітки', 'tr': 'Notlar', 'de': 'Anmerkungen', 'fr': 'Notes',
+    'es': 'Notas', 'pt': 'Notas', 'it': 'Note', 'pl': 'Przypisy', 'nl': 'Noten', 'cs': 'Poznámky',
+    'zh': '注释', 'ja': '注', 'ko': '주석', 'en': 'Notes', 'hu': 'Jegyzetek', 'ro': 'Note',
+    'sv': 'Noter', 'da': 'Noter', 'nb': 'Noter', 'fi': 'Huomautukset', 'el': 'Σημειώσεις',
+    'he': 'הערות', 'ar': 'ملاحظات', 'id': 'Catatan', 'ca': 'Notes', 'hr': 'Bilješke',
+    'sl': 'Opombe', 'lt': 'Pastabos', 'mk': 'Белешки',
+}
+
+
+def _notes_title() -> str:
+    return _NOTES_TITLE.get(lexicon.lang_code(config.target_lang), 'Notes')
 logger = logging.getLogger(__name__)
 
 _XLINK_NS = 'xmlns:l="http://www.w3.org/1999/xlink" xmlns:xlink="http://www.w3.org/1999/xlink"'
@@ -149,7 +165,8 @@ def _load_images(footer: str) -> Dict[str, dict]:
 def _parse_metadata(header: str) -> dict:
     soup = BeautifulSoup(header, 'xml')
     info = soup.find('title-info')
-    meta = {'title': 'Unknown Title', 'authors': [], 'lang': 'en', 'description': '',
+    meta = {'title': 'Unknown Title', 'authors': [], 'lang': lexicon.lang_code(config.target_lang) or 'en',
+            'description': '',
             'genres': [], 'series': None, 'publisher': '', 'cover_id': None}
     if info is None:
         return meta
@@ -317,7 +334,7 @@ class _Converter:
         flush_front()
 
         for root in extra_roots:
-            title = _text(root.find('title', recursive=False)) or 'Notes'
+            title = _text(root.find('title', recursive=False)) or _notes_title()
             notes_nodes = []
             for child in list(root.children):
                 if isinstance(child, Tag) and child.name == 'section':
@@ -496,11 +513,12 @@ def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) 
     if not body or not body.strip():
         raise ValueError("FB2 body is empty - translation may have failed")
 
-    if config.target_lang.lower() != 'english':
-        ascii_ratio = len(re.findall(r'[a-zA-Z]', body)) / len(body)
+    # Only a target with its own script can show an untranslated (Latin) body
+    if not lexicon.is_latin_script(config.target_lang):
+        ascii_ratio = lexicon.latin_share(body)
         if ascii_ratio > 0.7:
-            logger.warning(f"High ASCII ratio ({ascii_ratio:.1%}) in FB2 body. "
-                           f"May indicate translation failed or content not properly updated.")
+            logger.warning(f"{ascii_ratio:.0%} of the letters in the FB2 body are Latin for target "
+                           f"{config.target_lang}: the translation may have failed.")
 
     meta = _parse_metadata(header)
     book = epub.EpubBook()

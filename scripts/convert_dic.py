@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""Конвертация словаря en=ru в словарь en=<другой язык> с опорой на готовый перевод.
+"""Конвертация словаря source=hint в словарь source=<другой язык> с опорой на готовый перевод.
 
 Пример:
-    python scripts/convert_dic.py books/MyBook.dic fr es zh
+    python scripts/convert_dic.py books/MyBook.dic fr es zh tr
+    python scripts/convert_dic.py books/tr_ru.dic en de --source-lang turkish --hint-lang russian
 
 Для каждого языка рядом с исходником создаётся `<имя>_<код>.dic`
 (MyBook.dic -> MyBook_fr.dic). Категория, пол и заметки копируются как есть,
-переводится только поле target. Русский перевод передаётся в LLM как подсказка
-(род, устоявшаяся транскрипция), но источником остаётся английский термин.
+переводится только поле target. Языки исходного словаря — `--source-lang`
+(язык терминов, по умолчанию SOURCE_LANG) и `--hint-lang` (язык готового
+перевода, по умолчанию TARGET_LANG). Готовый перевод передаётся в LLM как
+подсказка (род, устоявшаяся транскрипция), источником остаётся термин.
 
 LLM — proofread-клиент из .env (API_BASE_PROOFREAD / API_KEY_PROOFREAD /
 MODEL_PROOFREAD / NOTHINK_PROOFREAD). Целевой файл переписывается атомарно после
@@ -29,24 +32,27 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import openai  # noqa: E402
 
+from src import lexicon  # noqa: E402
 from src.config import Config  # noqa: E402
 
 config = Config()
 
-LANG_NAMES = {
-    'fr': 'French', 'es': 'Spanish', 'zh': 'Chinese (Simplified)',
-    'de': 'German', 'it': 'Italian', 'pt': 'Portuguese', 'ja': 'Japanese',
-    'ko': 'Korean', 'pl': 'Polish', 'uk': 'Ukrainian', 'ru': 'Russian',
-}
+# Names the prompt needs beyond lexicon.language_name ('zh' -> 'Chinese')
+LANG_NAMES = {'zh': 'Chinese (Simplified)'}
+
+
+def lang_name(lang: str) -> str:
+    return LANG_NAMES.get(lexicon.lang_code(lang)) or lexicon.language_name(lang)
+
 
 PROMPT = """You are a professional literary translator building a glossary for a book series.
-Source language: English. Target language: {lang}.
+Source language: {source}. Target language: {lang}.
 
-Each item has the English term and its existing Russian translation (a hint about
-gender, spelling and the established rendering of the name). Translate the ENGLISH
-term into {lang}, following the conventions for proper names in {lang} book
-translation (transliterate/transcribe names, use the established {lang} form for
-well-known places, keep terms consistent). If the term should stay unchanged, return it as is.
+Each item has the {source} term ("source") and its existing {hint} translation ("hint":
+gender, spelling and the established rendering of the name). Translate the source term
+into {lang}, following the conventions for proper names in {lang} book translation
+(transliterate or transcribe names, use the established {lang} form for well-known places,
+keep terms consistent), in dictionary form. If the term should stay unchanged, return it as is.
 
 Return ONLY a JSON object: {{"terms": [{{"id": <id>, "target": "<translation>"}}, ...]}}
 with exactly one entry per input id.
@@ -89,15 +95,16 @@ def make_client():
     )
 
 
-def translate_batch(client, lang_name, batch):
+def translate_batch(client, target_name, batch, source_name, hint_name):
     items = "\n".join(
-        json.dumps({"id": i, "en": e[0], "ru": e[1] or None, "category": e[2]}, ensure_ascii=False)
+        json.dumps({"id": i, "source": e[0], "hint": e[1] or None, "category": e[2]}, ensure_ascii=False)
         for i, e in enumerate(batch)
     )
     kwargs = dict(
         model=config.model_proofread,
         temperature=0.2,
-        messages=[{"role": "user", "content": PROMPT.format(lang=lang_name, items=items)}],
+        messages=[{"role": "user", "content": PROMPT.format(
+            lang=target_name, source=source_name, hint=hint_name, items=items)}],
         response_format={"type": "json_object"},
     )
     if config.nothink_proofread:
@@ -113,9 +120,9 @@ def translate_batch(client, lang_name, batch):
     return result
 
 
-def write_dic(out_path: Path, src_name: str, code: str, entries, done):
+def write_dic(out_path: Path, src_name: str, code: str, entries, done, source_code: str):
     lines = [
-        f"# Vocabulary converted from {src_name} (en -> {code})",
+        f"# Vocabulary converted from {src_name} ({source_code} -> {code})",
         "# Format: source = target, category, gender, notes",
         "",
     ]
@@ -125,8 +132,10 @@ def write_dic(out_path: Path, src_name: str, code: str, entries, done):
     os.replace(tmp, out_path)
 
 
-def convert(src_path: Path, code: str, batch_size: int, force: bool, client):
-    lang_name = LANG_NAMES.get(code, code)
+def convert(src_path: Path, code: str, batch_size: int, force: bool, client,
+            source_lang: str, hint_lang: str):
+    target_name, source_name, hint_name = lang_name(code), lang_name(source_lang), lang_name(hint_lang)
+    source_code = lexicon.lang_code(source_lang)
     out_path = src_path.with_name(f"{src_path.stem}_{code}{src_path.suffix}")
     entries = parse_dic(src_path)
 
@@ -143,7 +152,7 @@ def convert(src_path: Path, code: str, batch_size: int, force: bool, client):
         got = {}
         for attempt in range(3):
             try:
-                got = translate_batch(client, lang_name, batch)
+                got = translate_batch(client, target_name, batch, source_name, hint_name)
             except (openai.AuthenticationError, openai.NotFoundError, openai.BadRequestError) as e:
                 # постоянная ошибка (ключ, модель, response_format): повторять бессмысленно
                 sys.exit(f"[{code}] ошибка API, прогресс сохранён в {out_path}: {e}")
@@ -158,11 +167,11 @@ def convert(src_path: Path, code: str, batch_size: int, force: bool, client):
                 done[e[0]] = got[i]
             else:
                 failed.append(e[0])
-        write_dic(out_path, src_path.name, code, entries, done)
+        write_dic(out_path, src_path.name, code, entries, done, source_code)
         print(f"  {min(start + batch_size, len(todo))}/{len(todo)}")
 
     if not todo:
-        write_dic(out_path, src_path.name, code, entries, done)
+        write_dic(out_path, src_path.name, code, entries, done, source_code)
     if failed:
         print(f"[{code}] НЕ переведено {len(failed)} терминов (повторите запуск): "
               + ", ".join(failed[:10]) + (" ..." if len(failed) > 10 else ""), file=sys.stderr)
@@ -173,14 +182,19 @@ def convert(src_path: Path, code: str, batch_size: int, force: bool, client):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('dic', type=Path, help='исходный en=ru .dic')
-    ap.add_argument('langs', nargs='+', help='коды целевых языков: fr es zh ...')
+    ap.add_argument('dic', type=Path, help='исходный .dic (source = hint)')
+    ap.add_argument('langs', nargs='+', help='коды целевых языков: fr es zh tr ...')
+    ap.add_argument('--source-lang', default=config.source_lang,
+                    help='язык терминов исходного словаря (по умолчанию SOURCE_LANG)')
+    ap.add_argument('--hint-lang', default=config.target_lang,
+                    help='язык готового перевода в исходном словаре (по умолчанию TARGET_LANG)')
     ap.add_argument('--batch', type=int, default=40, help='терминов за один запрос (по умолчанию 40)')
     ap.add_argument('--force', action='store_true', help='перевести заново, игнорируя существующий целевой .dic')
     args = ap.parse_args()
 
     client = make_client()
-    ok = [convert(args.dic, code.lower(), args.batch, args.force, client) for code in args.langs]
+    ok = [convert(args.dic, code.lower(), args.batch, args.force, client, args.source_lang, args.hint_lang)
+          for code in args.langs]
     sys.exit(0 if all(ok) else 1)
 
 

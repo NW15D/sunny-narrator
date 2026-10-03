@@ -129,11 +129,13 @@ Alice = Алиса, PERSON, she, 主角
 ```
 
 - 首次运行时通过 NER（命名实体）自动创建，然后由 LLM 翻译。只有设置 `DICT_FREQUENT_WORDS=true`（或对 `--build-dict`/`--build-series-dict` 使用 `--frequent-words`）时才会加入高频普通词。
-- **角色性别**（`he`、`she`、`it`、`they`）：如果词典未注明性别，摘要阶段会根据文本判断并写入 `.dic`；词典中没有的角色会以 `名字 = 译名, PERSON, 性别` 追加到末尾——适用于所有格式，同一次运行中的后续分块会立即使用它们。文件中已有的性别不会被覆盖——手动修改始终优先。
+- **角色性别**（`he`、`she`、`it`、`they`）：如果词典未注明性别，摘要阶段会根据文本判断；词典中没有的、有专名的角色会被加入。文件中已有的性别永远不会被覆盖——手动修改始终优先。
+- **自造词：** 除角色外，摘要阶段还会报告没有常规译法的自造词（`spidergun`）；它们以 `TERM` 加入。spaCy 模型已认识的词会被丢弃。
+- **不重复：** 词典已覆盖的候选词不会加入——条目的其他大小写或屈折形式（`Jain nodes` = `Jain node`，`Gabbleducks` = `gabbleduck`；人名只按屈折：`Jains` = `Jain`，但 `Marie` ≠ `Mary`），或包含已知术语的短语（已有 `Jain` 时的 `Jain node`、`Jain-tech`）。连字符、空格或连写是不同条目（`gabble-duck` ≠ `gabbleduck`）；全大写缩写只匹配自身（`ECS` ≠ `EC`）。
+- **新条目去向：** 新的人名和术语立即进入内存中的词典——本次运行的后续分块会使用它们，断点续传时从检查点恢复。只有设置 `DICT_AUTO_SAVE=true` 时才写入 `.dic`（默认 `false`：已审阅的词典保持不变）。
 - **术语匹配：** 所有格式相同——只有在分块中找到的词典术语才会进入该分块的提示词。可以识别词形变化（`spidergun` → `spiderguns`，`wolf` → `wolves`），中文/日文/韩文术语按子串匹配，术语不会在其他单词内部被匹配（`Ann` / `Annoying`）。
 - **多词术语优先：** 词数更多的术语优先于它所包含的较短术语（`Mad Hatter` 优先于 `Hatter`），其次是更长的术语。只出现在较长术语内部的短术语不会进入提示词，模型不会得到同一短语的两种译法。
 - **翻译前替换术语：** 分块中找到的词典术语的译名会在第一阶段之前替换进原文，避免模型漏掉它们（后续阶段看到的是原文）。标记、链接和 URL 不会被改动；小写术语不区分大小写匹配，人名按原样或全大写匹配。
-- **自造词：** 除角色外，摘要阶段还会报告没有常规译法的自造词（`spidergun`）；它们以 `TERM` 追加到词典，并供后续分块使用。spaCy 模型已认识的词会被丢弃。
 - **其他目标语言：** `python scripts/convert_dic.py books/MyBook.dic fr es zh` 将现成的词典转换为其他语言（`MyBook_fr.dic` 等），以现有译名作为提示。
 - **指定词典路径：** 默认在书籍旁查找词典（`books/MyBook.fb2` → `books/MyBook.dic`）。如需使用其他文件（例如系列共享词典），可在 `.env` 中设置 `DICTIONARY=path/to/file.dic`，或传入 `--dictionary path/to/file.dic`（命令行参数优先）。两个流程均支持；若文件不存在，将在该路径创建（目录必须已存在）。
 
@@ -305,4 +307,4 @@ Calibre 的内部标记（`calibre_link-*` 锚点、`.calibre` 类）会被自�
 
 ---
 
-[English](README.md) | [Русский](README_RU.md) | [Português](README_PT.md)
+[English](README.md) | [Русский](README_RU.md) | [Português](README_PT.md) | [Türkçe](README_TR.md)

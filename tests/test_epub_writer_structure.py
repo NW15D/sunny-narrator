@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.dirname(__file__))
 
 from epub_checks import EPUB_NS, XHTML, check_epub, fb2_file_to_epub, fragment_to_html
-from src.epub_writer import create_epub_from_fb2
+from src.epub_writer import config, create_epub_from_fb2
 
 RICH = os.path.join(os.path.dirname(__file__), 'data', 'rich_book.fb2')
 OPF_NS = '{http://www.idpf.org/2007/opf}'
@@ -205,7 +205,9 @@ def test_header_without_title_info_uses_defaults_and_publisher_is_kept(tmp_path)
     body = '<section><p>text</p></section>'
     path = create_epub_from_fb2('<description/>', body, '', str(tmp_path / 'a'))
     opf = _files(path)['EPUB/content.opf'].decode()
-    assert '<dc:title>Unknown Title</dc:title>' in opf and '<dc:language>en</dc:language>' in opf
+    # no <lang> in the header: the language of the translation (TARGET_LANG)
+    target = config.lang_code_map.get(config.target_lang, config.target_lang)
+    assert '<dc:title>Unknown Title</dc:title>' in opf and f'<dc:language>{target}</dc:language>' in opf
 
     header = ('<description><title-info><book-title>T</book-title><lang>en</lang></title-info>'
               '<publish-info><publisher>Pub &amp; Co</publisher></publish-info></description>')
@@ -218,10 +220,11 @@ def test_body_without_readable_content_is_refused(tmp_path):
         create_epub_from_fb2('<description/>', '<!-- only a comment -->', '', str(tmp_path / 'b'))
 
 
-def test_untranslated_looking_body_is_only_a_warning(tmp_path, caplog):
+def test_untranslated_looking_body_is_only_a_warning(tmp_path, caplog, monkeypatch):
+    monkeypatch.setattr(config, 'target_lang', 'russian')
     body = '<section><p>' + 'plain english words ' * 50 + '</p></section>'
     create_epub_from_fb2('<description/>', body, '', str(tmp_path / 'b'))
-    assert 'High ASCII ratio' in caplog.text
+    assert 'translation may have failed' in caplog.text  # target russian: Latin body
 
 
 def test_links_go_to_the_first_element_of_a_repeated_id(tmp_path):

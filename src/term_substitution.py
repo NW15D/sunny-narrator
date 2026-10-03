@@ -67,20 +67,23 @@ def _canon(text: str) -> str:
     return re.sub(r'\s+', ' ', unicodedata.normalize('NFKC', text)).translate(_APOSTROPHE_TABLE)
 
 
-def _adapt(source: str, found: str, target: str) -> Optional[str]:
+def _adapt(source: str, found: str, target: str, target_lang: str = "") -> Optional[str]:
     """The replacement for an occurrence `found` of `source`, or None when
-    the occurrence is a different word (a name written in lowercase)."""
+    the occurrence is a different word (a name written in lowercase).
+    Capitals follow the casing rules of the target language (Turkish
+    "iksir" -> "İksir", lexicon.upper)."""
     if _canon(found) == _canon(source):
         return target
     all_caps = len(found) > 1 and found.isupper()
     if source != source.lower():
-        return target.upper() if all_caps else None
+        return lexicon.upper(target, target_lang) if all_caps else None
     if all_caps:
-        return target.upper()
-    return target[:1].upper() + target[1:] if found[:1].isupper() else target
+        return lexicon.upper(target, target_lang)
+    return lexicon.upper(target[:1], target_lang) + target[1:] if found[:1].isupper() else target
 
 
-def replace_vocab_in_text(source_text: str, vocab_dict: Dict[str, str], xml: bool = False) -> str:
+def replace_vocab_in_text(source_text: str, vocab_dict: Dict[str, str], xml: bool = False,
+                          target_lang: str = "") -> str:
     """
     Replace glossary terms in source_text with their translations.
 
@@ -93,6 +96,7 @@ def replace_vocab_in_text(source_text: str, vocab_dict: Dict[str, str], xml: boo
         vocab_dict: Glossary terms of this chunk, source -> target
         xml: source_text is serialized FB2 (classic pipeline): terms are
             looked up and targets inserted with &, <, > escaped
+        target_lang: language of the targets, for their capitalization
 
     Examples:
         >>> replace_vocab_in_text("Mad Hatter and a hatter", {"Hatter": "Шляпник", "Mad Hatter": "Безумный Шляпник"})
@@ -120,7 +124,7 @@ def replace_vocab_in_text(source_text: str, vocab_dict: Dict[str, str], xml: boo
             if any(taken[match.start():match.end()]):
                 continue
             found = html.unescape(match.group(0)) if xml else match.group(0)
-            replacement = _adapt(source, found, target)
+            replacement = _adapt(source, found, target, target_lang)
             if replacement is not None:
                 if xml:
                     replacement = html.escape(replacement, quote=False)

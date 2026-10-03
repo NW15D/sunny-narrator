@@ -13,16 +13,20 @@ import src.fb2_handler as fb2
 
 logger = logging.getLogger(__name__)
 
-# Known chapter-marker patterns for common scraped web-novel formats:
-# Korean episode markers ("제20화", bare "20화"), and "Chapter N" / "Глава N" /
-# "Episode N" headings in English/Russian.
+# Known chapter-marker patterns: Korean episode markers ("제20화", bare
+# "20화"), Chinese/Japanese "第20章"/"第20話", and "<word> N" headings in the
+# languages of the source books: Chapter, Глава, Розділ, Bölüm, Kapitel,
+# Chapitre, Capítulo, Capitolo, Rozdział, Hoofdstuk, Kapitola, Episode.
+# Turkish also writes the number first: "20. Bölüm".
+_CHAPTER_WORDS = (r'chapter|episode|глава|розділ|b[öo]l[üu]m|kapitel|chapitre|cap[ií]tulo'
+                  r'|capitolo|rozdzia[łl]|hoofdstuk|kapitola|fejezet|luku')
 _CHAPTER_MARKER_RE = re.compile(
     r'^\s*('
     r'제\s*\d+\s*화'
     r'|\d+\s*화'
-    r'|chapter\s+\d+'
-    r'|глава\s+\d+'
-    r'|episode\s+\d+'
+    r'|第\s*[\d一二三四五六七八九十百千]+\s*[章話话回]'
+    rf'|(?:{_CHAPTER_WORDS})\s+\d+'
+    rf'|\d+\.?\s*(?:{_CHAPTER_WORDS})\b'
     r')',
     re.IGNORECASE,
 )
