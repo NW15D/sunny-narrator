@@ -9,7 +9,7 @@
 [![Last commit](https://img.shields.io/github/last-commit/NW15D/sunny-narrator)](https://github.com/NW15D/sunny-narrator/commits/main)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Sürüm:** 2.7  
+**Sürüm:** 2.8  
 **Sözlük güdümlü yapay zekâ kitap çevirmeni (AI book translator)** — FB2/TXT/EPUB/DOCX/PDF için, iki LLM'li çeviri ve 5 aşamalı kalite kontrolü olan, LLM tabanlı bir kurgu kitap çevirmeni.
 
 🖥️ **Konsol uygulaması (CLI)** — grafik arayüz yoktur; temel komut satırı deneyimi önerilir.

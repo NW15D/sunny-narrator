@@ -1,6 +1,6 @@
 # Sunny Narrator
 
-**Versão:** 2.7  
+**Versão:** 2.8  
 **Tradutor de livros guiado por glossário (AI book translator)** para FB2/TXT/EPUB/DOCX/PDF — um tradutor de ficção baseado em LLM (LLM fiction book translator), com sistema de tradução em dois LLMs e controle de qualidade em 5 estágios.
 
 🖥️ **Utilitário de linha de comando (CLI)** — sem interface gráfica; recomenda-se experiência básica com terminal.

@@ -1,6 +1,6 @@
 # Sunny Narrator
 
-**版本:** 2.7  
+**版本:** 2.8  
 **基于术语表的 AI 书籍翻译器（AI book translator）**，支持 FB2/TXT/EPUB/DOCX/PDF —— 基于 LLM 的小说/文学翻译工具（fiction book translator），采用双 LLM 翻译系统与 5 阶段质量控制。
 
 🖥️ **命令行工具（CLI）** —— 无图形界面，需要一定的命令行使用经验。

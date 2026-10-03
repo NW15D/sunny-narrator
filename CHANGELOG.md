@@ -2,19 +2,14 @@
 
 All notable changes to Sunny Narrator.
 
-## Unreleased
+## v2.8
 
-### Internationalization (checked with English → Turkish)
-- `COUNTRY` defaults from `TARGET_LANG` (`tr` → Türkiye); it was "Россия" for every target. Calibre pipeline functions take languages and country from the settings instead of `en`/`ru`/`Russia` defaults.
-- The wrong-language retry works for every target: it compares the ordinary words of the output with the source (markup, numbers and capitalized names/terms not counted), and the retry replaces the first answer only when it is more translated. It only knew Russian, so an untranslated chunk passed as Turkish, French, German.
-- The "translation may have failed" warning (EPUB writer, Calibre output) runs only for targets with their own script and counts all letters; it fired for every Latin-script target and for every translated Chinese/Japanese/Greek book.
-- Turkish/Azerbaijani capitals in term substitution: `iksir` → `İksir`, not `Iksir`.
-- The EPUB footnotes chapter is titled in the target language (`Notlar`, `Примечания`, …) instead of "Notes"; the EPUB language falls back to the target, not `en`.
-- NER for a source language without a spaCy pipeline uses the multilingual `xx_ent_wiki_sm` (was the English model); its `PER` label is normalized; Turkish case suffixes after an apostrophe are cut (`Ankara'ya` → `Ankara`). An empty `NERMODEL=` now means "by `SOURCE_LANG`" as documented.
-- TXT chapter headings are recognized in more languages (`Bölüm 3`, `3. Bölüm`, `Kapitel`, `Chapitre`, `Capítulo`, `第3章`, …).
-- `scripts/convert_dic.py` is no longer tied to an English→Russian dictionary: `--source-lang` / `--hint-lang` (defaults `SOURCE_LANG` / `TARGET_LANG`).
-- README in Turkish (`README_TR.md`).
-- Tested languages listed in every README and in `docs/LANGUAGES.md`: real book translations (English → Russian, Korean → Russian); source languages verified on real spaCy models by `tests/test_languages_real_models.py` (English, Korean, Japanese, Chinese, Russian, German, French, Spanish, Portuguese, Italian; Turkish limited); target languages covered by automated tests (Russian, Turkish, German, Chinese).
+### Dictionary: growth without duplicates
+- A name or coined term reported by the synopsis stage is added only when nothing of it is in the dictionary yet, so compounds no longer shadow the base entry with another translation. Another case or inflected form of an entry is that entry (`Jain nodes` = `Jain node`, `Gabbleducks` = `gabbleduck`; a name by inflection only — `Jains` is `Jain`, `Marie` is not `Mary`; an ALL-CAPS acronym only by itself — `ECS` is not `EC`); a phrase containing a known term is skipped (`Jain node`, `Jain-tech`, `jain shriek`, `Jason Williams` when `Jain` / `Jason` are there). A hyphen, a space or no separator make different entries (`gabble-duck` / `gabbleduck`). Of one batch the shorter candidate is taken first. The file and the in-memory dictionary share one set of rules.
+- The synopsis prompt gets the chunk's glossary (`<glossary>`) and is told not to report its terms, their forms or phrases built on them.
+- New `DICT_AUTO_SAVE` (default `false`): found entries join the in-memory dictionary for the rest of the run and are kept in the checkpoint for a resume; the `.dic` file is written only when it is on. Previously every entry went into the file.
+- Duplicate lines of one entry in a `.dic` (`Jain tech` / `jain tech`) are reported on load and the first one is kept (previously the last one silently won). When both `Jain tech` and `Jain-tech` are in the dictionary, both reach the prompt for a chunk with either spelling, and the substitution uses the literal one.
+- NER no longer puts a leading article into an entity (`a Jain` → `Jain`, `l'Empire`, `der Kaiser`, `los Jain`, `一个吉恩人`) for English, French, German, Spanish, Portuguese, Italian and Chinese; a capitalized article (`The Warship`, `El Greco`) and name particles (`de la Vega`, `da Silva`) stay.
 
 ### Prompts
 - `prompts.json` rewritten: 21.7 KB → 12.6 KB, no repeated rule blocks, one directive per rule.
@@ -26,13 +21,23 @@ All notable changes to Sunny Narrator.
 - Metadata: genre codes, dates, numbers and language codes are kept; glossary terms are translated in dictionary form.
 - Unused keys removed (`*_hunyuan` of reflection/improve/editor/vocabulary, `vocabulary.system`, `metadata_translation.system`, JSON `user_xml`/`user_hunyuan`).
 
-### Dictionary: growth without duplicates
-- A name or coined term reported by the synopsis stage is added only when nothing of it is in the dictionary yet. Another case or inflected form of an entry is that entry (`Jain nodes` = `Jain node`, `Gabbleducks` = `gabbleduck`; a name by inflection only — `Jains` is `Jain`, `Marie` is not `Mary`; an ALL-CAPS acronym only by itself — `ECS` is not `EC`); a phrase containing a known term is skipped (`Jain node`, `Jain-tech`, `jain shriek`, `Jason Williams` when `Jain` / `Jason` are there). A hyphen, a space or no separator make different entries (`gabble-duck` / `gabbleduck`), so it no longer shadows the base entry with another translation. Of one batch the shorter candidate is taken first.
-- The synopsis prompt gets the chunk's glossary (`<glossary>`) and is told not to report its terms, their forms or phrases built on them.
-- New `DICT_AUTO_SAVE` (default `false`): found entries join the in-memory dictionary for the rest of the run and are kept in the checkpoint for a resume; the `.dic` file is written only when it is on. Previously every entry went into the file.
-- Duplicate lines of one entry in a `.dic` (`Jain tech` / `jain tech`) are reported on load and the first one is kept (previously the last one silently won). When both `Jain tech` and `Jain-tech` are in the dictionary, both reach the prompt for a chunk with either spelling, and the substitution uses the literal one.
+### Internationalization (checked with English → Turkish)
+- `COUNTRY` defaults from `TARGET_LANG` (`tr` → Türkiye); it was "Россия" for every target. Calibre pipeline functions take languages and country from the settings instead of `en`/`ru`/`Russia` defaults.
+- The wrong-language retry works for every target: it compares the ordinary words of the output with the source (markup, numbers and capitalized names/terms not counted), and the retry replaces the first answer only when it is more translated. It only knew Russian, so an untranslated chunk passed as Turkish, French, German.
+- The "translation may have failed" warning (EPUB writer, Calibre output) runs only for targets with their own script and counts all letters; it fired for every Latin-script target and for every translated Chinese/Japanese/Greek book.
+- Turkish/Azerbaijani capitals in term substitution: `iksir` → `İksir`, not `Iksir`.
+- The EPUB footnotes chapter is titled in the target language (`Notlar`, `Примечания`, …) instead of "Notes"; the EPUB language falls back to the target, not `en`.
+- NER for a source language without a spaCy pipeline uses the multilingual `xx_ent_wiki_sm` (was the English model); its `PER` label is normalized; a Turkish case suffix after an apostrophe is cut (`Ankara'ya` → `Ankara`), a foreign name stays whole (`O'Brien`). An empty `NERMODEL=` now means "by `SOURCE_LANG`" as documented.
+- TXT chapter headings are recognized in more languages (`Bölüm 3`, `3. Bölüm`, `Kapitel`, `Chapitre`, `Capítulo`, `第3章`, …).
+- `scripts/convert_dic.py` is no longer tied to an English→Russian dictionary: `--source-lang` / `--hint-lang` (defaults `SOURCE_LANG` / `TARGET_LANG`).
+
+### Languages, documentation, tests
+- Tested languages listed in every README and in `docs/LANGUAGES.md`: real book translations (English → Russian, Korean → Russian); source languages verified on real spaCy models by `tests/test_languages_real_models.py` (English, Korean, Japanese, Chinese, Russian, German, French, Spanish, Portuguese, Italian; Turkish limited); target languages covered by automated tests (Russian, Turkish, German, Chinese).
+- README in Turkish (`README_TR.md`); the dictionary sections of every README describe `DICT_AUTO_SAVE` and the duplicate rules.
+- `tests/test_prompts.py` checks every prompt template against the variables of its call site; `tests/test_languages_real_models.py` runs the source languages on real spaCy models.
+
+### GPU
 - Fixed: with CuPy installed (extra `[gpu]`) per-chunk term matching crashed (`Implicit conversion to a NumPy array is not allowed`) in both the GPU and the CPU variant, because the spaCy model keeps its vectors on the GPU after `prefer_gpu()`. A test now checks that both variants give the same result.
-- NER no longer puts a leading article into an entity (`a Jain` → `Jain`, `l'Empire`, `der Kaiser`, `los Jain`, `一个吉恩人`) for English, French, German, Spanish, Portuguese, Italian and Chinese; a capitalized article (`The Warship`, `El Greco`) and name particles (`de la Vega`, `da Silva`) stay.
 
 ## v2.7
 

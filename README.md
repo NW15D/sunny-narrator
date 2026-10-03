@@ -9,7 +9,7 @@
 [![Last commit](https://img.shields.io/github/last-commit/NW15D/sunny-narrator)](https://github.com/NW15D/sunny-narrator/commits/main)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Version:** 2.7  
+**Version:** 2.8  
 **Glossary-Driven AI Book Translator** for FB2/TXT/EPUB/DOCX/PDF — an LLM-powered fiction book translator with dual-LLM translation and 5-stage quality control.
 
 🖥️ **Console app (CLI)** — no graphical interface; basic command-line experience is recommended.
