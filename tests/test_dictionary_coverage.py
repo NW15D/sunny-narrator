@@ -249,6 +249,17 @@ def test_names_are_compared_by_exact_words(tmp_path):
     assert "Mary = Мэри, PERSON, she, " in text and "Marie = Мари, PERSON, she, " in text
 
 
+def test_acronyms_match_only_themselves(tmp_path):
+    """ECS (Earth Central Security) is not EC (Earth Central), though the
+    stem of "ecs" is "ec"; "AIs" is still "AI"."""
+    dic = tmp_path / "s.dic"
+    dic.write_text("EC = ЕЦ, ORG, it, \nAI = ИИ, TERM, , \n", encoding="utf-8")
+    candidates = [_person("ECS", "ЦСБЗ", "it"), _term("AIs", "ИИ"), _term("ECS", "ЦСБЗ")]
+    assert apply_dictionary_candidates(str(dic), candidates, "english") == (0, 1)
+    text = dic.read_text(encoding="utf-8")
+    assert "ECS = ЦСБЗ, PERSON, it" in text and "AIs" not in text
+
+
 def test_the_jain_lines_of_series_dic_are_not_added(tmp_path):
     """Every Jain line of the user's series.dic, plus forms the model may send."""
     dic = tmp_path / "s.dic"

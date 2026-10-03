@@ -488,6 +488,10 @@ def covering_terms(candidate: str, terms: Iterable[str], lang: str,
     the term's word — the same stem AND one word extends the other ("Jains"
     is "Jain"). A shared stem alone is not enough: "Marie" and "Mary" (stem
     "mari") are different people.
+
+    A word of the candidate in ALL CAPS is an acronym and matches only
+    itself: "ECS" is not "EC", though the stem of "ecs" is "ec" ("AIs" is
+    not all caps and still is "AI").
     """
     stop_words = get_stop_words(lang_code(lang))
     terms = [t for t in terms if t and not is_stop_word(t, stop_words)]
@@ -502,18 +506,24 @@ def covering_terms(candidate: str, terms: Iterable[str], lang: str,
                                for i in range(len(own) - len(seps) + 1))
 
     words = tokenize(candidate)
+    surface = _surface_words(candidate)
     code = lang_code(lang)
 
-    def same_word(word: str, term_word: str) -> bool:
-        return word == term_word or (
-            (word.startswith(term_word) or term_word.startswith(word))
-            and _stem(code, word) == _stem(code, term_word))
+    def same_word(i: int, term_word: str) -> bool:
+        word = words[i]
+        if word == term_word:
+            return True
+        if surface is not None and len(surface[i]) > 1 and surface[i].isupper():
+            return False  # an acronym
+        if _stem(code, word) != _stem(code, term_word):
+            return False
+        return not exact or word.startswith(term_word) or term_word.startswith(word)
 
     def words_fit(term: str) -> bool:
-        if not exact or is_unspaced(term):  # unspaced: already an exact substring
+        if is_unspaced(term):  # already an exact substring
             return True
         own = tokenize(term)
-        return any(all(same_word(w, t) for w, t in zip(words[i:i + len(own)], own))
+        return any(all(same_word(i + j, t) for j, t in enumerate(own))
                    for i in range(len(words) - len(own) + 1))
 
     return sorted((t for t in found + shadowed if separators_fit(t) and words_fit(t)),
