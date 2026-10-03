@@ -84,6 +84,10 @@ def test_turkish_case_suffix_after_an_apostrophe(monkeypatch):
     # the multilingual model reports "xx": SOURCE_LANG decides
     monkeypatch.setattr(ner.config, 'source_lang', 'turkish')
     assert ner.entity_text(_Span("İstanbul'da", "xx")) == "İstanbul"
+    # review finding: a foreign name with an apostrophe is not a stem + suffix
+    for name in ("O'Brien", "D'Angelo", "N'Diaye"):
+        assert ner.entity_text(_Span(name, "tr")) == name
+    assert ner.entity_text(_Span("Ali'nin", "tr")) == "Ali"
     monkeypatch.setattr(ner.config, 'source_lang', 'english')
     assert ner.entity_text(_Span("O'Brien", "xx")) == "O'Brien"
     assert ner.entity_text(_Span("N'gar", "en")) == "N'gar"

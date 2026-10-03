@@ -882,9 +882,18 @@ class TranslationPipeline:
                 max_tokens=MAX_TOKENS_PER_CHUNK,
                 stage=TranslationStage.INITIAL
             )
-            text = remove_tags_with_check(retry_text, "initial_translation_retry", LLMRole.TRANSLATE)
+            retry_text = remove_tags_with_check(retry_text, "initial_translation_retry", LLMRole.TRANSLATE)
             tokens_used += retry_tokens
             metrics.log_language_mismatch(retry_tokens)
+            # The check can be wrong on a short chunk full of shared words:
+            # the retry replaces the first answer only when it is closer to
+            # a translation (fewer of the source's words)
+            first = _source_word_share(text, context.source_text) or 0.0
+            retried = _source_word_share(retry_text, context.source_text) or 0.0
+            if retry_text and retried < first:
+                text = retry_text
+            else:
+                logger.warning("Retry is not more translated than the first answer; keeping the first")
         
         return TranslationResult(
             stage=TranslationStage.INITIAL,
@@ -1829,29 +1838,44 @@ def remove_tags_with_check(text: str, stage_name: str = "", role: LLMRole = None
 _CYRILLIC_TARGETS = {'ru', 'uk', 'be', 'bg', 'sr', 'mk', 'kk'}
 
 
+def _source_word_share(text: str, source_text: str) -> Optional[float]:
+    """
+    Share of the distinct words of `text` that also occur in `source_text`,
+    or None when either has fewer than 8 such words (too short to judge).
+    Not counted: markup (lexicon.text_segments), numbers, and words written
+    with a capital in the source — names and coined terms (Jain, Ares,
+    Spidergun) legitimately stay the same in a Latin-script translation.
+    """
+    source_surface = [w for seg in lexicon.text_segments(source_text)
+                      for w in (lexicon._surface_words(seg) or [])]
+    capitalized = {lexicon.normalize(w) for w in source_surface if w[:1].isupper()}
+
+    def words(t: str) -> set:
+        return {w for w in lexicon.tokenize(' '.join(lexicon.text_segments(t)))
+                if not w.isdigit() and w not in capitalized}
+
+    text_words, source_words = words(text), words(source_text)
+    if min(len(text_words), len(source_words)) < 8:
+        return None
+    return len(text_words & source_words) / min(len(text_words), len(source_words))
+
+
 def _detect_language_mismatch(text: str, expected_lang: str, source_text: str) -> bool:
     """
     Whether the "translation" is still the source text (the model echoed or
-    skipped it), for any target language: more than half of its distinct
-    words also occur in the source. Markup is not counted (lexicon.
-    text_segments), so shared FB2 tags do not look like shared words.
-    A Cyrillic target with Cyrillic letters in the text counts as
-    translated. Too short texts (under 8 words) are not judged: names alone
-    could make them overlap.
+    skipped it), for any target language: more than half of its ordinary
+    words also occur in the source (_source_word_share). A Cyrillic target
+    with Cyrillic letters in the text counts as translated.
     """
     if not text or not source_text:
         return False
     code = lexicon.lang_code(expected_lang)
     if code in _CYRILLIC_TARGETS and any('\u0400' <= ch <= '\u04ff' for ch in text):
         return False
-    text_words = set(lexicon.tokenize(' '.join(lexicon.text_segments(text))))
-    source_words = set(lexicon.tokenize(' '.join(lexicon.text_segments(source_text))))
-    if min(len(text_words), len(source_words)) < 8:
-        return False
-    overlap = len(text_words & source_words) / min(len(text_words), len(source_words))
-    if overlap > 0.5:
+    share = _source_word_share(text, source_text)
+    if share is not None and share > 0.5:
         logger.warning(f"Language mismatch detected: expected {expected_lang}, "
-                       f"{overlap:.0%} of the words are the source's")
+                       f"{share:.0%} of the words are the source's")
         return True
     return False
 

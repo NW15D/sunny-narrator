@@ -6,7 +6,7 @@ All notable changes to Sunny Narrator.
 
 ### Internationalization (checked with English → Turkish)
 - `COUNTRY` defaults from `TARGET_LANG` (`tr` → Türkiye); it was "Россия" for every target. Calibre pipeline functions take languages and country from the settings instead of `en`/`ru`/`Russia` defaults.
-- The wrong-language retry works for every target: it compares the words of the output with the source (markup not counted). It only knew Russian, so an untranslated chunk passed as Turkish, French, German.
+- The wrong-language retry works for every target: it compares the ordinary words of the output with the source (markup, numbers and capitalized names/terms not counted), and the retry replaces the first answer only when it is more translated. It only knew Russian, so an untranslated chunk passed as Turkish, French, German.
 - The "translation may have failed" warning (EPUB writer, Calibre output) runs only for targets with their own script and counts all letters; it fired for every Latin-script target and for every translated Chinese/Japanese/Greek book.
 - Turkish/Azerbaijani capitals in term substitution: `iksir` → `İksir`, not `Iksir`.
 - The EPUB footnotes chapter is titled in the target language (`Notlar`, `Примечания`, …) instead of "Notes"; the EPUB language falls back to the target, not `en`.

@@ -126,3 +126,39 @@ def test_chunk_goes_through_all_stages_into_turkish(monkeypatch):
     assert translation.strip() == TURKISH
     assert synopsis.startswith("Ares iksiri içer")
     assert ("spidergun", "örümcek tabancası") in [(c['source'], c['target']) for c in sink]
+
+
+NAMES_EN = ("<p>Ares, Jain, Orlandine, Cormac, Thorn, Mika, Dragon, Hubbert, Smith, Ian, "
+            "Spatterjay and Masada.</p>")
+NAMES_TR = ("<p>Ares, Jain, Orlandine, Cormac, Thorn, Mika, Dragon, Hubbert, Smith, Ian, "
+            "Spatterjay ve Masada.</p>")
+
+
+def test_names_shared_with_the_source_are_not_a_wrong_language():
+    """Review finding: a Latin-script chunk dense with names crossed the 50%
+    overlap, and its correct translation was replaced by a retry."""
+    assert not u._detect_language_mismatch(NAMES_TR, "turkish", NAMES_EN)
+    # ordinary words still count
+    assert u._detect_language_mismatch(SOURCE, "turkish", SOURCE)
+
+
+def _run_initial(monkeypatch, answers):
+    calls = []
+
+    def fake_complete(**kw):
+        calls.append(kw['user_prompt'])
+        return f"<ttext>{answers[len(calls) - 1]}</ttext>", 10
+
+    monkeypatch.setattr(u.llm_service, 'complete', fake_complete)
+    monkeypatch.setattr(u.config, 'json_mode', False)
+    context = u.TranslationContext(source_lang="english", target_lang="turkish",
+                                   source_text=SOURCE, style="xml")
+    return u._pipeline.initial_translation(context).text, calls
+
+
+def test_retry_replaces_an_echo_but_not_with_another_echo(monkeypatch):
+    text, calls = _run_initial(monkeypatch, [SOURCE, TURKISH])
+    assert len(calls) == 2 and text == TURKISH          # echo -> real translation: taken
+    worse = SOURCE + "<p>And then the soldiers fell back towards the ship again.</p>"
+    text, calls = _run_initial(monkeypatch, [SOURCE, worse])
+    assert len(calls) == 2 and text == SOURCE           # no better: the first answer stays

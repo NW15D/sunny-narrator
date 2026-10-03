@@ -81,7 +81,9 @@ def _without_leading_articles(ent) -> str:
 # Turkish and Azerbaijani attach case suffixes to a proper name after an
 # apostrophe: "Ankara'ya", "İstanbul'da", "Ayşe'nin" are Ankara, İstanbul, Ayşe
 _APOSTROPHE_SUFFIX_LANGUAGES = {'tr', 'az'}
-_APOSTROPHE_SUFFIX_RE = re.compile(r"['’]\w+$")
+# A suffix is lowercase and follows a stem of two letters or more, so
+# "O'Brien", "D'Angelo", "N'Diaye" stay whole
+_APOSTROPHE_SUFFIX_RE = re.compile(r"(?<=\w\w)['’][^\W\d_A-ZÇĞİÖŞÜ]\w*$")
 
 
 def _ent_lang(ent) -> str:
@@ -94,7 +96,7 @@ def _ent_lang(ent) -> str:
 def entity_text(ent):
     """Entity text without a leading article (_without_leading_articles),
     without a Turkish/Azerbaijani case suffix after an apostrophe
-    ("Ankara'ya" -> "Ankara"; "O'Brien" in other languages stays) and
+    ("Ankara'ya" -> "Ankara"; "O'Brien" stays) and
     without the grammatical particle (josa) glued to its last word. Korean
     writes "철수는", "서울에서", "영희가" for 철수, 서울, 영희, and the .dic
     term must be the bare name or it matches one form only. The morphology

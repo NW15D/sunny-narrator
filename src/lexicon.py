@@ -562,12 +562,21 @@ def covering_terms(candidate: str, terms: Iterable[str], lang: str,
             return False
         return not exact or word.startswith(term_word) or term_word.startswith(word)
 
-    def words_fit(term: str) -> bool:
-        if is_unspaced(term):  # already an exact substring
-            return True
-        own = tokenize(term)
-        return any(all(same_word(i + j, t) for j, t in enumerate(own))
-                   for i in range(len(words) - len(own) + 1))
+    # separators(candidate)[i] stands between words[i] and words[i + 1],
+    # unless a script switch split a word without a separator ("ABC社")
+    aligned = len(own) == len(words) - 1
 
-    return sorted((t for t in found + shadowed if separators_fit(t) and words_fit(t)),
-                  key=term_rank, reverse=True)
+    def fits(term: str) -> bool:
+        if is_unspaced(term):  # already an exact substring
+            return separators_fit(term)
+        term_words, seps = tokenize(term), separators(term)
+        n = len(term_words)
+        for i in range(len(words) - n + 1):
+            if all(same_word(i + j, t) for j, t in enumerate(term_words)):
+                if not aligned:
+                    return separators_fit(term)
+                if own[i:i + n - 1] == seps:
+                    return True
+        return False
+
+    return sorted((t for t in found + shadowed if fits(t)), key=term_rank, reverse=True)

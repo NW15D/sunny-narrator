@@ -146,6 +146,43 @@ def _by_priority(candidates: List[Dict[str, str]]) -> List[Dict[str, str]]:
     return sorted(candidates, key=lambda c: lexicon.term_rank(c['source']))
 
 
+def _merge_into(matcher: CandidateMatcher, candidates: List[Dict[str, str]],
+                add, set_gender, where: str = "") -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
+    """
+    The one merge loop of the .dic file (apply_dictionary_candidates) and the
+    in-memory vocabulary (VocabularyManager._merge_candidates), so the two
+    can never follow different rules.
+
+    add(cand) stores a new entry and returns its matcher ref (None: it takes
+    no updates later); set_gender(ref, gender) fills an empty gender of an
+    existing entry and returns whether it changed anything. Covered
+    candidates and common nouns reported as characters are skipped.
+
+    Returns (added, updated) candidates.
+    """
+    added, updated = [], []
+    for cand in _by_priority(candidates):
+        category = cand.get('category', 'PERSON')
+        verdict, ref = matcher.match(cand)
+        if verdict == 'covered':
+            logger.info(f"Dictionary{where}: '{cand['source']}' not added, already covered by {ref}")
+            continue
+        if verdict == 'new':
+            if category == 'PERSON' and not looks_like_proper_name(cand['source']):
+                continue  # synopsis LLM reported a common noun, not a named character
+            matcher.add(cand['source'], cand['target'], add(cand))
+            logger.info(f"Dictionary{where}: added {cand['source']} = {cand['target']}, {category}")
+            added.append(cand)
+            continue
+        if ref is not None and category == 'PERSON' and set_gender(ref, cand['gender']):
+            updated.append(cand)
+    return added, updated
+
+
+# A gender report makes an entry without a category, or an earlier TERM, a PERSON
+_PROMOTED_TO_PERSON = ('', 'TERM')
+
+
 def apply_dictionary_candidates(dict_file: str, candidates: List[Dict[str, str]],
                                 source_lang: Optional[str] = None) -> Tuple[int, int]:
     """
@@ -179,33 +216,26 @@ def apply_dictionary_candidates(dict_file: str, candidates: List[Dict[str, str]]
         rows[i] = (source, fields)
         matcher.add(source, fields[0], i)
 
-    updated, appended = 0, []
-    for cand in _by_priority(candidates):
+    appended = []
+
+    def add(cand):
         category = cand.get('category', 'PERSON')
-        verdict, ref = matcher.match(cand)
-        if verdict == 'covered':
-            logger.info(f"Dictionary {dict_file}: '{cand['source']}' not added, "
-                        f"already covered by {ref}")
-            continue
-        if verdict == 'new':
-            if category == 'PERSON' and not looks_like_proper_name(cand['source']):
-                continue  # synopsis LLM reported a common noun, not a named character
-            line = f"{cand['source']} = {_dic_field(cand['target'])}, {category}, {cand['gender']}, "
-            appended.append(line)
-            logger.info(f"Dictionary {dict_file}: added {line.rstrip(', ')}")
-            matcher.add(cand['source'], cand['target'], None)
-            continue
-        if ref is None or category != 'PERSON':
-            continue
+        appended.append(f"{cand['source']} = {_dic_field(cand['target'])}, {category}, {cand['gender']}, ")
+        return None  # an appended line takes no gender update
+
+    def set_gender(ref, gender):
         source, fields = rows[ref]
         fields += [''] * (4 - len(fields))
         if fields[2]:
-            continue
-        fields[2] = cand['gender']
-        if fields[1] in ('', 'TERM'):
+            return False  # set by the user or an earlier chunk: it wins
+        fields[2] = gender
+        if fields[1] in _PROMOTED_TO_PERSON:
             fields[1] = 'PERSON'
         lines[ref] = f"{source} = {_dic_field(fields[0])}, " + ", ".join(fields[1:])
-        updated += 1
+        return True
+
+    _, updated_cands = _merge_into(matcher, candidates, add, set_gender, where=f" {dict_file}")
+    updated = len(updated_cands)
 
     if not updated and not appended:
         return 0, 0
@@ -818,31 +848,25 @@ class VocabularyManager:
             self._matcher = CandidateMatcher(self.source_lang)
             for key, entry in self.vocab.items():
                 self._matcher.add(entry.source, entry.target, key)
-        matcher = self._matcher
-        accepted = []
-        for cand in _by_priority(candidates):
-            category = cand.get('category', 'PERSON')
-            verdict, ref = matcher.match(cand)
-            if verdict == 'covered':
-                logger.info(f"Dictionary: '{cand['source']}' not added, already covered by {ref}")
-                continue
-            if verdict == 'new':
-                if category == 'PERSON' and not looks_like_proper_name(cand['source']):
-                    continue  # synopsis LLM reported a common noun, not a named character
-                key = cand['source'].replace(' ', '_').lower()
-                self.vocab[key] = VocabEntry(source=cand['source'], target=cand['target'],
-                                             category=category, gender=cand.get('gender', ''))
-                matcher.add(cand['source'], cand['target'], key)
-                logger.info(f"Dictionary: added {cand['source']} = {cand['target']}, {category}")
-                accepted.append(cand)
-                continue
-            entry = self.vocab.get(ref)
-            if entry is None or category != 'PERSON' or entry.gender:
-                continue
-            entry.gender = cand['gender']
-            if entry.category in ('', 'TERM'):
+
+        def add(cand):
+            key = cand['source'].replace(' ', '_').lower()
+            self.vocab[key] = VocabEntry(source=cand['source'], target=cand['target'],
+                                         category=cand.get('category', 'PERSON'),
+                                         gender=cand.get('gender', ''))
+            return key
+
+        def set_gender(key, gender):
+            entry = self.vocab.get(key)
+            if entry is None or entry.gender:
+                return False
+            entry.gender = gender
+            if entry.category in _PROMOTED_TO_PERSON:
                 entry.category = 'PERSON'
-            accepted.append(cand)
+            return True
+
+        added, updated = _merge_into(self._matcher, candidates, add, set_gender)
+        accepted = added + updated
         if accepted:
             self.session_candidates.extend(accepted)
             self.matched_terms_cache.clear()

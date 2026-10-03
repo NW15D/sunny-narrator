@@ -43,6 +43,10 @@ def test_covering_terms_ignore_case_and_inflection_but_not_separators():
     # a hyphenated spelling is another entry, but still contains "Jain"
     assert lexicon.covering_terms("Jain-tech", terms, "english") == ["Jain"]
     assert lexicon.covering_terms("Jain tech", ["Jain-tech"], "english") == []
+    # review finding: the separators must be the ones at the matched words,
+    # not the same separator somewhere else in the candidate
+    assert lexicon.covering_terms("Jain-tech-node Jain tech", ["tech node"], "english") == []
+    assert lexicon.covering_terms("Jain tech-node", ["tech-node"], "english") == ["tech-node"]
     assert lexicon.covering_terms("spiderguns battery", terms, "english") == ["spidergun"]
     # a stop-word entry would cover half the language
     assert lexicon.covering_terms("Will power", terms, "english") == []
