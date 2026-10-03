@@ -99,46 +99,29 @@ S_PROMT_PROOFREAD=false   # false = раздельные сообщения
 
 ## 🎯 Структура prompts.json
 
-### Пример для Translate LLM (Hunyuan)
+| Категория | Ключи | Кто вызывает |
+|---|---|---|
+| `initial_translation` | `system`, `user_xml` (FB2), `user_text` (Markdown, Calibre), `user_hunyuan` (Hunyuan, не FB2) | `TranslationPipeline.initial_translation` |
+| `reflection`, `improve`, `editor` | `system`, `user_xml`, `user_text` (по `style` чанка) | стадии 2–4 |
+| `synopsis` | `system`, `user`, `user_hunyuan`, `dictionary_rules` (общий фрагмент обоих `user`) | стадия 5 |
+| `*_json` | `system`, `user_text` | те же стадии при `JSON_MODE` |
+| `vocabulary`, `metadata_translation` | `user` (системного сообщения нет: `get_completion` шлёт только `user`) | перевод словаря, метаданные |
+| `image_generation` | `generation`, `variation` | обложка |
 
-```json
-{
-    "initial_translation": {
-        "system": "You are a professional literary translator...",
-        "user_xml": "<context>...</context>...",
-        "user_text": "...",
-        "user_hunyuan": "{outline_text}\n\n参考上面的信息..."
-    },
-    "synopsis": {
-        "system": "You are an expert summarizer...",
-        "user": "<text>...</text>...",
-        "user_hunyuan": "<text>...</text>\n\n请用{target_lang}..."
-    }
-}
-```
+Правила, которые проверяет `tests/test_prompts.py`:
 
-### Пример для Proofread LLM
+- в шаблоне только те плейсхолдеры, что передаёт вызывающий код, — иначе
+  `get_prompt` вернёт шаблон неподставленным (модель увидит `{target_lang}`
+  буквально) и напишет предупреждение в лог; литеральные фигурные скобки — `{{ }}`;
+- каждый ключ файла есть в списке вызовов теста — мёртвых ключей нет;
+- промпты перевода получают словарь чанка, а перевод/improve/editor требуют
+  сохранять теги, Markdown и плейсхолдеры (`![](sn-imgref-N)`, `[](sn-htmlref-N)`).
 
-```json
-{
-    "reflection": {
-        "system": "You are a literary translation quality reviewer...",
-        "user_xml": "<task>Target language: {target_lang}...</task>...",
-        "user_text": "..."
-    },
-    "improve": {
-        "system": "You are a literary translation editor...",
-        "user_xml": "<task>Target language: {target_lang}...</task>...",
-        "user_text": "..."
-    },
-    "editor": {
-        "system": "Ты профессиональный редактор-переводчик...",
-        "user_xml": "<original>...</original>...",
-        "user_text": "...",
-        "user_hunyuan": "..."
-    }
-}
-```
+Договорённости между стадиями: в исходник перед стадией 1 уже подставлены
+переводы терминов в начальной форме (промпт просит их склонять); рефлексия
+пишет правки «Replace «X» with «Y» — reason» на языке перевода (improve не
+видит исходник), а при отсутствии правок — ровно `NO CHANGES`; improve
+вызывается всегда и в этом случае возвращает перевод без изменений.
 
 ---
 

@@ -4,6 +4,16 @@ All notable changes to Sunny Narrator.
 
 ## Unreleased
 
+### Prompts
+- `prompts.json` rewritten: 21.7 KB → 12.6 KB, no repeated rule blocks, one directive per rule.
+- Fixed: the reflection system prompt reached the model unformatted (literal `{target_lang} ({country})`): it used `{source_lang}`, which the caller never passed. `get_prompt` now logs every unformatted prompt, and `tests/test_prompts.py` checks each template against the variables of its call site.
+- Fixed: EPUB/DOCX/PDF chunks (`user_text`) were translated without the glossary in the prompt.
+- Fixed contradictions: the JSON translator was told to drop XML tags; the editor was told to "restore FB2 tags" it cannot see; improve was told to fix accuracy and apply the glossary without having either; the Markdown prompts spoke of FB2 tags; the retry prompt said "English" for any source language.
+- The translator is told that glossary terms already substituted into the source are in base form and must be inflected; Markdown and image/HTML placeholders must be kept.
+- Reflection writes self-contained fixes ("Replace «X» with «Y» — reason") or exactly `NO CHANGES`; improve always runs and then returns the text unchanged.
+- Metadata: genre codes, dates, numbers and language codes are kept; glossary terms are translated in dictionary form.
+- Unused keys removed (`*_hunyuan` of reflection/improve/editor/vocabulary, `vocabulary.system`, `metadata_translation.system`, JSON `user_xml`/`user_hunyuan`).
+
 ### Dictionary: growth without duplicates
 - A name or coined term reported by the synopsis stage is added only when nothing of it is in the dictionary yet. Another case or inflected form of an entry is that entry (`Jain nodes` = `Jain node`, `Gabbleducks` = `gabbleduck`; a name by inflection only — `Jains` is `Jain`, `Marie` is not `Mary`; an ALL-CAPS acronym only by itself — `ECS` is not `EC`); a phrase containing a known term is skipped (`Jain node`, `Jain-tech`, `jain shriek`, `Jason Williams` when `Jain` / `Jason` are there). A hyphen, a space or no separator make different entries (`gabble-duck` / `gabbleduck`), so it no longer shadows the base entry with another translation. Of one batch the shorter candidate is taken first.
 - The synopsis prompt gets the chunk's glossary (`<glossary>`) and is told not to report its terms, their forms or phrases built on them.

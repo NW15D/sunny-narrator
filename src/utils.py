@@ -872,7 +872,8 @@ class TranslationPipeline:
         if _detect_language_mismatch(text, context.target_lang, context.source_text):
             logger.error("Translation returned in wrong language! Retrying...")
             # Retry once with stronger instruction
-            user_prompt = f"TRANSLATE to {context.target_lang} ONLY. DO NOT output English/source text.\n\n{user_prompt}"
+            user_prompt = (f"Translate into {context.target_lang} only; do not output "
+                           f"{context.source_lang} text.\n\n{user_prompt}")
             retry_text, retry_tokens = llm_service.complete(
                 role=LLMRole.TRANSLATE,
                 system_prompt=system_prompt,

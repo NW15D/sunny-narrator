@@ -222,8 +222,9 @@ class Config:
         if template:
             try:
                 return template.format(**kwargs)
-            except KeyError as e:
-                if self.debug:
-                    print(f"Missing variable for prompt {category}.{key}: {e}")
+            except (KeyError, IndexError, ValueError) as e:
+                # The model would get the raw template with "{target_lang}"
+                # left in it: tests/test_prompts.py guards against this
+                logger.warning(f"Prompt {category}.{key} is not formatted: missing or bad placeholder {e}")
                 return template
         return ""
