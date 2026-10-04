@@ -174,7 +174,7 @@ class Config:
         self.length_check_threshold = _parse_numeric_env('LENGTH_CHECK_THRESHOLD', 20, cast=int)
         
         # FILE: the book to translate (relative paths are resolved from the CWD)
-        self.myfile = os.getenv('FILE', 'books/eternal-moment.pg.epub')
+        self.myfile = os.getenv('FILE', 'books/ExampleBook.fb2')
         if not os.path.isabs(self.myfile):
              self.myfile = str(Path(os.getcwd()) / self.myfile)
              

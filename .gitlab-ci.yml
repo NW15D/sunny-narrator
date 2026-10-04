@@ -33,6 +33,7 @@
 
 stages:
   - test
+  - docker
   - badge
 
 tests:
@@ -96,6 +97,50 @@ tests:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == "main"
+
+# Both Docker images (GPU: Dockerfile, CPU: Dockerfile.cpu) are built and the
+# whole test suite runs inside each of them (scripts/docker-ci-test.sh): with
+# the image's Calibre and pandoc, so the EPUB/DOCX/PDF tests run for real.
+# Nothing is pushed yet.
+#
+# Runner: Docker executor with `privileged = true` (docker:dind), tagged
+# `docker`. The GPU image builds and is tested without a GPU: the test suite
+# falls back to the CPU variant of the matcher.
+docker-images:
+  stage: docker
+  needs: []
+  image: docker:27
+  services:
+    - name: docker:27-dind
+  tags:
+    - docker
+  interruptible: true
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  parallel:
+    matrix:
+      - VARIANT: gpu
+        DOCKERFILE: Dockerfile
+      - VARIANT: cpu
+        DOCKERFILE: Dockerfile.cpu
+  before_script:
+    # bash and GNU tar for scripts/docker-ci-test.sh (the image is Alpine)
+    - apk add --no-cache bash tar
+    - docker info
+  script:
+    - docker build --pull -f "$DOCKERFILE" -t "sunny-narrator:ci-$VARIANT" .
+    - bash scripts/docker-ci-test.sh "sunny-narrator:ci-$VARIANT" "report-$VARIANT.xml"
+  artifacts:
+    when: always
+    reports:
+      junit: report-$VARIANT.xml
+    paths:
+      - report-$VARIANT.xml
+    expire_in: 1 week
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_PIPELINE_SOURCE == "web"
 
 test-badge:
   tags:

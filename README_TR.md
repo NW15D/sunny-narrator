@@ -253,9 +253,10 @@ docker-compose up -d
 docker-compose -f docker-compose.cpu.yml up -d
 ```
 
-**Hazır GPU imajı** ([GitHub Container Registry](https://github.com/NW15D/sunny-narrator/pkgs/container/sunny-narrator), `main` dalına her gönderimde `Dockerfile` dosyasından derlenir):
+**Hazır imajlar** ([GitHub Container Registry](https://github.com/NW15D/sunny-narrator/pkgs/container/sunny-narrator), `main` dalına her gönderimde `Dockerfile` / `Dockerfile.cpu` dosyalarından derlenir ve test edilir; ikisinde de Calibre ve pandoc vardır):
 ```bash
-docker pull ghcr.io/nw15d/sunny-narrator:main
+docker pull ghcr.io/nw15d/sunny-narrator:main       # GPU
+docker pull ghcr.io/nw15d/sunny-narrator:main-cpu   # CPU
 ```
 
 **Kılavuzlar:** [docs/DOCKER_CPU_GUIDE.md](docs/DOCKER_CPU_GUIDE.md), [docs/GPU_DOCKER.md](docs/GPU_DOCKER.md)

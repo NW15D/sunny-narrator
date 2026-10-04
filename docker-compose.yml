@@ -10,7 +10,8 @@ services:
     env_file:
       - .env
     volumes:
-      - ./books:/app/books:ro
+      # read-write: the translation and its checkpoint are written next to the book
+      - ./books:/app/books
       - ./output:/app/output
       - ./logs:/app/logs
       - ./src/prompts.json:/app/src/prompts.json

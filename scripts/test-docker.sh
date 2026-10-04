@@ -4,7 +4,8 @@
 set -e
 
 COMPOSE_FILE="docker-compose.yml"
-TEST_BOOK="books/eternal-moment.pg.epub"
+TEST_BOOK="books/ExampleBook.fb2"            # classic pipeline
+TEST_BOOK_CALIBRE="books/eternal-moment.pg.epub"  # Calibre pipeline
 
 echo "=========================================="
 echo "Sunny Narrator Docker Test"
@@ -18,7 +19,7 @@ echo "   ✓ Build complete"
 
 echo ""
 echo "2. Testing GPU access inside container..."
-docker-compose -f $COMPOSE_FILE run --rm sunny-narrator python3 -c "
+docker-compose -f $COMPOSE_FILE run --rm --entrypoint python3 sunny-narrator -c "
 import torch
 print(f'PyTorch version: {torch.__version__}')
 print(f'CUDA available: {torch.cuda.is_available()}')
@@ -31,7 +32,7 @@ echo "   ✓ GPU test complete"
 
 echo ""
 echo "3. Testing spaCy with GPU..."
-docker-compose -f $COMPOSE_FILE run --rm sunny-narrator python3 -c "
+docker-compose -f $COMPOSE_FILE run --rm --entrypoint python3 sunny-narrator -c "
 import spacy
 from thinc.api import prefer_gpu
 print(f'spaCy version: {spacy.__version__}')
@@ -43,8 +44,14 @@ print(f'NER test: {[(ent.text, ent.label_) for ent in doc.ents]}')
 echo "   ✓ spaCy test complete"
 
 echo ""
-echo "4. Checking required files..."
-docker-compose -f $COMPOSE_FILE run --rm sunny-narrator ls -la /app/
+echo "4. Checking Calibre and pandoc..."
+docker-compose -f $COMPOSE_FILE run --rm --entrypoint ebook-convert sunny-narrator --version
+docker-compose -f $COMPOSE_FILE run --rm --entrypoint pandoc sunny-narrator --version
+echo "   ✓ Calibre/pandoc check complete"
+
+echo ""
+echo "5. Checking required files..."
+docker-compose -f $COMPOSE_FILE run --rm --entrypoint ls sunny-narrator -la /app/ /app/$TEST_BOOK /app/$TEST_BOOK_CALIBRE
 echo "   ✓ File check complete"
 
 echo ""
@@ -54,3 +61,4 @@ echo "=========================================="
 echo ""
 echo "To run translation:"
 echo "  docker-compose -f $COMPOSE_FILE run --rm -e FILE=$TEST_BOOK sunny-narrator"
+echo "  docker-compose -f $COMPOSE_FILE run --rm -e FILE=$TEST_BOOK_CALIBRE sunny-narrator"

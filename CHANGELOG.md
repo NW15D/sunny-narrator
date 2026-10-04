@@ -4,10 +4,11 @@ All notable changes to Sunny Narrator.
 
 ## Unreleased
 
-- Classic pipeline (FB2/TXT): the language marker in output names is the ISO code of `TARGET_LANG`, as in the Calibre pipeline — `TARGET_LANG=russian` now writes `Book_ru_1530-2909.fb2` and `Book_ru_cover.png` (was `Book_russian_…`). A checkpoint left under the old name is still resumed. Both pipelines take the marker from one place (`Config.lang_marker`).
-- The default `FILE` and the sample book of the tests is `books/eternal-moment.pg.epub` (`books/Cargo.fb2` was removed).
-- `scripts/test-docker.sh` uses the existing `docker-compose.yml` (it pointed to a missing `docker-compose.gpu.yml`).
-- New `scripts/clean_dic.py`: normalizes a `.dic`, merges case/gender duplicates, drops junk lines.
+- Classic pipeline (FB2/TXT): the language marker in output names is taken from `LANG_CODE_MAP`, as in the Calibre pipeline — `TARGET_LANG=russian` now writes `Book_ru_1530-2909.fb2` and `Book_ru_cover.png` (was `Book_russian_…`). A language missing from the map keeps its name, lowercased (`serbian`). A checkpoint left under the old name is still resumed. Both pipelines take the marker from one place (`Config.lang_marker`).
+- The sample book of the tests is `books/eternal-moment.pg.epub`; the default `FILE` is `books/ExampleBook.fb2`, as in `env.sample` (`books/Cargo.fb2` was removed).
+- Docker: both images (GPU and CPU) include Calibre (`ebook-convert`) and pandoc (3.12, pinned), so EPUB/DOCX/PDF books are translated in the container too. The GPU image is based on `nvidia/cuda:12.6.3-runtime-ubuntu24.04` (Python 3.12, `torch 2.14.1+cu126`, the project in `/opt/venv`). The CPU image is based on Python 3.11: it was on 3.10, below the project's `requires-python`, and did not build.
+- CI: both images are built and the test suite runs inside each of them (`scripts/docker-ci-test.sh`; the Calibre test must not be skipped there) — in GitLab (`docker-images` job, a privileged runner tagged `docker`) and in GitHub Actions, which then pushes them to GHCR: GPU as `main`, `2.8`, …, CPU as `main-cpu`, `2.8-cpu`, …. Pull requests build and test without pushing. `books/` is mounted read-write, since the translation and its checkpoint are written next to the book. `scripts/test-docker.sh` uses the existing `docker-compose.yml` (it pointed to a missing `docker-compose.gpu.yml`), its checks override the `app.py` entrypoint, and it checks Calibre and pandoc.
+- New `scripts/clean_dic.py`: cleans a `.dic` into a new file with a report — merges duplicates by the loader's rule (`lexicon.word_key`), normalizes gender synonyms (an unknown value is kept and reported), drops ordinary words by the vectors of the NER model (`--model`, `--keep`) and cut variants; every field is CSV-quoted as needed, so the result loads without losses.
 
 ## v2.8
 

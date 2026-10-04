@@ -252,9 +252,10 @@ docker-compose up -d
 docker-compose -f docker-compose.cpu.yml up -d
 ```
 
-**Pre-built GPU image** ([GitHub Container Registry](https://github.com/NW15D/sunny-narrator/pkgs/container/sunny-narrator), built from `Dockerfile` on every push to `main`):
+**Pre-built images** ([GitHub Container Registry](https://github.com/NW15D/sunny-narrator/pkgs/container/sunny-narrator), built from `Dockerfile` / `Dockerfile.cpu` and tested on every push to `main`; both include Calibre and pandoc):
 ```bash
-docker pull ghcr.io/nw15d/sunny-narrator:main
+docker pull ghcr.io/nw15d/sunny-narrator:main       # GPU
+docker pull ghcr.io/nw15d/sunny-narrator:main-cpu   # CPU
 ```
 
 **Guides:** [docs/DOCKER_CPU_GUIDE.md](docs/DOCKER_CPU_GUIDE.md), [docs/GPU_DOCKER.md](docs/GPU_DOCKER.md)

@@ -8,6 +8,11 @@ This document describes how to run Sunny Narrator with NVIDIA GPU support for fa
 - NVIDIA Container Toolkit installed on host
 - Docker Compose v2.0+
 
+The image has Calibre (`ebook-convert`) and pandoc, so every input format is
+translated in it: FB2/TXT (classic pipeline) and EPUB/DOCX/PDF (Calibre pipeline).
+`books/` is mounted read-write: the translation and its checkpoint are written
+next to the book.
+
 ## Quick Start
 
 ```bash
@@ -17,92 +22,31 @@ docker-compose -f docker-compose.yml up --build
 
 ## Dockerfile
 
-```dockerfile
-# Production-ready Dockerfile for Sunny Narrator with NVIDIA GPU support
-# Based on nvidia/cuda:12.1.0-runtime-ubuntu22.04 for smaller image size
+[`Dockerfile`](../Dockerfile), in short:
 
-FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
-
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-ENV DEBIAN_FRONTEND=noninteractive
-ENV CUDA_VISIBLE_DEVICES=0
-ENV PYTHONPATH=/app
-
-# Set working directory
-WORKDIR /app
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.10 \
-    python3-pip \
-    python3-dev \
-    libgomp1 \
-    libxml2-dev \
-    libxslt1-dev \
-    git \
-    curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
-
-# Upgrade pip
-RUN python3 -m pip install --upgrade pip setuptools wheel
-
-# Copy the dependency manifest first for better layer caching
-COPY pyproject.toml .
-
-# Install Python dependencies with CUDA support ([gpu] adds cupy and
-# spacy[cuda12x] on top of the base dependencies)
-RUN python3 -m pip install --no-cache-dir ".[gpu]"
-
-# Download spaCy models (multi-language support)
-RUN python3 -m spacy download en_core_web_lg && \
-    python3 -m spacy download ru_core_news_lg
-
-# Copy application code
-COPY app.py .
-COPY setup.py .
-COPY src/ ./src/
-
-# Create directories for volumes
-RUN mkdir -p /app/books /app/output
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD python3 -c "import torch; print(f'PyTorch CUDA: {torch.cuda.is_available()}')" || exit 1
-
-# Default entrypoint
-ENTRYPOINT ["python3", "app.py"]
-```
+- base `nvidia/cuda:12.6.3-runtime-ubuntu24.04` — the CUDA 12.6 runtime libraries
+  that `cupy-cuda12x` uses, Python 3.12;
+- the project in a venv (`/opt/venv`): `torch==2.14.1+cu126`, then `pip install ".[gpu]"`;
+- Calibre (`ebook-convert`) from Ubuntu and pandoc 3.12 (`PANDOC_VERSION` build arg),
+  headless (`QT_QPA_PLATFORM=offscreen`);
+- spaCy models `en_core_web_lg`, `ru_core_news_lg`;
+- entrypoint `python3 app.py`.
 
 ## docker-compose.yml
 
-```yaml
-version: "3.8"
+[`docker-compose.yml`](../docker-compose.yml): `.env` as the environment,
+`./books` mounted read-write (the translation and its checkpoint are written
+next to the book), `./logs`, `./src/prompts.json`, one NVIDIA GPU.
 
-services:
-  sunny-narrator:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: sunny-narrator:gpu
-    container_name: sunny-narrator-gpu
-    env_file:
-      - .env
-    volumes:
-      - ./books:/app/books:ro
-      - ./output:/app/output
-      - ./.env:/app/.env:ro
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    stdin_open: true
-    tty: true
+## Pre-built images
+
+Every push to `main` (and every `v*` tag) builds both images in GitHub Actions
+(`.github/workflows/docker-publish.yml`), runs the test suite inside each of
+them and pushes them to GHCR only when it passes:
+
+```bash
+docker pull ghcr.io/nw15d/sunny-narrator:main       # GPU
+docker pull ghcr.io/nw15d/sunny-narrator:main-cpu   # CPU
 ```
 
 ## Performance Comparison

@@ -15,6 +15,10 @@ Sunny Narrator поддерживает **два режима работы**:
 | **CPU-only** | `Dockerfile.cpu` | `docker-compose.cpu.yml` | Нет GPU |
 | **GPU (NVIDIA)** | `Dockerfile` | `docker-compose.yml` | NVIDIA GPU + CUDA |
 
+В обоих образах есть Calibre (`ebook-convert`) и pandoc, поэтому переводятся
+все форматы: FB2/TXT (classic-пайплайн) и EPUB/DOCX/PDF (Calibre-пайплайн).
+Каталог `books/` монтируется на запись — перевод и чекпоинт пишутся рядом с книгой.
+
 ---
 
 ## 🚀 Quick Start (CPU)

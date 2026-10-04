@@ -1,22 +1,43 @@
 name: Docker
 
+# Builds both images (GPU: Dockerfile, CPU: Dockerfile.cpu), runs the test
+# suite inside each of them — with Calibre and pandoc of the image, so the
+# EPUB/DOCX/PDF tests run for real — and pushes them to GHCR only after the
+# tests pass. Pull requests build and test without pushing.
+#
+# Tags: the GPU image keeps the plain tags (main, 2.8, sha-…), the CPU image
+# gets the same ones with a "-cpu" suffix (main-cpu, 2.8-cpu, sha-…-cpu).
+
 on:
   push:
     branches: [ "main", "master" ]
     tags: [ 'v*' ]
+  pull_request:
   release:
     types: [published]
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  PUSH: ${{ github.event_name != 'pull_request' }}
 
 jobs:
-  build-and-push-image:
+  build-test-push:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: gpu
+            dockerfile: Dockerfile
+            suffix: ""
+          - variant: cpu
+            dockerfile: Dockerfile.cpu
+            suffix: "-cpu"
 
     steps:
       - name: Checkout repository
@@ -35,7 +56,22 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Build the image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          load: true
+          tags: sunny-narrator:ci-${{ matrix.variant }}
+          cache-from: type=gha,scope=${{ matrix.variant }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.variant }}
+
+      # Calibre/pandoc check and the whole test suite inside the image
+      - name: Test the image
+        run: bash scripts/docker-ci-test.sh sunny-narrator:ci-${{ matrix.variant }}
+
       - name: Log in to the Container registry
+        if: env.PUSH == 'true'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -43,23 +79,27 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract metadata (tags, labels) for Docker
+        if: env.PUSH == 'true'
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: |
+            suffix=${{ matrix.suffix }},onlatest=true
           tags: |
             type=ref,event=branch
-            type=ref,event=pr
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha
 
-      - name: Build and push Docker image
+      # Same build as above: every layer comes from the cache
+      - name: Push the image
+        if: env.PUSH == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
+          file: ${{ matrix.dockerfile }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.variant }}

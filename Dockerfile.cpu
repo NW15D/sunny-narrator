@@ -1,7 +1,7 @@
 # CPU-only Dockerfile for Sunny Narrator
 # Use this for systems without NVIDIA GPU
 
-FROM python:3.10-slim
+FROM python:3.11-slim-bookworm
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -22,6 +22,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
+
+# Calibre (ebook-convert) and pandoc for the EPUB/DOCX/PDF pipeline.
+# pandoc is pinned to the release the project is tested with (the Debian one
+# is older). ebook-convert runs headless; Qt WebEngine (PDF output) needs
+# --no-sandbox as root.
+ARG PANDOC_VERSION=3.12
+ENV QT_QPA_PLATFORM=offscreen
+ENV QTWEBENGINE_CHROMIUM_FLAGS=--no-sandbox
+RUN apt-get update && apt-get install -y --no-install-recommends calibre curl ca-certificates \
+    && arch="$(dpkg --print-architecture)" \
+    && curl -fsSL -o /tmp/pandoc.deb \
+       "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-1-${arch}.deb" \
+    && dpkg -i /tmp/pandoc.deb && rm /tmp/pandoc.deb \
+    && rm -rf /var/lib/apt/lists/* && apt-get clean \
+    && ebook-convert --version && pandoc --version
 
 # Upgrade pip
 RUN python3 -m pip install --upgrade pip setuptools wheel
