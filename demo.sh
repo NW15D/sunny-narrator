@@ -1,8 +1,6 @@
 #!/bin/bash
-#plan llm pairs: qwen3-32_ mistral ,
-# Define value lists
 # Collect the list of epub files
-files=("books/eternal-moment.epub" "books/forster-short-fiction.se.epub" )
+files=("books/eternal-moment.pg.epub" "books/forster-short-fiction.se.epub" )
 
 mkdir -p ./logs
 
