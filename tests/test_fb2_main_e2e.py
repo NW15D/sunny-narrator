@@ -94,7 +94,7 @@ def run_main(monkeypatch):
 
 
 def _outputs(folder, ext):
-    return [p for p in glob.glob(os.path.join(folder, f'book_russian_*.{ext}'))
+    return [p for p in glob.glob(os.path.join(folder, f'book_ru_*.{ext}'))
             if not p.endswith('_tmp.fb2')]
 
 
@@ -296,7 +296,7 @@ def test_cover_is_sent_to_the_image_model_and_replaced(book, run_main, monkeypat
     assert f'<binary content-type="{content_type}" id="cover.png">{new_cover}</binary>' in xml
     assert xc.validate_fb2(xml) == []
     saved = sorted(p.name for p in book.parent.glob('book_*cover.*'))
-    assert saved == [f'book_russian_cover.{ext}']
+    assert saved == [f'book_ru_cover.{ext}']
     assert (book.parent / saved[0]).read_bytes() == image
 
 
@@ -369,7 +369,7 @@ def test_fb2_language_comes_from_the_config_not_the_llm(book, run_main):
 def test_main_on_its_own_never_writes_fb2_into_a_pdf(book, run_main):
     run_main(book, output_format='pdf')
     assert _outputs(book.parent, 'fb2')
-    assert not glob.glob(os.path.join(book.parent, 'book_russian_*.pdf'))
+    assert not glob.glob(os.path.join(book.parent, 'book_ru_*.pdf'))
 
 
 def test_covers_of_different_target_languages_do_not_overwrite_each_other(book, run_main, monkeypatch):
@@ -380,7 +380,7 @@ def test_covers_of_different_target_languages_do_not_overwrite_each_other(book, 
     monkeypatch.setattr(app.config, 'target_lang', 'german')
     run_main(book, images_key='key')
     names = sorted(p.name for p in book.parent.glob('book_*cover.*'))
-    assert names == ['book_german_cover.png', 'book_russian_cover.png']
+    assert names == ['book_de_cover.png', 'book_ru_cover.png']
 
 
 

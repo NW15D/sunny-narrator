@@ -21,7 +21,9 @@ python app.py          # Checkpoint found ... Resuming from chunk 52/100
 
 ## 📘 Classic pipeline (FB2/TXT)
 
-Files next to the book (`<book>_<TARGET_LANG>` prefix):
+Files next to the book (`<book>_<lang>` prefix, `<lang>` — the ISO code of
+`TARGET_LANG`: `russian` and `ru` both give `ru`; a checkpoint left by an older
+version under `<book>_russian` is still resumed):
 
 | File | Contents |
 |------|----------|
@@ -46,7 +48,7 @@ How it stays consistent:
   checkpoint is ignored and the book is translated again.
 
 After a successful run the checkpoint is removed; the final book gets a
-timestamp in its name (`Book_russian_1530-2909.fb2` / `.epub`).
+timestamp in its name (`Book_ru_1530-2909.fb2` / `.epub`).
 
 ---
 
@@ -54,8 +56,8 @@ timestamp in its name (`Book_russian_1530-2909.fb2` / `.epub`).
 
 | File | Contents |
 |------|----------|
-| `<book>.checkpoint.json` | Chunk-level progress, including the translated chunks |
-| `<book>.translated.md` + `<book>.meta.json` | The complete translation, written once all chunks are done; a rerun only rebuilds the output file from it (e.g. to try another `--output-format`) |
+| `<book>_<lang>.checkpoint.json` | Chunk-level progress, including the translated chunks |
+| `<book>_<lang>.translated.md` + `<book>_<lang>.meta.json` | The complete translation, written once all chunks are done; a rerun only rebuilds the output file from it (e.g. to try another `--output-format`) |
 
 `--fresh` ignores both and translates the book from scratch.
 

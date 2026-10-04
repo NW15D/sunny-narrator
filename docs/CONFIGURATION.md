@@ -57,7 +57,7 @@ authentication any non-empty API key will do.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `API_KEY_IMAGES` | — | Empty = the original cover is kept. When set, the cover is sent to the images model (**a paid call per book**) and replaced by the result, which is also saved as `<book>_<TARGET_LANG>_cover.<ext>` |
+| `API_KEY_IMAGES` | — | Empty = the original cover is kept. When set, the cover is sent to the images model (**a paid call per book**) and replaced by the result, which is also saved as `<book>_<lang>_cover.<ext>` (`<lang>` — ISO code of `TARGET_LANG`, e.g. `ru`) |
 | `API_BASE_IMAGES` | — | Base URL |
 | `MODEL_IMAGES` | `gpt-image-1.5` | Model name |
 | `TIMEOUT_IMAGES` | `600` | Request timeout, seconds |
@@ -89,7 +89,7 @@ authentication any non-empty API key will do.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `FILE` | `books/Cargo.fb2` | The book. `.fb2`/`.txt` → classic pipeline, `.epub`/`.docx`/`.pdf` → Calibre pipeline |
+| `FILE` | `books/eternal-moment.pg.epub` | The book. `.fb2`/`.txt` → classic pipeline, `.epub`/`.docx`/`.pdf` → Calibre pipeline |
 | `SOURCE_LANG` | `english` | Full name or ISO code (`korean`/`ko`, `english`/`en`, ...). Also selects the spaCy model and the CJK adaptations. Verified languages: [LANGUAGES.md](LANGUAGES.md) |
 | `TARGET_LANG` | `russian` | Full name or ISO code. Verified languages: [LANGUAGES.md](LANGUAGES.md) |
 | `COUNTRY` | by `TARGET_LANG` | Country for localization context in prompts; empty = derived from the target language (`ru` → Россия, `tr` → Türkiye, `de` → Deutschland, …; a language without one country → `<Language>-speaking countries`) |
@@ -130,8 +130,8 @@ authentication any non-empty API key will do.
 | `FB2_AUTO_REPAIR` | `true` | Classic pipeline: if the finished FB2 fails schema validation, rebalance its tags where they break. The repair is kept only if the book text is unchanged, the result is well-formed and the error count drops |
 
 The result is written next to the source file with a language marker in its
-name, e.g. `books/Book_russian_1530-2909.fb2` (classic) or
-`books/Title_ru.epub` (Calibre).
+name — the ISO code of `TARGET_LANG` (`russian` and `ru` both give `ru`), e.g.
+`books/Book_ru_1530-2909.fb2` (classic) or `books/Title_ru.epub` (Calibre).
 
 ---
 

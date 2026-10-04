@@ -1320,8 +1320,7 @@ def build_output(
     # Previously this lived only inside the `if not output_path:` branch,
     # so ebook-convert's --language always got metadata['language'] (the
     # *source* book's OPF language) instead of the translation target.
-    lang = (target_lang or config.target_lang or '').lower()
-    lang_marker = config.lang_code_map.get(lang, lang)
+    lang_marker = config.lang_marker(target_lang)
 
     # Work on a copy: build_output must not mutate the caller's metadata
     # dict (run_pipeline may still reference/dump it after this call).
@@ -2017,7 +2016,7 @@ def run_pipeline(
     # Deterministic (no timestamp) paths next to the source file, so a
     # second run on the same book finds what the first run left behind.
     stem = os.path.splitext(input_path)[0]
-    lang_marker = config.lang_code_map.get((target_lang or '').lower(), (target_lang or '').lower())
+    lang_marker = config.lang_marker(target_lang)
     suffix = f"_{lang_marker}" if lang_marker else ""
     if checkpoint_file is None:
         checkpoint_file = f"{stem}{suffix}.checkpoint.json"

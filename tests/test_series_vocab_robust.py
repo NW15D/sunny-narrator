@@ -24,7 +24,7 @@ def test_series_vocab_with_malformed_json():
     # Create test directory with sample books
     with tempfile.TemporaryDirectory() as tmpdir:
         # Copy sample books
-        shutil.copy(os.path.join(project_root, 'books', 'Cargo.fb2'), tmpdir)
+        shutil.copy(os.path.join(project_root, 'books', 'eternal-moment.pg.epub'), tmpdir)
         shutil.copy(os.path.join(project_root, 'books', 'ExampleBook.fb2'), tmpdir)
         
         output_file = os.path.join(tmpdir, 'test_series.dic')
@@ -32,21 +32,21 @@ def test_series_vocab_with_malformed_json():
         # Mock the vocabulary function to return malformed JSON
         def mock_vocabulary(source_lang, target_lang, source_text, country, role):
             # Simulate LLM returning malformed JSON with extra text
-            if "BENJAMIN" in source_text:
+            if "Haddon" in source_text:
                 return '''Some preamble...
 {
     "terms": [
-        {"source": "BENJAMIN BABBAGE", "target": "БЕНДЖАМИН БЭББИДЖ", "category": "PERSON"}
+        {"source": "Miss Haddon", "target": "Мисс Хэддон", "category": "PERSON"}
     ]
 }
 Trailing text...'''
-            elif "JANE" in source_text:
+            elif "Cantù" in source_text:
                 return '''[
-{"source": "JANE BERRENDT", "target": "ДЖЕЙН БЕРРЕНДТ", "category": "PERSON"}
+{"source": "Signora Cantù", "target": "Синьора Канту", "category": "PERSON"}
 ]'''
-            elif "Dallas" in source_text:
+            elif "Gutenberg" in source_text:
                 return '''Here's the translation:
-{"source": "Dallas", "target": "Даллас", "category": "GPE"}
+{"source": "Project Gutenberg", "target": "Проект Гутенберг", "category": "ORG"}
 End of response.'''
             else:
                 # Fallback CSV format
@@ -75,9 +75,9 @@ End of response.'''
                     content = f.read()
                 
                 # Should have non-empty translations
-                assert "БЕНДЖАМИН БЭББИДЖ" in content
-                assert "ДЖЕЙН БЕРРЕНДТ" in content
-                assert "Даллас" in content
+                assert "Мисс Хэддон" in content
+                assert "Синьора Канту" in content
+                assert "Проект Гутенберг" in content
                 assert "Перевод_" in content  # From fallback
                 
                 print("✅ Series vocab with malformed JSON test passed")

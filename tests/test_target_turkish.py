@@ -87,7 +87,7 @@ def test_output_paths_carry_the_turkish_marker(tmp_path):
     from app import build_resume_paths
     paths = build_resume_paths(str(tmp_path / "book.fb2"), "turkish")
     assert all(os.path.dirname(p) == str(tmp_path) for p in paths.values())
-    assert all("_turkish" in os.path.basename(p) for p in paths.values())
+    assert all(os.path.basename(p).startswith(("book_tr_", "book_tr.")) for p in paths.values())
     assert u.config.lang_code_map["turkish"] == "tr"
 
 

@@ -3,8 +3,8 @@
 
 set -e
 
-COMPOSE_FILE="docker-compose.gpu.yml"
-TEST_BOOK="books/Cargo.fb2"
+COMPOSE_FILE="docker-compose.yml"
+TEST_BOOK="books/eternal-moment.pg.epub"
 
 echo "=========================================="
 echo "Sunny Narrator Docker Test"
@@ -53,4 +53,4 @@ echo "All tests passed!"
 echo "=========================================="
 echo ""
 echo "To run translation:"
-echo "  docker-compose -f $COMPOSE_FILE run --rm sunny-narrator"
+echo "  docker-compose -f $COMPOSE_FILE run --rm -e FILE=$TEST_BOOK sunny-narrator"

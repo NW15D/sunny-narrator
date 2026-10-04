@@ -4,11 +4,11 @@ import tempfile
 import shutil
 
 def test_extract_text_from_book():
-    """Test extracting text from FB2 books."""
+    """Test extracting text from a book (EPUB)."""
     from src.ner import extract_text_from_book
     
     # Test with existing book
-    text = extract_text_from_book('books/Cargo.fb2')
+    text = extract_text_from_book('books/eternal-moment.pg.epub')
     assert len(text) > 0
     assert isinstance(text, str)
 
@@ -22,7 +22,7 @@ def test_create_series_vocab_finds_files():
     
     with tempfile.TemporaryDirectory() as tmpdir:
         # Copy sample books
-        shutil.copy('books/Cargo.fb2', tmpdir)
+        shutil.copy('books/eternal-moment.pg.epub', tmpdir)
         shutil.copy('books/ExampleBook.fb2', tmpdir)
         
         output = os.path.join(tmpdir, 'test.dic')
@@ -47,7 +47,7 @@ def test_series_vocab_aggregation():
     from src.ner import extract_text_from_book, make_vocab
     
     # Process two books
-    books = ['books/Cargo.fb2', 'books/ExampleBook.fb2']
+    books = ['books/eternal-moment.pg.epub', 'books/ExampleBook.fb2']
     
     all_entities = []
     

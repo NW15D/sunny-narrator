@@ -648,16 +648,25 @@ def build_resume_paths(myfile: str, target_lang: str) -> dict:
     checkpoint_file and output_tfile are deterministic (no timestamp) so a
     new run can find the previous checkpoint and resume. The final output
     file keeps a timestamp so finished books don't overwrite each other.
+
+    The language marker is the ISO code (config.lang_marker), as in the
+    Calibre pipeline: TARGET_LANG=russian and =ru both give "<book>_ru_...".
+    A checkpoint left under the old name ("<book>_russian.checkpoint.json")
+    is still resumed.
     """
     file_name, _ = os.path.splitext(os.path.basename(myfile))
     output_dir = os.path.dirname(myfile) or '.'
     timestamp = datetime.now().strftime("%H%M-%d%m")
-    stable_base = f"{output_dir}/{file_name}_{target_lang}"
-    output_base = f"{stable_base}_{timestamp}"
+    output_base = f"{output_dir}/{file_name}_{config.lang_marker(target_lang)}"
+    resume_base = output_base
+    legacy_base = f"{output_dir}/{file_name}_{target_lang}"
+    if (legacy_base != output_base and not os.path.exists(f"{output_base}.checkpoint.json")
+            and os.path.exists(f"{legacy_base}.checkpoint.json")):
+        resume_base = legacy_base
     return {
-        "output_file": f"{output_base}.{config.output_format}",
-        "output_tfile": f"{stable_base}_tmp.fb2",
-        "checkpoint_file": f"{stable_base}.checkpoint.json",
+        "output_file": f"{output_base}_{timestamp}.{config.output_format}",
+        "output_tfile": f"{resume_base}_tmp.fb2",
+        "checkpoint_file": f"{resume_base}.checkpoint.json",
     }
 
 
@@ -842,7 +851,7 @@ def main():
         print("Translating metadata...")
         metadata = fb2.extract_metadata(header)
         if metadata:
-            target_code = config.lang_code_map.get(config.target_lang.lower(), config.target_lang)
+            target_code = config.lang_marker()
             metadata['lang'] = target_code
             vocab_entries = list(engine.vocab_manager.vocab.values()) if engine.vocab_manager else []
             translated_meta = ta.translate_metadata(metadata, config.source_lang, config.target_lang, config.country,
@@ -863,7 +872,7 @@ def main():
                     cover_bytes = base64.b64decode(cover_result)
                     ext = IMAGE_EXTENSIONS.get(sniff_image_type(cover_bytes), '.png')
                     # language marker: translations into other languages keep their own cover
-                    with open(f"{output_dir}/{file_name}_{config.target_lang}_cover{ext}", 'wb') as f:
+                    with open(f"{output_dir}/{file_name}_{config.lang_marker()}_cover{ext}", 'wb') as f:
                         f.write(cover_bytes)
                 except Exception as e:
                     logger.error(f"Cover save error: {e}")

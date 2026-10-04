@@ -259,4 +259,4 @@ All reading and writing of `.dic` files goes through
 - **2026-03-30:** Fixed format documentation (was incorrectly described as JSON)
 - **v1.0:** Initial CSV format specification
 
-**See also:** [books/Cargo.dic](../books/Cargo.dic) — Example dictionary file
+**See also:** [books/eternal-moment.pg.dic](../books/eternal-moment.pg.dic) — Example dictionary file

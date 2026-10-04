@@ -2,6 +2,13 @@
 
 All notable changes to Sunny Narrator.
 
+## Unreleased
+
+- Classic pipeline (FB2/TXT): the language marker in output names is the ISO code of `TARGET_LANG`, as in the Calibre pipeline — `TARGET_LANG=russian` now writes `Book_ru_1530-2909.fb2` and `Book_ru_cover.png` (was `Book_russian_…`). A checkpoint left under the old name is still resumed. Both pipelines take the marker from one place (`Config.lang_marker`).
+- The default `FILE` and the sample book of the tests is `books/eternal-moment.pg.epub` (`books/Cargo.fb2` was removed).
+- `scripts/test-docker.sh` uses the existing `docker-compose.yml` (it pointed to a missing `docker-compose.gpu.yml`).
+- New `scripts/clean_dic.py`: normalizes a `.dic`, merges case/gender duplicates, drops junk lines.
+
 ## v2.8
 
 ### Dictionary: growth without duplicates

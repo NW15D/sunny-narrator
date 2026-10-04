@@ -71,6 +71,22 @@ def test_case_variant_does_not_shadow():
     assert lexicon.resolve_terms("THE MAD HATTER", list(V), "en") == (["Mad Hatter"], ["Hatter"])
 
 
+def test_phrases_first_then_single_words():
+    # As if phrases were replaced in a first pass and single words in a
+    # second one over the rest: the dictionary order does not matter, and
+    # the second pass never touches an inserted target ("Jain-узел").
+    v = {"Queen": "Королева", "Hearts": "Черви", "Queen of Hearts": "Червонная Королева",
+         "Mad": "Безумный", "Hatter": "Шляпник", "Mad Hatter": "Безумный Шляпник",
+         "Jain": "Джайн", "Jain node": "Jain-узел", "node": "узел"}
+    text = "The Queen of Hearts met the Mad Hatter near a Jain node. The Queen, the Hatter, Jain and a node."
+    expected = ("The Червонная Королева met the Безумный Шляпник near a Jain-узел. "
+                "The Королева, the Шляпник, Джайн and a узел.")
+    assert sub(text, v) == expected
+    assert sub(text, dict(reversed(list(v.items())))) == expected
+    # an inflected phrase is not a phrase occurrence: its single words are replaced
+    assert sub("Mad Hatters and Mad", v) == "Безумный Hatters and Безумный"
+
+
 def test_rank_counts_words_like_lexicon():
     # "Jean-Luc-Marie" is three words for both modules, so it beats "Marie Curie"
     v = {"Jean-Luc-Marie": "Жан-Люк-Мари", "Marie Curie": "Мария Кюри"}

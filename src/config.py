@@ -174,7 +174,7 @@ class Config:
         self.length_check_threshold = _parse_numeric_env('LENGTH_CHECK_THRESHOLD', 20, cast=int)
         
         # FILE: the book to translate (relative paths are resolved from the CWD)
-        self.myfile = os.getenv('FILE', 'books/Cargo.fb2')
+        self.myfile = os.getenv('FILE', 'books/eternal-moment.pg.epub')
         if not os.path.isabs(self.myfile):
              self.myfile = str(Path(os.getcwd()) / self.myfile)
              
@@ -227,6 +227,13 @@ class Config:
 
         # Load prompts
         self.prompts = self._load_prompts()
+
+    def lang_marker(self, lang: str = None) -> str:
+        """Language marker of output file names, shared by both pipelines:
+        the ISO code of `lang` (default TARGET_LANG), "russian" -> "ru";
+        an unknown language stays as written, lowercased."""
+        lang = (lang or self.target_lang or '').strip().lower()
+        return self.lang_code_map.get(lang, lang)
 
     def _load_prompts(self):
         import json
