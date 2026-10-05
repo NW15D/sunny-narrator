@@ -46,6 +46,9 @@ except ImportError:
 # Import existing utilities
 from src.utils import config, validate_translation_length, translate_chunk, translate_metadata, length_calibration
 from src.utils import _pipeline  # noqa: F401  (tests monkeypatch cp._pipeline.execute)
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
+from src.stage_pipeline import StageSequencer, chunk_slot, COMMITTED
 from src.checkpoint_manager import CheckpointManager, compute_fingerprint
 from src import lexicon, markdown_utils
 from src.config import default_country
@@ -984,9 +987,17 @@ def translate_chunks(
     if vocab_manager is not None:
         vocab_manager.restore_session_candidates(session_terms)
 
-    for i, chunk in enumerate(chunks):
-        if i < start_idx:
-            continue  # already translated before the checkpoint
+    # PARALLEL_STAGES=2: the translate stages of the next chunk overlap with the
+    # proofread stages of this one (see src/stage_pipeline.py). Fast mode has no
+    # proofread stages, nothing to overlap.
+    parallel = config.parallel_stages >= 2 and not fast_mode
+    sequencer = StageSequencer(first_index=start_idx) if parallel else None
+    # State right after each chunk's draft: what its checkpoint must record,
+    # the live state may already hold the next chunk's draft
+    draft_state = {}
+
+    def process_chunk(i, chunk):
+        nonlocal outline_text, failed_chunks, total_source_len, total_target_len
 
         # Sanitize surrogates before translation
         chunk = sanitize_surrogates(chunk)
@@ -1000,38 +1011,72 @@ def translate_chunks(
         # MAX_LLM_CALLS_PER_CHUNK guard. The outer retry loop below additionally
         # catches exceptions that propagate out of translate_chunk.
         # Only the glossary terms present in this chunk go into the prompt
-        chunk_vocab_entries = []
-        if vocab_manager is not None and vocab_manager.vocab:
-            chunk_vocab_entries = vocab_manager.get_vocab_for_chunk(chunk, 0, i)
-        chunk_vocab_dict = {e.source: e.target for e in chunk_vocab_entries}
         translation = None
         candidates = []
-        for attempt in range(3):  # Up to 3 attempts
-            try:
-                candidates = []
-                translation, synopsis = translate_chunk(
-                    source_lang=source_lang,
-                    target_lang=target_lang,
-                    source_text=chunk,
-                    outline_text=outline_text,
-                    vocab_dict=chunk_vocab_dict,
-                    vocab_entries=chunk_vocab_entries,
-                    country=country,
-                    style=style,
-                    fast_mode=fast_mode,
-                    candidate_sink=candidates
-                )
+        drafted = False
 
-                outline_text = synopsis or ""
-                break  # Success
-                
-            except Exception as e:
-                logger.warning(f"Translation attempt {attempt + 1} failed for chunk {i + 1} ({type(e).__name__}): {e}")
-                if attempt < 2:
-                    backoff = 2 ** (attempt + 1)  # 2s, 4s
-                    logger.info(f"Retrying chunk {i + 1} in {backoff}s...")
-                    time.sleep(backoff)
-        
+        def on_draft(draft_synopsis, draft_translation, draft_candidates):
+            # The next chunk starts now: it needs this chunk's synopsis and
+            # the terms it found (from the draft, not the proofread text)
+            nonlocal outline_text
+            outline_text = draft_synopsis or ""
+            if draft_candidates and vocab_manager is not None:
+                try:
+                    vocab_manager.record_dictionary_candidates(draft_candidates)
+                except OSError as e:
+                    logger.warning(f"Could not update dictionary with synopsis candidates: {e}")
+            draft_state[i] = (outline_text,
+                              list(vocab_manager.session_candidates) if vocab_manager is not None else [])
+
+        # In parallel mode this waits for the previous chunk's draft, so the
+        # glossary and the synopsis below already include it
+        with (chunk_slot(sequencer, i, on_draft) if parallel else nullcontext()) as slot:
+            chunk_outline = outline_text
+            chunk_vocab_entries = []
+            if vocab_manager is not None and vocab_manager.vocab:
+                chunk_vocab_entries = vocab_manager.get_vocab_for_chunk(chunk, 0, i)
+            chunk_vocab_dict = {e.source: e.target for e in chunk_vocab_entries}
+            for attempt in range(3):  # Up to 3 attempts
+                try:
+                    candidates = []
+                    translation, synopsis = translate_chunk(
+                        source_lang=source_lang,
+                        target_lang=target_lang,
+                        source_text=chunk,
+                        outline_text=chunk_outline,
+                        vocab_dict=chunk_vocab_dict,
+                        vocab_entries=chunk_vocab_entries,
+                        country=country,
+                        style=style,
+                        fast_mode=fast_mode,
+                        candidate_sink=candidates
+                    )
+
+                    if slot is None:
+                        outline_text = synopsis or ""
+                    break  # Success
+
+                except Exception as e:
+                    logger.warning(f"Translation attempt {attempt + 1} failed for chunk {i + 1} ({type(e).__name__}): {e}")
+                    if attempt < 2:
+                        backoff = 2 ** (attempt + 1)  # 2s, 4s
+                        logger.info(f"Retrying chunk {i + 1} in {backoff}s...")
+                        time.sleep(backoff)
+            drafted = slot is not None and slot.drafted
+            if slot is not None and not drafted and translation is not None:
+                outline_text = synopsis or ""  # no draft was reported: take the final one
+
+        # Results are written strictly in book order
+        if parallel:
+            sequencer.wait(COMMITTED, i - 1)
+        try:
+            commit_chunk(i, chunk, translation, candidates, drafted)
+        finally:
+            if parallel:
+                sequencer.mark(COMMITTED, i)
+
+    def commit_chunk(i, chunk, translation, candidates, drafted):
+        nonlocal failed_chunks, total_source_len, total_target_len
         chunk_failed = False  # H3: failed chunks must not advance the checkpoint
         if translation is not None:
             # Validate translation length
@@ -1062,7 +1107,7 @@ def translate_chunks(
             failed_chunks += 1
             chunk_failed = True
 
-        if candidates and not chunk_failed and vocab_manager is not None:
+        if candidates and not chunk_failed and not drafted and vocab_manager is not None:
             try:
                 vocab_manager.record_dictionary_candidates(candidates)
             except OSError as e:
@@ -1086,6 +1131,8 @@ def translate_chunks(
         # starts at the failed chunk and retries it through the real LLM pipeline
         # instead of silently shipping the untranslated original text.
         if checkpoint_mgr is not None and not chunk_failed:
+            saved_outline, saved_terms = draft_state.pop(i, (
+                outline_text, vocab_manager.session_candidates if vocab_manager is not None else []))
             checkpoint_mgr.save(
                 chunk_id=i,
                 section_idx=0,
@@ -1100,13 +1147,32 @@ def translate_chunks(
                 fingerprint=fingerprint,
                 extra={
                     'translated_parts': translated_parts,
-                    'outline_text': outline_text,
+                    'outline_text': saved_outline,
                     'failed_chunks': failed_chunks,
                     # with DICT_AUTO_SAVE off they live only in memory
-                    'session_terms': vocab_manager.session_candidates if vocab_manager is not None else [],
+                    'session_terms': saved_terms,
                 },
             )
-    
+
+    if not parallel:
+        for i, chunk in enumerate(chunks):
+            if i >= start_idx:  # earlier chunks were translated before the checkpoint
+                process_chunk(i, chunk)
+    else:
+        # Two workers = two chunks in flight: the next one starts as soon as a
+        # worker is free, i.e. once the chunk before the previous is committed
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(process_chunk, i, chunk)
+                       for i, chunk in enumerate(chunks) if i >= start_idx]
+            try:
+                for future in futures:
+                    future.result()
+            except BaseException:
+                sequencer.abort()
+                for future in futures:
+                    future.cancel()
+                raise
+
     print()  # New line after progress
     
     # Report failures

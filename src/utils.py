@@ -36,6 +36,7 @@ from src.llm_logger import log_llm_call
 from src.p_tags_processor import post_process_p_tags
 from src import lexicon
 from src.term_substitution import replace_vocab_in_text
+from src.stage_pipeline import current_slot
 from src.fb2_structure import join_paragraph_halves, split_in_two, split_paragraph_in_two
 
 # LLMService, TranslationPipeline, translate_chunk are defined in this module
@@ -1226,6 +1227,16 @@ class TranslationPipeline:
             synopsis_result = self.generate_synopsis(context, final_result.text)
             state.add_result(synopsis_result)
         else:
+            # PARALLEL_STAGES=2: the synopsis comes from the draft, so the next
+            # chunk can start its translate stages while this one is proofread
+            slot = current_slot()
+            if slot is not None:
+                synopsis_result = self.generate_synopsis(context, initial_result.text)
+                state.add_result(synopsis_result)
+                slot.draft_ready(synopsis_result.text, initial_result.text,
+                                 synopsis_result.metadata.get("dictionary_candidates", []))
+                slot.enter_proofread()
+
             # Stage 2: Reflection (proofread LLM) - NO vocab_dict
             reflection_result = self.reflection(context, initial_result.text)
             state.add_result(reflection_result)
@@ -1241,8 +1252,10 @@ class TranslationPipeline:
             state.add_result(final_edit_result)
             
             # Stage 5: Synopsis (translate LLM) - from final translation
-            synopsis_result = self.generate_synopsis(context, final_edit_result.text)
-            state.add_result(synopsis_result)
+            # (already done from the draft when the stages are pipelined)
+            if slot is None:
+                synopsis_result = self.generate_synopsis(context, final_edit_result.text)
+                state.add_result(synopsis_result)
             
             final_result = TranslationResult(
                 stage=TranslationStage.FINAL,

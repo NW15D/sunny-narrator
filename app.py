@@ -17,6 +17,10 @@ import warnings
 import base64
 import logging
 import json
+import copy
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from datetime import datetime
 from typing import Dict, List
 
@@ -35,6 +39,7 @@ import src.epub_handler as epub
 import src.txt_handler as txt
 from src.config import Config
 from src.synopsis_manager import SynopsisManager
+from src.stage_pipeline import StageSequencer, chunk_slot, current_slot, COMMITTED
 from src.llm_logger import init_llm_logger
 from src.vocabulary_manager import get_vocabulary_manager, DictionaryCreatedSignal, VocabularyManager
 from src.character_registry import get_character_registry, reset_character_registry
@@ -133,9 +138,9 @@ class TranslationEngine:
 
         # Per-chunk vocabulary cache: compute once per chunk, reuse for
         # entries/dict/formatted (previously rebuilt 3-4x per chunk)
-        self._vocab_cache_key = None
-        self._vocab_cache_entries = None
-        self._vocab_cache_formatted = None
+        # (with PARALLEL_STAGES=2 two chunks are in flight, so a few are kept)
+        self._vocab_cache = {}  # (s_idx, c_idx, chunk) -> {'entries', 'formatted'}
+        self._vocab_cache_lock = threading.Lock()
 
     def get_vocab_entries_for_chunk(self, chunk: str, s_idx: int, c_idx: int) -> List:
         """
@@ -158,12 +163,19 @@ class TranslationEngine:
         Key includes chunk text so any chunk changes self-invalidate.
         Logs a single line per chunk (previously one per accessor call).
         """
+        return self._vocab_cache_item(chunk, s_idx, c_idx)['entries']
+
+    def _vocab_cache_item(self, chunk: str, s_idx: int, c_idx: int) -> dict:
         key = (s_idx, c_idx, chunk)
-        if key != self._vocab_cache_key:
+        with self._vocab_cache_lock:
+            item = self._vocab_cache.get(key)
+            if item is not None:
+                return item
             entries = self.vocab_manager.get_vocab_for_chunk(chunk, s_idx, c_idx)
-            self._vocab_cache_key = key
-            self._vocab_cache_entries = entries
-            self._vocab_cache_formatted = None  # invalidate formatted cache
+            item = {'entries': entries, 'formatted': None}
+            while len(self._vocab_cache) >= 4:
+                self._vocab_cache.pop(next(iter(self._vocab_cache)))
+            self._vocab_cache[key] = item
 
             # Single log line per chunk
             if not entries:
@@ -173,7 +185,7 @@ class TranslationEngine:
             else:
                 logger.info(f"Vocabulary: {len(entries)} terms for chunk {s_idx}-{c_idx}")
 
-        return self._vocab_cache_entries
+        return item
 
     def get_vocab_dict_for_chunk(self, chunk: str, s_idx: int, c_idx: int) -> Dict[str, str]:
         """
@@ -210,10 +222,11 @@ class TranslationEngine:
             return ""
         
         # Format once per chunk (cache reuses it across loop + translate_chunk)
-        if self._vocab_cache_formatted is None:
-            self._vocab_cache_formatted = self.vocab_manager.format_for_model(entries, config.model_translate)
-        
-        return self._vocab_cache_formatted
+        item = self._vocab_cache_item(chunk, s_idx, c_idx)
+        if item['formatted'] is None:
+            item['formatted'] = self.vocab_manager.format_for_model(entries, config.model_translate)
+
+        return item['formatted']
 
     def translate_chunk(self, source_text: str, context: str, s_idx: int = 0, c_idx: int = 0) -> tuple:
         """
@@ -259,7 +272,9 @@ class TranslationEngine:
             if translation is None:
                 raise ValueError("Translation returned None")
 
-            if self.vocab_manager:
+            slot = current_slot()
+            if self.vocab_manager and not (slot is not None and slot.drafted):
+                # (already recorded from the draft when the stages are pipelined)
                 self.vocab_manager.record_dictionary_candidates(candidates)
 
             return translation, synopsis
@@ -439,29 +454,69 @@ class TranslationEngine:
                 text, cur_depth = section_transition(unit_meta(emitted_unit), cur_depth)
                 emit(text)
 
-        for item in all_chunks:
+        # PARALLEL_STAGES=2: the translate stages of the next chunk overlap with
+        # the proofread stages of this one (see src/stage_pipeline.py)
+        parallel = config.parallel_stages >= 2 and not config.fast_trans
+        sequencer = StageSequencer() if parallel else None
+        # State right after each chunk's draft: what its checkpoint must record,
+        # the live state may already hold the next chunk's draft
+        draft_state = {}
+
+        def process_item(k: int, item: dict):
             chunk = item['chunk']
             s_idx = item['section_idx']
             c_idx = item['chunk_idx']
             g_id = item['global_id']
 
-            # Get formatted vocabulary
-            formatted_vocab = self.get_formatted_vocab_for_chunk(chunk, s_idx, c_idx)
-            vocab_count = len(formatted_vocab.split('|' if 'hunyuan' in config.model_translate.lower() else '\n')) if formatted_vocab else 0
+            def on_draft(draft_synopsis, draft_translation, draft_candidates):
+                # The next chunk starts now: it needs this chunk's synopsis and
+                # the terms it found (from the draft, not the proofread text)
+                self.synopsis_manager.add_chunk_result(
+                    s_idx, c_idx, draft_translation, generated_synopsis=draft_synopsis)
+                if draft_candidates and self.vocab_manager:
+                    self.vocab_manager.record_dictionary_candidates(draft_candidates)
+                draft_state[g_id] = (
+                    copy.deepcopy(self.synopsis_manager.synopsis_cache),
+                    list(self.vocab_manager.session_candidates) if self.vocab_manager else [])
 
-            # Progress output
-            preview = (chunk[:80] + '...') if len(chunk) > 80 else chunk
-            print(f"\n[Chunk {g_id+1}/{total}] Section {s_idx+1}.{c_idx+1} | {len(chunk)} chars | Vocab: {vocab_count}")
-            print(f"  Source: {preview}")
+            # In parallel mode this waits for the previous chunk's draft, so the
+            # glossary and the synopsis below already include it
+            with (chunk_slot(sequencer, k, on_draft) if parallel else nullcontext()) as slot:
+                # Get formatted vocabulary
+                formatted_vocab = self.get_formatted_vocab_for_chunk(chunk, s_idx, c_idx)
+                vocab_count = len(formatted_vocab.split('|' if 'hunyuan' in config.model_translate.lower() else '\n')) if formatted_vocab else 0
 
-            # Get synopsis context
-            context = self.synopsis_manager.get_synopsis(s_idx, c_idx)
+                # Progress output
+                preview = (chunk[:80] + '...') if len(chunk) > 80 else chunk
+                print(f"\n[Chunk {g_id+1}/{total}] Section {s_idx+1}.{c_idx+1} | {len(chunk)} chars | Vocab: {vocab_count}")
+                print(f"  Source: {preview}")
 
-            # Translate
-            final_content, synopsis = self.process_chunk_recursive(chunk, s_idx, c_idx, g_id, context)
+                # Get synopsis context
+                context = self.synopsis_manager.get_synopsis(s_idx, c_idx)
 
-            # Update synopsis manager
-            self.synopsis_manager.add_chunk_result(s_idx, c_idx, final_content, generated_synopsis=synopsis)
+                # Translate
+                final_content, synopsis = self.process_chunk_recursive(chunk, s_idx, c_idx, g_id, context)
+                drafted = slot is not None and slot.drafted
+
+            # Results are written strictly in book order
+            if parallel:
+                sequencer.wait(COMMITTED, k - 1)
+            try:
+                commit_item(item, final_content, synopsis, drafted)
+            finally:
+                if parallel:
+                    sequencer.mark(COMMITTED, k)
+
+        def commit_item(item: dict, final_content: str, synopsis: str, drafted: bool):
+            nonlocal tail_written
+            chunk = item['chunk']
+            s_idx = item['section_idx']
+            c_idx = item['chunk_idx']
+            g_id = item['global_id']
+
+            # Update synopsis manager (already done from the draft when pipelined)
+            if not drafted:
+                self.synopsis_manager.add_chunk_result(s_idx, c_idx, final_content, generated_synopsis=synopsis)
 
             # Progress output
             result_preview = (final_content[:80] + '...') if len(final_content) > 80 else final_content
@@ -489,13 +544,33 @@ class TranslationEngine:
 
             # Save checkpoint after each chunk
             if checkpoint_file:
-                self.save_checkpoint(checkpoint_file)
+                snapshot = draft_state.pop(g_id, None)
+                self.save_checkpoint(checkpoint_file,
+                                     synopsis_history=snapshot[0] if snapshot else None,
+                                     session_terms=snapshot[1] if snapshot else None)
 
             # DEBUG: Print stats after each chunk
             if config.debug:
                 length_diff = len(final_content) - len(chunk) if final_content else 0
                 length_diff_pct = (length_diff / len(chunk) * 100) if chunk and len(chunk) > 0 else 0
                 print(f"  [✓] {len(chunk)} → {len(final_content):,} chars ({length_diff_pct:+.1f}%) | Successful: {self.stats['successful']}/{self.stats['failed'] + self.stats['successful']}")
+
+        if not parallel:
+            for k, item in enumerate(all_chunks):
+                process_item(k, item)
+        else:
+            # Two workers = two chunks in flight: the next one starts as soon as
+            # a worker is free, i.e. once the chunk before the previous is committed
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                futures = [pool.submit(process_item, k, item) for k, item in enumerate(all_chunks)]
+                try:
+                    for future in futures:
+                        future.result()
+                except BaseException:
+                    sequencer.abort()
+                    for future in futures:
+                        future.cancel()
+                    raise
 
         if book_end is None and not tail_written:
             # No chunk counts (flat sections) or a book without any text
@@ -511,12 +586,16 @@ class TranslationEngine:
         with open(output_tfile, encoding='utf-8') as f:
             return f.read()
 
-    def save_checkpoint(self, checkpoint_file: str):
+    def save_checkpoint(self, checkpoint_file: str, synopsis_history: dict = None,
+                        session_terms: list = None):
         """
         Save translation progress to checkpoint file (atomic write).
 
         Args:
             checkpoint_file: Path to checkpoint JSON file
+            synopsis_history, session_terms: state as of the end of the saved
+                chunk, when the live one may already include the next chunk
+                (pipelined stages); default is the live state
         """
         checkpoint = {
             "version": CHECKPOINT_VERSION,
@@ -531,10 +610,12 @@ class TranslationEngine:
                 "total_source_len": self.total_source_len,
                 "total_target_len": self.total_target_len
             },
-            "synopsis_history": self.synopsis_manager.synopsis_cache,
+            "synopsis_history": (synopsis_history if synopsis_history is not None
+                                 else self.synopsis_manager.synopsis_cache),
             # Dictionary entries found during the run: with DICT_AUTO_SAVE off
             # they live only in memory, a resume must not lose them
-            "session_terms": self.vocab_manager.session_candidates if self.vocab_manager else [],
+            "session_terms": (session_terms if session_terms is not None
+                              else self.vocab_manager.session_candidates if self.vocab_manager else []),
             "created_at": self.start_time.isoformat(),
             "updated_at": datetime.now().isoformat()
         }

@@ -170,6 +170,10 @@ class Config:
         default_model = self.lang_model_map.get(self.source_lang.lower(), 'xx_ent_wiki_sm')
         self.nermodel = os.getenv('NERMODEL') or default_model  # empty = by SOURCE_LANG
         self.fast_trans = os.getenv('FAST_TRANS', 'on').lower() in ['true', '1', 'on', 'yes']
+        # PARALLEL_STAGES: 1 = one chunk at a time; 2 = translate stages of the next
+        # chunk overlap with the proofread stages of this one (needs the two LLMs
+        # on separate GPUs). More than 2 gains nothing: one request per GPU.
+        self.parallel_stages = 2 if _parse_numeric_env('PARALLEL_STAGES', 1, cast=int) >= 2 else 1
         self.max_len_chunk = _parse_numeric_env('MAX_LEN_CHUNK', 8192, cast=int)
         self.length_check_threshold = _parse_numeric_env('LENGTH_CHECK_THRESHOLD', 20, cast=int)
         
