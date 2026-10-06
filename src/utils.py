@@ -36,7 +36,7 @@ from src.llm_logger import log_llm_call
 from src.p_tags_processor import post_process_p_tags
 from src import lexicon
 from src.term_substitution import replace_vocab_in_text
-from src.stage_pipeline import current_slot
+from src.stage_pipeline import PipelineAborted, current_slot
 from src.fb2_structure import join_paragraph_halves, split_in_two, split_paragraph_in_two
 
 # LLMService, TranslationPipeline, translate_chunk are defined in this module
@@ -45,6 +45,15 @@ from src.fb2_structure import join_paragraph_halves, split_in_two, split_paragra
 # =============================================================================
 # Translation Metrics Tracker
 # =============================================================================
+
+class TruncatedResponseError(ValueError):
+    """The LLM response hit max_tokens.
+
+    With a large max_tokens this almost always means the model fell into a
+    loop (repeating text), not that the translation needs more room;
+    translate_chunk answers by halving the chunk, which changes the input.
+    """
+
 
 class TranslationMetrics:
     """
@@ -644,9 +653,9 @@ class LLMService:
         _choice = response.choices[0]
         # C12: truncated response must fail loudly, not produce partial translation
         if getattr(_choice, 'finish_reason', None) == 'length':
-            raise ValueError(
+            raise TruncatedResponseError(
                 "LLM response was truncated (finish_reason='length'). "
-                "Increase max_tokens or shorten the input."
+                "Usually the model looped on this input; the chunk will be split."
             )
         result = _choice.message.content
         
@@ -1359,6 +1368,16 @@ def validate_translation_length(source_text: str, translated_text: str,
     return not should_split, percent_diff, should_split
 
 
+def _split_failed_chunk(source_text: str, style: str):
+    """Halves for a failed chunk as ((part1, part2), rejoin), or None if it cannot be split."""
+    part1, part2 = (split_in_two(source_text) if style == 'xml'
+                    else split_text_smartly(source_text))
+    if part1.strip() and part2.strip():
+        return (part1, part2), None
+    halves = split_paragraph_in_two(source_text)
+    return (halves, join_paragraph_halves) if halves else None
+
+
 def translate_chunk(source_lang: str, target_lang: str, source_text: str,
                     outline_text: str, vocab_dict: dict, vocab_entries: list = None,
                     country: str = "", style: str = "text", fast_mode: bool = False,
@@ -1406,17 +1425,49 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
         logger.debug(f"translate_chunk: vocab_dict={vocab_count} terms, vocab_entries={entries_count}, outline_len={len(outline_text) if outline_text else 0}")
     
     # Execute pipeline
-    state = _pipeline.execute(
-        source_lang=source_lang,
-        target_lang=target_lang,
-        source_text=source_text,
-        outline_text=outline_text,
-        vocab_dict=vocab_dict,
-        vocab_entries=vocab_entries,
-        country=country,
-        style=style,
-        fast_mode=fast_mode
-    )
+    try:
+        state = _pipeline.execute(
+            source_lang=source_lang,
+            target_lang=target_lang,
+            source_text=source_text,
+            outline_text=outline_text,
+            vocab_dict=vocab_dict,
+            vocab_entries=vocab_entries,
+            country=country,
+            style=style,
+            fast_mode=fast_mode
+        )
+    except PipelineAborted:
+        raise  # a neighbouring chunk failed: the run stops, nothing to split
+    except Exception as e:
+        # Any failure (truncated output, malformed response, API error): a
+        # retry of the same chunk tends to fail the same way - a model that
+        # looped on an input usually loops on it again - while its halves are
+        # a different input and usually go through. Bounded by MAX_DEPTH and
+        # the call cap.
+        halves = _split_failed_chunk(source_text, style) if depth < MAX_DEPTH else None
+        if halves is None or _llm_call_count[0] >= MAX_LLM_CALLS_PER_CHUNK:
+            raise
+        logger.warning(f"Chunk failed at depth {depth} ({type(e).__name__}: {e}); splitting in two")
+        metrics.log_rechunk(depth, 0.0)
+        (part1, part2), rejoin = halves
+        result1, syn1 = translate_chunk(
+            source_lang, target_lang, part1, outline_text,
+            vocab_dict, vocab_entries, country, style, fast_mode, depth + 1,
+            _llm_call_count=_llm_call_count, candidate_sink=candidate_sink
+        )
+        result2, syn2 = translate_chunk(
+            source_lang, target_lang, part2, outline_text,
+            vocab_dict, vocab_entries, country, style, fast_mode, depth + 1,
+            _llm_call_count=_llm_call_count, candidate_sink=candidate_sink
+        )
+        if not (result1 or "").strip() or not (result2 or "").strip():
+            # Re-raise rather than return "": the caller retries the whole
+            # chunk on an exception, but takes an empty result as final
+            logger.error("RECHUNK FAIL-FAST after error: a half returned empty translation")
+            raise e
+        combined = rejoin(result1, result2) if rejoin else result1 + "\n\n" + result2
+        return combined, " ".join(x for x in (syn1, syn2) if x)
     
     # Validate final translation length
     is_valid, percent_diff, should_split = validate_translation_length(
