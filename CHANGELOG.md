@@ -2,16 +2,30 @@
 
 All notable changes to Sunny Narrator.
 
-## Unreleased
+## v2.9
 
+### Translation
+- New `PARALLEL_STAGES` (default `1`): `2` overlaps the translate stages of the next chunk with the proofread stages of the current one, for the translate and proofread LLMs on separate GPUs (each GPU serves one request at a time, so more than 2 gains nothing). On the logs of real books the translate side (S1 + synopsis) takes 34–38% of the time, so the expected gain is about 1.4–1.5× (ceiling 1.5–1.6×). The price: in this mode the synopsis and the dictionary candidates come from the first translation (S1), not from the final one — the next chunk needs them before the proofreading of the previous one is over. Both pipelines (classic and Calibre) use it; the order of the output, checkpoints (they hold the state as of their own chunk), retries, rechunking and the error handling are unchanged. Not used with `FAST_TRANS` (no proofread stages). The mechanism is `src/stage_pipeline.py`.
+- A chunk that fails in the pipeline (`finish_reason='length'` after the model loops, a malformed response, an API error) is translated as two halves and glued back, in both pipelines; retrying the same input usually loops again. A half that fails re-raises the original error, so the whole-chunk retries still run.
+
+### FAST_TRANS and resume: one behaviour for both pipelines
 - DOCX/EPUB/PDF: `FAST_TRANS` from `.env` now applies to the Calibre pipeline too (it took only `--fast-mode`). Both pipelines read fast mode from one setting; with `FAST_TRANS` unset (default `on`) these books are now translated in fast mode as well — set `FAST_TRANS=false` for the full 5 stages.
 - `--fresh` works for FB2/TXT too: the checkpoint is removed and the book is translated from scratch. In the Calibre pipeline `--fresh` now also drops the chunk checkpoint (it ignored only the finished translation dump), so neither old chunks nor the dictionary entries found by the old run come back.
-- Docs: in `FAST_TRANS` mode the dictionary grows by the same rules (the synopsis stage is kept), but its candidates come from the unproofread first translation, and a translation under 200 characters gets no synopsis. New two-pass recipe (`docs/FAST_TRANS.md`, every README): a fast pass with `DICT_AUTO_SAVE=true`, review of the `.dic`, then `FAST_TRANS=false --fresh`.
-- New `PARALLEL_STAGES` (default `1`): `2` overlaps the translate stages of the next chunk with the proofread stages of the current one, for the translate and proofread LLMs on separate GPUs (each GPU serves one request at a time, so more than 2 gains nothing). On the logs of real books the translate side (S1 + synopsis) takes 34–38% of the time, so the expected gain is about 1.4–1.5× (ceiling 1.5–1.6×). The price: in this mode the synopsis and the dictionary candidates come from the first translation (S1), not from the final one — the next chunk needs them before the proofreading of the previous one is over. Both pipelines (classic and Calibre) use it; the order of the output, checkpoints (they hold the state as of their own chunk), retries, rechunking and the error handling are unchanged. Not used with `FAST_TRANS` (no proofread stages). The mechanism is `src/stage_pipeline.py`.
+- In `FAST_TRANS` mode the dictionary grows by the same rules (the synopsis stage is kept), but its candidates come from the unproofread first translation, and a translation under 200 characters gets no synopsis. New two-pass recipe (`docs/FAST_TRANS.md`, every README): a fast pass with `DICT_AUTO_SAVE=true`, review of the `.dic`, then `FAST_TRANS=false --fresh`.
+
+### Output names
 - Classic pipeline (FB2/TXT): the language marker in output names is taken from `LANG_CODE_MAP`, as in the Calibre pipeline — `TARGET_LANG=russian` now writes `Book_ru_1530-2909.fb2` and `Book_ru_cover.png` (was `Book_russian_…`). A language missing from the map keeps its name, lowercased (`serbian`). A checkpoint left under the old name is still resumed. Both pipelines take the marker from one place (`Config.lang_marker`).
-- The sample book of the tests is `books/eternal-moment.pg.epub`; the default `FILE` is `books/ExampleBook.fb2`, as in `env.sample` (`books/Cargo.fb2` was removed).
+
+### Docker and CI
 - Docker: both images (GPU and CPU) include Calibre (`ebook-convert`) and pandoc (3.12, pinned), so EPUB/DOCX/PDF books are translated in the container too. The GPU image is based on `nvidia/cuda:12.6.3-runtime-ubuntu24.04` (Python 3.12, `torch 2.14.1+cu126`, the project in `/opt/venv`). The CPU image is based on Python 3.11: it was on 3.10, below the project's `requires-python`, and did not build.
-- CI: both images are built and the test suite runs inside each of them (`scripts/docker-ci-test.sh`; the Calibre test must not be skipped there) — in GitLab (`docker-images` job, a privileged runner tagged `docker`) and in GitHub Actions, which then pushes them to GHCR: GPU as `main`, `2.8`, …, CPU as `main-cpu`, `2.8-cpu`, …. Pull requests build and test without pushing. `books/` is mounted read-write, since the translation and its checkpoint are written next to the book. `scripts/test-docker.sh` uses the existing `docker-compose.yml` (it pointed to a missing `docker-compose.gpu.yml`), its checks override the `app.py` entrypoint, and it checks Calibre and pandoc.
+- CI: both images are built and the test suite runs inside each of them (`scripts/docker-ci-test.sh`; the Calibre test must not be skipped there) — in GitLab (`docker-images` job, a privileged runner tagged `docker`) and in GitHub Actions, which then pushes them to GHCR: GPU as `main`, `2.9`, …, CPU as `main-cpu`, `2.9-cpu`, …. Pull requests build and test without pushing. `books/` is mounted read-write, since the translation and its checkpoint are written next to the book. `scripts/test-docker.sh` uses the existing `docker-compose.yml` (it pointed to a missing `docker-compose.gpu.yml`), its checks override the `app.py` entrypoint, and it checks Calibre and pandoc.
+
+### Demo books
+- `demo.sh` translates the demo books one after another into ru, es, fr, pl, pt, tr, zh, each with its own dictionary (`<book>_<lang>.dic`); the log of every run goes to `logs/<book>_<lang>.log`.
+- Translated samples of *The Eternal Moment* in `books/` (ru, es, fr, pl, pt).
+- The sample book of the tests is `books/eternal-moment.pg.epub`; the default `FILE` is `books/ExampleBook.fb2`, as in `env.sample` (`books/Cargo.fb2` was removed).
+
+### Tools
 - New `scripts/clean_dic.py`: cleans a `.dic` into a new file with a report — merges duplicates by the loader's rule (`lexicon.word_key`), normalizes gender synonyms (an unknown value is kept and reported), drops ordinary words by the vectors of the NER model (`--model`, `--keep`) and cut variants; every field is CSV-quoted as needed, so the result loads without losses.
 
 ## v2.8

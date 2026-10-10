@@ -1,7 +1,7 @@
 # Resume after a Crash — Checkpoints
 
-**Version:** 2.8  
-**Updated:** 2026-10-02
+**Version:** 2.9  
+**Updated:** 2026-10-10
 
 ---
 
