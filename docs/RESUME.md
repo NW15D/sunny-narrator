@@ -61,6 +61,12 @@ timestamp in its name (`Book_ru_1530-2909.fb2` / `.epub`).
 
 `--fresh` ignores both and translates the book from scratch.
 
+**`--fresh` in both pipelines.** For FB2/TXT it removes the checkpoint and
+starts over (`…_tmp.fb2` is rewritten). Neither the chunks nor the dictionary
+entries found by the old run come back — e.g. after a fast draft pass, before
+the quality pass with the reviewed dictionary
+([FAST_TRANS.md](FAST_TRANS.md#-two-passes-a-fast-draft-for-the-dictionary-then-the-quality-translation)).
+
 ---
 
 ## 📁 Checkpoint structure (classic)

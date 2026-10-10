@@ -2089,6 +2089,12 @@ def run_pipeline(
     translated_dump_path = f"{stem}{suffix}.translated.md"
     meta_dump_path = f"{stem}{suffix}.meta.json"
 
+    if fresh and os.path.exists(checkpoint_file):
+        # Its chunks and its dictionary entries (session_terms) must not come
+        # back, e.g. a fast draft pass before a quality pass
+        logger.info(f"--fresh: ignoring checkpoint {checkpoint_file}")
+        os.remove(checkpoint_file)
+
     # Resume fast path: a previous run that got all the way through
     # translation but crashed/hung during build_output (pandoc/ebook-convert
     # — see _markdown_to_html_file's docstring for the incident this

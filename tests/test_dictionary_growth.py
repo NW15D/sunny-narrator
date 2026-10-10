@@ -78,3 +78,58 @@ def test_ordinary_words_known_to_spacy_are_not_added_as_terms(tmp_path, monkeypa
 
     text = dic.read_text(encoding='utf-8')
     assert "spidergun = паукопушка, TERM" in text and "starship" not in text
+
+
+
+def test_fast_mode_grows_the_dictionary_like_the_standard_mode(tmp_path, monkeypatch):
+    """FAST_TRANS skips stages 2-4, but the synopsis (the source of the
+    candidates) still runs on the real translate_chunk path and its
+    candidates reach record_dictionary_candidates. Only a new entry is
+    appended; a known one may only get its empty gender filled in
+    (the file-level rules: tests/test_dictionary_coverage.py)."""
+    import src.utils as u
+
+    source = ("Bob walked to the old tower at dawn and looked at the dragon "
+              "sleeping on the hill. Alice followed him with a lantern, and "
+              "together they waited for the sun to rise over the quiet valley "
+              "while the wind moved through the tall grass around them.")
+    draft = "Боб пошёл к старой башне на рассвете. " * 7
+    stages = []
+
+    def fake_complete(role, system_prompt, user_prompt, max_tokens, stage, **kw):
+        stages.append(stage)
+        if stage == u.TranslationStage.SYNOPSIS:
+            return ("Боб и Алиса ждут рассвета.\n<genders>\nBob | Боб | he\n"
+                    "Alice | Алиса | she\n</genders>"), 10
+        return draft, 10
+
+    monkeypatch.setattr(u.config, 'json_mode', False)
+    monkeypatch.setattr(u.llm_service, 'complete', fake_complete)
+    monkeypatch.setattr(u, 'validate_translation_length', lambda *a, **kw: (True, 0.0, False))
+    sink = []
+    u.translate_chunk(source_lang='english', target_lang='russian', source_text=source,
+                      outline_text='', vocab_dict={}, vocab_entries=[], style='text',
+                      fast_mode=True, candidate_sink=sink)
+    assert stages == [u.TranslationStage.INITIAL, u.TranslationStage.SYNOPSIS]
+    assert {c['source'] for c in sink} == {'Bob', 'Alice'}
+
+    book, dic = _setup(tmp_path, monkeypatch, "book.fb2")
+    dic.write_text("dragon = дракон, TERM, , \nAlice = Алиса, PERSON, , \n", encoding='utf-8')
+    before = dic.read_text(encoding='utf-8')
+
+    monkeypatch.setattr(vm.config, 'dict_auto_save', False)
+    manager = vm.get_vocabulary_manager(str(book))
+    manager.load()
+    manager.record_dictionary_candidates(sink)
+    assert 'bob' in manager.vocab, "default: joins the in-memory dictionary"
+    assert dic.read_text(encoding='utf-8') == before, "default: the file is not touched"
+
+    monkeypatch.setattr(vm.config, 'dict_auto_save', True)
+    monkeypatch.setattr(vm, '_vocabulary_manager', None)
+    manager = vm.get_vocabulary_manager(str(book))
+    manager.load()
+    manager.record_dictionary_candidates(sink)
+    lines = dic.read_text(encoding='utf-8').splitlines()
+    assert lines == ["dragon = дракон, TERM, , ",
+                     "Alice = Алиса, PERSON, she, ",  # empty gender filled in, no second line
+                     "Bob = Боб, PERSON, he, "]

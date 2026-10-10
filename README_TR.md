@@ -117,6 +117,8 @@ OUTPUT_FORMAT=fb2
 
 **Hız:** ~2,5 kat daha hızlı (5 yerine 2 aşama)
 
+**💡 Püf noktası — ilk hızlı geçişten sonra iyi bir sözlük:** hızlı çeviriyi `DICT_AUTO_SAVE=true` ile çalıştırın. Özet aşaması hızlı modda da çalışır, bu yüzden yeni adlar ve terimler `.dic` dosyasına eklenir (yalnızca sözlüğün henüz kapsamadıkları; mevcut bir kaydın boş cinsiyet alanı doldurulabilir). Sözlüğü gözden geçirip düzeltin, ardından kitabı `FAST_TRANS=false` ve `--fresh` ile ikinci kez çevirin — tutarlı terminolojiyle kaliteli bir çeviri elde edersiniz. `--fresh`, yarıda kalan hızlı geçişin parçalarının ve terimlerinin geri gelmesini önler. Tüm biçimlerde çalışır (FB2/TXT ve DOCX/EPUB/PDF).
+
 **Ayrıntılar:** [docs/FAST_TRANS.md](docs/FAST_TRANS.md)
 
 ---
@@ -235,7 +237,7 @@ python app.py  # Ctrl+C
 python app.py  # ✓ Resuming from chunk 51/100
 ```
 
-DOCX/EPUB/PDF için `--fresh` kontrol noktasını yok sayar ve baştan başlar.
+`--fresh` kontrol noktasını yok sayar ve baştan başlar (her iki işlem hattı).
 
 **Ayrıntılar:** [docs/RESUME.md](docs/RESUME.md)
 

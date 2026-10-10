@@ -78,7 +78,7 @@ def _restore_signal_handlers():
 @pytest.fixture
 def run_main(monkeypatch):
     def run(book_path, output_format='fb2', translate=None, metadata=_fake_metadata,
-            max_len=300, images_key=''):
+            max_len=300, images_key='', fresh=False):
         monkeypatch.setattr(app.config, 'myfile', str(book_path))
         monkeypatch.setattr(app.config, 'output_format', output_format)
         monkeypatch.setattr(app.config, 'ner_opt', False)
@@ -89,7 +89,7 @@ def run_main(monkeypatch):
         monkeypatch.setattr(app.ta, 'translate_chunk', translate or _fake_translate())
         monkeypatch.setattr(app.ta, 'translate_metadata', metadata)
         monkeypatch.setattr(app.time, 'sleep', lambda s: None)
-        app.main()
+        app.main(fresh=fresh)
     return run
 
 
@@ -183,6 +183,48 @@ def test_interrupted_run_resumes_to_the_same_book(book, run_main, tmp_path):
     body = re.search(r'<body>.*?</body>', _read(out), re.DOTALL).group(0)
     assert body == re.search(r'<body>.*?</body>', _read(expected), re.DOTALL).group(0)
     assert not glob.glob(os.path.join(book.parent, '*.checkpoint.json'))
+
+
+def test_fresh_ignores_the_checkpoint_and_translates_every_chunk(book, run_main, tmp_path):
+    """--fresh: neither the chunks nor the dictionary entries of an
+    interrupted run come back (e.g. a fast draft pass before a quality pass)."""
+    reference = tmp_path / 'reference'
+    reference.mkdir()
+    shutil.copy(book, reference / 'book.fb2')
+    shutil.copy(book.parent / 'book.dic', reference / 'book.dic')
+    full = {'n': 0}
+    translate_all = _fake_translate()
+
+    def counting(*args, **kwargs):
+        full['n'] += 1
+        return translate_all(*args, **kwargs)
+    run_main(reference / 'book.fb2', translate=counting)
+    [expected] = _outputs(reference, 'fb2')
+
+    with pytest.raises(Interrupted):
+        run_main(book, translate=_fake_translate(fail_on=5))
+    [checkpoint] = glob.glob(os.path.join(book.parent, '*.checkpoint.json'))
+    with open(checkpoint, encoding='utf-8') as f:
+        data = json.load(f)
+    data['session_terms'] = [{'source': 'Roses', 'target': 'Отвергнутые розы',
+                              'gender': '', 'category': 'TERM'}]
+    with open(checkpoint, 'w', encoding='utf-8') as f:
+        json.dump(data, f)
+
+    calls = {'n': 0, 'entries': set()}
+    translate = _fake_translate()
+
+    def fresh_run(*args, **kwargs):
+        calls['n'] += 1
+        calls['entries'] |= {e.source for e in kwargs.get('vocab_entries') or []}
+        return translate(*args, **kwargs)
+    run_main(book, translate=fresh_run, fresh=True)
+
+    assert calls['n'] == full['n'], "every chunk is translated again"
+    assert 'Roses' not in calls['entries'], "a term of the old run must not come back"
+    [out] = _outputs(book.parent, 'fb2')
+    body = re.search(r'<body>.*?</body>', _read(out), re.DOTALL).group(0)
+    assert body == re.search(r'<body>.*?</body>', _read(expected), re.DOTALL).group(0)
 
 
 def test_resume_when_every_chunk_was_already_translated(book, run_main, tmp_path):

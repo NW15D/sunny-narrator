@@ -278,6 +278,28 @@ def test_fresh_ignores_existing_dump(tmp_path, monkeypatch):
     assert translate_mock.call_count == 1, "fresh=True must ignore the dump and translate again"
 
 
+def test_fresh_ignores_the_chunk_checkpoint(tmp_path, monkeypatch):
+    """--fresh also drops the chunk checkpoint of an interrupted run, with its
+    translated chunks and dictionary entries (session_terms)."""
+    input_path = tmp_path / "book.epub"
+    input_path.write_bytes(b"fake")
+    checkpoint = tmp_path / "book_ru.checkpoint.json"
+    checkpoint.write_text(json.dumps({"last_chunk": 3, "extra": {"session_terms": [
+        {"source": "Rejected", "target": "Отвергнутый", "gender": "", "category": "TERM"}]}}),
+        encoding='utf-8')
+    seen = {}
+
+    def translate(protected_md, **kwargs):
+        seen['checkpoint_left'] = os.path.exists(kwargs['checkpoint_file'])
+        return "# Глава\n\nПеревод текста"
+    _install_mocks(monkeypatch, translate=translate)
+
+    cp.run_pipeline(str(input_path), output_format="epub", target_lang="russian",
+                    skip_validation=True, fresh=True)
+
+    assert seen == {'checkpoint_left': False}, "translate_chunks must not find the old checkpoint"
+
+
 def test_without_fresh_reuses_a_fresh_dump(tmp_path, monkeypatch):
     """Sanity check for test 6: without fresh=True, the same pre-seeded dump
     IS reused (so test 6 is actually exercising the fresh flag, not just

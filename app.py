@@ -755,8 +755,12 @@ def build_resume_paths(myfile: str, target_lang: str) -> dict:
 # Main Entry Point
 # =============================================================================
 
-def main():
-    """Main translation workflow."""
+def main(fresh: bool = False):
+    """Main translation workflow.
+
+    fresh: ignore the checkpoint of an earlier run and translate from scratch
+    (--fresh, as in the Calibre pipeline).
+    """
     # Graceful shutdown handler. Engine/checkpoint refs are filled later;
     # if a signal arrives before that, there is nothing to save yet.
     _shutdown_state = {"engine": None, "checkpoint_file": None}
@@ -856,6 +860,11 @@ def main():
 
     # Check for existing checkpoint and resume
     resume_from_chunk = 0
+    if fresh and os.path.exists(checkpoint_file):
+        # Its chunks and its dictionary entries (session_terms) must not come
+        # back, e.g. a fast draft pass before a quality pass
+        print(f"--fresh: ignoring checkpoint {checkpoint_file}")
+        os.remove(checkpoint_file)
     if os.path.exists(checkpoint_file):
         print(f"\n{'='*60}")
         print(f"Checkpoint found: {checkpoint_file}")
@@ -1037,11 +1046,12 @@ def cli():
                        help='Max chunk size in chars for DOCX/EPUB/PDF translation (default: MAX_LEN_CHUNK=8192 from config)')
     # Fast mode — shared across both pipelines
     parser.add_argument('--fast-mode', action='store_true',
-                        help='Skip reflection/improve stages (both pipelines)')
-    # Calibre pipeline resume control (see src/calibre_pipeline.py:run_pipeline)
+                        help='Skip reflection/improve/final-edit stages (both pipelines; '
+                             'same as FAST_TRANS=true)')
+    # Resume control — both pipelines
     parser.add_argument('--fresh', action='store_true',
-                        help='DOCX/EPUB/PDF only: ignore any existing translation '
-                             'checkpoint/dump and translate from scratch')
+                        help='Ignore any existing translation checkpoint (and, for '
+                             'DOCX/EPUB/PDF, the translated dump) and translate from scratch')
     # Explicit vocabulary file — both pipelines
     parser.add_argument('--dictionary', type=str, default=None,
                         help='Explicit path to the .dic vocabulary file to use for '
@@ -1148,6 +1158,10 @@ def cli():
 
     input_ext = os.path.splitext(input_file)[1].lower()
 
+    # Fast mode — one setting for both pipelines: FAST_TRANS or --fast-mode
+    if args.fast_mode:
+        config.fast_trans = True
+
     if input_ext in CALIBRE_INPUT_FORMATS:
         # ---- Calibre-based pipeline ----
         # Default output: same as input (when config has classic-only 'fb2')
@@ -1181,7 +1195,7 @@ def cli():
                 source_lang=config.source_lang,
                 target_lang=config.target_lang,
                 country=config.country,
-                fast_mode=args.fast_mode,
+                fast_mode=config.fast_trans,
                 fresh=args.fresh,
                 dict_file=config.dictionary,
                 stats_out=stats,
@@ -1212,15 +1226,13 @@ def cli():
 
     elif input_ext in CLASSIC_INPUT_FORMATS:
         # ---- Classic FB2/TXT pipeline ----
-        if args.fast_mode:
-            config.fast_trans = True
         try:
             config.output_format = resolve_classic_output_format(args.output_format, config.output_format)
         except ValueError as e:
             print(f"Error: {e}")
             sys.exit(1)
         print(f"Output format: {config.output_format}")
-        main()
+        main(fresh=args.fresh)
     else:
         print(f"Error: Unsupported input format: {input_ext}")
         print(f"Supported formats: DOCX, EPUB, PDF (Calibre pipeline), FB2, TXT (Classic pipeline)")

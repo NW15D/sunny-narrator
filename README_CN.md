@@ -107,6 +107,8 @@ OUTPUT_FORMAT=fb2
 
 **速度：** 快约 2.5 倍（2 个阶段而非 5 个）
 
+**💡 小技巧——首轮快速翻译后得到高质量词典：** 以 `DICT_AUTO_SAVE=true` 运行快速翻译。快速模式下摘要阶段仍会运行，因此新的人名和术语会追加到 `.dic`（仅追加词典尚未覆盖的条目；已有条目的空性别字段可能会被填写）。审阅并修改词典后，再用 `FAST_TRANS=false` 和 `--fresh` 第二次翻译全书，即可得到术语一致的高质量译文。`--fresh` 可防止中断的快速翻译的分块和术语被恢复。适用于所有格式（FB2/TXT 和 DOCX/EPUB/PDF）。
+
 **详情：** [docs/FAST_TRANS.md](docs/FAST_TRANS.md)
 
 ---
@@ -225,7 +227,7 @@ python app.py  # Ctrl+C
 python app.py  # ✓ 从第 51/100 块继续
 ```
 
-对于 DOCX/EPUB/PDF，`--fresh` 会忽略检查点并从头开始翻译。
+`--fresh` 会忽略检查点并从头开始翻译（两条流水线均适用）。
 
 **详情：** [docs/RESUME.md](docs/RESUME.md)
 

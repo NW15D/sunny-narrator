@@ -11,7 +11,8 @@
 
 ## 📋 Overview
 
-`FAST_TRANS=true` skips quality control stages to accelerate translation.
+`FAST_TRANS=true` (or `--fast-mode`) skips quality control stages to
+accelerate translation. Both pipelines: FB2/TXT and DOCX/EPUB/PDF.
 
 **Configuration:**
 ```bash
@@ -163,8 +164,52 @@ python app.py
 
 1. **INITIAL (Stage 1)** — Base translation
 2. **SYNOPSIS (Stage 5)** — Context for subsequent chunks
-3. **Vocabulary** — Terminology dictionary
+3. **Vocabulary** — Terminology dictionary, including its growth while translating (see below)
 4. **XML structure** — Preservation of tags
+
+---
+
+## 📖 Dictionary in FAST_TRANS mode
+
+The dictionary grows by the same rules as in the standard mode: the synopsis
+stage (stage 5) is kept, and it is the one that reports new names
+(`<genders>`) and coined terms (`<terms>`). Both pipelines (FB2/TXT and
+DOCX/EPUB/PDF) use the same `record_dictionary_candidates`.
+
+- New entries join the in-memory dictionary at once, so the following chunks
+  of the run use them; a resumed run restores them from the checkpoint.
+- They are written to the `.dic` only with `DICT_AUTO_SAVE=true` (default
+  `false`). A new entry is appended only when the dictionary does not cover it
+  yet: an existing entry, its other case or inflected form and a phrase with a
+  known term are skipped. Existing lines are not removed and their
+  translations are not changed, but an existing entry may get its **empty
+  gender filled in** (and an entry without a category or with `TERM` then
+  becomes `PERSON`). Review those lines too, not only the appended ones.
+
+**Differences from the standard mode:**
+- The synopsis (and its candidates) comes from the first translation, there
+  is no proofreading — the same as with `PARALLEL_STAGES=2`.
+- A translation shorter than 200 characters gets no synopsis, so no
+  candidates.
+
+### 💡 Two passes: a fast draft for the dictionary, then the quality translation
+
+```bash
+# 1. Fast pass: collect names and terms into the .dic
+FAST_TRANS=true DICT_AUTO_SAVE=true python app.py
+
+# 2. Review and fix the .dic (new lines at the end, filled-in genders)
+
+# 3. Quality pass with the reviewed dictionary, from scratch
+FAST_TRANS=false python app.py --fresh
+```
+
+`--fresh` matters in step 3: if the fast pass was interrupted, its checkpoint
+would otherwise be resumed — the already fast-translated chunks would stay in
+the book and the entries found by that pass would come back into the
+in-memory dictionary, including the ones you removed. The same works for every
+input format: `FAST_TRANS` and `--fast-mode` (same as `FAST_TRANS=true`) apply
+to both pipelines.
 
 ---
 

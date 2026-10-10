@@ -107,6 +107,8 @@ OUTPUT_FORMAT=fb2
 
 **Velocidade:** ~2.5x mais rápido (2 estágios em vez de 5)
 
+**💡 Truque — um bom dicionário após a primeira passada rápida:** execute a tradução rápida com `DICT_AUTO_SAVE=true`. A etapa de sinopse continua ativa no modo rápido, então novos nomes e termos são acrescentados ao `.dic` (apenas os que o dicionário ainda não cobre; uma entrada existente pode ter o gênero vazio preenchido). Revise e corrija o dicionário e traduza o livro uma segunda vez com `FAST_TRANS=false` e `--fresh` — uma tradução de qualidade com terminologia consistente. `--fresh` impede que os chunks e termos de uma passada rápida interrompida voltem. Funciona para todos os formatos (FB2/TXT e DOCX/EPUB/PDF).
+
 **Detalhes:** [docs/FAST_TRANS.md](docs/FAST_TRANS.md)
 
 ---
@@ -225,7 +227,7 @@ python app.py  # Ctrl+C
 python app.py  # ✓ Retomando do chunk 51/100
 ```
 
-Para DOCX/EPUB/PDF, `--fresh` ignora o checkpoint e recomeça do zero.
+`--fresh` ignora o checkpoint e recomeça do zero (ambos os pipelines).
 
 **Detalhes:** [docs/RESUME.md](docs/RESUME.md)
 

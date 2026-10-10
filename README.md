@@ -116,6 +116,8 @@ OUTPUT_FORMAT=fb2
 
 **Speed:** ~2.5x faster (2 stages instead of 5)
 
+**💡 Trick — a good dictionary after the first fast pass:** run the fast translation with `DICT_AUTO_SAVE=true`. The synopsis stage still runs in fast mode, so new names and terms are appended to the `.dic` (only those the dictionary does not cover yet; an existing entry may get its empty gender filled in). Review and fix the dictionary, then translate the book a second time with `FAST_TRANS=false` and `--fresh` — a quality translation with consistent terminology. `--fresh` keeps the chunks and terms of an interrupted fast pass from coming back. Works for every format (FB2/TXT and DOCX/EPUB/PDF).
+
 **Details:** [docs/FAST_TRANS.md](docs/FAST_TRANS.md)
 
 ---
@@ -234,7 +236,7 @@ python app.py  # Ctrl+C
 python app.py  # ✓ Resuming from chunk 51/100
 ```
 
-For DOCX/EPUB/PDF, `--fresh` ignores the checkpoint and starts from scratch.
+`--fresh` ignores the checkpoint and starts from scratch (both pipelines).
 
 **Details:** [docs/RESUME.md](docs/RESUME.md)
 
