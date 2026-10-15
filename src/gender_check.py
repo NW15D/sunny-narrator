@@ -251,6 +251,26 @@ def checks_language(target_lang: str) -> bool:
     return code in _ADJ_AGREES and _target_nlp(code) is not None
 
 
+# Where a block of the text ends: a sentence never runs across one. Without
+# it the parser read a chapter heading as the subject of the next paragraph
+# ("### Диана" + "Кингхаммер пришел" -> "Диана пришел").
+_BLOCK_TAG_RE = re.compile(r'(?i)</?(?:p|h[1-6]|title|subtitle|v|stanza|poem|div|li|section|epigraph|'
+                           r'blockquote|cite|text-author|br|empty-line)\b[^>]*>')
+_MD_BLOCK_RE = re.compile(r'\n[ \t]*\n|^[ \t]*#{1,6}[^\n]*$', re.MULTILINE)
+
+
+def _blocks(text: str, masked: str) -> List[tuple]:
+    """(start, end) of the blocks of `text` (paragraphs, headings, verses):
+    split at block tags, Markdown blank lines and heading lines."""
+    cuts = {0, len(text)}
+    for m in _BLOCK_TAG_RE.finditer(text):
+        cuts.update(m.span())
+    for m in _MD_BLOCK_RE.finditer(text):
+        cuts.update(m.span())
+    cuts = sorted(cuts)
+    return [(a, b) for a, b in zip(cuts, cuts[1:]) if masked[a:b].strip()]
+
+
 def _masked(text: str) -> str:
     """`text` with its markup blanked out, offsets kept."""
     chars = list(text)
@@ -379,9 +399,18 @@ def find_gender_issues(text: str, vocab_entries: Iterable[Any], target_lang: str
     nlp = _target_nlp(code)
     if nlp is None:
         return []
+    masked = _masked(text)
+    spans = _blocks(text, masked)
     with _NLP_LOCK:
-        doc = nlp(_masked(text))
+        docs = list(nlp.pipe([masked[a:b] for a, b in spans]))
     issues: Dict[tuple, GenderIssue] = {}
+    for (base, _), doc in zip(spans, docs):
+        _find_in_block(doc, base, heads, code, issues)
+    return list(issues.values())
+
+
+def _find_in_block(doc, base: int, heads: dict, code: str, issues: dict):
+    """The issues of one parsed block (offsets shifted by `base`) into `issues`."""
     for tok in doc:
         if tok.text[:1].islower():
             continue  # a name is capitalized; Hebrew, Arabic, Hindi have no case
@@ -415,9 +444,8 @@ def find_gender_issues(text: str, vocab_entries: Iterable[Any], target_lang: str
         if wrong:
             # the sentence without the blanked markup around it ("<p>")
             words = [t for t in tok.sent if not t.is_space]
-            start, end = words[0].idx, words[-1].idx + len(words[-1].text)
+            start, end = base + words[0].idx, base + words[-1].idx + len(words[-1].text)
             key = (name, start)
             if key not in issues:
                 issues[key] = GenderIssue(name, gender, [], start, end)
             issues[key].words += [w for w in wrong if w not in issues[key].words]
-    return list(issues.values())

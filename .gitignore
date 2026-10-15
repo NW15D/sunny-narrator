@@ -172,3 +172,6 @@ cython_debug/
 
 # Git worktrees
 .worktrees/
+
+# Run logs, audits, prompt evaluations (app.py audit/eval, demo.sh): local data
+logs/

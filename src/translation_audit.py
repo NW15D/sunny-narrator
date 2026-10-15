@@ -67,7 +67,7 @@ def audit(book: Path, dic: Path, lang: str, samples: int) -> dict:
         for part in pieces(doc):
             mixed.update(script_guard.find_mixed_words(part, lang, targets))
             for issue in gender_check.find_gender_issues(part, entries, lang):
-                sentence = re.sub(r'<[^>]+>', '', part[issue.start:issue.end])
+                sentence = re.sub(r'<[^>]+>', ' ', part[issue.start:issue.end])
                 issues.append({'name': issue.name, 'gender': issue.gender, 'words': issue.words,
                                'sentence': ' '.join(sentence.split())[:300]})
     return {

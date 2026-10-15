@@ -449,3 +449,17 @@ def test_a_fix_may_only_change_endings_of_all_flagged_words():
     assert not u._gender_fix_ok(old, "Вашти сказал, что Куно устала.", [issue], context)  # another word
     assert not u._gender_fix_ok(old, "Вашти ответила, что Куно устал.", [issue], context)  # a new word
     assert not u._gender_fix_ok(old, "Вашти сказала, что устал Куно.", [issue], context)   # reordered
+
+
+@needs["ru"]
+@pytest.mark.parametrize("text", [
+    "<h3>Диана</h3><p>Кингхаммер пришел в движение, медленно выходя из построения.</p>",
+    "### Диана\n\nКомлинк был открыт, и Хоуг передал файлы.",
+])
+def test_a_heading_is_never_the_subject_of_the_next_paragraph(text):
+    """The Warship, ru: the chapter heading "Диана" read as the subject of
+    "Кингхаммер пришел" (the sentence ran across the block)."""
+    diana = VocabEntry(source="Diana", target="Диана", category="PERSON", gender="she")
+    assert gc.find_gender_issues(text, [diana], "russian") == []
+    issues = gc.find_gender_issues("<h3>Глава</h3><p>Диана пришел домой.</p>", [diana], "russian")
+    assert [i.words for i in issues] == [["пришел"]]
