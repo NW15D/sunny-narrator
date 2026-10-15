@@ -169,6 +169,15 @@ Alice = Alice, PERSON, she, Ana karakter
 
 **Diller.** Sözlük **kaynak** dilin spaCy modeliyle oluşturulur ve denetlenir (`NERMODEL`, `SOURCE_LANG`'a göre seçilir): `python -m spacy download en_core_web_lg` (İngilizce), `ru_core_news_lg`, `de_core_news_lg`, `fr_core_news_lg`, `es_core_news_lg`, `it_core_news_lg`, `pt_core_news_lg`, `pl_core_news_lg`, `uk_core_news_lg`, `ko_core_news_lg`, `ja_core_news_lg`, `zh_core_web_lg`; diğer diller `xx_ent_wiki_sm` kullanır (yalnızca adlar, zamirlerden cinsiyet yok). **Çevirideki** cinsiyet denetimi hedef dilin modelini gerektirir (`ru_core_news_sm`, `pl_core_news_sm`, `fr_core_news_sm`, …). Çince, Japonca ve Korece zamirlerin cinsiyeti yazılışlarından okunur; zamirleri cinsiyetsiz bir dildeki (Türkçe, Fince, Macarca) kitap cinsiyet vermez — elle girin.
 
+### Bir seriyi çevirmeden (veya yeniden çevirmeden) önce
+
+1. Sözlüğün yedeğini alın: `cp series.dic series.dic.bak`.
+2. Temizleyin: `python app.py dict clean series.dic` — raporu okuyun, katıldıklarınızı aktarın.
+3. Her kitapla, her biri kendi dosyasına olacak şekilde denetleyin: `python app.py dict review book1.epub --dic series.dic -o series.book1.reviewed.dic` (book2 vb. için aynı). Kitapların uzlaştığını aktarın; gerisine elle karar verin — önce `gender conflict` ve `gender not sure` bölümleri.
+4. Hiçbir aracın çözemeyeceğini elle düzeltin: adı hedef dilde eril bir isim olan kadın karakter (`Client` → `Клиентка`?), PERSON olarak işaretlenmiş bir tür veya unvan (→ `TERM`), `it`/`he`/`they` arasında gidip gelen cinsiyet.
+5. Kitapları seri sırasıyla `DICTIONARY=series.dic`, `DICT_AUTO_SAVE=false`, `--fresh` ile çevirin. İlk parçadan önce sözlük o kitaba göre denetlenir; kesin düzeltmeler yalnızca o çalışmaya uygulanır.
+6. Her kitaptan sonra, bir sonrakinden önce: çalışma raporunu (*The translation disagrees with the dictionary*, *Genders filled in from the synopsis*, *Words in two alphabets*), `<kitap>.dictcheck.txt` ve `series.<kitap>.reviewed.dic` dosyalarını okuyun, doğru olanı `series.dic`'e aktarın. Eski çeviriyle karşılaştırın: `python app.py audit … --compare …`.
+
 ---
 
 ## 🈶 CJK Dilleri (Korece, Japonca, Çince)

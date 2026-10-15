@@ -159,6 +159,15 @@ Alice = Алиса, PERSON, she, Personagem principal
 
 **Idiomas.** O dicionário é construído e verificado com o modelo spaCy do idioma de **origem** (`NERMODEL`, escolhido por `SOURCE_LANG`): `python -m spacy download en_core_web_lg` (inglês), `ru_core_news_lg`, `de_core_news_lg`, `fr_core_news_lg`, `es_core_news_lg`, `it_core_news_lg`, `pt_core_news_lg`, `pl_core_news_lg`, `uk_core_news_lg`, `ko_core_news_lg`, `ja_core_news_lg`, `zh_core_web_lg`; os demais idiomas usam `xx_ent_wiki_sm` (só nomes, sem gênero pelos pronomes). A verificação de gênero da **tradução** precisa do modelo do idioma de destino (`ru_core_news_sm`, `pl_core_news_sm`, `fr_core_news_sm`, …). O gênero dos pronomes em chinês, japonês e coreano é lido pela grafia; um livro num idioma sem pronomes com gênero (turco, finlandês, húngaro) não fornece gênero — preencha à mão.
 
+### Antes de traduzir (ou retraduzir) uma série
+
+1. Faça uma cópia do dicionário: `cp series.dic series.dic.bak`.
+2. Limpe-o: `python app.py dict clean series.dic` — leia o relatório e aproveite o que concordar.
+3. Verifique-o contra cada livro, cada um em seu próprio arquivo: `python app.py dict review book1.epub --dic series.dic -o series.book1.reviewed.dic` (o mesmo para book2, …). Aproveite aquilo em que os livros concordam; decida o resto à mão — primeiro as seções `gender conflict` e `gender not sure`.
+4. Corrija à mão o que nenhuma ferramenta resolve: uma personagem cujo nome é um substantivo masculino no idioma de destino (`Client` → `Клиентка`?), uma espécie ou título marcado como PERSON (→ `TERM`), um gênero que oscila entre `it`/`he`/`they`.
+5. Traduza os livros na ordem da série com `DICTIONARY=series.dic`, `DICT_AUTO_SAVE=false`, `--fresh`. Antes do primeiro chunk o dicionário é verificado contra aquele livro; as correções seguras valem só para aquela execução.
+6. Depois de cada livro, antes do próximo: leia o relatório da execução (*The translation disagrees with the dictionary*, *Genders filled in from the synopsis*, *Words in two alphabets*), `<livro>.dictcheck.txt` e `series.<livro>.reviewed.dic`, e passe o que estiver certo para `series.dic`. Compare com uma tradução antiga: `python app.py audit … --compare …`.
+
 ---
 
 ## 🈶 Idiomas CJK (coreano, japonês, chinês)

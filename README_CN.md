@@ -159,6 +159,15 @@ Alice = Алиса, PERSON, she, 主角
 
 **语言。** 词典使用**源**语言的 spaCy 模型构建和检查（`NERMODEL`，按 `SOURCE_LANG` 选择）：`python -m spacy download en_core_web_lg`（英语）、`ru_core_news_lg`、`de_core_news_lg`、`fr_core_news_lg`、`es_core_news_lg`、`it_core_news_lg`、`pt_core_news_lg`、`pl_core_news_lg`、`uk_core_news_lg`、`ko_core_news_lg`、`ja_core_news_lg`、`zh_core_web_lg`；其他语言使用 `xx_ent_wiki_sm`（只有名称，无法通过代词判断性别）。检查**译文**中的性别需要目标语言的模型（`ru_core_news_sm`、`pl_core_news_sm`、`fr_core_news_sm` 等）。中文、日语和韩语代词的性别按写法判断；代词没有性别的语言（土耳其语、芬兰语、匈牙利语）写成的书无法提供性别——请手动填写。
 
+### 翻译（或重新翻译）系列图书之前
+
+1. 备份词典：`cp series.dic series.dic.bak`。
+2. 清理：`python app.py dict clean series.dic` —— 阅读报告，采纳你同意的部分。
+3. 对照每一本书检查，每本书单独输出：`python app.py dict review book1.epub --dic series.dic -o series.book1.reviewed.dic`（book2 等同理）。采纳各书一致的结果；其余手动决定 —— 先看 `gender conflict` 和 `gender not sure` 部分。
+4. 手动修正工具无法判断的情况：名字在目标语言中是阳性名词的女性角色（`Client` → `Клиентка`？）、被标为 PERSON 的物种或头衔（→ `TERM`）、在 `it`/`he`/`they` 之间跳动的性别。
+5. 按系列顺序翻译各书，使用 `DICTIONARY=series.dic`、`DICT_AUTO_SAVE=false`、`--fresh`。第一个分块之前会对照该书检查词典；可靠的修正只作用于本次运行。
+6. 每本书之后、下一本之前：阅读运行报告（*The translation disagrees with the dictionary*、*Genders filled in from the synopsis*、*Words in two alphabets*）、`<书名>.dictcheck.txt` 和 `series.<书名>.reviewed.dic`，把正确的内容写入 `series.dic`。与旧译文比较：`python app.py audit … --compare …`。
+
 ---
 
 ## 🈶 CJK 语言（韩语、日语、中文）

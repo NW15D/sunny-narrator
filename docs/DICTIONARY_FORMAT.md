@@ -303,6 +303,10 @@ So the next book starts from `series.dic` as you left it. To carry the
 findings of a book over to the next ones, take its reviewed copy (or the lines
 you agree with) into `series.dic`.
 
+Step by step before translating or retranslating a series: the README,
+section *Vocabulary* → *Before translating (or retranslating) a series* (in
+every README language).
+
 ## Dictionary commands
 
 All of them write next to their input and never change the input itself:

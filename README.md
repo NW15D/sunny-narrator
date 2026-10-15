@@ -168,6 +168,15 @@ Alice = Алиса, PERSON, she, Main character
 
 **Languages.** The dictionary is built and checked with the spaCy model of the **source** language (`NERMODEL`, chosen by `SOURCE_LANG`): `python -m spacy download en_core_web_lg` (English), `ru_core_news_lg`, `de_core_news_lg`, `fr_core_news_lg`, `es_core_news_lg`, `it_core_news_lg`, `pt_core_news_lg`, `pl_core_news_lg`, `uk_core_news_lg`, `ko_core_news_lg`, `ja_core_news_lg`, `zh_core_web_lg`; any other language uses `xx_ent_wiki_sm` (names only, no genders from pronouns). The gender check of the **translation** needs the model of the target language (`ru_core_news_sm`, `pl_core_news_sm`, `fr_core_news_sm`, …). Chinese, Japanese and Korean pronoun genders are read by their form; a book in a language without gendered pronouns (Turkish, Finnish, Hungarian) gives no genders — set them by hand.
 
+### Before translating (or retranslating) a series
+
+1. Back up the dictionary: `cp series.dic series.dic.bak`.
+2. Clean it: `python app.py dict clean series.dic` — read the report, take over what you agree with.
+3. Check it against every book, each into its own file: `python app.py dict review book1.epub --dic series.dic -o series.book1.reviewed.dic` (the same for book2, …). Take over what the books agree on; decide the rest by hand — the `gender conflict` and `gender not sure` sections first.
+4. Fix by hand what no tool can: a female character whose name is a masculine noun in the target language (`Client` → `Клиентка`?), a species or a title marked PERSON (→ `TERM`), a gender that jumps between `it`/`he`/`they`.
+5. Translate the books in series order with `DICTIONARY=series.dic`, `DICT_AUTO_SAVE=false`, `--fresh`. Before the first chunk the dictionary is checked against that book; the sure fixes apply to that run only.
+6. After each book, before the next one: read the run report (*The translation disagrees with the dictionary*, *Genders filled in from the synopsis*, *Words in two alphabets*), `<book>.dictcheck.txt` and `series.<book>.reviewed.dic`, and take over what is right into `series.dic`. Compare with an older translation: `python app.py audit … --compare …`.
+
 ---
 
 ## 🈶 CJK Languages (Korean, Japanese, Chinese)

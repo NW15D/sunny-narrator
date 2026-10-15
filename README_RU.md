@@ -159,6 +159,15 @@ Alice = Алиса, PERSON, she, Главный персонаж
 
 **Языки.** Словарь строится и проверяется spaCy-моделью **исходного** языка (`NERMODEL`, выбирается по `SOURCE_LANG`): `python -m spacy download en_core_web_lg` (английский), `ru_core_news_lg`, `de_core_news_lg`, `fr_core_news_lg`, `es_core_news_lg`, `it_core_news_lg`, `pt_core_news_lg`, `pl_core_news_lg`, `uk_core_news_lg`, `ko_core_news_lg`, `ja_core_news_lg`, `zh_core_web_lg`; для остальных языков — `xx_ent_wiki_sm` (только имена, без пола по местоимениям). Для проверки пола в **переводе** нужна модель языка перевода (`ru_core_news_sm`, `pl_core_news_sm`, `fr_core_news_sm`, …). Род местоимений китайского, японского и корейского определяется по написанию; книга на языке без родовых местоимений (турецкий, финский, венгерский) пола не даёт — укажите его вручную.
 
+### Перед переводом (или повторным переводом) серии
+
+1. Сохраните копию словаря: `cp series.dic series.dic.bak`.
+2. Почистите: `python app.py dict clean series.dic` — прочитайте отчёт, перенесите согласное.
+3. Сверьте с каждой книгой, каждую в свой файл: `python app.py dict review book1.epub --dic series.dic -o series.book1.reviewed.dic` (так же для book2, …). Перенесите то, в чём книги согласны; остальное решите вручную — в первую очередь разделы `gender conflict` и `gender not sure`.
+4. Вручную исправьте то, что не решит ни один инструмент: персонаж-женщина, чьё имя в языке перевода — существительное мужского рода (`Client` → `Клиентка`?), вид или должность с категорией PERSON (→ `TERM`), пол, который «прыгает» между `it`/`he`/`they`.
+5. Переводите книги по порядку серии с `DICTIONARY=series.dic`, `DICT_AUTO_SAVE=false`, `--fresh`. Перед первым чанком словарь проверяется по этой книге; уверенные исправления действуют только на этот запуск.
+6. После каждой книги, до следующей: прочитайте отчёт запуска (*The translation disagrees with the dictionary*, *Genders filled in from the synopsis*, *Words in two alphabets*), `<книга>.dictcheck.txt` и `series.<книга>.reviewed.dic` и перенесите верное в `series.dic`. Сравните со старым переводом: `python app.py audit … --compare …`.
+
 ---
 
 ## 🈶 CJK-языки (корейский, японский, китайский)
