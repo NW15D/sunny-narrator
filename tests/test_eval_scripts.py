@@ -27,8 +27,8 @@ def test_audit_counts_mixed_words_gender_errors_and_missing_genders(tmp_path):
     dic = tmp_path / "book_ru.dic"
     dic.write_text(DIC, encoding="utf-8")
     report = translation_audit.audit(book, dic, "russian", samples=5)
-    assert report["mixed_words"] == 3 and report["mixed_fixable"] == 2
-    assert report["unfixable"] == ["centralные"]
+    assert report["mixed_words"] == 3
+    assert {w for w, _ in report["mixed_top"]} == {"dошло", "Gорода", "centralные"}
     assert report["gender_issues"] == 1 and report["gender_samples"][0]["words"] == ["сказал"]
     assert report["persons_without_gender"] == ["Kuno"]
 
@@ -66,3 +66,58 @@ def test_prompt_eval_runs_the_pipeline_on_the_chosen_passages(tmp_path, monkeypa
     assert result["translation"] == "Вашти сказала, что устала. Она уснула."
     assert data["summary"]["gender_issues_left"] == 0
     assert out.with_suffix(".md").exists()
+
+
+@needs_ru
+def test_prompt_eval_variants_change_only_this_run(tmp_path, monkeypatch):
+    """--prompts / --no-glossary / --no-substitution: the A/B switches that
+    look for the cause of a regression (words in two alphabets)."""
+    import src.utils as u
+    book = tmp_path / "book.txt"
+    book.write_text("Vashti met Kuno in the Machine. She was tired.\n\n", encoding="utf-8")
+    dic = tmp_path / "book_ru.dic"
+    dic.write_text(DIC, encoding="utf-8")
+    old_prompts = tmp_path / "old.json"
+    # the old reflection.system needed {source_lang}, which the code no longer passes
+    old_prompts.write_text('{"initial_translation": {"user_text": "OLD {source_text}", '
+                           '"system": "OLD {source_lang}"}}', encoding="utf-8")
+    prompts = []
+
+    def fake_complete(role, system_prompt, user_prompt, max_tokens=0, stage=None, **kw):
+        prompts.append((stage, user_prompt))
+        return "<ttext>Вашти встретила Куно. Она устала.</ttext>", 5
+
+    monkeypatch.setattr(u.llm_service, 'complete', fake_complete)
+    for name, value in (('json_mode', False), ('fast_trans', True), ('gender_check', 'off'),
+                        ('source_lang', 'english'), ('target_lang', 'russian')):
+        monkeypatch.setattr(u.config, name, value)
+    monkeypatch.setattr(u, 'validate_translation_length', lambda *a, **kw: (True, 0.0, False))
+    monkeypatch.setattr(u.config, 'prompts', {k: dict(v) if isinstance(v, dict) else v
+                                              for k, v in u.config.prompts.items()})
+    for name in ('_format_vocab_for_prompt', 'replace_vocab_in_text'):
+        monkeypatch.setattr(u, name, getattr(u, name))  # restored after the test
+    monkeypatch.setattr(u.config, 'get_prompt', u.config.get_prompt)
+
+    def run(*flags):
+        prompts.clear()
+        out = tmp_path / f"run{len(flags)}.json"
+        monkeypatch.setattr(sys, 'argv', ["prompt_eval.py", str(book), "--dic", str(dic), "--count", "1",
+                                          "--size", "40", "--out", str(out), *flags])
+        prompt_eval.main()
+        return next(p for s, p in prompts if s == u.TranslationStage.INITIAL), json.loads(
+            out.read_text(encoding="utf-8"))["summary"]
+
+    prompt, summary = run()
+    assert "Machine = Машина" in prompt and "Машина" in prompt.split("<source")[1]
+    assert summary["variant"] == {'prompts': None, 'prompts_skipped': [], 'no_glossary': False,
+                                  'no_substitution': False}
+    prompt, summary = run("--no-glossary", "--no-substitution")
+    assert "Machine = Машина" not in prompt and "the Machine" in prompt
+    assert summary["variant"]["no_glossary"] and summary["variant"]["no_substitution"]
+    prompt, summary = run("--prompts", str(old_prompts))
+    assert prompt.startswith("OLD ")
+    assert summary["variant"]["prompts_skipped"] == ["initial_translation.system"]
+
+    monkeypatch.setattr(u.config, 'json_mode', True)
+    with pytest.raises(SystemExit, match="JSON_MODE=false"):
+        run("--no-glossary")

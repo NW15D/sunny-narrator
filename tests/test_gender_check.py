@@ -220,10 +220,24 @@ def test_warn_and_off_make_no_llm_call(monkeypatch):
         assert [c[0] for c in calls] == [u.TranslationStage.INITIAL]
 
 
-def test_mixed_alphabet_words_are_fixed_at_every_text_stage(monkeypatch):
+def test_mixed_alphabet_words_are_logged_not_changed(monkeypatch, caplog):
+    before = u.metrics.mixed_words
     text, _ = _run(monkeypatch, {u.TranslationStage.INITIAL: "<ttext>Куно dошёл до Gорода.</ttext>"},
                    fast_mode=True, gender_check="off")
-    assert text == "Куно дошёл до Города."
+    assert text == "Куно dошёл до Gорода."
+    assert u.metrics.mixed_words - before == 2
+    assert "Words in two alphabets: dошёл, Gорода" in caplog.text
+
+
+def test_synopsis_candidates_in_two_alphabets_do_not_enter_the_dictionary(monkeypatch):
+    def fake_complete(role, system_prompt, user_prompt, max_tokens=0, stage=None, **kw):
+        return ("Куно и Вашти.\n<genders>\nKuno | Kуно | he\nVashti | Вашти | she\n</genders>"), 5
+
+    monkeypatch.setattr(u.llm_service, 'complete', fake_complete)
+    context = u.TranslationContext(source_lang="english", target_lang="russian",
+                                   source_text="Kuno and Vashti met.")
+    result = u._pipeline.generate_synopsis(context, "Куно и Вашти встретились. " * 10)
+    assert [c['source'] for c in result.metadata['dictionary_candidates']] == ["Vashti"]
 
 
 def test_fast_trans_is_off_by_default(monkeypatch):

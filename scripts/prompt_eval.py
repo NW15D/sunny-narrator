@@ -20,6 +20,20 @@
    алфавитах и ошибки пола, плюс счётчики пайплайна (сколько исправлено по ходу).
 4. Сохраняет JSON (для `--compare`) и рядом `.md` с исходником и переводом
    каждого отрывка — местоимения через несколько предложений проверяйте глазами.
+
+Поиск причины (A/B на одних и тех же отрывках; меняется только этот прогон):
+    --prompts FILE      промпты из другого файла поверх текущих, например версия
+                        до переписывания 2026-10-03:
+                        git show 9c46d69^:src/prompts.json > /tmp/prompts_old.json
+    --no-glossary       без <vocabulary> в промптах (перевод, reflection)
+    --no-substitution   без подстановки переводов терминов в исходник
+
+Пример: откуда слова в двух алфавитах («dошло»)
+    E="python scripts/prompt_eval.py BOOK --dic DIC --count 8"
+    $E --out logs/eval/now.json
+    $E --no-glossary --out logs/eval/no_glossary.json --compare logs/eval/now.json
+    $E --no-substitution --out logs/eval/no_subst.json --compare logs/eval/now.json
+    $E --prompts /tmp/prompts_old.json --out logs/eval/old.json --compare logs/eval/now.json
 """
 import argparse
 import json
@@ -70,6 +84,46 @@ def pick(chunks: list, names: list, source_lang: str, count: int) -> list:
     return sorted(i for _, i in sorted(scored)[:count])
 
 
+def overlay_prompts(other: dict) -> set:
+    """Use the templates of `other` instead of the current ones. Each one is
+    formatted with the variables the code really passes; one that needs
+    another (the old reflection.system used {source_lang}) would reach the
+    model unformatted, so the current template is used for it and its name
+    is added to the returned set (filled while the run goes)."""
+    overlay = {(category, key): template for category, templates in other.items()
+               if isinstance(templates, dict) for key, template in templates.items()}
+    original, skipped = utils.config.get_prompt, set()
+
+    def get_prompt(category, key, **kwargs):
+        template = overlay.get((category, key))
+        if template is not None:
+            try:
+                return template.format(**kwargs)
+            except (KeyError, IndexError, ValueError):
+                skipped.add(f"{category}.{key}")
+        return original(category, key, **kwargs)
+
+    utils.config.get_prompt = get_prompt
+    return skipped
+
+
+def apply_variant(args) -> dict:
+    """The --prompts / --no-glossary / --no-substitution changes, for this
+    process only; returns them for the summary."""
+    skipped = set()
+    if args.prompts:
+        skipped = overlay_prompts(json.loads(args.prompts.read_text(encoding='utf-8')))
+    if args.no_glossary:
+        if utils.config.json_mode:
+            sys.exit("--no-glossary works with JSON_MODE=false: in JSON mode the glossary is "
+                     "the \"vocabulary\" of the input, not a prompt line")
+        utils._format_vocab_for_prompt = lambda *a, **kw: ""
+    if args.no_substitution:
+        utils.replace_vocab_in_text = lambda text, *a, **kw: text
+    return {'prompts': str(args.prompts) if args.prompts else None, 'prompts_skipped': skipped,
+            'no_glossary': args.no_glossary, 'no_substitution': args.no_substitution}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     parser.add_argument('book', type=Path, help='исходник (.epub, .fb2, .txt, .md)')
@@ -79,20 +133,32 @@ def main():
     parser.add_argument('--size', type=int, default=2000, help='длина отрывка, символов')
     parser.add_argument('--out', type=Path, required=True, help='JSON результата (рядом — .md)')
     parser.add_argument('--compare', type=Path, help='JSON прошлого прогона')
+    parser.add_argument('--prompts', type=Path, help='промпты из этого файла поверх src/prompts.json')
+    parser.add_argument('--no-glossary', action='store_true', help='без <vocabulary> в промптах')
+    parser.add_argument('--no-substitution', action='store_true',
+                        help='без подстановки переводов терминов в исходник')
     args = parser.parse_args()
 
     config = utils.config
+    variant = apply_variant(args)
     entries = read_dic(args.dic)
-    persons = [e for e in entries if e.category.upper() == 'PERSON' and e.gender in gender_check.GENDERS]
-    names = ([n.strip() for n in args.names.split(',') if n.strip()] if args.names
-             else [e.source for e in persons])
+    persons = [e for e in entries if e.category.upper() == 'PERSON']
+    gendered = [e for e in persons if e.gender in gender_check.GENDERS]
+    if args.names:
+        names = [n.strip() for n in args.names.split(',') if n.strip()]
+    else:
+        if not gendered:
+            print("В словаре нет персонажей с полом: отрывки выбраны по всем персонажам, "
+                  "ошибки пола не проверяются (заполните третье поле he/she)")
+        names = [e.source for e in (gendered or persons)]
     if not names:
-        sys.exit("В словаре нет персонажей с полом: заполните третье поле (he/she) или задайте --names")
+        sys.exit("В словаре нет персонажей (PERSON): задайте --names")
 
     chunks = passages(args.book, args.size)
     chosen = pick(chunks, names, config.source_lang, args.count)
     print(f"{config.source_lang} -> {config.target_lang}, FAST_TRANS={config.fast_trans}, "
-          f"GENDER_CHECK={config.gender_check}; отрывков: {len(chosen)} из {len(chunks)}")
+          f"GENDER_CHECK={config.gender_check}; отрывков: {len(chosen)} из {len(chunks)}; "
+          f"вариант: {variant}")
 
     results = []
     for n, i in enumerate(chosen, 1):
@@ -121,9 +187,10 @@ def main():
         'gender_check': config.gender_check,
         'model_translate': config.model_translate, 'model_proofread': config.model_proofread,
         'passages': [r['index'] for r in results],
-        'mixed_words_left': sum(len(r['mixed_words']) for r in results),
+        # the skipped templates are known only after the run
+        'variant': dict(variant, prompts_skipped=sorted(variant['prompts_skipped'])),
+        'mixed_words': sum(len(r['mixed_words']) for r in results),
         'gender_issues_left': sum(len(r['gender_issues']) for r in results),
-        'mixed_words_fixed_in_pipeline': pipeline['script_fixes'],
         'gender_issues_found_in_pipeline': pipeline['gender_issues'],
         'gender_issues_fixed_in_pipeline': pipeline['gender_fixed'],
         'seconds': round(sum(r['seconds'] for r in results), 1),
@@ -141,15 +208,19 @@ def main():
         previous = json.loads(args.compare.read_text(encoding='utf-8'))['summary']
         if previous.get('passages') != summary['passages']:
             print("ВНИМАНИЕ: отрывки другие, чем в сравниваемом прогоне — сравнение неточное")
+        print(f"Прошлый прогон: {previous.get('variant')}")
     print()
     for key, value in summary.items():
-        if key == 'passages':
+        if key in ('passages', 'variant'):
             continue
         line = f"{key}: {value}"
         if previous is not None and isinstance(value, (int, float)) and not isinstance(value, bool) \
                 and key in previous:
             line += f"  (было {previous[key]})"
         print(line)
+    if summary['variant']['prompts_skipped']:
+        print("--prompts: эти шаблоны требуют того, что код больше не передаёт, взяты текущие: "
+              + ", ".join(summary['variant']['prompts_skipped']))
     print(f"\nСохранено: {args.out}, переводы для чтения: {md}")
 
 

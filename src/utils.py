@@ -76,21 +76,16 @@ class TranslationMetrics:
         self.language_mismatch_retries = 0
         self.successful_translations = 0
         self.failed_translations = 0
-        self.script_fixes = 0
-        self.script_unfixed = 0
+        self.mixed_words = 0
         self.gender_issues = 0
         self.gender_fixed = 0
 
-    def log_script(self, stage: str, fixes: list, unfixed: list):
-        """Words written in two alphabets: fixed (INFO), left as they are (WARNING)."""
+    def log_mixed_words(self, words: list):
+        """Words of the final translation written in two alphabets ("dошло"):
+        logged, not fixed (script_guard)."""
         with self._lock:
-            self.script_fixes += len(fixes)
-            self.script_unfixed += len(unfixed)
-        if fixes:
-            logger.info(f"[{stage}] mixed-alphabet words fixed: "
-                        + ", ".join(f"{old}→{new}" for old, new in fixes))
-        if unfixed:
-            logger.warning(f"[{stage}] mixed-alphabet words left as they are: {', '.join(unfixed)}")
+            self.mixed_words += len(words)
+        logger.warning(f"Words in two alphabets: {', '.join(words)}")
 
     def log_gender(self, found: int, fixed: int):
         with self._lock:
@@ -140,8 +135,7 @@ class TranslationMetrics:
             "retry_percentage": (self.retry_tokens / total) * 100,
             "rechunk_count": self.rechunk_count,
             "language_mismatch_retries": self.language_mismatch_retries,
-            "script_fixes": self.script_fixes,
-            "script_unfixed": self.script_unfixed,
+            "mixed_words": self.mixed_words,
             "gender_issues": self.gender_issues,
             "gender_fixed": self.gender_fixed,
         }
@@ -159,8 +153,7 @@ class TranslationMetrics:
         logger.info(f"Retry tokens: {report['retry_tokens']:,} ({report['retry_percentage']:.1f}%)")
         logger.info(f"Rechunk events: {report['rechunk_count']}")
         logger.info(f"Language mismatch retries: {report['language_mismatch_retries']}")
-        logger.info(f"Mixed-alphabet words: {report['script_fixes']} fixed, "
-                    f"{report['script_unfixed']} left")
+        logger.info(f"Words in two alphabets: {report['mixed_words']}")
         logger.info(f"Gender errors: {report['gender_issues']} found, {report['gender_fixed']} fixed")
         logger.info("=" * 60)
 
@@ -780,25 +773,13 @@ def _dictionary_targets(context: TranslationContext) -> List[str]:
     return [t for t in targets + list((context.vocab_dict or {}).values()) if t]
 
 
-def _guard_script(text: str, context: TranslationContext, stage: str) -> str:
-    """A stage's output with its mixed-alphabet words ("dошло") put back
-    into the target alphabet (script_guard). The words that stay mixed are
-    reported once, for the final text (_report_mixed_words)."""
-    if not text:
-        return text
-    fixed, fixes, unfixed = script_guard.fix_mixed_script(text, context.target_lang,
-                                                          _dictionary_targets(context))
-    if fixes:
-        metrics.log_script(stage, fixes, [])
-    if unfixed:
-        logger.debug(f"[{stage}] mixed-alphabet words left: {unfixed}")
-    return fixed
-
-
-def _report_mixed_words(text: str, context: TranslationContext):
-    unfixed = script_guard.find_mixed_words(text, context.target_lang, _dictionary_targets(context))
-    if unfixed:
-        metrics.log_script("final", [], unfixed)
+def _note_mixed_words(text: str, context: TranslationContext, stage: str):
+    """Words of a stage's output written in two alphabets, for the log: the
+    stage that brought one in points to its cause (INFO; the metric counts
+    the accepted translation of the chunk only, translate_chunk)."""
+    words = script_guard.find_mixed_words(text, context.target_lang, _dictionary_targets(context))
+    if words:
+        logger.info(f"[{stage}] words in two alphabets: {', '.join(words)}")
 
 
 _MAX_GENDER_FIXES = 12   # sentences per GENDER call
@@ -838,6 +819,10 @@ def _gender_fix_ok(old: str, new: str, issues: List[Any], context: TranslationCo
     changed = sum(max(i2 - i1, j2 - j1) for tag, i1, i2, j1, j2 in
                   difflib.SequenceMatcher(None, old_words, new_words).get_opcodes() if tag != 'equal')
     if changed > max(3, 2 * sum(len(i.words) for i in issues)):
+        return False
+    targets = _dictionary_targets(context)
+    if len(script_guard.find_mixed_words(new, context.target_lang, targets)) > \
+            len(script_guard.find_mixed_words(old, context.target_lang, targets)):
         return False
     names = {i.name for i in issues}
     return not any(i.name in names for i in
@@ -1006,8 +991,7 @@ class TranslationPipeline:
             else:
                 logger.warning("Retry is not more translated than the first answer; keeping the first")
 
-        text = _guard_script(text, context, "initial_translation")
-
+        _note_mixed_words(text, context, "initial_translation")
         return TranslationResult(
             stage=TranslationStage.INITIAL,
             llm_role=LLMRole.TRANSLATE,
@@ -1061,12 +1045,16 @@ class TranslationPipeline:
             logger.info(f"[synopsis] Dictionary candidates reported: {len(candidates)}")
 
         text = remove_tags_with_check(text, "generate_synopsis", LLMRole.TRANSLATE)
-        text = _guard_script(text, context, "generate_synopsis")
-        if candidates:  # one call: the dictionary words are prepared once
-            targets = _guard_script("\n".join(c['target'] for c in candidates), context,
-                                    "dictionary_candidates").split("\n")
-            for cand, target in zip(candidates, targets):
-                cand['target'] = target
+        # the synopsis is the next chunk's context: a word in two alphabets
+        # there can spread into the next translation
+        _note_mixed_words(text, context, "generate_synopsis")
+        # a translation written in two alphabets ("Gород") would become the
+        # dictionary's and spread to every later chunk
+        mixed = [c for c in candidates if script_guard.find_mixed_words(c['target'], context.target_lang)]
+        if mixed:
+            logger.warning("[synopsis] candidates in two alphabets not added: "
+                           + ", ".join(f"{c['source']} = {c['target']}" for c in mixed))
+            candidates = [c for c in candidates if c not in mixed]
 
         # Synopsis can be empty - pipeline continues without it
         if not text or len(text.strip()) == 0:
@@ -1214,8 +1202,7 @@ class TranslationPipeline:
             if retry_tokens > 0:
                 metrics.log_retry(retry_tokens, "Empty after remove_tags retry [improve]")
 
-        text = _guard_script(text, context, "improve_translation")
-
+        _note_mixed_words(text, context, "improve_translation")
         return TranslationResult(
             stage=TranslationStage.IMPROVE,
             llm_role=LLMRole.PROOFREAD,
@@ -1294,8 +1281,7 @@ class TranslationPipeline:
             if retry_tokens > 0:
                 metrics.log_retry(retry_tokens, "Empty after remove_tags retry [final]")
 
-        text = _guard_script(text, context, "final_edit")
-
+        _note_mixed_words(text, context, "final_edit")
         return TranslationResult(
             stage=TranslationStage.FINAL,
             llm_role=LLMRole.PROOFREAD,
@@ -1383,7 +1369,6 @@ class TranslationPipeline:
             for new in reversed(replies.get(n, [])):
                 if new == old:
                     continue
-                new = _guard_script(new, context, "gender")
                 if _gender_fix_ok(old, new, by_sentence[(a, b)], context):
                     text = text[:a] + new + text[b:]
                     fixed_issues += len(by_sentence[(a, b)])
@@ -1484,7 +1469,6 @@ class TranslationPipeline:
             )
             state.add_result(final_result)
 
-        _report_mixed_words(state.final_translation or "", context)
         return state
 
 
@@ -1761,6 +1745,15 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
     # PipelineState.add_result; state.final_result does not exist)
     tokens = state.total_tokens if isinstance(state.total_tokens, (int, float)) else 0
     metrics.log_success(tokens)  # INFO level
+
+    # Words in two alphabets of the accepted translation (a split chunk is
+    # counted by its halves, not by the translation thrown away)
+    mixed = script_guard.find_mixed_words(
+        state.final_translation, target_lang,
+        _dictionary_targets(TranslationContext(source_lang, target_lang, "", vocab_dict=vocab_dict or {},
+                                               vocab_entries=vocab_entries or [])))
+    if mixed:
+        metrics.log_mixed_words(mixed)
     
     return state.final_translation, state.synopsis
 
@@ -2110,7 +2103,7 @@ def remove_tags_with_check(text: str, stage_name: str = "", role: LLMRole = None
     return cleaned
 
 
-_CYRILLIC_TARGETS = frozenset(script_guard.CYRILLIC_ALPHABETS)
+_CYRILLIC_TARGETS = script_guard.CYRILLIC_LANGS
 
 
 def _source_word_share(text: str, source_text: str) -> Optional[float]:

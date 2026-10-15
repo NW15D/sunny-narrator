@@ -47,7 +47,8 @@ CATEGORY_ORDER = ['PERSON', 'GPE', 'LOC', 'FAC', 'ORG', 'PRODUCT', 'EVENT', 'TER
 
 
 def parse_dic(path: Path, report):
-    """Записи файла: dict(source, target, category, gender, notes)."""
+    """Записи файла: dict(source, target, category, gender, notes, line) —
+    line: индекс строки в text.splitlines()."""
     rows = []
     for num, line in enumerate(path.read_text(encoding='utf-8-sig').splitlines(), 1):
         line = line.strip()
@@ -68,7 +69,7 @@ def parse_dic(path: Path, report):
         # unquoted notes with commas (older files): keep all of them
         notes = ', '.join(f for f in fields[3:] if f)
         rows.append(dict(source=source, target=fields[0], category=fields[1],
-                         gender=fields[2], notes=notes))
+                         gender=fields[2], notes=notes, line=num - 1))
     return rows
 
 

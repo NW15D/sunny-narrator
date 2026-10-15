@@ -68,11 +68,9 @@ there; Turkish, Finnish, Hungarian and other languages without grammatical
 gender of persons get no block.
 
 **Words in two alphabets** (`src/script_guard.py`, `tests/test_script_guard.py`):
-Cyrillic targets (ru, uk, be, bg, sr, mk, kk) and Greek get Latin letters
-out, Latin-script targets get Cyrillic ones (Greek letters there are
-notation: `5 μm`, `Δx`); a word is checked
-against pymorphy3 for Russian and Ukrainian, elsewhere only an unambiguous
-variant or look-alike letters are used.
+found and logged, not fixed — Latin letters inside a word of a Cyrillic
+(ru, uk, be, bg, sr, mk, kk) or Greek target, Cyrillic letters inside a word
+of a Latin-script target (Greek letters there are notation: `5 μm`, `Δx`).
 
 Other targets get the generic behavior: the country defaults to
 `<Language>-speaking countries` unless `COUNTRY` is set

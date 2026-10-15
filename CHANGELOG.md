@@ -11,10 +11,9 @@ All notable changes to Sunny Narrator.
 - `--build-dict` asks the model for the gender of every PERSON (guessed from the name: the new `.dic` says so in its header — check it, the GENDER stage enforces it); on load, characters without gender are listed in the log, and the spellings of the gender field (`female`, `она`, `ж`, …) become `he`/`she`/`it`/`they`; an unknown value is ignored with a warning, so the synopsis can still fill the gender in. The synopsis, `--build-dict` and `scripts/clean_dic.py` use the same list.
 - The GENDER stage never costs a chunk its translation: a failure in it (a truncated reply, an API error) keeps the translation as it is. A sentence soft-wrapped over several lines (pandoc Markdown) is sent as one line, keeping its no-break spaces; one across list items, quote or verse lines is never merged. The gender votes of the synopsis are kept in the checkpoint as one record.
 - New `GENDER_LLM=auto|translate|proofread` (default `auto`: proofread; with `FAST_TRANS` only when `API_BASE_PROOFREAD` is set). `translate` for `FAST_TRANS` with only the translate model loaded.
-- `pymorphy3` with the Russian and Ukrainian dictionaries is a declared dependency (it came only with the ru/uk spaCy models); without it the mixed-alphabet fix warns that it works without a word list.
 
 ### Words in two alphabets
-- New `src/script_guard.py`: a small model starts a word with the Latin letter of the same sound or shape (`dошло`, `Gород`, `taкого`). After every text stage (and in the synopsis and the dictionary candidates) such a word is put back into the target alphabet when a variant is a real word (pymorphy3 for Russian/Ukrainian, the same word elsewhere in the chunk, the stem of a dictionary translation); look-alike letters go without a word list. A word that stays ambiguous is only logged (`centralные`). Cyrillic and Greek targets get Latin letters out, Latin-script targets Cyrillic ones (Greek letters there are notation — `5 μm`, `Δx` — and stay).
+- New `src/script_guard.py` finds the words the model wrote in two alphabets (`dошло`, `Gород`, `taкого`): Latin letters in a word of a Cyrillic or Greek target, Cyrillic ones in a Latin-script target (Greek letters there are notation — `5 μm`, `Δx`). They are logged per chunk and counted in the metrics report, not fixed: they appeared after the prompt rewrite of 2026-10-03, so the cause is looked for in the prompts (`scripts/prompt_eval.py --prompts / --no-glossary / --no-substitution`). A dictionary candidate of the synopsis written in two alphabets is not added; a GENDER fix that adds such a word is rejected.
 - The editor prompt no longer tells the model to keep "Latin-script terms as they are".
 
 ### Prompts: one pipeline
@@ -28,7 +27,9 @@ All notable changes to Sunny Narrator.
 ### Measurement
 - New `scripts/translation_audit.py`: words in two alphabets, gender errors and characters without gender in a finished book, with `--compare` against an earlier run.
 - New `scripts/prompt_eval.py`: the passages of a book with the most gendered characters, translated by the real pipeline with the `.env` models, measured the same way and compared with an earlier run.
-- Metrics report: mixed-alphabet words fixed/left, gender errors found/fixed.
+- New `scripts/review_dic.py`: categories and genders of a `.dic` checked against the source book without an LLM — the category by the NER labels of the entry's mentions (PERSON → LOC/ORG, TERM → PERSON; an entry written lowercase in the book → TERM), the gender of a person by the pronouns of the sentences naming only them. Sure findings go to `<name>.reviewed.dic` (the source `.dic` is not changed, its lines and comments are kept), the rest with all the evidence to the report; a gender already in the `.dic` that the book contradicts is only reported. On the demo books: `Vorta` (a village) is no longer PERSON, every gender set is right, `Shelley … she` is reported (the book says he), two-person scenes (Kuno he ×17 / she ×14) stay unsure.
+- `scripts/prompt_eval.py` A/B switches for this run only: `--prompts FILE` (other prompts over the current ones, e.g. the version before a rewrite), `--no-glossary`, `--no-substitution`; the variant is saved in the result and shown by `--compare`.
+- Metrics report: words in two alphabets, gender errors found/fixed.
 
 ### Defaults
 - `FAST_TRANS` defaults to `false` in the code, as in `env.sample` (it was `on`).

@@ -25,7 +25,7 @@ dictionary character's verb or adjective has the other gender and sends only
 them to the proofread LLM when `API_BASE_PROOFREAD` is set, otherwise to the
 translate LLM (`GENDER_CHECK`, `GENDER_LLM`, see CONFIGURATION.md). With only
 the translate model loaded set `GENDER_LLM=translate`. Words in
-two alphabets (`dошло`) are fixed without an LLM in both modes.
+two alphabets (`dошло`) are logged in both modes.
 
 ---
 

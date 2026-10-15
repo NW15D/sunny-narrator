@@ -89,6 +89,16 @@ gender, and the synopsis may fill it in. The gender of a PERSON goes to the
 in the translation by the GENDER stage — a wrong gender here is enforced
 throughout the book.
 
+`scripts/review_dic.py BOOK --dic DIC` checks the categories and genders
+against the source book without an LLM: a category by the NER labels of the
+entry's mentions (a village tagged PERSON, a species written lowercase), an
+empty gender by the pronouns of the sentences that name only that character.
+It writes `<name>.reviewed.dic` next to the dictionary and a report with the
+evidence; the source `.dic` is not changed. A gender already in the file that
+the book contradicts is only reported, and a two-person scene ("she" in a
+sentence about Kuno is often Vashti) leaves the gender unsure — check those
+by hand.
+
 ---
 
 ## Examples

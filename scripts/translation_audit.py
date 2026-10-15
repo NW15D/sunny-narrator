@@ -10,8 +10,8 @@
 
 Книга: .epub, .fb2, .txt, .md, .html. Считает теми же функциями, что и
 пайплайн:
-1. Слова в двух алфавитах («dошло», «Gород») — `script_guard.find_mixed_words`;
-   показывает, что из них исправилось бы автоматически, а что осталось бы в логе.
+1. Слова в двух алфавитах («dошло», «Gород») — `script_guard.find_mixed_words`
+   (пайплайн их не исправляет, только пишет в лог; причину ищет `prompt_eval.py`).
 2. Ошибки пола — `gender_check.find_gender_issues`: персонаж из словаря с полом
    he/she — подлежащее, а сказуемое другого рода («Вашти сказал»). Нужна
    spaCy-модель языка перевода (`python -m spacy download ru_core_news_sm`).
@@ -65,13 +65,10 @@ def read_dic(path: Path) -> list:
 def audit(book: Path, dic: Path, lang: str, samples: int) -> dict:
     entries = read_dic(dic)
     targets = [e.target for e in entries]
-    mixed, fixable, issues = collections.Counter(), collections.Counter(), []
+    mixed, issues = collections.Counter(), []
     for doc in read_book(book):
         for part in pieces(doc):
-            _, fixes, unfixed = script_guard.fix_mixed_script(part, lang, targets)
-            fixable.update(old for old, _ in fixes)
-            mixed.update(old for old, _ in fixes)
-            mixed.update(unfixed)
+            mixed.update(script_guard.find_mixed_words(part, lang, targets))
             for issue in gender_check.find_gender_issues(part, entries, lang):
                 sentence = re.sub(r'<[^>]+>', '', part[issue.start:issue.end])
                 issues.append({'name': issue.name, 'gender': issue.gender, 'words': issue.words,
@@ -80,9 +77,7 @@ def audit(book: Path, dic: Path, lang: str, samples: int) -> dict:
         'book': str(book), 'dic': str(dic), 'lang': lang,
         'gender_checked': gender_check.checks_language(lang),
         'mixed_words': sum(mixed.values()),
-        'mixed_fixable': sum(fixable.values()),
         'mixed_top': mixed.most_common(samples),
-        'unfixable': sorted(set(mixed) - set(fixable)),
         'gender_issues': len(issues),
         'gender_by_name': collections.Counter(i['name'] for i in issues).most_common(),
         'gender_samples': issues[:samples],
@@ -99,11 +94,8 @@ def print_report(r: dict, previous: dict = None):
 
     print(f"Книга: {r['book']}\nСловарь: {r['dic']}\nЯзык: {r['lang']}\n")
     print(f"Слова в двух алфавитах: {r['mixed_words']}{delta('mixed_words')}")
-    print(f"  исправились бы автоматически: {r['mixed_fixable']}")
     if r['mixed_top']:
         print("  чаще всего: " + ", ".join(f"{w}×{n}" for w, n in r['mixed_top']))
-    if r['unfixable']:
-        print("  остались бы (в лог): " + ", ".join(r['unfixable']))
     if not r['gender_checked']:
         print("\nПол: не проверяется (язык без рода сказуемого или нет spaCy-модели)")
     else:
