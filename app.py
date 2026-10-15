@@ -42,6 +42,7 @@ from src.synopsis_manager import SynopsisManager
 from src.stage_pipeline import StageSequencer, chunk_slot, current_slot, COMMITTED
 from src.llm_logger import init_llm_logger
 from src.vocabulary_manager import get_vocabulary_manager, DictionaryCreatedSignal, VocabularyManager
+from src.dict_review import DictionaryCheckFailed
 from src.character_registry import get_character_registry, reset_character_registry
 from src.epub_writer import create_epub_from_fb2
 from src.xml_utils import IMAGE_EXTENSIONS, sniff_image_type
@@ -924,6 +925,9 @@ def main(fresh: bool = False):
         except DictionaryCreatedSignal as e:
             print(f"\n📖 {e}")
             sys.exit(0)
+        except DictionaryCheckFailed as e:
+            print(f"\n✗ {e}")
+            sys.exit(2)
 
     # Process chunks if any remain, or content was already loaded from temp file above
     if chunks:
@@ -1022,6 +1026,12 @@ def cli():
     arguments and routes the input file to the classic or Calibre pipeline."""
     import argparse
 
+    # Commands besides a translation: dict clean|review|convert, audit, eval,
+    # clean-calibre (src/commands.py)
+    from src import commands
+    if len(sys.argv) > 1 and sys.argv[1] in commands.COMMANDS:
+        sys.exit(commands.run(sys.argv[1:]))
+
     parser = argparse.ArgumentParser(description='Sunny Narrator - AI book translator')
     parser.add_argument('--build-series-dict', type=str,
                        help='Build unified dictionary from books folder')
@@ -1059,6 +1069,11 @@ def cli():
                              'lookup next to the source file (both pipelines). '
                              'Same as setting DICTIONARY in .env')
 
+    parser.add_argument('--no-autofix', action='store_true',
+                        help='Do not apply the sure findings of the dictionary check for the run; '
+                             'a dictionary contradicting the book then stops the run (DICT_AUTOFIX=false)')
+    parser.add_argument('--force', action='store_true',
+                        help='With --no-autofix: translate even if the dictionary contradicts the book')
     args, unknown = parser.parse_known_args()
     if unknown:
         print(f"Warning: ignoring unknown arguments: {' '.join(unknown)}")
@@ -1067,6 +1082,13 @@ def cli():
     if args.max_chunk_size is not None and args.max_chunk_size <= 0:
         print("Error: --max-chunk-size must be a positive integer", file=sys.stderr)
         sys.exit(1)
+
+    # The dictionary check before a translation (src/dict_review.py) reads
+    # the config of the vocabulary manager
+    import src.vocabulary_manager as vm
+    if args.no_autofix:
+        vm.config.dict_autofix = False
+    vm.config.dict_force = args.force
 
     # --dictionary overrides DICTIONARY from .env (both pipelines)
     if args.dictionary:
@@ -1217,6 +1239,9 @@ def cli():
             # Same as the classic pipeline: stop so the new .dic can be reviewed
             print(f"\n📖 {e}")
             sys.exit(0)
+        except DictionaryCheckFailed as e:
+            print(f"\n✗ {e}")
+            sys.exit(2)
         except Exception as e:
             print(f"\n✗ Pipeline failed: {e}")
             import traceback

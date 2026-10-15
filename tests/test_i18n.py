@@ -123,11 +123,8 @@ def test_calibre_pipeline_takes_languages_and_country_from_the_settings(monkeypa
 
 
 def _convert_dic_module():
-    path = Path(__file__).resolve().parent.parent / "scripts" / "convert_dic.py"
-    spec = importlib.util.spec_from_file_location("convert_dic", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    from src import dict_convert
+    return dict_convert
 
 
 def test_dictionary_converter_is_not_tied_to_english_and_russian():

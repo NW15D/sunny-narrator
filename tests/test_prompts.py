@@ -133,7 +133,7 @@ def test_the_gender_rule_is_in_every_stage_that_writes_text():
 
 
 # Prompts are written for models up to 20B: a new rule replaces an old one.
-# Raise a budget only on purpose, with prompt_eval.py run on the real models.
+# Raise a budget only on purpose, with `app.py eval` run on the real models.
 BUDGET = {
     ("initial_translation", "system"): 600, ("initial_translation", "user_xml"): 700,
     ("initial_translation", "user_text"): 700, ("initial_translation", "user_hunyuan"): 400,

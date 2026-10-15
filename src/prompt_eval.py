@@ -1,11 +1,10 @@
-#!/usr/bin/env python3
 """Прогон отрывков-ловушек через настоящий пайплайн: проверка промптов на ваших моделях.
 
 Пример:
-    python scripts/prompt_eval.py books/eternal-moment.pg.epub \\
+    python app.py eval books/eternal-moment.pg.epub \\
         --dic books/eternal-moment.pg_ru.dic --count 8 --out logs/eval/before.json
     # после правки промптов или моделей — те же отрывки и сравнение
-    python scripts/prompt_eval.py books/eternal-moment.pg.epub \\
+    python app.py eval books/eternal-moment.pg.epub \\
         --dic books/eternal-moment.pg_ru.dic --count 8 --out logs/eval/after.json \\
         --compare logs/eval/before.json
 
@@ -16,7 +15,7 @@
    (или `--names`) и местоимений he/she: там модель чаще всего путает пол.
    Выбор детерминированный: при тех же файлах — те же отрывки.
 2. Переводит каждый через `translate_chunk` — все стадии, включая GENDER.
-3. Считает по готовым переводам то же, что `translation_audit.py`: слова в двух
+3. Считает по готовым переводам то же, что `app.py audit`: слова в двух
    алфавитах и ошибки пола, плюс счётчики пайплайна (сколько исправлено по ходу).
 4. Сохраняет JSON (для `--compare`) и рядом `.md` с исходником и переводом
    каждого отрывка — местоимения через несколько предложений проверяйте глазами.
@@ -29,7 +28,7 @@
     --no-substitution   без подстановки переводов терминов в исходник
 
 Пример: откуда слова в двух алфавитах («dошло»)
-    E="python scripts/prompt_eval.py BOOK --dic DIC --count 8"
+    E="python app.py eval BOOK --dic DIC --count 8"
     $E --out logs/eval/now.json
     $E --no-glossary --out logs/eval/no_glossary.json --compare logs/eval/now.json
     $E --no-substitution --out logs/eval/no_subst.json --compare logs/eval/now.json
@@ -42,11 +41,9 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from scripts.translation_audit import read_book, read_dic  # noqa: E402
-from src import gender_check, lexicon, script_guard  # noqa: E402
-from src import utils  # noqa: E402  (нужны ключи API из .env)
+from src.translation_audit import read_book, read_dic
+from src import gender_check, lexicon, script_guard
+from src import utils  # нужны ключи API из .env
 
 _PRONOUNS = re.compile(r"\b(?:he|she|him|her|his|hers|himself|herself)\b", re.IGNORECASE)
 
@@ -124,8 +121,8 @@ def apply_variant(args) -> dict:
             'no_glossary': args.no_glossary, 'no_substitution': args.no_substitution}
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
+def main(argv=None):
+    parser = argparse.ArgumentParser(prog='app.py eval', description=__doc__.split('\n')[0])
     parser.add_argument('book', type=Path, help='исходник (.epub, .fb2, .txt, .md)')
     parser.add_argument('--dic', type=Path, required=True, help='словарь перевода (.dic)')
     parser.add_argument('--names', help='персонажи через запятую (по умолчанию — все с полом)')
@@ -137,7 +134,7 @@ def main():
     parser.add_argument('--no-glossary', action='store_true', help='без <vocabulary> в промптах')
     parser.add_argument('--no-substitution', action='store_true',
                         help='без подстановки переводов терминов в исходник')
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     config = utils.config
     variant = apply_variant(args)

@@ -399,7 +399,9 @@ def test_gender_votes_are_one_compact_checkpoint_record(tmp_path):
         if chunk == 0:
             snapshot = list(manager.session_candidates)
     records = [c for c in manager.session_candidates if 'gender_votes' in c]
-    assert records == [{'gender_votes': {'bob': {'he': 5}}}]
+    # two votes settle the gender; a known gender is not voted on any more
+    assert records == [{'gender_votes': {'bob': {'he': 2}}}]
+    assert manager.vocab['bob'].gender == 'he' and manager.synopsis_genders == [('Bob', 'he')]
     assert [c for c in snapshot if 'gender_votes' in c] == [{'gender_votes': {'bob': {'he': 1}}}], \
         "an earlier snapshot keeps the votes as of its chunk"
 
@@ -408,3 +410,42 @@ def test_synopsis_gender_spellings_are_accepted():
     _, candidates = u.extract_dictionary_candidates(
         "Пересказ.\n<genders>\nVashti | Вашти | female\n</genders>", "Vashti slept.", "english")
     assert [(c['source'], c['gender']) for c in candidates] == [("Vashti", "she")]
+
+
+# --- false findings of a real run (The Warship, ru) ---------------------------
+
+@needs["ru"]
+@pytest.mark.parametrize("sentence, name, gender", [
+    # the joined verbs belong to Спраг, not to Король
+    ("Король просто хотел, чтобы Спраг установила ментальную связь с компьютером, "
+     "выступила в роли катализатора, а затем была поглощена.", "Король", "he"),
+    ("Ангела уже не было, и вскоре она достигла отверстия и подтянулась следом.", "Ангел", "he"),
+    ("Трик ускорился, почти летя на бегу.", "Трик", "he"),                        # a gerund
+    ("Она увидела погоню, но Дракон был тяжело повреждён и сбит.", "Дракон", "he"),  # tagged feminine
+    ("Ей не понравилась пауза, а «Да» Клиентки было слишком простым.", "Клиентка", "she"),
+    ("Ангел повел их к стеклянной стене, но та была искажена и перекручена.", "Ангел", "he"),
+])
+def test_real_false_findings_are_gone(sentence, name, gender):
+    entry = VocabEntry(source=name, target=name, category="PERSON", gender=gender)
+    assert gc.find_gender_issues(sentence, [entry], "russian") == []
+
+
+@needs["ru"]
+def test_real_findings_stay():
+    brull = VocabEntry(source="Brull", target="Брулл", category="PERSON", gender="he")
+    client = VocabEntry(source="Client", target="Клиент", category="PERSON", gender="she")
+    assert [i.words for i in gc.find_gender_issues("— Они бьют с орбиты, — сказала Брулл.", [brull], "ru")] \
+        == [["сказала"]]
+    assert [i.words for i in gc.find_gender_issues("Клиент оценил ситуацию.", [client], "ru")] == [["оценил"]]
+
+
+@needs["ru"]
+def test_a_fix_may_only_change_endings_of_all_flagged_words():
+    context = u.TranslationContext(source_lang="english", target_lang="russian", source_text="",
+                                   vocab_entries=[VASHTI])
+    issue = gc.GenderIssue("Вашти", "she", ["сказал"], 0, 0)
+    old = "Вашти сказал, что Куно устал."
+    assert u._gender_fix_ok(old, "Вашти сказала, что Куно устал.", [issue], context)
+    assert not u._gender_fix_ok(old, "Вашти сказал, что Куно устала.", [issue], context)  # another word
+    assert not u._gender_fix_ok(old, "Вашти ответила, что Куно устал.", [issue], context)  # a new word
+    assert not u._gender_fix_ok(old, "Вашти сказала, что устал Куно.", [issue], context)   # reordered

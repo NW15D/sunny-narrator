@@ -138,7 +138,7 @@ Alice = Алиса, PERSON, she, 主角
 - **术语匹配：** 所有格式相同——只有在分块中找到的词典术语才会进入该分块的提示词。可以识别词形变化（`spidergun` → `spiderguns`，`wolf` → `wolves`），中文/日文/韩文术语按子串匹配，术语不会在其他单词内部被匹配（`Ann` / `Annoying`）。
 - **多词术语优先：** 词数更多的术语优先于它所包含的较短术语（`Mad Hatter` 优先于 `Hatter`），其次是更长的术语。只出现在较长术语内部的短术语不会进入提示词，模型不会得到同一短语的两种译法。
 - **翻译前替换术语：** 分块中找到的词典术语的译名会在第一阶段之前替换进原文，避免模型漏掉它们（后续阶段看到的是原文）。标记、链接和 URL 不会被改动；小写术语不区分大小写匹配，人名按原样或全大写匹配。
-- **其他目标语言：** `python scripts/convert_dic.py books/MyBook.dic fr es zh` 将现成的词典转换为其他语言（`MyBook_fr.dic` 等），以现有译名作为提示。
+- **其他目标语言：** `python app.py dict convert books/MyBook.dic fr es zh` 将现成的词典转换为其他语言（`MyBook_fr.dic` 等），以现有译名作为提示。
 - **指定词典路径：** 默认在书籍旁查找词典（`books/MyBook.fb2` → `books/MyBook.dic`）。如需使用其他文件（例如系列共享词典），可在 `.env` 中设置 `DICTIONARY=path/to/file.dic`，或传入 `--dictionary path/to/file.dic`（命令行参数优先）。两个流程均支持；若文件不存在，将在该路径创建（目录必须已存在）。
 
 **格式指南：** [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md)

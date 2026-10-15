@@ -1,9 +1,8 @@
-#!/usr/bin/env python3
 """Конвертация словаря source=hint в словарь source=<другой язык> с опорой на готовый перевод.
 
 Пример:
-    python scripts/convert_dic.py books/MyBook.dic fr es zh tr
-    python scripts/convert_dic.py books/tr_ru.dic en de --source-lang turkish --hint-lang russian
+    python app.py dict convert books/MyBook.dic fr es zh tr
+    python app.py dict convert books/tr_ru.dic en de --source-lang turkish --hint-lang russian
 
 Для каждого языка рядом с исходником создаётся `<имя>_<код>.dic`
 (MyBook.dic -> MyBook_fr.dic). Категория, пол и заметки копируются как есть,
@@ -28,12 +27,10 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import openai
 
-import openai  # noqa: E402
-
-from src import lexicon  # noqa: E402
-from src.config import Config  # noqa: E402
+from src import lexicon
+from src.config import Config
 
 config = Config()
 
@@ -180,8 +177,8 @@ def convert(src_path: Path, code: str, batch_size: int, force: bool, client,
     return True
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog='app.py dict convert', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('dic', type=Path, help='исходный .dic (source = hint)')
     ap.add_argument('langs', nargs='+', help='коды целевых языков: fr es zh tr ...')
     ap.add_argument('--source-lang', default=config.source_lang,
@@ -190,7 +187,7 @@ def main():
                     help='язык готового перевода в исходном словаре (по умолчанию TARGET_LANG)')
     ap.add_argument('--batch', type=int, default=40, help='терминов за один запрос (по умолчанию 40)')
     ap.add_argument('--force', action='store_true', help='перевести заново, игнорируя существующий целевой .dic')
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     client = make_client()
     ok = [convert(args.dic, code.lower(), args.batch, args.force, client, args.source_lang, args.hint_lang)

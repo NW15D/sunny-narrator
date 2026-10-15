@@ -167,6 +167,14 @@ class Config:
         # in-memory dictionary for the rest of the run (and its resume), but
         # the reviewed .dic stays as the user left it.
         self.dict_auto_save = os.getenv('DICT_AUTO_SAVE', 'false').lower() in ['true', '1', 't', 'on', 'yes']
+        # DICT_CHECK: before a translation the dictionary is checked against
+        # the book (src/dict_review.py): categories and genders by the NER of
+        # the source and its pronouns. DICT_AUTOFIX: the sure findings are
+        # applied for the run (the .dic is not changed; --no-autofix turns it
+        # off, then a contradiction stops the run unless --force).
+        self.dict_check = _parse_bool_env('DICT_CHECK', 'true')
+        self.dict_autofix = _parse_bool_env('DICT_AUTOFIX', 'true')
+        self.dict_force = False  # --force
         self.country = os.getenv('COUNTRY') or default_country(self.target_lang)
         
         # Determine default model from mapping if not specified in ENV

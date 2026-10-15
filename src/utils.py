@@ -22,6 +22,7 @@ import io
 import base64
 import httpx
 import time
+import collections
 import dataclasses
 import difflib
 import threading
@@ -79,6 +80,8 @@ class TranslationMetrics:
         self.mixed_words = 0
         self.gender_issues = 0
         self.gender_fixed = 0
+        self.gender_by_name = collections.Counter()  # (name, dictionary gender) -> errors
+        self.synopsis_genders = []                   # (source, gender) filled from the synopsis
 
     def log_mixed_words(self, words: list):
         """Words of the final translation written in two alphabets ("dошло"):
@@ -87,10 +90,20 @@ class TranslationMetrics:
             self.mixed_words += len(words)
         logger.warning(f"Words in two alphabets: {', '.join(words)}")
 
-    def log_gender(self, found: int, fixed: int):
+    def log_gender(self, issues: list, fixed: int):
+        """Gender errors the GENDER stage found (gender_check.GenderIssue)
+        and fixed; per character for the report: a character the translation
+        keeps getting "wrong" more likely has a wrong gender in the .dic."""
         with self._lock:
-            self.gender_issues += found
+            self.gender_issues += len(issues)
             self.gender_fixed += fixed
+            for issue in issues:
+                self.gender_by_name[(issue.name, issue.gender)] += 1
+
+    def log_synopsis_gender(self, source: str, gender: str):
+        """A character's empty gender filled in from the synopsis."""
+        with self._lock:
+            self.synopsis_genders.append((source, gender))
         
     def log_retry(self, tokens: int, reason: str):
         """Log retry event (ERROR level)."""
@@ -155,6 +168,13 @@ class TranslationMetrics:
         logger.info(f"Language mismatch retries: {report['language_mismatch_retries']}")
         logger.info(f"Words in two alphabets: {report['mixed_words']}")
         logger.info(f"Gender errors: {report['gender_issues']} found, {report['gender_fixed']} fixed")
+        if self.gender_by_name:
+            logger.info("The translation disagrees with the dictionary (check these genders in the .dic):")
+            for (name, gender), n in self.gender_by_name.most_common(15):
+                logger.info(f"  {name}: the .dic says {gender}, {n} sentence(s) of the translation do not")
+        if self.synopsis_genders:
+            logger.info(f"Genders filled in from the synopsis ({len(self.synopsis_genders)}): "
+                        + ", ".join(f"{s} = {g}" for s, g in self.synopsis_genders))
         logger.info("=" * 60)
 
 
@@ -807,18 +827,33 @@ def _non_text(text: str) -> List[str]:
     return [text[a:b] for a, b in lexicon.non_text_spans(text)]
 
 
+_FIX_WORD_RE = re.compile(r'\w+')
+
+
 def _gender_fix_ok(old: str, new: str, issues: List[Any], context: TranslationContext) -> bool:
     """Whether a sentence from the GENDER call can replace the original: the
-    same markup, about the same length, only a few words changed, and no
-    gender error left for its characters."""
+    same markup and words in the same order, only endings changed (each
+    changed word keeps its stem: "сказал" -> "сказала", never another word),
+    every flagged word changed, no new word in two alphabets, and no gender
+    error left for its characters. A sentence the check misread (the verb
+    belongs to another character) then cannot be "fixed" by rewriting the
+    other character's verbs."""
     if _non_text(old) != _non_text(new):
         return False
-    if abs(len(new) - len(old)) > max(10, len(old) // 7):
+    old_words, new_words = _FIX_WORD_RE.findall(old), _FIX_WORD_RE.findall(new)
+    if len(old_words) != len(new_words):
         return False
-    old_words, new_words = old.split(), new.split()
-    changed = sum(max(i2 - i1, j2 - j1) for tag, i1, i2, j1, j2 in
-                  difflib.SequenceMatcher(None, old_words, new_words).get_opcodes() if tag != 'equal')
-    if changed > max(3, 2 * sum(len(i.words) for i in issues)):
+    code = lexicon.lang_code(context.target_lang)
+    changed = set()
+    for a, b in zip(old_words, new_words):
+        if a == b:
+            continue
+        na, nb = lexicon.normalize(a), lexicon.normalize(b)
+        if lexicon.stem(na, code) != lexicon.stem(nb, code) and na[:3] != nb[:3]:
+            return False
+        changed.add(a)
+    flagged = {w for i in issues for w in i.words}
+    if not changed or not flagged <= changed:
         return False
     targets = _dictionary_targets(context)
     if len(script_guard.find_mixed_words(new, context.target_lang, targets)) > \
@@ -1334,7 +1369,7 @@ class TranslationPipeline:
         spans = [span for span in sorted(by_sentence)
                  if not _BLOCK_BREAK_RE.search(translation[span[0]:span[1]])][:_MAX_GENDER_FIXES]
         if config.gender_check == 'warn' or not spans:
-            metrics.log_gender(len(issues), 0)
+            metrics.log_gender(issues, 0)
             return result(translation, issues=len(issues))
 
         # one line per sentence: its soft line breaks become spaces, other
@@ -1374,7 +1409,7 @@ class TranslationPipeline:
                     fixed_issues += len(by_sentence[(a, b)])
                     break
                 logger.info(f"[gender] fix of sentence {n} rejected: {new[:200]}")
-        metrics.log_gender(len(issues), fixed_issues)
+        metrics.log_gender(issues, fixed_issues)
         if fixed_issues:
             logger.info(f"[gender] fixed {fixed_issues} of {len(issues)} gender error(s)")
         return result(text, tokens, issues=len(issues), fixed=fixed_issues)

@@ -329,6 +329,9 @@ class VocabularyManager:
         # chunks before
         self.session_candidates: List[Dict[str, str]] = []
         self._gender_votes: Dict[str, Dict[str, int]] = {}
+        # (source, gender) the synopsis filled in during this run (logged,
+        # reported at the end: is the <genders> block worth its cost?)
+        self.synopsis_genders: List[Tuple[str, str]] = []
         # CandidateMatcher over self.vocab, built on first use, reset by load()
         self._matcher: Optional[CandidateMatcher] = None
         
@@ -346,13 +349,18 @@ class VocabularyManager:
         Raises:
             DictionaryCreatedSignal: if dictionary was created and needs user review
         """
+        from src import dict_review
         if os.path.exists(self.dict_file):
             logger.info(f"Loading vocabulary from {self.dict_file}")
-            return self.load()
+            self.load()
+            # checked against the book before anything is translated
+            dict_review.preflight(self, source_text, config)
+            return self.vocab
         else:
             logger.info(f"Dictionary not found. Creating: {self.dict_file}")
             self.build_dictionary(source_text)
             self._extract_characters()
+            dict_review.preflight(self, source_text, config, write_back=True)
             # Check if auto-continue is enabled
             if getattr(config, 'auto_continue_after_dict', False):
                 logger.info("Auto-continue enabled, proceeding without manual review")
@@ -360,6 +368,13 @@ class VocabularyManager:
             else:
                 # Signal that dictionary was created and needs review
                 raise DictionaryCreatedSignal(self.dict_file)
+
+    def apply_review_fixes(self):
+        """After dict_review changed categories/genders in self.vocab: the
+        characters and the term matcher follow the new fields."""
+        self.matched_terms_cache.clear()
+        self._matcher = None
+        self._extract_characters()
 
     def load(self) -> Dict[str, VocabEntry]:
         """Load the .dic file if it exists (empty vocabulary otherwise)."""
@@ -868,9 +883,10 @@ class VocabularyManager:
         The synopsis infers the gender from a draft a small model may have
         misgendered, and the first gender filled in stays for the rest of
         the run. An unconfirmed or disputed gender is blanked, so a new
-        character still joins the dictionary (without gender). A report
-        against the gender of the dictionary is logged: the chunk was likely
-        translated with the wrong gender.
+        character still joins the dictionary (without gender). A character
+        whose gender the dictionary has is not voted on: the dictionary wins
+        and the synopsis prompt leaves them out (<characters>); a mismatch of
+        the translation itself is what the GENDER stage reports.
         """
         out, seen = [], set()
         for cand in candidates:
@@ -880,9 +896,11 @@ class VocabularyManager:
                 continue
             key = lexicon.word_key(cand['source'])
             known = self.vocab.get(cand['source'].replace(' ', '_').lower())
-            if known is not None and known.gender and known.gender != gender:
-                logger.warning(f"[gender] synopsis reports '{cand['source']}' as {gender}, "
-                               f"the dictionary says {known.gender}: check this chunk")
+            if known is not None and known.gender:
+                logger.debug(f"[gender] synopsis gender of '{cand['source']}' ignored: "
+                             f"the dictionary has {known.gender}")
+                out.append(dict(cand, gender=''))
+                continue
             counts = self._gender_votes.setdefault(key, {})
             if key not in seen:
                 seen.add(key)
@@ -894,6 +912,14 @@ class VocabularyManager:
             confirmed = len(counts) == 1 and counts.get(gender, 0) >= self.GENDER_VOTES
             out.append(cand if confirmed else dict(cand, gender=''))
         return out
+
+    def _note_synopsis_gender(self, source: str, gender: str):
+        self.synopsis_genders.append((source, gender))
+        try:
+            from src import utils
+            utils.metrics.log_synopsis_gender(source, gender)
+        except Exception as e:  # the report line only; never fails the run
+            logger.debug(f"synopsis gender not reported: {e}")
 
     def _count_gender_vote(self, cand: Dict[str, str]):
         counts = self._gender_votes.setdefault(lexicon.word_key(cand['source']), {})
@@ -935,6 +961,8 @@ class VocabularyManager:
             self.vocab[key] = VocabEntry(source=cand['source'], target=cand['target'],
                                          category=cand.get('category', 'PERSON'),
                                          gender=cand.get('gender', ''))
+            if cand.get('gender'):
+                self._note_synopsis_gender(cand['source'], cand['gender'])
             return key
 
         def set_gender(key, gender):
@@ -942,6 +970,9 @@ class VocabularyManager:
             if entry is None or entry.gender or not gender:
                 return False
             entry.gender = gender
+            self._note_synopsis_gender(entry.source, gender)
+            logger.info(f"[gender] {entry.source} = {gender}: from the synopsis "
+                        f"({self.GENDER_VOTES} chunks agree)")
             if entry.category in _PROMOTED_TO_PERSON:
                 entry.category = 'PERSON'
             return True

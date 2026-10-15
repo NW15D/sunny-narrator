@@ -1,5 +1,5 @@
 """
-scripts/translation_audit.py and scripts/prompt_eval.py: the measurement of a
+app.py audit / eval (src/translation_audit.py, src/prompt_eval.py): the measurement of a
 translation (mixed alphabets, gender of the characters) before and after a
 change of prompts or models. prompt_eval runs with a faked LLM here.
 """
@@ -12,7 +12,7 @@ from spacy.util import is_package
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from scripts import prompt_eval, translation_audit
+from src import prompt_eval, translation_audit
 
 needs_ru = pytest.mark.skipif(not is_package("ru_core_news_sm"), reason="ru_core_news_sm not installed")
 
@@ -55,9 +55,7 @@ def test_prompt_eval_runs_the_pipeline_on_the_chosen_passages(tmp_path, monkeypa
     monkeypatch.setattr(u.config, 'target_lang', 'russian')
     monkeypatch.setattr(u, 'validate_translation_length', lambda *a, **kw: (True, 0.0, False))
     out = tmp_path / "eval" / "run.json"
-    monkeypatch.setattr(sys, 'argv', ["prompt_eval.py", str(book), "--dic", str(dic),
-                                      "--count", "1", "--size", "60", "--out", str(out)])
-    prompt_eval.main()
+    prompt_eval.main([str(book), "--dic", str(dic), "--count", "1", "--size", "60", "--out", str(out)])
 
     data = json.loads(out.read_text(encoding="utf-8"))
     assert len(data["results"]) == 1
@@ -101,9 +99,7 @@ def test_prompt_eval_variants_change_only_this_run(tmp_path, monkeypatch):
     def run(*flags):
         prompts.clear()
         out = tmp_path / f"run{len(flags)}.json"
-        monkeypatch.setattr(sys, 'argv', ["prompt_eval.py", str(book), "--dic", str(dic), "--count", "1",
-                                          "--size", "40", "--out", str(out), *flags])
-        prompt_eval.main()
+        prompt_eval.main([str(book), "--dic", str(dic), "--count", "1", "--size", "40", "--out", str(out), *flags])
         return next(p for s, p in prompts if s == u.TranslationStage.INITIAL), json.loads(
             out.read_text(encoding="utf-8"))["summary"]
 

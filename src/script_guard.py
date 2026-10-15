@@ -4,7 +4,7 @@ in Russian — the model switched to the other alphabet in the middle of a
 word. No LLM stage notices it (the model reads "gолосом" as "голосом").
 
 The words are found and logged, not fixed: the cause is upstream, in the
-prompt or the model, and scripts/prompt_eval.py looks for it (--prompts,
+prompt or the model, and `app.py eval` (src/prompt_eval.py) looks for it (--prompts,
 --no-glossary, --no-substitution). Checked:
 
 - Cyrillic targets (ru, uk, be, bg, sr, mk, kk) and Greek: Latin letters

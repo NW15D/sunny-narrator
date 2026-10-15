@@ -89,15 +89,8 @@ gender, and the synopsis may fill it in. The gender of a PERSON goes to the
 in the translation by the GENDER stage — a wrong gender here is enforced
 throughout the book.
 
-`scripts/review_dic.py BOOK --dic DIC` checks the categories and genders
-against the source book without an LLM: a category by the NER labels of the
-entry's mentions (a village tagged PERSON, a species written lowercase), an
-empty gender by the pronouns of the sentences that name only that character.
-It writes `<name>.reviewed.dic` next to the dictionary and a report with the
-evidence; the source `.dic` is not changed. A gender already in the file that
-the book contradicts is only reported, and a two-person scene ("she" in a
-sentence about Kuno is often Vashti) leaves the gender unsure — check those
-by hand.
+The categories and genders are checked against the book before every
+translation — see [Dictionary check before a translation](#dictionary-check-before-a-translation).
 
 ---
 
@@ -227,6 +220,70 @@ Cat = Кот, PERSON, it, Cheshire Cat
 ```
 
 ---
+
+## Dictionary check before a translation
+
+Every translation run (both pipelines) checks the dictionary against the
+source book right after loading it, before the first chunk — without an LLM,
+with the spaCy model of the source language (`NERMODEL`, by `SOURCE_LANG`):
+
+- **Category** by the NER labels of the entry's mentions in the book: a
+  village written as PERSON becomes LOC/ORG, a species written lowercase in
+  the `.dic` and in the book becomes TERM, a TERM the book treats as a
+  person becomes PERSON. A character the book keeps calling *he* or *she*
+  stays a person whatever NER says (it tags invented names ORG). A lowercase
+  word is not a mention of a capitalized name ("stone" is not "Stone").
+- **Gender** of a character by the 3rd person singular pronouns of the
+  sentences that name only that character: an empty gender is filled in, a
+  gender the book contradicts is changed. A decision needs more than three
+  pronouns (4) and 85 % of them for one gender — in a scene of two ("she" in
+  a sentence about Kuno is often Vashti) the gender stays unsure and is only
+  reported.
+- **A translation written in two alphabets** (`Gород`) is reported.
+
+What happens with the findings:
+
+| Setting | Sure findings | The run |
+|---|---|---|
+| default (`DICT_AUTOFIX=true`) | applied **for this run** in memory; the `.dic` is not changed, `<dic>.reviewed.dic` gets them to take over | goes on |
+| `--no-autofix` (`DICT_AUTOFIX=false`) | not applied | stops (exit code 2) when the dictionary contradicts the book: a category, a gender the book contradicts, a translation in two alphabets |
+| `--no-autofix --force` | not applied | goes on as is |
+| a dictionary just built (`--build-dict` or a missing `.dic`) | written into the new file, it stops for review anyway | stops for review |
+
+The report with all the evidence (also the unsure findings and the
+characters not found in this book — normal for a series dictionary) is
+`<book>.dictcheck.txt` next to the book. The result is cached in
+`<book>.dictcheck.json` for this dictionary and book: a resumed run does not
+parse the book again. `DICT_CHECK=false` turns the check off.
+
+Languages: the NER labels of the spaCy models (OntoNotes `PERSON/GPE/ORG`,
+WikiNER `PER/LOC/ORG`, Polish `persName/placeName/orgName`, Korean
+`PS/LC/OG`) and the pronoun gender of their morphology (`Person=3` or
+`Person=Third`) are understood; Chinese, Japanese and Korean pronouns have
+no gender feature and are read by their form (他/她, 彼/彼女, 그/그녀). A model
+without a parser (`xx_ent_wiki_sm`) gets a sentencizer; without a model the
+check is skipped with a warning.
+
+## Dictionary commands
+
+All of them write next to their input and never change the input itself:
+
+```bash
+# duplicates (by lexicon.word_key), gender spellings, ordinary words, cut variants
+python app.py dict clean books/MyBook.dic            # -> MyBook.clean.dic + report
+# categories and genders against the book (what the check before a translation does)
+python app.py dict review books/MyBook.epub --dic books/MyBook.dic   # -> MyBook.reviewed.dic + report
+# the dictionary into other target languages (proofread LLM from .env)
+python app.py dict convert books/MyBook.dic fr es zh # -> MyBook_fr.dic, ...
+# a finished translation: words in two alphabets, gender errors, characters without gender
+python app.py audit books/MyBook_ru.epub --dic books/MyBook_ru.dic --lang russian --json audit.json
+# passages through the real pipeline with the .env models (A/B of prompts and settings)
+python app.py eval books/MyBook.epub --dic books/MyBook_ru.dic --count 8 --out logs/eval/run.json
+# Calibre markers out of a FB2/HTML file (what the Calibre pipeline does to every book)
+python app.py clean-calibre book.fb2 --inplace
+```
+
+`python app.py <command> -h` lists the options of each.
 
 ## Common Mistakes
 

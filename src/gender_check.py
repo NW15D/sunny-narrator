@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 GENDERS = ('he', 'she', 'it', 'they')
 # What people write in the gender field of a .dic; the loader normalizes it
-# (normalize_gender), scripts/clean_dic.py rewrites the file
+# (normalize_gender), `app.py dict clean` (src/dict_clean.py) rewrites the file
 GENDER_SYNONYMS = {
     'he': {'он', 'м', 'муж', 'мужской', 'm', 'male', 'masc', 'masculine'},
     'she': {'она', 'ж', 'жен', 'женский', 'f', 'female', 'fem', 'feminine'},
@@ -112,6 +112,28 @@ _AGREEING_AUX = {
     'fr': {'être'}, 'it': {'essere'}, 'es': {'ser', 'estar'}, 'pt': {'ser', 'estar', 'ficar'},
     'ca': {'ser', 'estar'}, 'ro': {'fi'}, 'el': {'είμαι'},
 }
+# Slavic: the small models tag a form's gender wrong ("повреждён" as
+# feminine). Without the reflexive ending a masculine past form or short
+# adjective ends in a consonant ("сказал", "повреждён", "сказав", "powiedział"),
+# a feminine one in -a ("сказала", "рада", "powiedziała").
+_SLAVIC_FORM_CHECK = {'ru', 'uk', 'be', 'bg', 'pl', 'cs', 'sk'}
+_SLAVIC_CONSONANTS = set('бвгджзйклмнпрстфхцчшщўbcdfghjklłmnprstvwzčďňřšťžźżćń')
+
+
+def _slavic_form(word: str) -> Optional[str]:
+    """'Masc' or 'Fem' by the ending of a past form or short adjective."""
+    word = lexicon.normalize(word)
+    for reflexive in ('ся', 'сь'):
+        if word.endswith(reflexive) and len(word) > 3:
+            word = word[:-2]
+            break
+    if word.endswith(('а', 'a')):
+        return 'Fem'
+    if word[-1:] in _SLAVIC_CONSONANTS:
+        return 'Masc'
+    return None
+
+
 # Romance languages: an adjective or participle shows its gender by the
 # ending; a word without it ("melhor", "distante", "romancière" tagged
 # masculine) is invariant or mistagged. Slavic forms are always gendered.
@@ -240,9 +262,11 @@ def _masked(text: str) -> str:
 
 
 def _name_heads(vocab_entries: Iterable[Any], code: str) -> Dict[str, tuple]:
-    """Stem of the last word of each gendered name -> (name, gender, the
-    normalized words before it); a stem shared by characters of different
-    genders is dropped."""
+    """The last word of each gendered name, normalized -> (name, gender, the
+    normalized words before it); a word shared by characters of different
+    genders is dropped. Matched as written, not by stem: a subject stands in
+    the dictionary (nominative) form, and the parser often takes another case
+    for one ("Ангела уже не было", "«Да» Клиентки было простым")."""
     heads: Dict[str, tuple] = {}
     clashes = set()
     for entry in vocab_entries or []:
@@ -253,7 +277,7 @@ def _name_heads(vocab_entries: Iterable[Any], code: str) -> Dict[str, tuple]:
         words = _WORD_RE.findall(name)
         if not words:
             continue
-        key = lexicon.stem(lexicon.normalize(words[-1]), code)
+        key = lexicon.normalize(words[-1])
         if key in heads and heads[key][1] != gender:
             clashes.add(key)
         heads.setdefault(key, (name, gender, [lexicon.normalize(w) for w in words[:-1]]))
@@ -265,6 +289,10 @@ def _name_heads(vocab_entries: Iterable[Any], code: str) -> Dict[str, tuple]:
 def _agrees_here(word, code: str, gender: str) -> bool:
     """Whether the gender of this predicate word must follow the subject
     (`gender`: the character's)."""
+    if set(word.morph.get('VerbForm')) & {'Conv', 'Inf'}:
+        return False  # a gerund ("летя") or an infinitive has no gender
+    if code in _SLAVIC_FORM_CHECK:
+        return word.pos_ in ('VERB', 'AUX', 'ADJ') and _slavic_form(word.text) == _OPPOSITE[gender]
     if word.pos_ in ('VERB', 'AUX'):
         if code in _VERB_AGREES:
             return True
@@ -316,15 +344,23 @@ def _other_person(tok, before: List[str]) -> bool:
     return linked and words != before and words[-1] != before[-1]
 
 
-def _predicates(head) -> List[Any]:
+def _predicates(head, subj) -> List[Any]:
     """The predicate of a subject and the predicates joined to it by "and"
-    that have no subject of their own."""
+    that have no subject of their own. A joined predicate with another
+    subject between it and the name belongs to that subject, whatever the
+    parser attached it to ("Король хотел, чтобы Спраг установила…,
+    выступила…", "Ангела не было, и она достигла… и подтянулась")."""
+    def another_subject_between(c) -> bool:
+        lo, hi = sorted((subj.i, c.i))
+        return any(t.dep_ in _SUBJECT_DEPS and t.i != subj.i for t in subj.doc[lo + 1:hi])
+
     out, todo = [], [head]
     while todo:
         p = todo.pop()
         out.append(p)
         todo += [c for c in p.children if c.dep_ == 'conj' and c.pos_ in ('VERB', 'ADJ', 'AUX')
-                 and not any(g.dep_ in _SUBJECT_DEPS for g in c.children)]
+                 and not any(g.dep_ in _SUBJECT_DEPS for g in c.children)
+                 and not another_subject_between(c)]
     return out
 
 
@@ -349,7 +385,7 @@ def find_gender_issues(text: str, vocab_entries: Iterable[Any], target_lang: str
     for tok in doc:
         if tok.text[:1].islower():
             continue  # a name is capitalized; Hebrew, Arabic, Hindi have no case
-        hit = heads.get(lexicon.stem(lexicon.normalize(tok.text), code))
+        hit = heads.get(lexicon.normalize(tok.text))
         if hit is None:
             continue
         name, gender, before = hit
@@ -364,10 +400,12 @@ def find_gender_issues(text: str, vocab_entries: Iterable[Any], target_lang: str
         if subj.dep_ not in _SUBJECT_DEPS or any(c.dep_ == 'conj' for c in subj.children):
             continue  # not the subject, or one of several ("Вашти и Куно пошли")
         if subj.morph.get('Case') and 'Nom' not in subj.morph.get('Case'):
-            continue  # "Майклу было двадцать два" 
+            continue  # "Майклу было двадцать два"
+        if 'Plur' in subj.morph.get('Number'):
+            continue
         opposite = _OPPOSITE[gender]
         wrong = []
-        for pred in _predicates(subj.head):
+        for pred in _predicates(subj.head, subj):
             if _other_subject(pred, subj, opposite) or _separated(subj, pred):
                 continue
             for word in [pred] + [c for c in pred.children if c.dep_.startswith(('cop', 'aux'))]:

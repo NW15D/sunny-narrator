@@ -1,11 +1,10 @@
-#!/usr/bin/env python3
 """Замер качества готового перевода без LLM: смешанные алфавиты и пол персонажей.
 
 Пример:
-    python scripts/translation_audit.py books/The_eternal_moment_ru.epub \\
+    python app.py audit books/The_eternal_moment_ru.epub \\
         --dic books/eternal-moment.pg_ru.dic --lang russian --json logs/audit_before.json
     # после правок — тот же замер и сравнение с прошлым
-    python scripts/translation_audit.py books/The_eternal_moment_ru.epub \\
+    python app.py audit books/The_eternal_moment_ru.epub \\
         --dic books/eternal-moment.pg_ru.dic --lang russian --compare logs/audit_before.json
 
 Книга: .epub, .fb2, .txt, .md, .html. Считает теми же функциями, что и
@@ -28,9 +27,7 @@ import sys
 import zipfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from src import gender_check, script_guard  # noqa: E402
+from src import gender_check, script_guard
 
 _PIECE = 50000  # символов на один разбор spaCy
 
@@ -109,15 +106,15 @@ def print_report(r: dict, previous: dict = None):
               + ", ".join(r['persons_without_gender']))
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
+def main(argv=None):
+    parser = argparse.ArgumentParser(prog='app.py audit', description=__doc__.split('\n')[0])
     parser.add_argument('book', type=Path)
     parser.add_argument('--dic', type=Path, required=True, help='словарь перевода (.dic)')
     parser.add_argument('--lang', required=True, help='язык перевода (TARGET_LANG)')
     parser.add_argument('--samples', type=int, default=20, help='сколько примеров показать')
     parser.add_argument('--json', type=Path, help='сохранить результат для сравнения')
     parser.add_argument('--compare', type=Path, help='JSON прошлого замера')
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     report = audit(args.book, args.dic, args.lang, args.samples)
     previous = json.loads(args.compare.read_text(encoding='utf-8')) if args.compare else None

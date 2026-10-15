@@ -1,47 +1,34 @@
-#!/usr/bin/env python3
-"""Чистка словаря .dic перед ручной проверкой.
-
-Пример:
-    python scripts/clean_dic.py books/MyBook.dic
-    python scripts/clean_dic.py books/MyBook.dic -o books/MyBook_clean.dic --keep runcible,autogun
-
-Исходный файл не меняется. Результат — `<имя>.clean.dic` рядом с исходником
-(или `-o`), отчёт о каждом изменении — `<результат>.report.txt` (или `--report`).
-
-Шаги:
-1. Поля: категория — в верхний регистр (у записи в нижнем регистре без
-   категории — TERM); пол — синонимы (он/она/оно/они, male/female, м/ж, …)
-   приводятся к he/she/it/they (тот же список, что у загрузчика,
-   `gender_check.GENDER_MAP`). Незнакомое значение пола остаётся как есть и
-   попадает в отчёт: загрузчик его не принимает (пишет в лог), поправьте вручную.
-2. Дубли одной записи (`Jain tech` / `jain tech`, по `lexicon.word_key`, как
-   в загрузчике; `Jain-tech` — другая запись) сливаются в одну: остаётся
-   запись с категорией и с заглавной буквой, при равенстве — первая в файле;
-   пустые пол и заметки дополняются из остальных. Разные переводы — в отчёт.
-3. Обычные слова: однословная запись в нижнем регистре, у которой есть вектор
-   в spaCy-модели (`ner.known_words`; модель — NERMODEL / по SOURCE_LANG или
-   `--model`), удаляется. `--keep` — слова, которые оставить. С моделью без
-   векторов (*_sm) шаг ничего не удаляет.
-4. Обрезанные варианты: при том же переводе запись, которая длиннее другой на
-   1–2 буквы и не является обычным словом (`Jains` при `Jain`), удаляется.
-
-Строки пишутся тем же CSV-форматом, что у `build_dictionary` и
-`convert_dic.py`: поле с запятой или кавычкой берётся в кавычки, кавычки
-внутри удваиваются, поэтому файл читается загрузчиком без потерь.
 """
-import argparse
+Cleaning of a .dic before its review (`app.py dict clean`). The source file
+is not changed: the result is `<name>.clean.dic` (or `output`), every change
+is listed in `<result>.report.txt`.
+
+1. Fields: the category upper-cased (a lowercase entry without one becomes
+   TERM); the gender spellings (он/она, male/female, м/ж, ...) become
+   he/she/it/they (gender_check.GENDER_MAP, the loader's list); an unknown
+   value stays and is reported (the loader ignores it).
+2. Duplicates of one entry ("Jain tech" / "jain tech", lexicon.word_key as in
+   the loader; "Jain-tech" is another entry) merge into one: the one with a
+   category and a capital wins, else the first; empty gender and notes are
+   filled from the others. Different translations are reported.
+3. Ordinary words: a one-word lowercase entry the spaCy model has a vector for
+   (ner.known_words; NERMODEL or `model`) is dropped, except `keep`. A model
+   without vectors (*_sm) drops nothing.
+4. Cut variants: with the same translation an entry 1-2 letters longer than
+   another and not an ordinary word ("Jains" next to "Jain") is dropped.
+
+Lines are written in the CSV format of build_dictionary and dict_convert, so
+the loader reads the result without losses.
+"""
 import collections
 import csv
 import io
 import os
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from src import lexicon  # noqa: E402
-from src import ner  # noqa: E402
-from src.gender_check import GENDER_MAP  # noqa: E402  (the loader normalizes the same way)
+from src import lexicon
+from src import ner
+from src.gender_check import GENDER_MAP  # the loader normalizes the same way
 
 CATEGORY_ORDER = ['PERSON', 'GPE', 'LOC', 'FAC', 'ORG', 'PRODUCT', 'EVENT', 'TERM']
 
@@ -163,25 +150,20 @@ def render(rows, src_name: str) -> str:
     return "\n".join(lines)
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('dic', type=Path, help='исходный .dic')
-    ap.add_argument('-o', '--output', type=Path, help='результат (по умолчанию <имя>.clean.dic)')
-    ap.add_argument('--report', type=Path, help='отчёт (по умолчанию <результат>.report.txt)')
-    ap.add_argument('--model', default=ner.config.nermodel,
-                    help=f'spaCy-модель для обычных слов (по умолчанию {ner.config.nermodel})')
-    ap.add_argument('--keep', default='', help='слова через запятую, которые не удалять как обычные')
-    args = ap.parse_args()
-
-    output = args.output or args.dic.with_name(f"{args.dic.stem}.clean.dic")
-    report_path = args.report or output.with_name(f"{output.stem}.report.txt")
-    if output.resolve() == args.dic.resolve():
-        ap.error('результат не должен совпадать с исходным файлом')
-    ner.config.nermodel = args.model
-    keep = {w.strip().casefold() for w in args.keep.split(',') if w.strip()}
+def clean_file(dic: Path, output: Path = None, report_path: Path = None,
+               model: str = None, keep: str = '') -> dict:
+    """Clean `dic` into `output` (default <name>.clean.dic) with a report;
+    returns {'output', 'report', 'before', 'after', 'counts'}."""
+    output = output or dic.with_name(f"{dic.stem}.clean.dic")
+    report_path = report_path or output.with_name(f"{output.stem}.report.txt")
+    if output.resolve() == dic.resolve():
+        raise ValueError('the result must not overwrite the source file')
+    if model:
+        ner.config.nermodel = model
+    keep = {w.strip().casefold() for w in keep.split(',') if w.strip()}
 
     report = collections.defaultdict(list)
-    rows = parse_dic(args.dic, report)
+    rows = parse_dic(dic, report)
     total = len(rows)
     for row in rows:
         normalize_fields(row, report)
@@ -189,14 +171,8 @@ def main():
     rows, ordinary = drop_ordinary_words(rows, keep, report)
     rows = drop_cut_variants(rows, ordinary, report)
 
-    write_atomic(output, render(rows, args.dic.name))
+    write_atomic(output, render(rows, dic.name))
     write_atomic(report_path, ''.join(f"## {k} ({len(v)})\n" + '\n'.join(v) + '\n\n'
                                       for k, v in report.items()))
-    print(f"{total} -> {len(rows)} entries: {output}")
-    for k, v in report.items():
-        print(f"  {k}: {len(v)}")
-    print(f"report: {report_path}")
-
-
-if __name__ == '__main__':
-    main()
+    return {'output': output, 'report': report_path, 'before': total, 'after': len(rows),
+            'counts': {k: len(v) for k, v in report.items()}}

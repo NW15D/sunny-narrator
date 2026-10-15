@@ -1,15 +1,12 @@
-"""scripts/clean_dic.py: the cleaned .dic loads back without losing fields."""
-import importlib.util
+"""app.py dict clean (src/dict_clean.py): the cleaned .dic loads back without losing fields."""
 import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-ROOT = Path(__file__).resolve().parent.parent
-_spec = importlib.util.spec_from_file_location('clean_dic', ROOT / 'scripts' / 'clean_dic.py')
-clean_dic = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(clean_dic)
+from src import commands
+from src import dict_clean as clean_dic
 
 SOURCE = '''# test
 Jain tech = джайн-техника, TERM, ,
@@ -32,8 +29,7 @@ def _run(tmp_path, monkeypatch, *args):
     src.write_text(SOURCE, encoding='utf-8')
     monkeypatch.setattr(clean_dic.ner, 'known_words',
                         lambda words: {w for w in words if w in ('starship', 'runcible')})
-    monkeypatch.setattr(sys, 'argv', ['clean_dic.py', str(src), *args])
-    clean_dic.main()
+    assert commands.run(['dict', 'clean', str(src), *args]) == 0
     return tmp_path / 'book.clean.dic', tmp_path / 'book.clean.report.txt'
 
 
@@ -79,7 +75,5 @@ def test_source_file_is_not_overwritten(tmp_path, monkeypatch):
     import pytest
     src = tmp_path / 'book.dic'
     src.write_text(SOURCE, encoding='utf-8')
-    monkeypatch.setattr(sys, 'argv', ['clean_dic.py', str(src), '-o', str(src)])
-    with pytest.raises(SystemExit):
-        clean_dic.main()
+    assert commands.run(['dict', 'clean', str(src), '-o', str(src)]) == 2
     assert src.read_text(encoding='utf-8') == SOURCE
