@@ -358,9 +358,8 @@ class VocabularyManager:
             return self.vocab
         else:
             logger.info(f"Dictionary not found. Creating: {self.dict_file}")
-            self.build_dictionary(source_text)
+            self.build_dictionary(source_text)  # checks it against the book itself
             self._extract_characters()
-            dict_review.preflight(self, source_text, config, write_back=True)
             # Check if auto-continue is enabled
             if getattr(config, 'auto_continue_after_dict', False):
                 logger.info("Auto-continue enabled, proceeding without manual review")
@@ -460,7 +459,12 @@ class VocabularyManager:
             
             if extracted_terms:
                 # Format terms for translation
-                terms_text = '\n'.join([term for term, cat, notes in extracted_terms])
+                # The category goes to the LLM as a hint for the translation
+                # (a name is transliterated, a coined word is not); the .dic
+                # gets the category of NER and the book, not the LLM's
+                categories = {term: cat for term, cat, notes in extracted_terms}
+                terms_text = '\n'.join(f"{term} [{cat}]" if cat else term
+                                        for term, cat, notes in extracted_terms)
                 
                 # Split into chunks based on MAX_LEN_CHUNK configuration
                 CHUNK_SIZE = int(config.max_len_chunk) if hasattr(config, 'max_len_chunk') else 16384
@@ -490,8 +494,9 @@ class VocabularyManager:
                         f"# Vocabulary for {self.book_name}\n"
                         f"# Format: source = target, category, gender, notes\n"
                         f"# Generated automatically by NER\n"
-                        f"# The gender of a PERSON is guessed from the name alone: check it, the\n"
-                        f"# translation follows it (the GENDER stage fixes sentences against it)\n\n"
+                        f"# Categories and genders come from the book (NER labels, pronouns); an empty\n"
+                        f"# gender: the book does not show it clearly - set it or let the synopsis\n"
+                        f"# fill it in. The translation follows the gender here (the GENDER stage).\n\n"
                     )
 
                 self.vocab.clear()
@@ -507,7 +512,7 @@ class VocabularyManager:
                             "proofread"
                         )
                         parsed = self._parse_and_append_chunk(vocab_translated, idx + 1, len(chunks),
-                                                              out_path=building_path)
+                                                              out_path=building_path, categories=categories)
                         total_parsed += parsed
                         logger.info(f"Chunk {idx + 1}: wrote {parsed} entries")
                     os.replace(building_path, self.dict_file)
@@ -518,6 +523,12 @@ class VocabularyManager:
                     raise
 
                 logger.info(f"Dictionary saved: {self.dict_file} ({total_parsed} total entries)")
+                # Categories and genders from the book: the NER majority, the
+                # pronouns (an entry the book keeps calling he/she is a PERSON
+                # with that gender, whatever NER tagged it). Written into the
+                # new file; an unsure gender stays empty for the review.
+                from src import dict_review
+                dict_review.preflight(self, body, config, write_back=True)
             else:
                 logger.warning("No terms extracted by NER")
                 self._create_template()
@@ -526,7 +537,8 @@ class VocabularyManager:
             self._create_template()
 
     def _parse_and_append_chunk(self, vocab_translated: str, chunk_num: int, total_chunks: int,
-                                out_path: Optional[str] = None) -> int:
+                                out_path: Optional[str] = None,
+                                categories: Optional[Dict[str, str]] = None) -> int:
         """
         Parse LLM response and append entries to the dictionary file in consistent CSV format.
         out_path: file to append to (default dict_file; build_dictionary passes
@@ -631,9 +643,15 @@ class VocabularyManager:
         
         for term in terms:
             if isinstance(term, dict):
-                source = str(term.get('source', '')).strip()
-                target = str(term.get('target', '')).strip()
+                # the source as sent, "Trike [ORG]": the category is a hint
+                source = re.sub(r'\s*\[[^\]]*\]\s*$', '', str(term.get('source', '')).strip())
+                target = re.sub(r'\s*\[[^\]]*\]\s*$', '', str(term.get('target', '')).strip())
                 category = str(term.get('category', 'TERM')).strip()
+                if categories is not None:
+                    # NER's category, decided again by the book afterwards; the
+                    # LLM only translates (it guessed categories and genders)
+                    category = categories.get(source) or next(
+                        (c for s, c in categories.items() if s.casefold() == source.casefold()), 'TERM')
                 
                 # Skip empty or invalid entries
                 if not source or not target:
@@ -645,8 +663,8 @@ class VocabularyManager:
                 else:
                     category = category.upper()
                 gender = normalize_gender(str(term.get('gender', '') or ''))
-                if category != 'PERSON' or gender not in GENDERS:
-                    gender = ''
+                if category != 'PERSON' or gender not in GENDERS or categories is not None:
+                    gender = ''  # a built dictionary takes the gender from the book
 
                 valid_terms.append({
                     "source": source,

@@ -46,15 +46,34 @@ from src.gender_check import normalize_gender
 
 logger = logging.getLogger(__name__)
 
-# NER labels of the spaCy models -> .dic categories: OntoNotes (en, ja, zh),
-# WikiNER (de, fr, es, it, pt, ru, uk, xx), NKJP (pl), the Korean set
-LABELS = {
-    'PERSON': 'PERSON', 'PER': 'PERSON', 'persName': 'PERSON', 'PS': 'PERSON',
-    'GPE': 'LOC', 'LOC': 'LOC', 'FAC': 'LOC', 'placeName': 'LOC', 'geogName': 'LOC', 'LC': 'LOC',
-    'ORG': 'ORG', 'orgName': 'ORG', 'OG': 'ORG',
-}
+# NER labels -> the categories a review decides between (ner.CATEGORY_OF_LABEL,
+# the table the dictionary is built with; its TERM labels are left out: a
+# review moves entries only between people, places and organizations)
+LABELS = {label: cat for label, cat in ner.CATEGORY_OF_LABEL.items() if cat != 'TERM'}
 FEATURE_GENDER = {'Masc': 'he', 'Fem': 'she'}
 THIRD_PERSON = {'3', 'Third'}  # en/de/fr/...: "3", ru: "Third"
+# Forms of address that tell a gender: in the entry ("Miss Raby", "Signora
+# Cantù") or before the name in the book ("Miss Harbottle"). Far more reliable
+# than pronouns: "Harbottle, who was always right, had warned me against
+# him" is about another man. Normalized (casefold), without the dot.
+HONORIFICS = {
+    'he': {'mr', 'sir', 'lord', 'master', 'mister', 'signor', 'monsieur', 'herr', 'señor', 'senhor',
+           'don', 'dom', 'pan', 'pane', 'господин', 'мистер', 'сэр', 'лорд', 'пан', 'синьор', 'месье',
+           'герр', 'сеньор'},
+    'she': {'mrs', 'miss', 'ms', 'lady', 'madam', 'madame', 'mademoiselle', 'mme', 'mlle', 'signora',
+            'signorina', 'frau', 'fräulein', 'señora', 'señorita', 'senhora', 'dona', 'doña', 'pani',
+            'госпожа', 'миссис', 'мисс', 'леди', 'мадам', 'мадемуазель', 'синьора', 'синьорина', 'фрау',
+            'сеньора', 'сеньорита'},
+}
+_HONORIFIC = {word: gender for gender, words in HONORIFICS.items() for word in words}
+
+
+def honorific_gender(source: str) -> Optional[str]:
+    """he/she when the entry starts with a form of address ("Miss Raby")."""
+    words = lexicon.tokenize(source)
+    return _HONORIFIC.get(words[0]) if len(words) > 1 else None
+
+
 # Pronouns of languages whose models give them no gender feature
 PRONOUN_GENDER = {
     'zh': {'他': 'he', '她': 'she'},
@@ -111,6 +130,7 @@ class Evidence:
         self.mentions = 0
         self.lowercase = 0                    # mentions written lowercase (not sentence-initial)
         self.pronouns = collections.Counter()  # he / she
+        self.honorifics = collections.Counter()  # he / she: "Miss" before the name
 
 
 def looks_like_proper_name(source: str) -> bool:
@@ -169,6 +189,11 @@ def collect(paragraphs: list, rows: list, nlp) -> dict:
             mentions.append((i, i + len(words), k))
             ev = evidence[k]
             ev.mentions += 1
+            j = i - 1
+            if j >= 0 and doc[j].text == '.':
+                j -= 1  # "Mr. Andrews"
+            if j >= 0 and norm[j] in _HONORIFIC:
+                ev.honorifics[_HONORIFIC[norm[j]]] += 1
             if lowercase:
                 ev.lowercase += 1
             label = LABELS.get(span[-1].ent_type_)
@@ -212,10 +237,14 @@ def _majority(counter: collections.Counter, min_votes: int, ratio: float):
 
 
 def review(rows: list, evidence: dict, min_votes: int, ratio: float, report: dict,
-           fix_conflicts: bool = False) -> int:
+           fix_conflicts: bool = False, promote_persons: bool = False) -> int:
     """Apply the sure changes to rows; report everything. Returns the count.
     A gender the .dic has and the book contradicts is changed only with
-    `fix_conflicts` (the check before a translation), otherwise reported."""
+    `fix_conflicts` (the check before a translation), otherwise reported.
+    `promote_persons` (a dictionary just built from NER): a capitalized entry
+    the book keeps calling he or she becomes a PERSON with that gender,
+    whatever NER tagged it ("Trike" ORG); a reviewed dictionary is the
+    user's, its LOC/ORG stay."""
     changed = 0
     for k, row in enumerate(rows):
         ev = evidence.get(k)
@@ -232,16 +261,22 @@ def review(rows: list, evidence: dict, min_votes: int, ratio: float, report: dic
         # only them is a person, whatever NER says (it tags invented names
         # ORG: Trike, Cog); mixed pronouns are other people around a place
         pronouns = sum(ev.pronouns.values())
+        person = _majority(ev.pronouns, min_votes, ratio)
         if (old == 'PERSON' and not looks_like_proper_name(row['source'])
                 and ev.lowercase >= min_votes and ev.lowercase / ev.mentions >= ratio):
             new, why = 'TERM', f"lowercase in {ev.lowercase} of {ev.mentions} mentions"
+        elif promote_persons and old in ('PERSON', 'LOC', 'ORG') and not looks_like_proper_name(row['source']):
+            # NER tagged a lowercase word ("dell", "submind"): not a name
+            new, why = 'TERM', "a lowercase word, not a name"
+        elif (promote_persons and old != 'PERSON' and person and person[3]
+              and looks_like_proper_name(row['source'])):
+            new, why = 'PERSON', f"the book calls it {person[0]} ({person[1]} of {pronouns} pronouns)"
         else:
             top = _majority(ev.labels, min_votes, ratio)
             if top and top[0] != old and (old in ('', 'TERM') and top[0] == 'PERSON'
                                           or old == 'PERSON' or old == ''):
                 label, votes, total, sure = top
                 why = f"NER {label} in {votes} of {total} tagged mentions ({ev.mentions} in all)"
-                person = _majority(ev.pronouns, min_votes, ratio)
                 if sure and old == 'PERSON' and person and person[3]:
                     why += f"; but the book calls it {person[0]} ({person[1]} of {pronouns} pronouns)"
                     sure = False
@@ -258,12 +293,21 @@ def review(rows: list, evidence: dict, min_votes: int, ratio: float, report: dic
                 report['gender cleared (not a person)'].append(f"{name}: {row['gender']}")
                 row['gender'] = ''
 
-        # gender
+        # gender: a form of address in the entry or before the name (2+, one
+        # gender) decides; else the pronouns
         if row['category'] != 'PERSON':
             continue
-        top = _majority(ev.pronouns, min_votes, ratio)
+        titled = honorific_gender(row['source'])
+        if titled is None and sum(ev.honorifics.values()) >= 2 and len(ev.honorifics) == 1:
+            titled = next(iter(ev.honorifics))
+        top = (titled, 1, 1, True) if titled else _majority(ev.pronouns, min_votes, ratio)
+        if not titled and top and top[3] and ev.honorifics and top[0] not in ev.honorifics:
+            top = (top[0], top[1], top[2], False)  # "Miss Harbottle" once, "he" around her: unsure
         counts = ', '.join(f"{g} ×{n}" for g, n in ev.pronouns.most_common()) or 'no pronouns'
-        if new and not row['gender']:  # a new person: one guess at a time, the gender waits
+        if titled:
+            counts = f"form of address: {titled}; pronouns: {counts}"
+        if new and not row['gender'] and not why.startswith('the book calls it'):
+            # a person by NER labels only: one guess at a time, the gender waits
             report['gender not sure (not set)'].append(f"{name}: {counts} (category just changed)")
         elif top and top[3]:
             gender = top[0]
@@ -367,12 +411,30 @@ class DictionaryCheckFailed(Exception):
                          f"Fix the .dic, run without --no-autofix, or add --force.")
 
 
+def reviewed_path(manager) -> Path:
+    """Where the check puts the fixed copy of the dictionary: next to it,
+    `<dic>.reviewed.dic`; for a dictionary shared by a series (its name is
+    not the book's) `<dic>.<book>.reviewed.dic`, so the books of the series do
+    not overwrite each other's findings."""
+    dic = Path(manager.dict_file)
+    if dic.stem == manager.book_name:
+        return dic.with_name(f"{dic.stem}.reviewed.dic")
+    return dic.with_name(f"{dic.stem}.{manager.book_name}.reviewed.dic")
+
+
 def _rows_of(vocab: dict) -> list:
     return [{'key': key, 'source': e.source, 'target': e.target, 'category': (e.category or '').upper(),
              'gender': normalize_gender(e.gender), 'notes': e.notes} for key, e in vocab.items()]
 
 
 def preflight(manager, source_text: Optional[str], config, write_back: bool = False) -> dict:
+    """See _check; write_back: the dictionary was just built by NER (not
+    reviewed by anyone): the findings go into its file, and an entry the book
+    keeps calling he/she becomes a PERSON whatever NER tagged it."""
+    return _check(manager, source_text, config, write_back)
+
+
+def _check(manager, source_text: Optional[str], config, write_back: bool) -> dict:
     """
     The check before a translation (see the module docstring). `manager` is
     the loaded VocabularyManager, `source_text` the book (FB2 body or the
@@ -398,7 +460,8 @@ def preflight(manager, source_text: Optional[str], config, write_back: bool = Fa
     cache_path = book_dir / f"{manager.book_name}.dictcheck.json"
     report_path = book_dir / f"{manager.book_name}.dictcheck.txt"
     model = config.nermodel
-    key = hashlib.sha256(json.dumps([rows, model, MIN_VOTES, RATIO, manager.target_lang], ensure_ascii=False,
+    key = hashlib.sha256(json.dumps([rows, model, MIN_VOTES, RATIO, manager.target_lang, write_back],
+                                    ensure_ascii=False,
                                     sort_keys=True).encode('utf-8')
                          + hashlib.sha256(source_text.encode('utf-8')).digest()).hexdigest()
 
@@ -422,7 +485,7 @@ def preflight(manager, source_text: Optional[str], config, write_back: bool = Fa
         evidence = collect(paragraphs, rows, nlp)
         report = collections.defaultdict(list)
         originals = {r['key']: (r['category'], r['gender']) for r in rows}
-        review(rows, evidence, MIN_VOTES, RATIO, report, fix_conflicts=True)
+        review(rows, evidence, MIN_VOTES, RATIO, report, fix_conflicts=True, promote_persons=write_back)
         _mixed_translations(rows, manager.target_lang, report)
         fixes = [{'key': r['key'], 'source': r['source'], 'category': r['category'], 'gender': r['gender'],
                   'was': list(originals[r['key']])} for r in rows if r.get('changed')]
@@ -448,7 +511,7 @@ def preflight(manager, source_text: Optional[str], config, write_back: bool = Fa
                 _write_reviewed(Path(manager.dict_file), Path(manager.dict_file), fixes)
                 where = f"written into {manager.dict_file}"
             else:
-                reviewed = Path(manager.dict_file).with_name(f"{Path(manager.dict_file).stem}.reviewed.dic")
+                reviewed = reviewed_path(manager)
                 _write_reviewed(Path(manager.dict_file), reviewed, fixes)
                 where = f"for this run; {Path(manager.dict_file).name} is unchanged, {reviewed.name} has them"
             logger.warning(f"Dictionary check: {len(fixes)} fix(es) applied {where}. Report: {report_path}")

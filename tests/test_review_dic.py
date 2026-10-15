@@ -214,3 +214,90 @@ def test_chinese_pronouns_have_no_gender_feature_but_a_gender():
 def test_a_model_without_a_parser_gets_sentences():
     nlp = rd._load_model("xx_ent_wiki_sm")
     assert list(nlp("Anna came. Kuno left.").sents)[1].text == "Kuno left."
+
+
+# --- building a dictionary: categories and genders from the book --------------
+
+def test_a_form_of_address_decides_and_contradicting_pronouns_leave_it_unsure():
+    rows = [_row("Miss Raby"), _row("Michael"), _row("Harbottle")]
+    evidence = {0: _ev(pronouns={'he': 9}),                                # the entry says Miss
+                1: _ev(pronouns={'he': 3}), 2: _ev(pronouns={'he': 6, 'she': 1})}
+    evidence[1].honorifics.update({'he': 6})                              # "Mr. Michael" ×6
+    evidence[2].honorifics.update({'she': 1})                             # "Miss Harbottle" once
+    report = collections.defaultdict(list)
+    rd.review(rows, evidence, min_votes=4, ratio=0.85, report=report)
+    assert [r['gender'] for r in rows] == ['she', 'he', '']
+    assert rd.honorific_gender("Signora Cantù") == 'she' and rd.honorific_gender("Мисс Хэддон") == 'she'
+    assert rd.honorific_gender("Miss") is None
+
+
+def test_a_built_dictionary_trusts_pronouns_over_ner_labels():
+    rows = [_row("Trike", category="ORG"), _row("dell", category="ORG"), _row("Vorta", category="ORG")]
+    evidence = {0: _ev(labels={'ORG': 256}, pronouns={'he': 40}),
+                1: _ev(labels={'ORG': 5}, lowercase=5),
+                2: _ev(labels={'ORG': 12}, pronouns={'she': 3, 'he': 3})}
+    report = collections.defaultdict(list)
+    rd.review(rows, evidence, 4, 0.85, report, fix_conflicts=True, promote_persons=True)
+    assert [(r['category'], r['gender']) for r in rows] == [("PERSON", "he"), ("TERM", ""), ("ORG", "")]
+    # a reviewed dictionary is the user's: no promotion there
+    rows = [_row("Trike", category="ORG")]
+    rd.review(rows, {0: _ev(pronouns={'he': 40})}, 4, 0.85, collections.defaultdict(list), fix_conflicts=True)
+    assert rows[0]['category'] == "ORG"
+
+
+@pytest.mark.skipif(not is_package("en_core_web_sm"), reason="en_core_web_sm not installed")
+def test_build_takes_categories_and_genders_from_the_book_not_the_llm(tmp_path, monkeypatch):
+    import json
+    import re
+    import src.utils as u
+    import src.vocabulary_manager as vm
+    import src.ner as ner
+    book = tmp_path / "book.txt"
+    text = "\n\n".join(["John walked to the ship. John said that he was tired and he slept."] * 8
+                       + ["Miss Raby looked at the sea. Miss Raby smiled."] * 6)
+    book.write_text(text, encoding="utf-8")
+    sent = []
+
+    def fake_vocabulary(source_lang, target_lang, terms, country, role):
+        sent.append(terms)
+        names = [re.sub(r'\s*\[[^\]]*\]$', '', line) for line in terms.splitlines() if line.strip()]
+        # the LLM guesses categories and genders - they must not reach the .dic
+        return json.dumps({"terms": [{"source": n, "target": n.upper(), "category": "LOC", "gender": "she"}
+                                     for n in names]})
+
+    monkeypatch.setattr(u, 'vocabulary', fake_vocabulary)
+    monkeypatch.setattr(vm.config, 'dict_check', True)
+    monkeypatch.setattr(vm.config, 'nermodel', 'en_core_web_sm')
+    monkeypatch.setattr(ner.config, 'nermodel', 'en_core_web_sm')
+    manager = vm.VocabularyManager(str(book), dict_file=str(tmp_path / "book.dic"), source_lang="english")
+    manager.build_dictionary(source_text=text, min_count_ner=3, use_ner=True)
+
+    assert any("[" in terms for terms in sent), "the category goes to the LLM as a hint"
+    entries = {e.source: e for e in vm.VocabularyManager(str(book), dict_file=str(tmp_path / "book.dic"))
+               .load().values()}
+    # the LLM said LOC/she for everything: the .dic has NER's category and the book's gender
+    assert (entries["John"].category, entries["John"].gender, entries["John"].target) == ("PERSON", "he", "JOHN")
+    assert (entries["Raby"].category, entries["Raby"].gender) == ("PERSON", "she")   # "Miss" before the name
+
+
+@pytest.mark.skipif(not is_package("en_core_web_sm"), reason="en_core_web_sm not installed")
+def test_a_series_dictionary_gets_a_reviewed_copy_per_book(tmp_path, monkeypatch):
+    """One series.dic, two books: each run fixes the dictionary for itself
+    only, series.dic stays as it is, and the findings do not overwrite each
+    other."""
+    import src.vocabulary_manager as vm
+    monkeypatch.setattr(vm.config, 'dict_check', True)
+    monkeypatch.setattr(vm.config, 'nermodel', 'en_core_web_sm')
+    monkeypatch.setattr(vm.config, 'dict_autofix', True)
+    dic = tmp_path / "series.dic"
+    dic.write_text("Vashti = Вашти, PERSON, he, \n", encoding="utf-8")
+    before = dic.read_text(encoding="utf-8")
+    for name in ("book1", "book2"):
+        book = tmp_path / f"{name}.txt"
+        book.write_text("x", encoding="utf-8")
+        manager = vm.VocabularyManager(str(book), dict_file=str(dic), source_lang="english")
+        manager.initialize(source_text=EN_TEXT)
+        assert manager.vocab['vashti'].gender == 'she'
+        assert (tmp_path / f"series.{name}.reviewed.dic").exists()
+        assert (tmp_path / f"{name}.dictcheck.txt").exists()
+    assert dic.read_text(encoding="utf-8") == before

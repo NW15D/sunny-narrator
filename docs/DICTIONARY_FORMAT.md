@@ -138,11 +138,32 @@ python app.py
 ```
 
 **Process:**
-1. NER extracts terms from source text
-2. LLM translates terms
-3. Dictionary saved in CSV format
-4. Review and edit dictionary
-5. Restart translation
+1. NER of the source language finds the names and named things. One entry per
+   entity: its forms are grouped by lemma ("Анну", "Анне" → "Анна", in the
+   nominative when the book has it), the category is the one most mentions
+   got ("Trike" tagged ORG 256 times and PERSON twice is one entry). Every
+   label family is understood: OntoNotes (en, ja, zh), WikiNER `PER/LOC/ORG/MISC`
+   (de, fr, es, it, pt, ru, uk, xx), Polish `persName/placeName/orgName`,
+   Korean `PS/LC/OG`. Peoples, species and other named things
+   (`NORP`, `MISC`, `PRODUCT`, `EVENT`: Prador, Jain) become TERM.
+2. The LLM (proofread) **only translates**; the category goes to it as a hint
+   ("Trike [ORG]": a name is transliterated, a coined word is not).
+3. The categories and genders are decided by the book, like the
+   [check before a translation](#dictionary-check-before-a-translation), and
+   written into the new file:
+   - an entry the book keeps calling *he* or *she* is a PERSON with that
+     gender, whatever NER tagged it; a lowercase word NER took for a name
+     ("dell", "submind") is a TERM;
+   - the gender of a person: a form of address in the entry or before the
+     name in the book ("Miss Raby", "Mr. Michael", "Signora", "мисс",
+     "Frau", ...) decides; else the pronouns of the sentences naming only
+     that person; when they disagree ("Miss Harbottle" once, "he" around her
+     — another man) or are too few, the gender stays **empty** and is
+     listed in `<book>.dictcheck.txt`. A wrong gender is worse than none: the
+     translation follows the `.dic`, an empty one the synopsis fills in.
+4. The new dictionary stops the run for your review: check the report, fill
+   in the empty genders you know.
+5. Restart translation.
 
 ### Method 2: Manual
 
@@ -245,7 +266,7 @@ What happens with the findings:
 
 | Setting | Sure findings | The run |
 |---|---|---|
-| default (`DICT_AUTOFIX=true`) | applied **for this run** in memory; the `.dic` is not changed, `<dic>.reviewed.dic` gets them to take over | goes on |
+| default (`DICT_AUTOFIX=true`) | applied **for this run** in memory; the `.dic` is not changed, `<dic>.reviewed.dic` gets them to take over (a series dictionary: `<dic>.<book>.reviewed.dic`, one per book) | goes on |
 | `--no-autofix` (`DICT_AUTOFIX=false`) | not applied | stops (exit code 2) when the dictionary contradicts the book: a category, a gender the book contradicts, a translation in two alphabets |
 | `--no-autofix --force` | not applied | goes on as is |
 | a dictionary just built (`--build-dict` or a missing `.dic`) | written into the new file, it stops for review anyway | stops for review |
@@ -263,6 +284,24 @@ WikiNER `PER/LOC/ORG`, Polish `persName/placeName/orgName`, Korean
 no gender feature and are read by their form (他/她, 彼/彼女, 그/그녀). A model
 without a parser (`xx_ent_wiki_sm`) gets a sentencizer; without a model the
 check is skipped with a warning.
+
+### A dictionary shared by a series
+
+One `series.dic` for all books of a series (`DICTIONARY=series.dic` or
+`--dictionary`) is **never changed by a translation run**:
+
+- the check before each book reads it and fixes it **in memory for that
+  book's run** only, against that book's text (a character of book 3 may not
+  appear in book 1: "not found in the book" is normal and changes nothing);
+  its findings go to `series.<book>.reviewed.dic` and `<book>.dictcheck.txt`;
+- the synopsis adds new characters and fills empty genders in memory for the
+  run (and its resume); into `series.dic` only with `DICT_AUTO_SAVE=true` —
+  new lines and empty genders, an existing value is never rewritten;
+- the file changes when you edit it or take over a `series.<book>.reviewed.dic`.
+
+So the next book starts from `series.dic` as you left it. To carry the
+findings of a book over to the next ones, take its reviewed copy (or the lines
+you agree with) into `series.dic`.
 
 ## Dictionary commands
 

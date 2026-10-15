@@ -34,17 +34,30 @@ _nlp_cache = {}
 # TI=time, QT=quantity) - none of which overlap with the OntoNotes labels.
 # Without this, filtering by an OntoNotes-only category list silently
 # drops every entity found in Korean text.
-NER_CATEGORIES = ["ORG", "LOC", "GPE", "PERSON", "EVENT", "FAC", "PRODUCT", "PS", "LC", "OG"]
-
-# Normalize scheme-specific labels to their OntoNotes-style equivalent so
-# .dic output categories stay consistent regardless of which model produced
-# them.
-# KLUE labels of ko_core_news_lg and the PER of the multilingual xx_ent_wiki_sm
-_LABEL_NORMALIZATION = {"PS": "PERSON", "LC": "LOC", "OG": "ORG", "PER": "PERSON"}
+# NER labels of the spaCy models -> .dic categories: one table for building
+# a dictionary and for checking it against the book (src/dict_review.py).
+# OntoNotes (en, ja, zh), WikiNER (de, fr, es, it, pt, ru, uk, xx: PER, not
+# PERSON - without it the characters of these books never reached the .dic),
+# NKJP (pl), KLUE (ko). Peoples, species and other named things (NORP, MISC,
+# PRODUCT, EVENT: Prador, Jain) are glossary terms.
+CATEGORY_OF_LABEL = {
+    'PERSON': 'PERSON', 'PER': 'PERSON', 'persName': 'PERSON', 'PS': 'PERSON',
+    'GPE': 'LOC', 'LOC': 'LOC', 'FAC': 'LOC', 'placeName': 'LOC', 'geogName': 'LOC', 'LC': 'LOC',
+    'ORG': 'ORG', 'orgName': 'ORG', 'OG': 'ORG',
+    'NORP': 'TERM', 'MISC': 'TERM', 'PRODUCT': 'TERM', 'EVENT': 'TERM',
+}
+NER_CATEGORIES = list(CATEGORY_OF_LABEL)
 
 
 def _normalize_label(label):
-    return _LABEL_NORMALIZATION.get(label, label)
+    return CATEGORY_OF_LABEL.get(label, label)
+
+
+def _majority_category(categories: Counter) -> str:
+    """The category most mentions of an entity got (ties: a person first):
+    "Trike" tagged ORG 256 times and PERSON twice is one entry, not two."""
+    order = {'PERSON': 0, 'LOC': 1, 'ORG': 2, 'TERM': 3}
+    return max(categories, key=lambda c: (categories[c], -order.get(c, 9)))
 
 def _ner_disabled_pipes(lang=None):
     """spaCy components NER does not need. Korean keeps the lemmatizer:
@@ -247,10 +260,21 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
                     print(f"Error processing chunk {i+1}: {e}")
                 continue
 
-        # Count occurrences of each entity
-        item_counts = Counter(ents)
-        unique_ents = [(text, label, count)
-                       for (text, label), count in item_counts.items()]
+        # One entry per entity: its forms ("Анна"/"Анну") grouped by the
+        # lemmas of all its tokens, the category most of its mentions got,
+        # the nominative form when the book has it (_preferred_form)
+        try:
+            keys = _lemma_keys(nlp, {term for term, _ in ents})
+        except Exception as e:  # no lemmatizer: forms are grouped as written
+            logger.debug(f"entity lemmas unavailable: {e}")
+            keys = {}
+        groups = {}  # lemma key -> (Counter(category), Counter(surface form))
+        for term, label in ents:
+            cats, forms = groups.setdefault(keys.get(term) or lexicon.normalize(term), (Counter(), Counter()))
+            cats[label] += 1
+            forms[term] += 1
+        unique_ents = [(_preferred_form(forms, key), _majority_category(cats), sum(forms.values()))
+                       for key, (cats, forms) in groups.items()]
 
         if config.debug:
             print(f"Unique entities before filtering by count: {len(unique_ents)}")
@@ -908,28 +932,28 @@ def create_series_vocab(
     print(f"Total unique words: {len(all_words)}")
 
     # ============================================================
-    # PHASE 1: NORMALIZE & MERGE ENTITIES (by lemma only, keep FIRST category)
+    # PHASE 1: NORMALIZE & MERGE ENTITIES (by lemma, the majority category)
     # ============================================================
 
     # Group surface forms of an entity by the lemmas of ALL its tokens
-    # ("Ивана"/"Иван" together, "John Smith" stays "John Smith"), keep the
-    # first category seen, and write the most frequent surface form: proper
-    # names keep their capital letters in the .dic.
-    entity_groups = {}  # lemma key -> (first_category, Counter(surface form))
+    # ("Ивана"/"Иван" together, "John Smith" stays "John Smith"), take the
+    # category most mentions got, and write the preferred surface form:
+    # proper names keep their capital letters in the .dic.
+    entity_groups = {}  # lemma key -> (Counter(category), Counter(surface form))
     term_to_key = _lemma_keys(nlp, {term for term, _, _ in all_raw_entities})
 
     for term, cat, book in all_raw_entities:
         key = term_to_key.get(term) or lexicon.normalize(term)
-        if key not in entity_groups:
-            entity_groups[key] = (cat, Counter())
-        entity_groups[key][1][term] += 1
+        cats, forms = entity_groups.setdefault(key, (Counter(), Counter()))
+        cats[cat] += 1
+        forms[term] += 1
 
     aggregated_entities = []
-    for key, (first_cat, forms) in entity_groups.items():
+    for key, (cats, forms) in entity_groups.items():
         output_term = _preferred_form(forms, key)
-        aggregated_entities.append((output_term, first_cat, sum(forms.values())))
+        aggregated_entities.append((output_term, _majority_category(cats), sum(forms.values())))
 
-    print(f"\nEntities after lemma-based merge (first category): {len(aggregated_entities)}")
+    print(f"\nEntities after lemma-based merge (majority category): {len(aggregated_entities)}")
 
     # ============================================================
     # PHASE 2: NORMALIZE & MERGE WORDS (by lemma, case-insensitive)
@@ -1108,7 +1132,8 @@ def create_series_vocab(
 
             term_lower = term_text.lower()
             target = all_translations.get(term_lower, "")
-            category = all_categories.get(term_lower, ner_cat)
+            # NER's category (majority of the mentions); the LLM only translates
+            category = ner_cat or all_categories.get(term_lower, '')
             out_lines.append(f"{term_text} = {target}, {category}, , \n")
 
         print(f"  Chunk {idx + 1} translated ({chunk_parsed} terms)")

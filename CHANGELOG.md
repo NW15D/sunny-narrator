@@ -32,6 +32,13 @@ All notable changes to Sunny Narrator.
 - Multilingual: the NER labels of OntoNotes, WikiNER, Polish and Korean spaCy models, pronoun gender by `Person=3`/`Person=Third` morphology, Chinese/Japanese/Korean pronouns by their form, a sentencizer for a model without a parser.
 - The synopsis reports a gender (`<genders>`) only for characters the dictionary has no gender for; a gender it fills in is logged and listed in the run report. The run report also lists the characters the translation keeps disagreeing with the dictionary on (the GENDER stage findings): a wrong gender in the `.dic` shows there.
 
+### A new dictionary takes its categories and genders from the book
+- NER: the characters of books in German, French, Spanish, Italian, Portuguese, Russian and Ukrainian (and with `xx_ent_wiki_sm`) never reached the dictionary — their models label people `PER`, which was not on the list; the Polish `persName/placeName/orgName` labels were not either. One table of labels → categories (`ner.CATEGORY_OF_LABEL`) now serves building and checking a dictionary; peoples and species (`NORP`, `MISC`) become TERM.
+- One entry per entity: the forms are grouped by lemma (the nominative "Москва", not "Москву"), the category is the majority of the mentions, not the label of whichever variant survived.
+- The LLM only translates the glossary: its guessed categories and genders (by the name alone) are no longer used. The categories and genders are decided by the book and written into the new `.dic`: an entry the book keeps calling he/she is a PERSON with that gender (NER tags invented names ORG), a lowercase word is a TERM, a form of address ("Miss", "Mr.", "Signora", "мисс", "Frau") decides a gender before the pronouns, and a gender the evidence disagrees on stays empty and is reported. On the demo book: 10 of 24 characters get a gender, all right (8 right and one wrong before, "Harbottle" he); the rest are listed for the review.
+
+- A dictionary shared by a series is never changed by a translation run: the check before each book fixes it in memory for that run, against that book; the findings go to `<dic>.<book>.reviewed.dic` (one per book — they overwrote each other in one `<dic>.reviewed.dic`) and `<book>.dictcheck.txt`.
+
 ### Commands instead of scripts
 - The Python tools of `scripts/` are commands of the application: `app.py dict clean|review|convert`, `app.py audit`, `app.py eval`, `app.py clean-calibre` (`python app.py <command> -h`; `docs/DICTIONARY_FORMAT.md`). `scripts/cleanup_calibre_markup.py` was a copy of the Calibre pipeline's cleanup and is gone; `scripts/` keeps the shell tools only.
 
