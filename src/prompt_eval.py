@@ -165,11 +165,13 @@ def main(argv=None):
           f"вариант: {variant}")
 
     results = []
+    counted = {'gender_issues': 0, 'gender_fixed': 0}  # pipeline counters of the passages that finished
     for n, i in enumerate(chosen, 1):
         source = chunks[i]
         used = set(lexicon.find_terms(source, [e.source for e in entries], config.source_lang))
         vocab = [e for e in entries if e.source in used]
         started = time.time()
+        metrics_before = utils.metrics.get_report()
         try:
             translation, _ = utils.translate_chunk(
                 source_lang=config.source_lang, target_lang=config.target_lang, source_text=source,
@@ -181,6 +183,9 @@ def main(argv=None):
             print(f"[{n}/{len(chosen)}] отрывок {i}: ошибка — {results[-1]['error'][:200]}")
             _save_partial(args.out, results)
             continue
+        metrics_after = utils.metrics.get_report()
+        for key in counted:
+            counted[key] += metrics_after[key] - metrics_before[key]
         issues = gender_check.find_gender_issues(translation, vocab, config.target_lang)
         mixed = script_guard.find_mixed_words(translation, config.target_lang, [v.target for v in vocab])
         results.append({
@@ -196,7 +201,6 @@ def main(argv=None):
     failed = [r for r in results if 'error' in r]
     results = [r for r in results if 'error' not in r]
 
-    pipeline = utils.metrics.get_report()
     summary = {
         'target_lang': config.target_lang, 'fast_trans': config.fast_trans,
         'gender_check': config.gender_check,
@@ -207,8 +211,8 @@ def main(argv=None):
         'failed': [r['index'] for r in failed],
         'mixed_words': sum(len(r['mixed_words']) for r in results),
         'gender_issues_left': sum(len(r['gender_issues']) for r in results),
-        'gender_issues_found_in_pipeline': pipeline['gender_issues'],
-        'gender_issues_fixed_in_pipeline': pipeline['gender_fixed'],
+        'gender_issues_found_in_pipeline': counted['gender_issues'],
+        'gender_issues_fixed_in_pipeline': counted['gender_fixed'],
         'seconds': round(sum(r['seconds'] for r in results), 1),
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
@@ -222,10 +226,13 @@ def main(argv=None):
 
     previous = None
     if args.compare:
-        previous = json.loads(args.compare.read_text(encoding='utf-8'))['summary']
-        if previous.get('passages') != summary['passages']:
+        previous = json.loads(args.compare.read_text(encoding='utf-8')).get('summary')
+        if previous is None:
+            print(f"ВНИМАНИЕ: {args.compare} — незаконченный прогон (нет итогов), сравнения не будет")
+        elif previous.get('passages') != summary['passages']:
             print("ВНИМАНИЕ: отрывки другие, чем в сравниваемом прогоне — сравнение неточное")
-        print(f"Прошлый прогон: {previous.get('variant')}")
+        if previous is not None:
+            print(f"Прошлый прогон: {previous.get('variant')}")
     print()
     for key, value in summary.items():
         if key in ('passages', 'variant', 'failed'):

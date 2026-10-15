@@ -30,10 +30,11 @@ from src import lexicon
 from src import ner
 from src.gender_check import GENDER_MAP  # the loader normalizes the same way
 
+REPORT_EXT = '.report.txt'  # <result>.report.txt next to the result
 CATEGORY_ORDER = ['PERSON', 'GPE', 'LOC', 'FAC', 'ORG', 'PRODUCT', 'EVENT', 'TERM']
 
 
-def parse_dic(path: Path, report):
+def parse_dic(path: Path, report, keep_empty_target: bool = False):
     """Записи файла: dict(source, target, category, gender, notes, line) —
     line: индекс строки в text.splitlines()."""
     rows = []
@@ -50,7 +51,7 @@ def parse_dic(path: Path, report):
         except csv.Error:
             fields = []
         fields += [''] * (4 - len(fields))
-        if not source or not fields[0]:
+        if not source or (not fields[0] and not keep_empty_target):
             report['skipped'].append(f"{num}: {line}")
             continue
         # unquoted notes with commas (older files): keep all of them
@@ -155,7 +156,7 @@ def clean_file(dic: Path, output: Path = None, report_path: Path = None,
     """Clean `dic` into `output` (default <name>.clean.dic) with a report;
     returns {'output', 'report', 'before', 'after', 'counts'}."""
     output = output or dic.with_name(f"{dic.stem}.clean.dic")
-    report_path = report_path or output.with_name(f"{output.stem}.report.txt")
+    report_path = report_path or output.with_name(f"{output.stem}{REPORT_EXT}")
     if output.resolve() == dic.resolve():
         raise ValueError('the result must not overwrite the source file')
     if model:

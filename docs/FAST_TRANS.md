@@ -22,8 +22,8 @@ FAST_TRANS=false   # Standard mode, the default
 
 The GENDER stage runs in fast mode too: the code finds the sentences where a
 dictionary character's verb or adjective has the other gender and sends only
-them to the proofread LLM when `API_BASE_PROOFREAD` is another server than
-`API_BASE_TRANSLATE`, otherwise to the translate LLM (`GENDER_CHECK`, `GENDER_LLM`, see CONFIGURATION.md). With only
+them to the proofread LLM, unless it is another model on the same local
+server as the translate LLM (then to the translate LLM) (`GENDER_CHECK`, `GENDER_LLM`, see CONFIGURATION.md). With only
 the translate model loaded set `GENDER_LLM=translate`. Words in
 two alphabets (`dошло`) are logged in both modes.
 

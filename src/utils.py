@@ -830,7 +830,16 @@ def _non_text(text: str) -> List[str]:
 _FIX_WORD_RE = re.compile(r'\w+')
 
 
-def _gender_fix_ok(old: str, new: str, issues: List[Any], context: TranslationContext) -> bool:
+def _gender_errors(text: str, context: TranslationContext) -> collections.Counter:
+    """Wrong words per character in `text` (gender_check)."""
+    errors = collections.Counter()
+    for issue in gender_check.find_gender_issues(text, context.vocab_entries, context.target_lang):
+        errors[issue.name] += len(issue.words)
+    return errors
+
+
+def _gender_fix_ok(old: str, new: str, issues: List[Any], context: TranslationContext,
+                   before: Optional[collections.Counter] = None) -> bool:
     """Whether a sentence from the GENDER call can replace the original: the
     same markup and words in the same order, only endings changed (each
     changed word keeps its stem: "сказал" -> "сказала", never another word),
@@ -859,14 +868,14 @@ def _gender_fix_ok(old: str, new: str, issues: List[Any], context: TranslationCo
     if len(script_guard.find_mixed_words(new, context.target_lang, targets)) > \
             len(script_guard.find_mixed_words(old, context.target_lang, targets)):
         return False
-    # no error left for the flagged characters, and none new for anyone else
-    # ("Вашти сказала, что Куно пришла": the LLM changed Kuno's verb too)
-    def found(text):
-        return {(i.name, tuple(i.words)) for i in
-                gender_check.find_gender_issues(text, context.vocab_entries, context.target_lang)}
-    before, after = found(old), found(new)
+    # no error left for the flagged characters, and no more for anyone else
+    # ("Вашти сказала, что Куно пришла": the LLM changed Kuno's verb too); a
+    # reply that also fixes another character's error is fine
+    before = _gender_errors(old, context) if before is None else before
+    after = _gender_errors(new, context)
     names = {i.name for i in issues}
-    return not any(name in names for name, _ in after) and after <= before
+    return (not any(after[name] for name in names)
+            and all(n <= before.get(name, 0) for name, n in after.items()))
 
 
 class TranslationPipeline:
@@ -1406,10 +1415,13 @@ class TranslationPipeline:
         text, fixed_issues = translation, 0
         for n, (a, b) in reversed(list(enumerate(spans, 1))):
             old = flat[(a, b)]
+            before = None  # the errors of the original sentence, parsed once
             for new in reversed(replies.get(n, [])):
                 if new == old:
                     continue
-                if _gender_fix_ok(old, new, by_sentence[(a, b)], context):
+                if before is None:
+                    before = _gender_errors(old, context)
+                if _gender_fix_ok(old, new, by_sentence[(a, b)], context, before):
                     text = text[:a] + new + text[b:]
                     fixed_issues += len(by_sentence[(a, b)])
                     break

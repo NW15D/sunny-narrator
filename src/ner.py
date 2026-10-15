@@ -806,17 +806,14 @@ def _preferred_form(forms, lemma_key):
     return max(forms, key=lambda f: (lexicon.normalize(f) == lemma_key, forms[f]))
 
 
-# Reports the dictionary tools write next to the books: not books
-_GENERATED_REPORTS = ('.dictcheck.txt', '.report.txt')
-
-
 def series_book_files(books_folder: str) -> list:
     """The FB2/EPUB/TXT books of a series folder, without the reports the
     check before a translation and `app.py dict` leave there (a rebuilt
     series dictionary took their lines for names)."""
+    from src.dict_review import GENERATED_SUFFIXES  # imports this module
     return [os.path.join(books_folder, f) for f in sorted(os.listdir(books_folder))
             if Path(f).suffix.lower() in {'.fb2', '.epub', '.txt'}
-            and not f.lower().endswith(_GENERATED_REPORTS)]
+            and not f.lower().endswith(GENERATED_SUFFIXES)]
 
 
 def create_series_vocab(

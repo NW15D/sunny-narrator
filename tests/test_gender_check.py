@@ -477,8 +477,23 @@ def test_a_fix_may_not_bring_an_error_to_another_character():
 
 def test_auto_gender_llm_needs_a_proofread_server_of_its_own(monkeypatch):
     from src.config import Config
-    monkeypatch.setenv('API_BASE_TRANSLATE', 'http://localhost:11434/v1')
-    monkeypatch.setenv('API_BASE_PROOFREAD', 'http://localhost:11434/v1')
-    assert Config().proofread_configured is False      # one Ollama: the models would swap
-    monkeypatch.setenv('API_BASE_PROOFREAD', 'http://localhost:8081/v1')
-    assert Config().proofread_configured is True
+    monkeypatch.setenv('MODEL_TRANSLATE', 'Gemma4-26B')
+    monkeypatch.setenv('MODEL_PROOFREAD', 'Qwen36-35B')
+    for translate, proofread, usable in [
+        ('http://localhost:11434/v1', 'http://localhost:11434/v1', False),   # one Ollama: models would swap
+        ('http://localhost:11434/v1', 'http://127.0.0.1:11434', False),      # the same server written another way
+        ('http://192.168.0.55:6155/v1', 'http://192.168.0.55:6150/v1', True),  # two llama.cpp servers
+        ('https://openrouter.ai/api/v1', 'https://openrouter.ai/api/v1', True),  # a hosted API swaps nothing
+    ]:
+        monkeypatch.setenv('API_BASE_TRANSLATE', translate)
+        monkeypatch.setenv('API_BASE_PROOFREAD', proofread)
+        assert Config().proofread_configured is usable, (translate, proofread)
+
+
+@needs["ru"]
+def test_a_fix_that_also_mends_another_character_is_taken():
+    context = u.TranslationContext(source_lang="english", target_lang="russian", source_text="",
+                                   vocab_entries=[VASHTI, KUNO])
+    issue = gc.GenderIssue("Вашти", "she", ["сказал"], 0, 0)
+    old = "Вашти сказал, а Куно пришла."
+    assert u._gender_fix_ok(old, "Вашти сказала, а Куно пришёл.", [issue], context)

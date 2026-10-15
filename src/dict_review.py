@@ -43,7 +43,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from src import lexicon, ner, script_guard
-from src.dict_clean import format_line, parse_dic, write_atomic
+from src.dict_clean import REPORT_EXT, format_line, parse_dic, write_atomic
 from src.gender_check import normalize_gender
 
 logger = logging.getLogger(__name__)
@@ -87,6 +87,10 @@ PRONOUN_GENDER = {
 # share of the evidence for one side
 MIN_VOTES = 4
 RATIO = 0.85
+# The reports the dictionary tools leave next to the books and dictionaries:
+# never a book (ner.series_book_files)
+REPORT_SUFFIX = '.dictcheck.txt'
+GENERATED_SUFFIXES = (REPORT_SUFFIX, REPORT_EXT)
 REPORT_ORDER = ['category changed', 'gender changed (the book disagrees)', 'gender set',
                 'gender cleared (not a person)', 'gender conflict (not changed)',
                 'translation in two alphabets', 'category: not sure (not changed)',
@@ -283,9 +287,11 @@ def review(rows: list, evidence: dict, min_votes: int, ratio: float, report: dic
                 if sure and old == 'PERSON' and person and person[3]:
                     why += f"; but the book calls it {person[0]} ({person[1]} of {pronouns} pronouns)"
                     sure = False
-                elif sure and old == 'PERSON' and not promote_persons and (pronouns or row['gender']):
-                    # the user's dictionary says person: any he/she around the
-                    # name, or a gender set by hand, keeps it one
+                elif (sure and old == 'PERSON' and not promote_persons
+                      and (pronouns >= min_votes or row['gender'])):
+                    # the user's dictionary says person: he/she around the name
+                    # (as much evidence as any decision) or a gender set by
+                    # hand keeps it one
                     why += (f"; but the .dic has a gender ({row['gender']})" if row['gender']
                             else f"; but he/she in {pronouns} sentence(s) naming only it")
                     sure = False
@@ -388,7 +394,7 @@ def review_file(book: Path, dic: Path, output: Path = None, report_path: Path = 
     evidence into the report. The source .dic is not changed; a gender the
     book contradicts is only reported here."""
     output = output or dic.with_name(f"{dic.stem}.reviewed.dic")
-    report_path = report_path or output.with_name(f"{output.stem}.report.txt")
+    report_path = report_path or output.with_name(f"{output.stem}{REPORT_EXT}")
     if output.resolve() == dic.resolve():
         raise ValueError('the result must not overwrite the source file')
     model = model or ner.config.nermodel
@@ -426,8 +432,10 @@ def _best_effort(write, *args, **kwargs):
     the fixes are applied in memory anyway."""
     try:
         write(*args, **kwargs)
+        return True
     except OSError as e:
         logger.warning(f"Dictionary check: {args[0] if args else ''} not written ({e})")
+        return False
 
 
 def reviewed_path(manager) -> Path:
@@ -449,15 +457,23 @@ def _book_key(source_text: str, model: str) -> str:
                           + hashlib.sha256(source_text.encode('utf-8')).digest()).hexdigest()
 
 
+def _entries_key(rows: list) -> list:
+    """What collect() depends on besides the book: the entries (longer ones
+    take mentions from shorter ones) and their categories (a PERSON is
+    counted in the pronoun scenes)."""
+    return sorted([lexicon.word_key(r['source']), r['category']] for r in rows)
+
+
 def _save_evidence(cache_path: Path, source_text: str, model: str, rows: list, evidence: dict):
     """What the book says of each entry (by its source), not the decisions:
-    an edited category or gender reuses it, only a new entry parses again."""
+    an edited gender reuses it; a new or removed entry or a changed category
+    parses the book again."""
     data = {lexicon.word_key(row['source']): {
         'mentions': ev.mentions, 'lowercase': ev.lowercase,
         **{f: dict(getattr(ev, f)) for f in _EVIDENCE_FIELDS}}
         for k, row in enumerate(rows) for ev in [evidence.get(k, Evidence())]}
-    write_atomic(cache_path, json.dumps({'book': _book_key(source_text, model), 'evidence': data},
-                                        ensure_ascii=False))
+    write_atomic(cache_path, json.dumps({'book': _book_key(source_text, model), 'entries': _entries_key(rows),
+                                         'evidence': data}, ensure_ascii=False))
 
 
 def _cached_evidence(cache_path: Path, source_text: str, model: str, rows: list) -> Optional[dict]:
@@ -467,7 +483,7 @@ def _cached_evidence(cache_path: Path, source_text: str, model: str, rows: list)
         cached = json.loads(cache_path.read_text(encoding='utf-8'))
     except Exception:
         return None
-    if cached.get('book') != _book_key(source_text, model):
+    if cached.get('book') != _book_key(source_text, model) or cached.get('entries') != _entries_key(rows):
         return None
     stored = cached.get('evidence', {})
     evidence = {}
@@ -519,7 +535,7 @@ def _check(manager, source_text: Optional[str], config, write_back: bool) -> dic
     rows = _rows_of(manager.vocab)
     book_dir = Path(manager.book_dir or '.')
     cache_path = book_dir / f"{manager.book_name}.dictcheck.json"
-    report_path = book_dir / f"{manager.book_name}.dictcheck.txt"
+    report_path = book_dir / f"{manager.book_name}{REPORT_SUFFIX}"
     model = config.nermodel
     evidence = _cached_evidence(cache_path, source_text, model, rows)
     if evidence is None:
@@ -557,12 +573,14 @@ def _check(manager, source_text: Optional[str], config, write_back: bool) -> dic
         if fixes:
             manager.apply_review_fixes()
             if write_back:
-                _best_effort(_write_reviewed, Path(manager.dict_file), Path(manager.dict_file), fixes)
-                where = f"written into {manager.dict_file}"
+                written = _best_effort(_write_reviewed, Path(manager.dict_file), Path(manager.dict_file), fixes)
+                where = (f"written into {manager.dict_file}" if written else
+                         f"for this run only: {manager.dict_file} could not be written")
             else:
                 reviewed = reviewed_path(manager)
-                _best_effort(_write_reviewed, Path(manager.dict_file), reviewed, fixes)
-                where = f"for this run; {Path(manager.dict_file).name} is unchanged, {reviewed.name} has them"
+                written = _best_effort(_write_reviewed, Path(manager.dict_file), reviewed, fixes)
+                where = f"for this run; {Path(manager.dict_file).name} is unchanged" + (
+                    f", {reviewed.name} has them" if written else "")
             logger.warning(f"Dictionary check: {len(fixes)} fix(es) applied {where}. Report: {report_path}")
             for fix in fixes:
                 logger.info(f"  {fix['source']}: {'/'.join(x or '—' for x in fix['was'])} -> "

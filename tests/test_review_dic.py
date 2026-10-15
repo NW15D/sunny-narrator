@@ -321,12 +321,15 @@ def test_a_dotted_title_is_a_form_of_address():
     assert dict(evidence[0].honorifics) == {'she': 3} and dict(evidence[1].honorifics) == {'he': 3}
 
 
-def test_a_reviewed_person_keeps_its_category_with_any_he_or_she():
-    rows = [_row("Cog"), _row("Wheel")]
-    evidence = {0: _ev(labels={'ORG': 20}, pronouns={'he': 2}),     # too few to be sure, but some
-                1: _ev(labels={'ORG': 20})}
+def test_a_reviewed_person_keeps_its_category_with_enough_he_or_she():
+    """Mixed pronouns are not sure of a gender, but 4+ of them say "a person"
+    (Cog); one "He walked on to Vorta." says nothing of the village."""
+    rows = [_row("Cog"), _row("Vorta"), _row("Wheel")]
+    evidence = {0: _ev(labels={'ORG': 20}, pronouns={'he': 3, 'she': 2}),
+                1: _ev(labels={'ORG': 20}, pronouns={'he': 1}),
+                2: _ev(labels={'ORG': 20})}
     rd.review(rows, evidence, 4, 0.85, collections.defaultdict(list), fix_conflicts=True)
-    assert [r['category'] for r in rows] == ["PERSON", "ORG"]
+    assert [r['category'] for r in rows] == ["PERSON", "ORG", "ORG"]
 
 
 def test_reports_are_not_books_of_a_series(tmp_path):
@@ -353,3 +356,17 @@ def test_an_edited_gender_reuses_the_evidence_of_the_book(tmp_path, monkeypatch,
     caplog.set_level("INFO")
     manager.initialize(source_text=EN_TEXT)
     assert "evidence of this book is cached" in caplog.text
+
+
+def test_a_changed_category_parses_the_book_again():
+    rows = [_row("Trike", category="ORG")]
+    key = rd._entries_key(rows)
+    assert rd._entries_key([_row("Trike", category="PERSON")]) != key
+    assert rd._entries_key([_row("Trike", category="ORG", gender="he")]) == key   # a gender: reused
+
+
+def test_convert_keeps_an_entry_without_a_translation_yet(tmp_path):
+    from src import dict_convert
+    dic = tmp_path / "b.dic"
+    dic.write_text("Kuno = , PERSON, he, \nVashti = Вашти, PERSON, she, \n", encoding="utf-8")
+    assert [e[0] for e in dict_convert.parse_dic(dic)] == ["Kuno", "Vashti"]

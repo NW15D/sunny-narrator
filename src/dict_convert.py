@@ -60,7 +60,8 @@ Items:
 def parse_dic(path: Path):
     """[(source, target, category, gender, notes)]: the entries as
     dict_clean.parse_dic reads them (one .dic reader for every command)."""
-    rows = dict_clean.parse_dic(path, collections.defaultdict(list))
+    # an entry without a translation yet is translated without a hint
+    rows = dict_clean.parse_dic(path, collections.defaultdict(list), keep_empty_target=True)
     return [(r['source'], r['target'], r['category'], r['gender'], r['notes']) for r in rows]
 
 

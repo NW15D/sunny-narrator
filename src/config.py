@@ -12,6 +12,30 @@ def _parse_bool_env(name, default='false'):
     return str(val).lower() in ('true', '1', 'on', 'yes')
 
 
+def _same_local_server(url_a: str, url_b: str) -> bool:
+    """Whether two API URLs are one server on this machine or the local
+    network (localhost and 127.0.0.1 alike; the path, such as /v1, ignored)."""
+    import ipaddress
+    from urllib.parse import urlsplit
+
+    def where(url):
+        parts = urlsplit(url if '://' in url else f"http://{url}")
+        host = (parts.hostname or '').lower()
+        if host in ('localhost', '127.0.0.1', '::1', '0.0.0.0'):
+            host = 'localhost'
+        return host, parts.port or (443 if parts.scheme == 'https' else 80)
+
+    a, b = where(url_a), where(url_b)
+    if a != b:
+        return False
+    if a[0] == 'localhost':
+        return True
+    try:
+        return ipaddress.ip_address(a[0]).is_private
+    except ValueError:
+        return False  # a hosted API by name
+
+
 def _parse_numeric_env(name, default, cast=float):
     """Parse numeric env var with fallback to default on invalid values."""
     try:
@@ -103,14 +127,16 @@ class Config:
         # Proofread API (proofread model)
         self.api_key_proofread = os.getenv('API_KEY_PROOFREAD', os.getenv('API_KEY2', ''))
         self.base_url_proofread = os.getenv('API_BASE_PROOFREAD', os.getenv('API_BASE2', 'https://api.openai.com/v1'))
-        # A proofread server of its own: with FAST_TRANS (GENDER_LLM=auto) the
-        # GENDER stage goes to it instead of the translate LLM. The same
-        # server for both (one Ollama, env.sample) does not count: a call there
-        # would swap the loaded model every chunk with a gender error
-        self.proofread_configured = (bool(os.getenv('API_BASE_PROOFREAD') or os.getenv('API_BASE2'))
-                                     and self.base_url_proofread.rstrip('/') != self.base_url_translate.rstrip('/'))
         self.sys_not_promt_proofread = os.getenv('S_PROMT_PROOFREAD', os.getenv('S_PROMT2', '')).lower() in ('true', '1', 'on')
         self.model_proofread = os.getenv('MODEL_PROOFREAD', os.getenv('MODEL2', 'tencent/Hunyuan-MT-7B'))
+        # The proofread LLM is usable next to the translate one: with FAST_TRANS
+        # (GENDER_LLM=auto) the GENDER stage goes to it. Not when it is another
+        # model on the same local server (one Ollama, env.sample): a call there
+        # swaps the loaded model every chunk with a gender error. A hosted API
+        # serving both models swaps nothing.
+        self.proofread_configured = (bool(os.getenv('API_BASE_PROOFREAD') or os.getenv('API_BASE2'))
+                                     and not (_same_local_server(self.base_url_proofread, self.base_url_translate)
+                                              and self.model_proofread != self.model_translate))
         self.temp_proofread = _parse_numeric_env('TEMP_PROOFREAD', os.getenv('TEMP2', 0.7))
         self.timeout_proofread = _parse_numeric_env('TIMEOUT_PROOFREAD', os.getenv('TIMEOUT2', 6000), cast=int)
         self.nothink_proofread = _parse_bool_env('NOTHINK_PROOFREAD', os.getenv('NOTHINK', 'false'))
