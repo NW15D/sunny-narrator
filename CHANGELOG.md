@@ -2,7 +2,7 @@
 
 All notable changes to Sunny Narrator.
 
-## Unreleased
+## v2.9.1
 
 ### Gender of the characters (small models)
 - New GENDER stage after the last text stage, in both modes — `FAST_TRANS` too. Without an LLM it finds the sentences where a dictionary character with gender `he`/`she` is the subject and the verb or adjective has the other gender (`Вашти сказал`, `Ellen était fatigué`), by the spaCy model of the target language (`src/gender_check.py`); the found sentences go to the LLM in one short call (`gender_fix` prompt: the sentences, the wrong words, the character's gender), and a fixed sentence replaces the original only when the check passes, the markup is the same and only a few words changed. `GENDER_CHECK=fix|warn|off` (default `fix`), `TEMP_GENDER` (default `0.05`). Checked: Slavic languages (verb gender: ru, uk, pl, …), French, Spanish, Portuguese, Italian, Catalan, Romanian, Greek (participles with être/essere/ser, predicative adjectives); languages without the model or without predicate gender are not checked. Pronouns a few sentences away are not checked: a pronoun may refer to anything.

@@ -1,6 +1,6 @@
 # FAST_TRANS Mode — Fast Translation
 
-**Version:** 2.9  
+**Version:** 2.9.1  
 **Date:** 2026-10-10
 
 ---
@@ -228,5 +228,5 @@ to both pipelines.
 
 ---
 
-**Version:** 2.9  
+**Version:** 2.9.1  
 **Updated:** 2026-10-10
