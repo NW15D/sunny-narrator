@@ -1,5 +1,7 @@
 # Sunny Narrator
 
+[English](README.md) | **Русский** | [中文](README_CN.md) | [Português](README_PT.md) | [Türkçe](README_TR.md)
+
 **Версия:** 2.9  
 **AI-переводчик книг с глоссарием (AI book translator)** для форматов FB2/TXT/EPUB/DOCX/PDF — переводчик художественной литературы на базе LLM (LLM fiction book translator) с двумя независимыми LLM и 5-стадийным контролем качества.
 
@@ -349,7 +351,3 @@ FILE=books/mybook.epub python app.py --output-format epub
 ## 📝 История изменений
 
 История версий: [CHANGELOG.md](CHANGELOG.md)
-
----
-
-[English](README.md) | [中文](README_CN.md) | [Português](README_PT.md) | [Türkçe](README_TR.md)

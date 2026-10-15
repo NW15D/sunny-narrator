@@ -1,5 +1,7 @@
 # Sunny Narrator
 
+[English](README.md) | [Русский](README_RU.md) | [中文](README_CN.md) | [Português](README_PT.md) | **Türkçe**
+
 <p align="center">
   <img src="assets/sunny-narrator-github-banner.webp" alt="Sunny Narrator — EPUB, PDF, TXT, FB2 ve DOCX kitaplarını birçok dile çevirin" width="100%">
 </p>
@@ -361,7 +363,3 @@ Belgeler İngilizce ve Rusçadır.
 ## 📝 Değişiklik Günlüğü
 
 Sürüm geçmişi: [CHANGELOG.md](CHANGELOG.md)
-
----
-
-[English](README.md) | [Русский](README_RU.md) | [中文](README_CN.md) | [Português](README_PT.md)

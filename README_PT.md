@@ -1,5 +1,7 @@
 # Sunny Narrator
 
+[English](README.md) | [Русский](README_RU.md) | [中文](README_CN.md) | **Português** | [Türkçe](README_TR.md)
+
 **Versão:** 2.9  
 **Tradutor de livros guiado por glossário (AI book translator)** para FB2/TXT/EPUB/DOCX/PDF — um tradutor de ficção baseado em LLM (LLM fiction book translator), com sistema de tradução em dois LLMs e controle de qualidade em 5 estágios.
 
@@ -349,7 +351,3 @@ O log do console mostra cada etapa da tradução: verificações de tamanho com 
 ## 📝 Histórico de Mudanças
 
 Histórico de versões: [CHANGELOG.md](CHANGELOG.md)
-
----
-
-[English](README.md) | [Русский](README_RU.md) | [中文](README_CN.md) | [Türkçe](README_TR.md)

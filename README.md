@@ -1,5 +1,7 @@
 # Sunny Narrator
 
+**English** | [Русский](README_RU.md) | [中文](README_CN.md) | [Português](README_PT.md) | [Türkçe](README_TR.md)
+
 <p align="center">
   <img src="assets/sunny-narrator-github-banner.webp" alt="Sunny Narrator — translate EPUB, PDF, TXT, FB2 and DOCX books into many languages" width="100%">
 </p>
@@ -358,7 +360,3 @@ The console log shows every step of the translation: length checks with the cali
 ## 📝 Changelog
 
 Release history: [CHANGELOG.md](CHANGELOG.md)
-
----
-
-[Русский](README_RU.md) | [中文](README_CN.md) | [Português](README_PT.md) | [Türkçe](README_TR.md)
