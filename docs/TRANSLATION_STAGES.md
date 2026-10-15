@@ -28,6 +28,12 @@
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
+│ GENDER (code + one short LLM call when needed; FAST_TRANS too)  │
+│ Input: final_translation, characters with gender                │
+│ Output: final_translation with the gender errors fixed          │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
 │ Stage 5: SYNOPSIS (Translate LLM)                                │
 │ Input: final_translation                                        │
 │ Output: synopsis (context for next chunk)                       │

@@ -30,6 +30,7 @@ from pathlib import Path
 from src.config import Config
 from src import ner as ner_module
 from src import lexicon
+from src.gender_check import GENDERS, normalize_gender
 from src.character_registry import get_character_registry, Character
 
 config = Config()
@@ -174,7 +175,7 @@ def _merge_into(matcher: CandidateMatcher, candidates: List[Dict[str, str]],
             logger.info(f"Dictionary{where}: added {cand['source']} = {cand['target']}, {category}")
             added.append(cand)
             continue
-        if ref is not None and category == 'PERSON' and set_gender(ref, cand['gender']):
+        if ref is not None and category == 'PERSON' and cand.get('gender') and set_gender(ref, cand['gender']):
             updated.append(cand)
     return added, updated
 
@@ -322,8 +323,12 @@ class VocabularyManager:
         self.vocab: Dict[str, VocabEntry] = {}
         self.characters: Dict[str, Character] = {}
         self.matched_terms_cache: Dict[Tuple[int, int], List[str]] = {}  # (s_idx, c_idx) -> terms
-        # Candidates the synopsis stage added during this run (checkpointed)
+        # Candidates the synopsis stage added during this run (checkpointed),
+        # plus one record {'gender_votes': {...}} with the gender reports
+        # _confirmed_genders counted, so a resumed run keeps the votes of the
+        # chunks before
         self.session_candidates: List[Dict[str, str]] = []
+        self._gender_votes: Dict[str, Dict[str, int]] = {}
         # CandidateMatcher over self.vocab, built on first use, reset by load()
         self._matcher: Optional[CandidateMatcher] = None
         
@@ -362,6 +367,12 @@ class VocabularyManager:
         self.matched_terms_cache.clear()
         self._matcher = None
         self._extract_characters()
+        no_gender = sorted(e.source for e in self.vocab.values()
+                           if e.category == 'PERSON' and not e.gender)
+        if no_gender:
+            logger.warning(f"Dictionary {self.dict_file}: {len(no_gender)} character(s) without gender "
+                           f"(he/she/it/they in the third field), the model guesses it: "
+                           f"{', '.join(no_gender)}")
         return self.vocab
 
     def _atomic_write(self, content: str):
@@ -463,7 +474,9 @@ class VocabularyManager:
                     f.write(
                         f"# Vocabulary for {self.book_name}\n"
                         f"# Format: source = target, category, gender, notes\n"
-                        f"# Generated automatically by NER\n\n"
+                        f"# Generated automatically by NER\n"
+                        f"# The gender of a PERSON is guessed from the name alone: check it, the\n"
+                        f"# translation follows it (the GENDER stage fixes sentences against it)\n\n"
                     )
 
                 self.vocab.clear()
@@ -616,11 +629,15 @@ class VocabularyManager:
                     category = "TERM"
                 else:
                     category = category.upper()
-                
+                gender = normalize_gender(str(term.get('gender', '') or ''))
+                if category != 'PERSON' or gender not in GENDERS:
+                    gender = ''
+
                 valid_terms.append({
                     "source": source,
                     "target": target,
-                    "category": category
+                    "category": category,
+                    "gender": gender
                 })
         
         if not valid_terms:
@@ -654,7 +671,7 @@ class VocabularyManager:
                 source=source,
                 target=target,
                 category=category,
-                gender="",
+                gender=term.get("gender", ""),
                 notes=""
             )
             parsed += 1
@@ -737,8 +754,14 @@ class VocabularyManager:
                         logger.warning(f"Line {line_num}: Empty source or target")
                         continue
                     
-                    # NO VALIDATION - allow any category and gender values (may be in any language)
-                    # category and gender are passed as-is to prompts
+                    # Category: any value, passed as-is to the prompts. Gender:
+                    # its spellings ("female", "она", "ж") become he/she/it/they,
+                    # the form the <characters> block and the gender check use
+                    gender = normalize_gender(gender)
+                    if gender and gender not in GENDERS:
+                        logger.warning(f"Line {line_num}: '{source}': unknown gender '{gender}' "
+                                       f"(he/she/it/they) ignored, the character has no gender")
+                        gender = ""
                     
                     # "Jain tech" and "jain tech" are one entry ("Jain-tech"
                     # is another one, lexicon.word_key): the first line wins
@@ -828,18 +851,76 @@ class VocabularyManager:
                 logger.info(f"Dictionary: ordinary words not added as terms: {sorted(known)}")
                 candidates = [c for c in candidates
                               if not (c.get('category') == 'TERM' and c['source'] in known)]
-        accepted = self._merge_candidates(candidates)
+        accepted = self._merge_candidates(self._confirmed_genders(candidates))
         if accepted and config.dict_auto_save and os.path.exists(self.dict_file):
             updated, added = apply_dictionary_candidates(self.dict_file, accepted, self.source_lang)
             if updated or added:
                 logger.info(f"Dictionary {self.dict_file}: gender set for {updated}, added {added} entr(y/ies)")
 
+    # A gender the synopsis reports becomes the character's only when this
+    # many chunks agree on it
+    GENDER_VOTES = 2
+
+    def _confirmed_genders(self, candidates: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """The candidates of one chunk with each PERSON gender kept only when
+        it is confirmed: GENDER_VOTES chunks reported it and none another one.
+
+        The synopsis infers the gender from a draft a small model may have
+        misgendered, and the first gender filled in stays for the rest of
+        the run. An unconfirmed or disputed gender is blanked, so a new
+        character still joins the dictionary (without gender). A report
+        against the gender of the dictionary is logged: the chunk was likely
+        translated with the wrong gender.
+        """
+        out, seen = [], set()
+        for cand in candidates:
+            gender = cand.get('gender', '')
+            if cand.get('category', 'PERSON') != 'PERSON' or not gender:
+                out.append(cand)
+                continue
+            key = lexicon.word_key(cand['source'])
+            known = self.vocab.get(cand['source'].replace(' ', '_').lower())
+            if known is not None and known.gender and known.gender != gender:
+                logger.warning(f"[gender] synopsis reports '{cand['source']}' as {gender}, "
+                               f"the dictionary says {known.gender}: check this chunk")
+            counts = self._gender_votes.setdefault(key, {})
+            if key not in seen:
+                seen.add(key)
+                if counts and gender not in counts:
+                    logger.warning(f"[gender] synopsis disagrees on '{cand['source']}': "
+                                   f"{', '.join(counts)} before, {gender} now; its gender stays "
+                                   f"empty, set it in the .dic")
+                self._count_gender_vote(cand)
+            confirmed = len(counts) == 1 and counts.get(gender, 0) >= self.GENDER_VOTES
+            out.append(cand if confirmed else dict(cand, gender=''))
+        return out
+
+    def _count_gender_vote(self, cand: Dict[str, str]):
+        counts = self._gender_votes.setdefault(lexicon.word_key(cand['source']), {})
+        counts[cand['gender']] = counts.get(cand['gender'], 0) + 1
+        self._save_gender_votes()
+
+    def _save_gender_votes(self):
+        """Replace the votes record of session_candidates with a new one: a
+        checkpoint snapshot taken earlier (list(session_candidates)) keeps
+        the votes as of its own chunk."""
+        self.session_candidates[:] = [c for c in self.session_candidates if 'gender_votes' not in c]
+        self.session_candidates.append(
+            {'gender_votes': {key: dict(counts) for key, counts in self._gender_votes.items()}})
+
     def restore_session_candidates(self, candidates: Optional[List[Dict[str, str]]]):
         """Put the candidates of an interrupted run (from its checkpoint)
-        back into the in-memory vocabulary. The file is not written: with
-        DICT_AUTO_SAVE they are there already, without it they never go."""
-        if candidates:
-            self._merge_candidates(candidates)
+        back into the in-memory vocabulary, and its gender votes back into
+        the count. The file is not written: with DICT_AUTO_SAVE they are
+        there already, without it they never go."""
+        if not candidates:
+            return
+        for record in candidates:
+            for key, counts in record.get('gender_votes', {}).items():
+                self._gender_votes[key] = dict(counts)
+        if self._gender_votes:
+            self._save_gender_votes()
+        self._merge_candidates([c for c in candidates if 'gender_votes' not in c])
 
     def _merge_candidates(self, candidates: List[Dict[str, str]]) -> List[Dict[str, str]]:
         """Apply the candidates to self.vocab by the rules of
@@ -858,7 +939,7 @@ class VocabularyManager:
 
         def set_gender(key, gender):
             entry = self.vocab.get(key)
-            if entry is None or entry.gender:
+            if entry is None or entry.gender or not gender:
                 return False
             entry.gender = gender
             if entry.category in _PROMOTED_TO_PERSON:

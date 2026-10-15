@@ -42,8 +42,23 @@ def test_synopsis_characters_lists_gender_of_present_characters():
         {"source": "Bob", "target": "Боб", "category": "PERSON", "gender": "he"},
         {"source": "Rome", "target": "Рим", "category": "LOC", "gender": ""},
     ]
-    block = utils.build_synopsis_characters(entries, "Алиса пришла в Рим.")
-    assert "Алиса: female (she)" in block
+    block = utils.build_synopsis_characters(entries, "Алиса пришла в Рим.", "russian")
+    assert "Алиса — она (сказала)" in block
     assert "Боб" not in block and "Рим" not in block
     assert utils.build_synopsis_characters(entries, "Никого нет.") == ""
     assert utils.build_synopsis_characters([], "Алиса") == ""
+
+
+def test_metadata_prompt_is_not_empty_with_a_hunyuan_translate_model(monkeypatch):
+    """translate_metadata asked for metadata_translation.user_hunyuan, a key
+    that does not exist: the model got an empty prompt."""
+    seen = {}
+
+    def fake_get_completion(role, prompt_category, prompt_key=None, **kw):
+        seen['prompt'] = utils.config.get_prompt(prompt_category, prompt_key, **kw)
+        return '{"title": "Книга"}'
+
+    monkeypatch.setattr(utils.config, 'model_translate', 'Hunyuan')
+    monkeypatch.setattr(utils.llm_service_compat, 'get_completion', fake_get_completion)
+    utils.translate_metadata({"title": "Book"}, "english", "russian", "Россия")
+    assert "<metadata>" in seen['prompt']

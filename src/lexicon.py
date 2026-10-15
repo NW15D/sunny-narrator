@@ -80,15 +80,20 @@ def non_text_spans(text: str, entities: bool = True) -> List[Tuple[int, int]]:
     return sorted(spans)
 
 
-def text_segments(text: str) -> List[str]:
-    """The pieces of `text` between its non_text_spans."""
-    pieces, pos = [], 0
+def text_spans(text: str) -> List[Tuple[int, int]]:
+    """(start, end) of the pieces of `text` between its non_text_spans."""
+    spans, pos = [], 0
     for start, end in non_text_spans(text):
         if start >= pos:
-            pieces.append(text[pos:start])
+            spans.append((pos, start))
         pos = max(pos, end)
-    pieces.append(text[pos:])
-    return pieces
+    spans.append((pos, len(text)))
+    return spans
+
+
+def text_segments(text: str) -> List[str]:
+    """The pieces of `text` between its non_text_spans."""
+    return [text[start:end] for start, end in text_spans(text)]
 
 
 # ISO code -> NLTK stopwords corpus file. NLTK has no list for ja, ko, pl,
@@ -284,6 +289,12 @@ def _stemmer(code: str):
 def _stem(code: str, word: str) -> str:
     stemmer = _stemmer(code)
     return stemmer.stem(word) if stemmer else word
+
+
+def stem(word: str, lang: str) -> str:
+    """Snowball stem of a normalized word; the word itself for a language
+    without a stemmer."""
+    return _stem(lang_code(lang), word)
 
 
 def normalize(text: str) -> str:

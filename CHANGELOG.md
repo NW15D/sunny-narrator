@@ -2,6 +2,37 @@
 
 All notable changes to Sunny Narrator.
 
+## Unreleased
+
+### Gender of the characters (small models)
+- New GENDER stage after the last text stage, in both modes — `FAST_TRANS` too. Without an LLM it finds the sentences where a dictionary character with gender `he`/`she` is the subject and the verb or adjective has the other gender (`Вашти сказал`, `Ellen était fatigué`), by the spaCy model of the target language (`src/gender_check.py`); the found sentences go to the LLM in one short call (`gender_fix` prompt: the sentences, the wrong words, the character's gender), and a fixed sentence replaces the original only when the check passes, the markup is the same and only a few words changed. `GENDER_CHECK=fix|warn|off` (default `fix`), `TEMP_GENDER` (default `0.05`). Checked: Slavic languages (verb gender: ru, uk, pl, …), French, Spanish, Portuguese, Italian, Catalan, Romanian, Greek (participles with être/essere/ser, predicative adjectives); languages without the model or without predicate gender are not checked. Pronouns a few sentences away are not checked: a pronoun may refer to anything.
+- The gender left the glossary lines (`Vashti = Вашти, PERSON, she`) for a `<characters>` block in every stage (translation, reflection, improve, editor; JSON mode too): `Вашти — она (сказала)`, written the way the target language shows it. The editor saw no gender at all before and was told to fix gender agreement. Reflection checks the gender first.
+- The synopsis infers a gender from the pronouns of the source, not from the translation, and a gender it reports becomes the character's only when two chunks agree; a disagreement is logged and leaves the gender empty, a report against the `.dic` is logged. A small model that misgendered one draft no longer fixes that gender for the rest of the run.
+- `--build-dict` asks the model for the gender of every PERSON (guessed from the name: the new `.dic` says so in its header — check it, the GENDER stage enforces it); on load, characters without gender are listed in the log, and the spellings of the gender field (`female`, `она`, `ж`, …) become `he`/`she`/`it`/`they`; an unknown value is ignored with a warning, so the synopsis can still fill the gender in. The synopsis, `--build-dict` and `scripts/clean_dic.py` use the same list.
+- The GENDER stage never costs a chunk its translation: a failure in it (a truncated reply, an API error) keeps the translation as it is. A sentence soft-wrapped over several lines (pandoc Markdown) is sent as one line, keeping its no-break spaces; one across list items, quote or verse lines is never merged. The gender votes of the synopsis are kept in the checkpoint as one record.
+- New `GENDER_LLM=auto|translate|proofread` (default `auto`: proofread; with `FAST_TRANS` only when `API_BASE_PROOFREAD` is set). `translate` for `FAST_TRANS` with only the translate model loaded.
+- `pymorphy3` with the Russian and Ukrainian dictionaries is a declared dependency (it came only with the ru/uk spaCy models); without it the mixed-alphabet fix warns that it works without a word list.
+
+### Words in two alphabets
+- New `src/script_guard.py`: a small model starts a word with the Latin letter of the same sound or shape (`dошло`, `Gород`, `taкого`). After every text stage (and in the synopsis and the dictionary candidates) such a word is put back into the target alphabet when a variant is a real word (pymorphy3 for Russian/Ukrainian, the same word elsewhere in the chunk, the stem of a dictionary translation); look-alike letters go without a word list. A word that stays ambiguous is only logged (`centralные`). Cyrillic and Greek targets get Latin letters out, Latin-script targets Cyrillic ones (Greek letters there are notation — `5 μm`, `Δx` — and stay).
+- The editor prompt no longer tells the model to keep "Latin-script terms as they are".
+
+### Prompts: one pipeline
+- The translation stage knows the readers' country (`for readers in {country}`), as reflection and the editor did: with `FAST_TRANS` the localization (pt-BR / pt-PT, es-ES / es-MX) was not asked for at all.
+- The JSON variants carry the rules of the text ones: the translator knows about the terms already replaced in the source and the country, "omit nothing, add nothing"; improve adjusts nearby words only for grammar and skips a suggestion that would break markup; the editor keeps names and acronyms and does not shorten or add.
+- Duplicates removed: the two glossary rules of the translation stage are one; `initial_translation.user_hunyuan` no longer repeats its system prompt; `synopsis.user_hunyuan` (the same text as `synopsis.user`) is gone. In the glossary prompt "if unsure, keep the source term" applies to coined words only, not to names.
+- Fix: with `MODEL_TRANSLATE=Hunyuan` the metadata were sent with an empty prompt (`metadata_translation.user_hunyuan` does not exist).
+- With `FAST_TRANS` the GENDER stage goes to the proofread LLM when `API_BASE_PROOFREAD` is set (it follows edit instructions better than a translation model), otherwise to the translate LLM.
+- `tests/test_prompts.py`: every prompt key the code asks for exists; the text and JSON variants of a stage carry the same rules; every stage that writes text has the gender rule; each prompt has a length budget.
+
+### Measurement
+- New `scripts/translation_audit.py`: words in two alphabets, gender errors and characters without gender in a finished book, with `--compare` against an earlier run.
+- New `scripts/prompt_eval.py`: the passages of a book with the most gendered characters, translated by the real pipeline with the `.env` models, measured the same way and compared with an earlier run.
+- Metrics report: mixed-alphabet words fixed/left, gender errors found/fixed.
+
+### Defaults
+- `FAST_TRANS` defaults to `false` in the code, as in `env.sample` (it was `on`).
+
 ## v2.9
 
 ### Translation

@@ -36,17 +36,18 @@ def test_calibre_translation_adds_new_character_to_file_and_index(tmp_path, monk
 
     def fake_translate_chunk(**kw):
         prompts.append(sorted(e.source for e in kw['vocab_entries']))
-        if len(prompts) == 1:  # synopsis of chunk 1 reports a new character
-            kw['candidate_sink'].append({'source': 'Bob', 'target': 'Боб', 'gender': 'he'})
+        # the synopses of chunks 1 and 2 report a new character; its gender
+        # is settled by the second report
+        kw['candidate_sink'].append({'source': 'Bob', 'target': 'Боб', 'gender': 'he'})
         return "перевод", "synopsis"
 
     monkeypatch.setattr(cp, '_split_into_chunks_md',
-                        lambda text, size: ["Bob saw a dragon.", "Then Bob left."])
+                        lambda text, size: ["Bob saw a dragon.", "Then Bob left.", "Bob slept."])
     monkeypatch.setattr(cp, 'validate_translation_length', lambda *a, **kw: (True, 0.0, False))
     with patch.object(cp, 'translate_chunk', side_effect=fake_translate_chunk):
         cp.translate_chunks("ignored", book_path=str(book))
 
-    assert prompts == [["dragon"], ["Bob"]], "chunk 2 must already see the new character"
+    assert prompts == [["dragon"], ["Bob"], ["Bob"]], "chunk 2 must already see the new character"
     assert "Bob = Боб, PERSON, he" in dic.read_text(encoding='utf-8')
 
 
@@ -57,6 +58,8 @@ def test_manager_record_updates_index_and_drops_stale_matches(tmp_path, monkeypa
     manager.load()
     assert [e.source for e in manager.get_vocab_for_chunk("Bob and a dragon", 0, 0)] == ["dragon"]
 
+    manager.record_dictionary_candidates([{'source': 'Bob', 'target': 'Боб', 'gender': 'he'}])
+    assert manager.vocab['bob'].gender == '', "one chunk does not settle a gender"
     manager.record_dictionary_candidates([{'source': 'Bob', 'target': 'Боб', 'gender': 'he'}])
 
     assert manager.vocab['bob'].gender == 'he'
@@ -129,6 +132,11 @@ def test_fast_mode_grows_the_dictionary_like_the_standard_mode(tmp_path, monkeyp
     manager = vm.get_vocabulary_manager(str(book))
     manager.load()
     manager.record_dictionary_candidates(sink)
+    lines = dic.read_text(encoding='utf-8').splitlines()
+    assert lines == ["dragon = дракон, TERM, , ",
+                     "Alice = Алиса, PERSON, , ",   # one chunk does not settle a gender
+                     "Bob = Боб, PERSON, , "]
+    manager.record_dictionary_candidates(sink)  # the next chunk agrees
     lines = dic.read_text(encoding='utf-8').splitlines()
     assert lines == ["dragon = дракон, TERM, , ",
                      "Alice = Алиса, PERSON, she, ",  # empty gender filled in, no second line

@@ -16,9 +16,16 @@ accelerate translation. Both pipelines: FB2/TXT and DOCX/EPUB/PDF.
 
 **Configuration:**
 ```bash
-FAST_TRANS=true    # Fast mode (2 stages)
-FAST_TRANS=false   # Standard mode (5 stages)
+FAST_TRANS=true    # Fast mode (INITIAL, GENDER, SYNOPSIS)
+FAST_TRANS=false   # Standard mode, the default
 ```
+
+The GENDER stage runs in fast mode too: the code finds the sentences where a
+dictionary character's verb or adjective has the other gender and sends only
+them to the proofread LLM when `API_BASE_PROOFREAD` is set, otherwise to the
+translate LLM (`GENDER_CHECK`, `GENDER_LLM`, see CONFIGURATION.md). With only
+the translate model loaded set `GENDER_LLM=translate`. Words in
+two alphabets (`dошло`) are fixed without an LLM in both modes.
 
 ---
 

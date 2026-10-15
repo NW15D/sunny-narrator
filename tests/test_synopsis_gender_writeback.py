@@ -17,7 +17,7 @@ def test_extract_genders_strips_block_and_keeps_only_names_in_source():
         "김철수 | Ким Чхольсу | he\n"
         "이영희 | Ли Ёнхи | She\n"
         "홍길동 | Хон Гильдон | he\n"          # not in source: hallucinated
-        "박민수 | Пак Минсу | male\n"           # invalid gender value
+        "박민수 | Пак Минсу | robot\n"          # invalid gender value
         "김철수 | Ким Чхольсу | he\n"          # duplicate
         "</genders>"
     )
@@ -113,10 +113,14 @@ def test_vocabulary_manager_reloads_after_recording(tmp_path):
     vm = VocabularyManager(str(book))
     vm.vocab = vm._load_from_file()
 
-    vm.record_dictionary_candidates([
+    chunk = [
         {'source': '김철수', 'target': 'Ким Чхольсу', 'gender': 'he', 'category': 'PERSON'},
         {'source': '이영희', 'target': 'Ли Ёнхи', 'gender': 'she'},
-    ])
+    ]
+    vm.record_dictionary_candidates(chunk)
+    # one chunk adds the new character, but settles no gender
+    assert vm.vocab['김철수'].gender == '' and vm.vocab['이영희'].gender == ''
+    vm.record_dictionary_candidates(chunk)  # the next chunk agrees
 
     assert vm.vocab['김철수'].gender == 'he'
     assert vm.vocab['이영희'].target == 'Ли Ёнхи'
@@ -208,10 +212,10 @@ def test_gender_report_upgrades_a_term_to_person(tmp_path):
     assert "Orlandine = Орландина, PERSON, she, " in dic.read_text(encoding="utf-8")
 
 
-def test_dictionary_rules_are_shared_by_both_prompts_and_ask_for_base_form():
+def test_dictionary_rules_end_the_synopsis_prompt_and_ask_for_base_form():
     rules = u.config.get_prompt("synopsis", "dictionary_rules")
     assert "<terms>" in rules and "nominative case" in rules
-    for key in ("user", "user_hunyuan"):
+    for key in ("user",):
         prompt = u.config.get_prompt("synopsis", key, target_lang="russian", source_text="s",
                                      final_translation="t", characters_block="",
                                      glossary_block="", dictionary_rules=rules)

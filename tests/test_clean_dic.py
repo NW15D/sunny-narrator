@@ -53,7 +53,7 @@ def test_cleaned_dictionary_round_trips(tmp_path, monkeypatch):
     assert vocab['Jain-tech'].target == 'джайн-технология'
     # gender synonyms are normalized, an unknown one is kept and reported
     assert (vocab['Anna'].category, vocab['Anna'].gender, vocab['Anna'].notes) == ('PERSON', 'she', 'heroine')
-    assert vocab['Ivan'].gender == 'sie'
+    assert vocab['Ivan'].gender == ''  # kept in the file, ignored (and logged) by the loader
     # commas and quotes survive in every field, the category is not lost
     assert (vocab['Foo'].target, vocab['Foo'].category, vocab['Foo'].notes) == ('Bar, Baz', 'NORP', 'first, second')
     assert vocab['Quote'].target == 'Он сказал "да", и ушёл'

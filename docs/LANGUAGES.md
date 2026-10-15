@@ -56,6 +56,24 @@ by hand and add the inflected forms you need.
 | German | language marker in output file and cover names; country `Deutschland` by default | Automated |
 | Chinese | the EPUB "translation may have failed" check does not fire on translated Chinese text | Automated |
 
+**Gender of the characters** (`src/gender_check.py`, `tests/test_gender_check.py`):
+the GENDER stage checks the predicate of a dictionary character by the spaCy
+model of the target language — past-tense verbs in Russian, Ukrainian, Polish
+(and other Slavic languages with a model), participles with être/essere/ser
+and predicative adjectives in French, Spanish, Portuguese, Italian (Catalan,
+Romanian, Greek with a model). Checked on real models: ru, uk, pl, fr, es.
+English, German, Dutch, Scandinavian languages and Chinese/Japanese/Korean
+have no predicate gender — only the `<characters>` block of the prompts works
+there; Turkish, Finnish, Hungarian and other languages without grammatical
+gender of persons get no block.
+
+**Words in two alphabets** (`src/script_guard.py`, `tests/test_script_guard.py`):
+Cyrillic targets (ru, uk, be, bg, sr, mk, kk) and Greek get Latin letters
+out, Latin-script targets get Cyrillic ones (Greek letters there are
+notation: `5 μm`, `Δx`); a word is checked
+against pymorphy3 for Russian and Ukrainian, elsewhere only an unambiguous
+variant or look-alike letters are used.
+
 Other targets get the generic behavior: the country defaults to
 `<Language>-speaking countries` unless `COUNTRY` is set
 (`src/config.py`, `_DEFAULT_COUNTRY`), the EPUB footnotes chapter falls back
@@ -66,8 +84,10 @@ to "Notes" when the language is not in `src/epub_writer.py`, `_NOTES_TITLE`.
 ```bash
 pip install -e ".[cjk]"   # tokenizers of the Japanese and Chinese models
 for m in en_core_web_sm de_core_news_sm fr_core_news_sm es_core_news_sm pt_core_news_sm \
-         it_core_news_sm ru_core_news_sm ko_core_news_sm ja_core_news_sm zh_core_web_sm xx_ent_wiki_sm; do
+         it_core_news_sm ru_core_news_sm ko_core_news_sm ja_core_news_sm zh_core_web_sm \
+         pl_core_news_sm uk_core_news_sm xx_ent_wiki_sm; do
     python -m spacy download "$m"
 done
-pytest tests/test_languages_real_models.py tests/test_target_turkish.py tests/test_i18n.py
+pytest tests/test_languages_real_models.py tests/test_target_turkish.py tests/test_i18n.py \
+       tests/test_gender_check.py tests/test_script_guard.py
 ```

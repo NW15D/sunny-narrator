@@ -38,6 +38,11 @@ dependencies = [
     "spacy==3.8.13",
     "thinc==8.3.13",
     "torch>=2.5.1",
+    # Word lists for script_guard ("dошло" -> "дошло"): Russian and Ukrainian
+    # words are checked against them (the ru/uk spaCy models pull the same)
+    "pymorphy3==2.0.6",
+    "pymorphy3-dicts-ru==2.4.417150.4580142",
+    "pymorphy3-dicts-uk==2.4.1.1.1663094765",
     # Encoding detection
     "charset-normalizer==3.4.6",
     "chardet==4.0.0",

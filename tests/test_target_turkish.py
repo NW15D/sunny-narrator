@@ -66,9 +66,9 @@ def test_prompts_carry_the_turkish_target():
     system = u.config.get_prompt("reflection", "system", target_lang="turkish", country="Türkiye")
     assert "into turkish for readers in Türkiye" in system
     user = u.config.get_prompt("initial_translation", "user_xml", source_lang="english",
-                               target_lang="turkish", outline_text="", vocab_dict="Jain = Jainler",
-                               source_text=SOURCE)
-    assert "into turkish" in user and "Jain = Jainler" in user
+                               target_lang="turkish", country="Türkiye", outline_text="",
+                               vocab_dict="Jain = Jainler", characters="", source_text=SOURCE)
+    assert "into turkish for readers in Türkiye" in user and "Jain = Jainler" in user
 
 
 def test_synopsis_candidates_with_turkish_names():

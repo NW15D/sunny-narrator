@@ -23,6 +23,7 @@ import base64
 import httpx
 import time
 import dataclasses
+import difflib
 import threading
 from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass, field
@@ -34,10 +35,10 @@ import tiktoken
 from src.config import Config
 from src.llm_logger import log_llm_call
 from src.p_tags_processor import post_process_p_tags
-from src import lexicon
+from src import gender_check, lexicon, script_guard
 from src.term_substitution import replace_vocab_in_text
 from src.stage_pipeline import PipelineAborted, current_slot
-from src.fb2_structure import join_paragraph_halves, split_in_two, split_paragraph_in_two
+from src.fb2_structure import join_paragraph_halves, markup_tags, split_in_two, split_paragraph_in_two
 
 # LLMService, TranslationPipeline, translate_chunk are defined in this module
 
@@ -75,6 +76,26 @@ class TranslationMetrics:
         self.language_mismatch_retries = 0
         self.successful_translations = 0
         self.failed_translations = 0
+        self.script_fixes = 0
+        self.script_unfixed = 0
+        self.gender_issues = 0
+        self.gender_fixed = 0
+
+    def log_script(self, stage: str, fixes: list, unfixed: list):
+        """Words written in two alphabets: fixed (INFO), left as they are (WARNING)."""
+        with self._lock:
+            self.script_fixes += len(fixes)
+            self.script_unfixed += len(unfixed)
+        if fixes:
+            logger.info(f"[{stage}] mixed-alphabet words fixed: "
+                        + ", ".join(f"{old}→{new}" for old, new in fixes))
+        if unfixed:
+            logger.warning(f"[{stage}] mixed-alphabet words left as they are: {', '.join(unfixed)}")
+
+    def log_gender(self, found: int, fixed: int):
+        with self._lock:
+            self.gender_issues += found
+            self.gender_fixed += fixed
         
     def log_retry(self, tokens: int, reason: str):
         """Log retry event (ERROR level)."""
@@ -118,7 +139,11 @@ class TranslationMetrics:
             "retry_tokens": self.retry_tokens,
             "retry_percentage": (self.retry_tokens / total) * 100,
             "rechunk_count": self.rechunk_count,
-            "language_mismatch_retries": self.language_mismatch_retries
+            "language_mismatch_retries": self.language_mismatch_retries,
+            "script_fixes": self.script_fixes,
+            "script_unfixed": self.script_unfixed,
+            "gender_issues": self.gender_issues,
+            "gender_fixed": self.gender_fixed,
         }
         
     def print_report(self):
@@ -134,6 +159,9 @@ class TranslationMetrics:
         logger.info(f"Retry tokens: {report['retry_tokens']:,} ({report['retry_percentage']:.1f}%)")
         logger.info(f"Rechunk events: {report['rechunk_count']}")
         logger.info(f"Language mismatch retries: {report['language_mismatch_retries']}")
+        logger.info(f"Mixed-alphabet words: {report['script_fixes']} fixed, "
+                    f"{report['script_unfixed']} left")
+        logger.info(f"Gender errors: {report['gender_issues']} found, {report['gender_fixed']} fixed")
         logger.info("=" * 60)
 
 
@@ -150,49 +178,43 @@ def _format_vocab_for_prompt(
     vocab_entries: Optional[List[Any]] = None
 ) -> str:
     """
-    Glossary lines for the prompt: "source = target, category, gender, notes"
-    per VocabEntry (empty fields omitted), or "source = target" per vocab_dict
-    item when there are no entries.
+    Glossary lines for the prompt: "source = target, category, notes" per
+    VocabEntry (empty fields omitted), or "source = target" per vocab_dict
+    item when there are no entries. The gender goes to the <characters>
+    block instead (characters_for_prompt), written the way the target
+    language shows it.
     """
     if vocab_entries:
         lines = []
         for entry in vocab_entries:
-            extra = [v for v in (getattr(entry, 'category', ''), getattr(entry, 'gender', ''),
-                                 getattr(entry, 'notes', '')) if v]
+            extra = [v for v in (getattr(entry, 'category', ''), getattr(entry, 'notes', '')) if v]
             line = f"{entry.source} = {entry.target}"
             lines.append(line + ", " + ", ".join(extra) if extra else line)
         return "\n".join(lines)
     return "\n".join(f"{source} = {target}" for source, target in (vocab_dict or {}).items())
 
 
-_GENDER_LABELS = {
-    'he': 'male (he)', 'she': 'female (she)', 'it': 'neuter (it)', 'they': 'plural/non-binary (they)',
-}
+def characters_for_prompt(context: 'TranslationContext') -> str:
+    """The <characters> lines of a stage prompt: every dictionary character
+    of the chunk with a gender, "Вашти — она (сказала)"."""
+    return "\n".join(gender_check.characters_lines(context.vocab_entries, context.target_lang))
 
 
-def build_synopsis_characters(vocab_entries, translation: str) -> str:
+def characters_for_json(context: 'TranslationContext') -> Dict[str, str]:
+    """The same for JSON mode: {name: label}."""
+    return dict(gender_check.characters(context.vocab_entries, context.target_lang))
+
+
+def build_synopsis_characters(vocab_entries, translation: str, target_lang: str = "") -> str:
     """
-    List the dictionary characters that appear in the translated chunk,
-    with their grammatical gender, for the synopsis prompt.
-
-    Matches both the target-language name (as it stands in the translation)
-    and the source name. Returns "" when no gendered entry is present.
+    The dictionary characters that appear in the translated chunk (by the
+    target-language or the source name), with their gender, as the
+    <characters> block of the synopsis prompt. "" when none has a gender.
+    A target language without grammatical gender gets English labels: the
+    synopsis still reports genders for the dictionary.
     """
-    if not vocab_entries:
-        return ""
-    haystack = translation.lower()
-    lines, seen = [], set()
-    for entry in vocab_entries:
-        get = entry.get if isinstance(entry, dict) else lambda k, d="": getattr(entry, k, d)
-        gender = (get('gender', '') or '').strip().lower()
-        target = (get('target', '') or '').strip()
-        source = (get('source', '') or '').strip()
-        if not gender or not (target or source) or (target or source) in seen:
-            continue
-        if not ((target and target.lower() in haystack) or (source and source.lower() in haystack)):
-            continue
-        seen.add(target or source)
-        lines.append(f"- {target or source}: {_GENDER_LABELS.get(gender, gender)}")
+    lines = gender_check.characters_lines(vocab_entries, target_lang or config.target_lang,
+                                          present_in=translation, genderless_in_english=True)
     if not lines:
         return ""
     return "<characters>\n" + "\n".join(lines) + "\n</characters>\n\n"
@@ -221,7 +243,6 @@ def build_synopsis_glossary(vocab_entries) -> str:
 # A block whose closing tag is missing ends where the other block starts
 _GENDERS_BLOCK_RE = re.compile(r'<genders>(.*?)(?:</genders>|(?=<terms>)|$)', re.DOTALL | re.IGNORECASE)
 _TERMS_BLOCK_RE = re.compile(r'<terms>(.*?)(?:</terms>|(?=<genders>)|$)', re.DOTALL | re.IGNORECASE)
-_VALID_GENDERS = {'he', 'she', 'it', 'they'}
 
 
 def _min_term_length(term: str) -> int:
@@ -263,11 +284,11 @@ def extract_dictionary_candidates(text: str, source_text: str,
             if len(parts) != (3 if category == 'PERSON' else 2):
                 continue
             source, target = parts[0], parts[1]
-            gender = parts[2].lower() if category == 'PERSON' else ''
+            gender = gender_check.normalize_gender(parts[2]) if category == 'PERSON' else ''
             if not source or not target or source.lower() in seen:
                 continue
             if category == 'PERSON':
-                if gender not in _VALID_GENDERS or source.lower() not in source_lower:
+                if gender not in gender_check.GENDERS or source.lower() not in source_lower:
                     continue
             else:
                 if (len(source) < _min_term_length(source)
@@ -294,6 +315,7 @@ class TranslationStage(Enum):
     REFLECTION = "reflection"      # Merged: quality + nuances + suggestions
     IMPROVE = "improve"            # Apply reflection suggestions
     FINAL = "final"
+    GENDER = "gender"              # Fix of the character-gender errors the code found
 
 
 class LLMRole(Enum):
@@ -371,7 +393,7 @@ class PipelineState:
             self.reflection = result.text
         elif result.stage == TranslationStage.IMPROVE:
             self.final_translation = result.text
-        elif result.stage == TranslationStage.FINAL:
+        elif result.stage in (TranslationStage.FINAL, TranslationStage.GENDER):
             self.final_translation = result.text
 
 
@@ -475,6 +497,8 @@ class LLMService:
             return config.temp_final_edit
         elif stage == TranslationStage.SYNOPSIS:
             return config.temp_synopsis
+        elif stage == TranslationStage.GENDER:
+            return config.temp_gender
         else:
             # Fallback to role-based default
             if role == LLMRole.TRANSLATE:
@@ -750,6 +774,76 @@ class LLMService:
 llm_service = LLMService()
 
 
+def _dictionary_targets(context: TranslationContext) -> List[str]:
+    targets = [(e.get('target', '') if isinstance(e, dict) else getattr(e, 'target', ''))
+               for e in context.vocab_entries]
+    return [t for t in targets + list((context.vocab_dict or {}).values()) if t]
+
+
+def _guard_script(text: str, context: TranslationContext, stage: str) -> str:
+    """A stage's output with its mixed-alphabet words ("dошло") put back
+    into the target alphabet (script_guard). The words that stay mixed are
+    reported once, for the final text (_report_mixed_words)."""
+    if not text:
+        return text
+    fixed, fixes, unfixed = script_guard.fix_mixed_script(text, context.target_lang,
+                                                          _dictionary_targets(context))
+    if fixes:
+        metrics.log_script(stage, fixes, [])
+    if unfixed:
+        logger.debug(f"[{stage}] mixed-alphabet words left: {unfixed}")
+    return fixed
+
+
+def _report_mixed_words(text: str, context: TranslationContext):
+    unfixed = script_guard.find_mixed_words(text, context.target_lang, _dictionary_targets(context))
+    if unfixed:
+        metrics.log_script("final", [], unfixed)
+
+
+_MAX_GENDER_FIXES = 12   # sentences per GENDER call
+# A sentence across a paragraph break, a hard line break or the lines of a
+# Markdown list, quote, verse (line block), table or heading is not sent: its
+# fix could not be put back in place. A soft wrap of pandoc is just a space.
+_BLOCK_BREAK_RE = re.compile(r'\n[ \t]*\n|  \n|\\\n|\n[ \t]*(?:[*+>|#-]|\d+[.)])')
+_SOFT_BREAK_RE = re.compile(r'[ \t]*\n[ \t]*')
+_THINK_RE = re.compile(r'^.*?</think>', re.DOTALL)
+_NUMBERED_RE = re.compile(r'^\s*(\d+)[.)]\s*(.+?)\s*$')
+
+
+def _gender_role(fast_mode: bool) -> LLMRole:
+    """The LLM of the GENDER call (GENDER_LLM): the proofread one by default -
+    it follows edit instructions better than a translation model - except
+    with FAST_TRANS and no proofread server set (API_BASE_PROOFREAD)."""
+    if config.gender_llm == 'translate':
+        return LLMRole.TRANSLATE
+    if config.gender_llm == 'proofread' or not fast_mode or config.proofread_configured:
+        return LLMRole.PROOFREAD
+    return LLMRole.TRANSLATE
+
+
+def _non_text(text: str) -> List[str]:
+    return [text[a:b] for a, b in lexicon.non_text_spans(text)]
+
+
+def _gender_fix_ok(old: str, new: str, issues: List[Any], context: TranslationContext) -> bool:
+    """Whether a sentence from the GENDER call can replace the original: the
+    same markup, about the same length, only a few words changed, and no
+    gender error left for its characters."""
+    if _non_text(old) != _non_text(new):
+        return False
+    if abs(len(new) - len(old)) > max(10, len(old) // 7):
+        return False
+    old_words, new_words = old.split(), new.split()
+    changed = sum(max(i2 - i1, j2 - j1) for tag, i1, i2, j1, j2 in
+                  difflib.SequenceMatcher(None, old_words, new_words).get_opcodes() if tag != 'equal')
+    if changed > max(3, 2 * sum(len(i.words) for i in issues)):
+        return False
+    names = {i.name for i in issues}
+    return not any(i.name in names for i in
+                   gender_check.find_gender_issues(new, context.vocab_entries, context.target_lang))
+
+
 class TranslationPipeline:
     """Main translation pipeline implementing dual-LLM workflow."""
     
@@ -792,6 +886,7 @@ class TranslationPipeline:
                 "target_lang": context.target_lang,
                 "country": context.country,
                 "vocabulary": context.vocab_dict or {},
+                "characters": characters_for_json(context),
                 "synopsis": context.outline_text or ""
             }, ensure_ascii=False)
             
@@ -817,7 +912,9 @@ class TranslationPipeline:
                 source_lang=context.source_lang,
                 target_lang=context.target_lang,
                 outline_text=context.outline_text,
+                country=context.country,
                 vocab_dict=vocab_str,
+                characters=characters_for_prompt(context),
                 source_text=context.source_text
             )
         elif config.model_translate == "Hunyuan":
@@ -831,7 +928,9 @@ class TranslationPipeline:
                 source_lang=context.source_lang,
                 target_lang=context.target_lang,
                 outline_text=context.outline_text,
+                country=context.country,
                 vocab_dict=vocab_str,
+                characters=characters_for_prompt(context),
                 source_text=context.source_text
             )
         else:
@@ -845,7 +944,9 @@ class TranslationPipeline:
                 source_lang=context.source_lang,
                 target_lang=context.target_lang,
                 outline_text=context.outline_text,
+                country=context.country,
                 vocab_dict=vocab_str,
+                characters=characters_for_prompt(context),
                 source_text=context.source_text
             )
         
@@ -904,7 +1005,9 @@ class TranslationPipeline:
                 text = retry_text
             else:
                 logger.warning("Retry is not more translated than the first answer; keeping the first")
-        
+
+        text = _guard_script(text, context, "initial_translation")
+
         return TranslationResult(
             stage=TranslationStage.INITIAL,
             llm_role=LLMRole.TRANSLATE,
@@ -930,13 +1033,13 @@ class TranslationPipeline:
                 tokens_used=0
             )
         
-        prompt_key = "user_hunyuan" if config.model_translate == "Hunyuan" else "user"
         user_prompt = config.get_prompt(
-            "synopsis", prompt_key,
+            "synopsis", "user",
             target_lang=context.target_lang,
             source_text=context.source_text,
             final_translation=translation,
-            characters_block=build_synopsis_characters(context.vocab_entries, translation),
+            characters_block=build_synopsis_characters(context.vocab_entries, translation,
+                                                       context.target_lang),
             glossary_block=build_synopsis_glossary(context.vocab_entries),
             dictionary_rules=config.get_prompt("synopsis", "dictionary_rules")
         )
@@ -958,6 +1061,12 @@ class TranslationPipeline:
             logger.info(f"[synopsis] Dictionary candidates reported: {len(candidates)}")
 
         text = remove_tags_with_check(text, "generate_synopsis", LLMRole.TRANSLATE)
+        text = _guard_script(text, context, "generate_synopsis")
+        if candidates:  # one call: the dictionary words are prepared once
+            targets = _guard_script("\n".join(c['target'] for c in candidates), context,
+                                    "dictionary_candidates").split("\n")
+            for cand, target in zip(candidates, targets):
+                cand['target'] = target
 
         # Synopsis can be empty - pipeline continues without it
         if not text or len(text.strip()) == 0:
@@ -989,7 +1098,8 @@ class TranslationPipeline:
                 "source_lang": context.source_lang,
                 "target_lang": context.target_lang,
                 "country": context.country,
-                "vocabulary": context.vocab_dict or {}
+                "vocabulary": context.vocab_dict or {},
+                "characters": characters_for_json(context)
             }, ensure_ascii=False)
             
             user_prompt = config.get_prompt(
@@ -1013,7 +1123,8 @@ class TranslationPipeline:
                 source_text=context.source_text,
                 translation=translation,
                 country=context.country,
-                vocab_dict=vocab_str
+                vocab_dict=vocab_str,
+                characters=characters_for_prompt(context)
             )
             system_prompt = config.get_prompt("reflection", "system",
                 target_lang=context.target_lang,
@@ -1050,7 +1161,8 @@ class TranslationPipeline:
                 "suggestions": suggestions,
                 "target_lang": context.target_lang,
                 "country": context.country,
-                "vocabulary": context.vocab_dict or {}
+                "vocabulary": context.vocab_dict or {},
+                "characters": characters_for_json(context)
             }, ensure_ascii=False)
             
             user_prompt = config.get_prompt(
@@ -1062,18 +1174,13 @@ class TranslationPipeline:
                 country=context.country
             )
         else:
-            # Format vocab for prompt: prefer vocab_entries, fallback to vocab_dict
-            vocab_str = _format_vocab_for_prompt(
-                vocab_dict=context.vocab_dict,
-                vocab_entries=context.vocab_entries
-            )
             user_prompt = config.get_prompt(
                 "improve", f"user_{context.style}",
                 target_lang=context.target_lang,
                 country=context.country,
                 translation=translation,
                 reflection=reflection,
-                vocab_dict=vocab_str
+                characters=characters_for_prompt(context)
             )
             system_prompt = config.get_prompt("improve", "system",
                 target_lang=context.target_lang,
@@ -1106,7 +1213,9 @@ class TranslationPipeline:
             tokens_used += retry_tokens
             if retry_tokens > 0:
                 metrics.log_retry(retry_tokens, "Empty after remove_tags retry [improve]")
-        
+
+        text = _guard_script(text, context, "improve_translation")
+
         return TranslationResult(
             stage=TranslationStage.IMPROVE,
             llm_role=LLMRole.PROOFREAD,
@@ -1126,7 +1235,8 @@ class TranslationPipeline:
             json_input = json.dumps({
                 "translation": translation,
                 "target_lang": context.target_lang,
-                "country": context.country
+                "country": context.country,
+                "characters": characters_for_json(context)
             }, ensure_ascii=False)
             
             user_prompt = config.get_prompt(
@@ -1142,7 +1252,8 @@ class TranslationPipeline:
                 "editor", f"user_{context.style}",
                 target_lang=context.target_lang,
                 country=context.country,
-                translation=translation
+                translation=translation,
+                characters=characters_for_prompt(context)
             )
             system_prompt = config.get_prompt("editor", "system",
                 target_lang=context.target_lang,
@@ -1182,7 +1293,9 @@ class TranslationPipeline:
             tokens_used += retry_tokens
             if retry_tokens > 0:
                 metrics.log_retry(retry_tokens, "Empty after remove_tags retry [final]")
-        
+
+        text = _guard_script(text, context, "final_edit")
+
         return TranslationResult(
             stage=TranslationStage.FINAL,
             llm_role=LLMRole.PROOFREAD,
@@ -1191,6 +1304,96 @@ class TranslationPipeline:
             tokens_used=tokens_used
         )
     
+    @log_entry
+    def gender_fix(self, context: TranslationContext, translation: str,
+                   role: LLMRole) -> TranslationResult:
+        """
+        GENDER stage, after the last text stage in both modes (FAST_TRANS
+        too): gender_check finds the sentences where a dictionary character
+        is the subject and its predicate has the other gender; with
+        GENDER_CHECK=fix they go to the LLM in one short call, and a fixed
+        sentence replaces the original only when it passes _gender_fix_ok.
+
+        The stage only improves a finished translation: any failure in it
+        (a truncated reply, an API or spaCy error) keeps the translation as
+        it is instead of failing, and so retranslating, the chunk.
+        """
+        try:
+            return self._gender_fix(context, translation, role)
+        except PipelineAborted:
+            raise
+        except Exception as e:
+            logger.warning(f"[gender] stage skipped, translation kept: {type(e).__name__}: {e}")
+            return TranslationResult(stage=TranslationStage.GENDER, llm_role=role, text=translation,
+                                     metadata={"error": f"{type(e).__name__}: {e}"})
+
+    def _gender_fix(self, context: TranslationContext, translation: str,
+                    role: LLMRole) -> TranslationResult:
+        def result(text: str, tokens: int = 0, **meta) -> TranslationResult:
+            return TranslationResult(stage=TranslationStage.GENDER, llm_role=role, text=text,
+                                     metadata=meta, tokens_used=tokens)
+
+        if config.gender_check == 'off' or not translation:
+            return result(translation)
+        issues = gender_check.find_gender_issues(translation, context.vocab_entries,
+                                                 context.target_lang)
+        if not issues:
+            return result(translation, issues=0)
+        for issue in issues:
+            logger.warning(f"[gender] {issue.name} ({issue.gender}): {', '.join(issue.words)} — "
+                           f"{' '.join(translation[issue.start:issue.end].split())[:200]}")
+        by_sentence: Dict[Tuple[int, int], list] = {}
+        for issue in issues:
+            by_sentence.setdefault((issue.start, issue.end), []).append(issue)
+        spans = [span for span in sorted(by_sentence)
+                 if not _BLOCK_BREAK_RE.search(translation[span[0]:span[1]])][:_MAX_GENDER_FIXES]
+        if config.gender_check == 'warn' or not spans:
+            metrics.log_gender(len(issues), 0)
+            return result(translation, issues=len(issues))
+
+        # one line per sentence: its soft line breaks become spaces, other
+        # whitespace (a no-break space before "!" in French) stays
+        flat = {span: _SOFT_BREAK_RE.sub(' ', translation[span[0]:span[1]]) for span in spans}
+        labels = dict(gender_check.characters(context.vocab_entries, context.target_lang))
+        names = list(dict.fromkeys(i.name for span in spans for i in by_sentence[span]))
+        sentences = "\n".join(f"{n}. {flat[span]}" for n, span in enumerate(spans, 1))
+        errors = "\n".join(
+            f"{n}. " + "; ".join(f"«{w}» — {i.name}: {labels.get(i.name, i.gender)}"
+                                 for i in by_sentence[span] for w in i.words)
+            for n, span in enumerate(spans, 1))
+        user_prompt = config.get_prompt(
+            "gender_fix", "user",
+            characters="\n".join(f"{name} — {labels.get(name, '')}" for name in names),
+            sentences=sentences, errors=errors)
+        system_prompt = config.get_prompt("gender_fix", "system", target_lang=context.target_lang)
+        reply, tokens = llm_service.complete(
+            role=role, system_prompt=system_prompt, user_prompt=user_prompt,
+            max_tokens=MAX_TOKENS_PER_CHUNK, stage=TranslationStage.GENDER, allow_empty=True)
+
+        # every numbered line of the reply: an echo of <errors> may carry the
+        # same number as the fixed sentence, so each one is tried, the last first
+        replies: Dict[int, List[str]] = {}
+        for line in _THINK_RE.sub('', reply or '').splitlines():
+            m = _NUMBERED_RE.match(line)
+            if m:
+                replies.setdefault(int(m.group(1)), []).append(m.group(2))
+        text, fixed_issues = translation, 0
+        for n, (a, b) in reversed(list(enumerate(spans, 1))):
+            old = flat[(a, b)]
+            for new in reversed(replies.get(n, [])):
+                if new == old:
+                    continue
+                new = _guard_script(new, context, "gender")
+                if _gender_fix_ok(old, new, by_sentence[(a, b)], context):
+                    text = text[:a] + new + text[b:]
+                    fixed_issues += len(by_sentence[(a, b)])
+                    break
+                logger.info(f"[gender] fix of sentence {n} rejected: {new[:200]}")
+        metrics.log_gender(len(issues), fixed_issues)
+        if fixed_issues:
+            logger.info(f"[gender] fixed {fixed_issues} of {len(issues)} gender error(s)")
+        return result(text, tokens, issues=len(issues), fixed=fixed_issues)
+
     def execute(self, source_lang: str, target_lang: str, source_text: str,
                 outline_text: str, vocab_dict: dict, vocab_entries: list = None,
                 country: str = "", style: str = "text", fast_mode: bool = False) -> PipelineState:
@@ -1223,11 +1426,14 @@ class TranslationPipeline:
         state.add_result(initial_result)
         
         if fast_mode:
-            # Fast path: skip reflection/improve/final_edit, return initial translation
+            # Fast path: skip reflection/improve/final_edit; the GENDER stage
+            # still runs (on the LLM _gender_role picks)
+            gender_result = self.gender_fix(context, initial_result.text, _gender_role(fast_mode))
+            state.add_result(gender_result)
             final_result = TranslationResult(
                 stage=TranslationStage.FINAL,
                 llm_role=LLMRole.TRANSLATE,
-                text=initial_result.text,
+                text=gender_result.text,
                 metadata={"fast_mode": True, "applied_reflection": False}
             )
             state.add_result(final_result)
@@ -1259,21 +1465,26 @@ class TranslationPipeline:
             # Stage 4: Final Edit (proofread LLM) - WITH vocab_dict
             final_edit_result = self.final_edit(context, improve_result.text)
             state.add_result(final_edit_result)
-            
+
+            # GENDER: the character-gender errors the code finds (proofread LLM)
+            gender_result = self.gender_fix(context, final_edit_result.text, _gender_role(fast_mode))
+            state.add_result(gender_result)
+
             # Stage 5: Synopsis (translate LLM) - from final translation
             # (already done from the draft when the stages are pipelined)
             if slot is None:
-                synopsis_result = self.generate_synopsis(context, final_edit_result.text)
+                synopsis_result = self.generate_synopsis(context, gender_result.text)
                 state.add_result(synopsis_result)
             
             final_result = TranslationResult(
                 stage=TranslationStage.FINAL,
                 llm_role=LLMRole.PROOFREAD,
-                text=final_edit_result.text,
+                text=gender_result.text,
                 metadata={"fast_mode": False, "applied_reflection": True, "final_edit": True}
             )
             state.add_result(final_result)
-        
+
+        _report_mixed_words(state.final_translation or "", context)
         return state
 
 
@@ -1607,7 +1818,7 @@ class LLMServiceCompat:
         Args:
             role: LLM role ("translate" or "proofread")
             prompt_category: Category in prompts.json (e.g., "vocabulary")
-            prompt_key: Key in category (e.g., "user", "user_hunyuan")
+            prompt_key: Key in category (e.g., "user")
             temperature: Override temperature (optional)
             max_tokens: Override max tokens (optional)
             json_mode: Enable JSON response format
@@ -1899,7 +2110,7 @@ def remove_tags_with_check(text: str, stage_name: str = "", role: LLMRole = None
     return cleaned
 
 
-_CYRILLIC_TARGETS = {'ru', 'uk', 'be', 'bg', 'sr', 'mk', 'kk'}
+_CYRILLIC_TARGETS = frozenset(script_guard.CYRILLIC_ALPHABETS)
 
 
 def _source_word_share(text: str, source_text: str) -> Optional[float]:
@@ -2081,13 +2292,10 @@ def translate_metadata(metadata: dict, source_lang: str, target_lang: str,
     book's dictionary.
     """
     try:
-        # Use Hunyuan-specific prompt if model is Hunyuan
-        prompt_key = "user_hunyuan" if config.model_translate == "Hunyuan" else "user"
-        
         response = llm_service_compat.get_completion(
             role="proofread",
             prompt_category="metadata_translation",
-            prompt_key=prompt_key,
+            prompt_key="user",
             json_mode=True,
             source_lang=source_lang,
             target_lang=target_lang,

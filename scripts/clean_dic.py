@@ -11,8 +11,9 @@
 Шаги:
 1. Поля: категория — в верхний регистр (у записи в нижнем регистре без
    категории — TERM); пол — синонимы (он/она/оно/они, male/female, м/ж, …)
-   приводятся к he/she/it/they. Незнакомое значение пола остаётся как есть и
-   попадает в отчёт: загрузчик принимает пол на любом языке.
+   приводятся к he/she/it/they (тот же список, что у загрузчика,
+   `gender_check.GENDER_MAP`). Незнакомое значение пола остаётся как есть и
+   попадает в отчёт: загрузчик его не принимает (пишет в лог), поправьте вручную.
 2. Дубли одной записи (`Jain tech` / `jain tech`, по `lexicon.word_key`, как
    в загрузчике; `Jain-tech` — другая запись) сливаются в одну: остаётся
    запись с категорией и с заглавной буквой, при равенстве — первая в файле;
@@ -40,15 +41,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src import lexicon  # noqa: E402
 from src import ner  # noqa: E402
-
-GENDERS = ('he', 'she', 'it', 'they')
-GENDER_SYNONYMS = {
-    'he': {'он', 'м', 'муж', 'мужской', 'm', 'male', 'masc', 'masculine'},
-    'she': {'она', 'ж', 'жен', 'женский', 'f', 'female', 'fem', 'feminine'},
-    'it': {'оно', 'ср', 'n', 'neuter'},
-    'they': {'они', 'pl', 'plural'},
-}
-GENDER_MAP = {s: g for g, synonyms in GENDER_SYNONYMS.items() for s in synonyms | {g}}
+from src.gender_check import GENDER_MAP  # noqa: E402  (the loader normalizes the same way)
 
 CATEGORY_ORDER = ['PERSON', 'GPE', 'LOC', 'FAC', 'ORG', 'PRODUCT', 'EVENT', 'TERM']
 

@@ -97,10 +97,15 @@ class Config:
         self.temp_final_edit = _parse_numeric_env('TEMP_FINAL_EDIT', 0.15)
         # Stage 5: SYNOPSIS
         self.temp_synopsis = _parse_numeric_env('TEMP_SYNOPSIS', 0.15)
+        # GENDER stage (fix of the sentences GENDER_CHECK found)
+        self.temp_gender = _parse_numeric_env('TEMP_GENDER', 0.05)
 
         # Proofread API (proofread model)
         self.api_key_proofread = os.getenv('API_KEY_PROOFREAD', os.getenv('API_KEY2', ''))
         self.base_url_proofread = os.getenv('API_BASE_PROOFREAD', os.getenv('API_BASE2', 'https://api.openai.com/v1'))
+        # A proofread server set explicitly: with FAST_TRANS the GENDER stage
+        # goes to it instead of the translate LLM
+        self.proofread_configured = bool(os.getenv('API_BASE_PROOFREAD') or os.getenv('API_BASE2'))
         self.sys_not_promt_proofread = os.getenv('S_PROMT_PROOFREAD', os.getenv('S_PROMT2', '')).lower() in ('true', '1', 'on')
         self.model_proofread = os.getenv('MODEL_PROOFREAD', os.getenv('MODEL2', 'tencent/Hunyuan-MT-7B'))
         self.temp_proofread = _parse_numeric_env('TEMP_PROOFREAD', os.getenv('TEMP2', 0.7))
@@ -169,7 +174,19 @@ class Config:
         # Arabic, ...) gets the multilingual NER model, not the English one
         default_model = self.lang_model_map.get(self.source_lang.lower(), 'xx_ent_wiki_sm')
         self.nermodel = os.getenv('NERMODEL') or default_model  # empty = by SOURCE_LANG
-        self.fast_trans = os.getenv('FAST_TRANS', 'on').lower() in ['true', '1', 'on', 'yes']
+        self.fast_trans = os.getenv('FAST_TRANS', 'false').lower() in ['true', '1', 'on', 'yes']
+        # GENDER_CHECK: the GENDER stage after the last text stage (both modes,
+        # FAST_TRANS too): "fix" - a sentence where a dictionary character's
+        # predicate has the other gender goes to the LLM for a fix; "warn" -
+        # only logged; "off".
+        gender_check = os.getenv('GENDER_CHECK', 'fix').strip().lower()
+        self.gender_check = gender_check if gender_check in ('fix', 'warn', 'off') else 'fix'
+        # GENDER_LLM: which LLM gets the GENDER call. "auto": the proofread
+        # LLM, with FAST_TRANS too when API_BASE_PROOFREAD is set; "translate"
+        # or "proofread" always that one (FAST_TRANS with only the translate
+        # model loaded: "translate", or every fix reloads the other model)
+        gender_llm = os.getenv('GENDER_LLM', 'auto').strip().lower()
+        self.gender_llm = gender_llm if gender_llm in ('auto', 'translate', 'proofread') else 'auto'
         # PARALLEL_STAGES: 1 = one chunk at a time; 2 = translate stages of the next
         # chunk overlap with the proofread stages of this one (needs the two LLMs
         # on separate GPUs). More than 2 gains nothing: one request per GPU.

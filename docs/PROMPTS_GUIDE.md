@@ -103,7 +103,8 @@ S_PROMT_PROOFREAD=false   # false = раздельные сообщения
 |---|---|---|
 | `initial_translation` | `system`, `user_xml` (FB2), `user_text` (Markdown, Calibre), `user_hunyuan` (Hunyuan, не FB2) | `TranslationPipeline.initial_translation` |
 | `reflection`, `improve`, `editor` | `system`, `user_xml`, `user_text` (по `style` чанка) | стадии 2–4 |
-| `synopsis` | `system`, `user`, `user_hunyuan`, `dictionary_rules` (общий фрагмент обоих `user`) | стадия 5 |
+| `synopsis` | `system`, `user`, `dictionary_rules` (подставляется в конец `user`) | стадия 5 |
+| `gender_fix` | `system`, `user` | стадия GENDER: только предложения, где `gender_check` нашёл сказуемое другого рода (LLM — `GENDER_LLM`: по умолчанию proofread, при `FAST_TRANS` без `API_BASE_PROOFREAD` — translate) |
 | `*_json` | `system`, `user_text` | те же стадии при `JSON_MODE` |
 | `vocabulary`, `metadata_translation` | `user` (системного сообщения нет: `get_completion` шлёт только `user`) | перевод словаря, метаданные |
 | `image_generation` | `generation`, `variation` | обложка |
@@ -116,6 +117,16 @@ S_PROMT_PROOFREAD=false   # false = раздельные сообщения
 - каждый ключ файла есть в списке вызовов теста — мёртвых ключей нет;
 - промпты перевода получают словарь чанка, а перевод/improve/editor требуют
   сохранять теги, Markdown и плейсхолдеры (`![](sn-imgref-N)`, `[](sn-htmlref-N)`).
+
+Пол персонажей: не поле строки `<vocabulary>`, а блок `<characters>` во всех
+стадиях (в JSON-режиме — ключ `"characters"`), строка на персонажа в форме
+языка перевода — `Вашти — она (сказала)` (`gender_check.characters_lines`).
+Слабая модель копирует увиденную форму глагола надёжнее, чем переводит «she»
+с конца строки глоссария. Промпты пишутся под модели до 20B: новое правило —
+вместо старого, а не в добавок; `scripts/prompt_eval.py` проверяет правку на
+ваших моделях. `tests/test_prompts.py` следит, чтобы текстовый и JSON-вариант
+стадии несли одни правила (`SAME_RULES`) и чтобы промпт не выходил за свой
+бюджет длины (`BUDGET`).
 
 Договорённости между стадиями: в исходник перед стадией 1 уже подставлены
 переводы терминов в начальной форме (промпт просит их склонять); рефлексия
@@ -145,12 +156,12 @@ S_PROMT_PROOFREAD=false   # false = раздельные сообщения
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │ ЭТАП 4: FINAL_EDIT (Proofread LLM) 🆕                           │
-│ Промпт: editor (system + user_xml/user_text/user_hunyuan)       │
+│ Промпт: editor (system + user_xml/user_text)                    │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │ ЭТАП 5: SYNOPSIS (Translate LLM) ← из финального перевода      │
-│ Промпт: synopsis (system + user/user_hunyuan)                   │
+│ Промпт: synopsis (system + user)                                │
 └─────────────────────────────────────────────────────────────────┘
 ```
 

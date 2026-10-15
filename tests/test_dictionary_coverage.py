@@ -178,7 +178,7 @@ def test_synopsis_prompt_lists_the_chunk_glossary():
     block = u.build_synopsis_glossary(entries)
     assert block == "<glossary>\nJain = Джайны\nspidergun = паукопушка\n</glossary>\n\n"
     assert u.build_synopsis_glossary([]) == ""
-    for key in ("user", "user_hunyuan"):
+    for key in ("user",):
         prompt = u.config.get_prompt("synopsis", key, target_lang="russian", source_text="s",
                                      final_translation="t", characters_block="",
                                      glossary_block=block,

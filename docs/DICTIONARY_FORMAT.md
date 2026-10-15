@@ -80,6 +80,15 @@ Queen's Court = Двор Королевы, ORG, ,
 | `they` | Plural or non-binary |
 | *(empty)* | Not applicable (LOC, ORG, TERM) |
 
+The loader also accepts the usual spellings and turns them into these four:
+`male`/`m`/`он`/`м`/`муж` → `he`, `female`/`f`/`она`/`ж`/`жен` → `she`, `оно`/`n`
+→ `it`, `они`/`pl` → `they` (`src/gender_check.py`, `GENDER_SYNONYMS`). Any
+other value is ignored with a warning in the log: the character then has no
+gender, and the synopsis may fill it in. The gender of a PERSON goes to the
+`<characters>` block of every stage ("Вашти — она (сказала)") and is checked
+in the translation by the GENDER stage — a wrong gender here is enforced
+throughout the book.
+
 ---
 
 ## Examples
