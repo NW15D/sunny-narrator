@@ -130,8 +130,9 @@ OUTPUT_FORMAT=fb2
 Alice = Алиса, PERSON, she, 主角
 ```
 
-- 首次运行时通过 NER（命名实体）自动创建，然后由 LLM 翻译。只有设置 `DICT_FREQUENT_WORDS=true`（或对 `--build-dict`/`--build-series-dict` 使用 `--frequent-words`）时才会加入高频普通词。
-- **角色性别**（`he`、`she`、`it`、`they`）：如果词典未注明性别，摘要阶段会根据文本判断；词典中没有的、有专名的角色会被加入。文件中已有的性别永远不会被覆盖——手动修改始终优先。
+- **自动创建**：首次运行时（或使用 `--build-dict`）由源语言的 spaCy 模型找出名称；类别和性别由书本身决定（NER 标签的多数、代词、*Miss*/*Mr.* 之类的称谓），LLM 只负责翻译。不确定的性别留空，运行会停止，以便你检查新的 `.dic`。只有设置 `DICT_FREQUENT_WORDS=true`（或对 `--build-dict`/`--build-series-dict` 使用 `--frequent-words`）时才会加入常见普通词。
+- **每次翻译前对照书本检查**（不使用 LLM）：可靠的发现——空的性别、与书矛盾的性别或类别——只用于本次运行；`.dic` 不会改变，这些修正写入 `<dic>.reviewed.dic`。`--no-autofix` 在出现矛盾时停止运行，`--force` 仍然翻译；报告为 `<书名>.dictcheck.txt`。
+- **角色性别**（`he`、`she`、`it`、`they`）：所有阶段都以目标语言的形式获得性别（`Вашти — она (сказала)`），GENDER 阶段会修正与词典矛盾的句子。运行不会覆盖文件中已有的性别；摘要只在两个分块一致时填写空的性别。
 - **自造词：** 除角色外，摘要阶段还会报告没有常规译法的自造词（`spidergun`）；它们以 `TERM` 加入。spaCy 模型已认识的词会被丢弃。
 - **不重复：** 词典已覆盖的候选词不会加入——条目的其他大小写或屈折形式（`Jain nodes` = `Jain node`，`Gabbleducks` = `gabbleduck`；人名只按屈折：`Jains` = `Jain`，但 `Marie` ≠ `Mary`），或包含已知术语的短语（已有 `Jain` 时的 `Jain node`、`Jain-tech`）。连字符、空格或连写是不同条目（`gabble-duck` ≠ `gabbleduck`）；全大写缩写只匹配自身（`ECS` ≠ `EC`）。
 - **新条目去向：** 新的人名和术语立即进入内存中的词典——本次运行的后续分块会使用它们，断点续传时从检查点恢复。只有设置 `DICT_AUTO_SAVE=true` 时才写入 `.dic`（默认 `false`：已审阅的词典保持不变）。
@@ -142,6 +143,21 @@ Alice = Алиса, PERSON, she, 主角
 - **指定词典路径：** 默认在书籍旁查找词典（`books/MyBook.fb2` → `books/MyBook.dic`）。如需使用其他文件（例如系列共享词典），可在 `.env` 中设置 `DICTIONARY=path/to/file.dic`，或传入 `--dictionary path/to/file.dic`（命令行参数优先）。两个流程均支持；若文件不存在，将在该路径创建（目录必须已存在）。
 
 **格式指南：** [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md)
+
+### 词典操作
+
+| 任务 | 命令 / 步骤 |
+|---|---|
+| 新书，无词典 | `python app.py`（或 `python app.py --build-dict books/MyBook.epub`）→ `books/MyBook.dic` + `books/MyBook.dictcheck.txt` → 填写你已知的空性别 → 再次运行 |
+| 使用词典翻译 | `python app.py` —— 先进行检查；阅读 `<书名>.dictcheck.txt`，同意的话采用 `<dic>.reviewed.dic` |
+| 严格模式 | `python app.py --no-autofix` —— 出现矛盾时停止（退出码 2）；`--force` 仍然翻译 |
+| 系列图书 | `python app.py --build-series-dict books/series/ --series-dict-output series.dic`，然后每本书使用 `--dictionary series.dic`；运行永远不会修改 `series.dic`，每本书得到 `series.<书名>.reviewed.dic` |
+| 清理词典 | `python app.py dict clean books/MyBook.dic` → `MyBook.clean.dic` + 报告（重复项、性别写法、普通词） |
+| 不翻译，只对照书本检查 | `python app.py dict review books/MyBook.epub --dic books/MyBook.dic` → `MyBook.reviewed.dic` + 报告 |
+| 另一种目标语言 | `python app.py dict convert books/MyBook.dic fr es zh` |
+| 检查已完成的译文 | `python app.py audit books/MyBook_ru.epub --dic books/MyBook_ru.dic --lang russian` |
+
+**语言。** 词典使用**源**语言的 spaCy 模型构建和检查（`NERMODEL`，按 `SOURCE_LANG` 选择）：`python -m spacy download en_core_web_lg`（英语）、`ru_core_news_lg`、`de_core_news_lg`、`fr_core_news_lg`、`es_core_news_lg`、`it_core_news_lg`、`pt_core_news_lg`、`pl_core_news_lg`、`uk_core_news_lg`、`ko_core_news_lg`、`ja_core_news_lg`、`zh_core_web_lg`；其他语言使用 `xx_ent_wiki_sm`（只有名称，无法通过代词判断性别）。检查**译文**中的性别需要目标语言的模型（`ru_core_news_sm`、`pl_core_news_sm`、`fr_core_news_sm` 等）。中文、日语和韩语代词的性别按写法判断；代词没有性别的语言（土耳其语、芬兰语、匈牙利语）写成的书无法提供性别——请手动填写。
 
 ---
 
@@ -205,10 +221,10 @@ python app.py --build-series-dict books/ --series-dict-output series.dic --min-c
 **工作流程：**
 1. 查找文件夹中的所有书籍文件
 2. 从每本书中提取文本
-3. 运行 NER 查找命名实体（PERSON、ORG、LOC、GPE、EVENT、FAC、PRODUCT）
+3. 运行 NER：每个实体一条（词形按词元合并，类别取多数提及）
 4. 汇总所有书籍的出现次数
 5. 按阈值过滤
-6. 通过 proofread LLM 翻译术语
+6. 通过 proofread LLM 翻译术语（它只负责翻译；性别由每本书翻译前的检查设置）
 7. 保存统一的 `.dic` 文件
 
 **输出：** 普通的 `.dic` 文件（`source = target, category, gender, notes`）。专有名词保留大写字母和全部单词（`John Smith`）。

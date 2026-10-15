@@ -130,8 +130,9 @@ O arquivo de dicionário (`*.dic`) garante a consistência da terminologia:
 Alice = Алиса, PERSON, she, Personagem principal
 ```
 
-- Criado automaticamente na primeira execução via NER (entidades nomeadas) e depois traduzido pelo LLM. Palavras comuns frequentes só são adicionadas com `DICT_FREQUENT_WORDS=true` (ou `--frequent-words` para `--build-dict`/`--build-series-dict`).
-- **Gênero dos personagens** (`he`, `she`, `it`, `they`): se o dicionário não indica o gênero, o estágio de sinopse o determina pelo texto; personagens com nome próprio ausentes do dicionário são adicionados. Um gênero já presente no arquivo nunca é sobrescrito — edições manuais sempre prevalecem.
+- **Criado automaticamente** na primeira execução (ou com `--build-dict`): o modelo spaCy do idioma de origem encontra os nomes; a categoria e o gênero são decididos pelo próprio livro (a maioria dos rótulos NER, os pronomes, formas de tratamento como *Miss*/*Mr.*), o LLM apenas traduz. Um gênero incerto fica vazio, e a execução para para você revisar o novo `.dic`. Palavras comuns frequentes só são adicionadas com `DICT_FREQUENT_WORDS=true` (ou `--frequent-words` para `--build-dict`/`--build-series-dict`).
+- **Verificado contra o livro antes de cada tradução** (sem LLM): as descobertas seguras — um gênero vazio, um gênero ou categoria que o livro contradiz — valem só para aquela execução; o `.dic` não muda, `<dic>.reviewed.dic` as recebe. `--no-autofix` para a execução diante de uma contradição, `--force` traduz mesmo assim; o relatório é `<livro>.dictcheck.txt`.
+- **Gênero dos personagens** (`he`, `she`, `it`, `they`): todas as etapas o recebem na forma do idioma de destino (`Вашти — она (сказала)`), e a etapa GENDER corrige as frases que contradizem o dicionário. Um gênero no arquivo nunca é sobrescrito por uma execução; a sinopse preenche apenas os vazios, quando dois chunks concordam.
 - **Palavras inventadas:** além dos personagens, a etapa de sinopse informa palavras inventadas sem tradução comum (`spidergun`); elas são adicionadas como `TERM`. Palavras que o modelo spaCy já conhece são descartadas.
 - **Sem duplicatas:** um candidato que o dicionário já cobre não é adicionado — outra caixa ou forma flexionada de uma entrada (`Jain nodes` = `Jain node`, `Gabbleducks` = `gabbleduck`; um nome só pela flexão: `Jains` = `Jain`, mas `Marie` ≠ `Mary`) ou uma frase com um termo conhecido (`Jain node`, `Jain-tech` quando `Jain` existe). Hífen, espaço ou escrita junta são entradas diferentes (`gabble-duck` ≠ `gabbleduck`); uma sigla em MAIÚSCULAS só corresponde a si mesma (`ECS` ≠ `EC`).
 - **Para onde vão as entradas encontradas:** novos nomes e termos entram logo no dicionário em memória — os chunks seguintes da execução os usam, e uma execução retomada os restaura do checkpoint. Só são gravados no `.dic` com `DICT_AUTO_SAVE=true` (padrão `false`: o dicionário revisado fica como está).
@@ -142,6 +143,21 @@ Alice = Алиса, PERSON, she, Personagem principal
 - **Caminho explícito do dicionário:** por padrão o dicionário é procurado ao lado do livro (`books/MyBook.fb2` → `books/MyBook.dic`). Para usar outro arquivo, por exemplo um dicionário comum da série, defina `DICTIONARY=path/to/file.dic` no `.env` ou passe `--dictionary path/to/file.dic` (a flag da CLI tem prioridade). Funciona nos dois pipelines; um arquivo inexistente é criado nesse caminho (o diretório deve existir).
 
 **Guia de formato:** [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md)
+
+### Trabalhando com dicionários
+
+| Tarefa | Comando / passo |
+|---|---|
+| Livro novo, sem dicionário | `python app.py` (ou `python app.py --build-dict books/MyBook.epub`) → `books/MyBook.dic` + `books/MyBook.dictcheck.txt` → preencha os gêneros vazios que você conhece → execute de novo |
+| Traduzir com dicionário | `python app.py` — a verificação roda primeiro; leia `<livro>.dictcheck.txt` e, se concordar, use `<dic>.reviewed.dic` |
+| Modo estrito | `python app.py --no-autofix` — para diante de uma contradição (código de saída 2); `--force` traduz mesmo assim |
+| Série de livros | `python app.py --build-series-dict books/series/ --series-dict-output series.dic`, depois cada livro com `--dictionary series.dic`; uma execução nunca altera `series.dic`, cada livro recebe `series.<livro>.reviewed.dic` |
+| Limpar um dicionário | `python app.py dict clean books/MyBook.dic` → `MyBook.clean.dic` + relatório (duplicatas, grafias de gênero, palavras comuns) |
+| Verificar contra o livro sem traduzir | `python app.py dict review books/MyBook.epub --dic books/MyBook.dic` → `MyBook.reviewed.dic` + relatório |
+| Outro idioma de destino | `python app.py dict convert books/MyBook.dic fr es zh` |
+| Verificar uma tradução pronta | `python app.py audit books/MyBook_ru.epub --dic books/MyBook_ru.dic --lang russian` |
+
+**Idiomas.** O dicionário é construído e verificado com o modelo spaCy do idioma de **origem** (`NERMODEL`, escolhido por `SOURCE_LANG`): `python -m spacy download en_core_web_lg` (inglês), `ru_core_news_lg`, `de_core_news_lg`, `fr_core_news_lg`, `es_core_news_lg`, `it_core_news_lg`, `pt_core_news_lg`, `pl_core_news_lg`, `uk_core_news_lg`, `ko_core_news_lg`, `ja_core_news_lg`, `zh_core_web_lg`; os demais idiomas usam `xx_ent_wiki_sm` (só nomes, sem gênero pelos pronomes). A verificação de gênero da **tradução** precisa do modelo do idioma de destino (`ru_core_news_sm`, `pl_core_news_sm`, `fr_core_news_sm`, …). O gênero dos pronomes em chinês, japonês e coreano é lido pela grafia; um livro num idioma sem pronomes com gênero (turco, finlandês, húngaro) não fornece gênero — preencha à mão.
 
 ---
 
@@ -205,10 +221,10 @@ O dicionário de um único livro é criado com `--build-dict path/to/book`.
 **Workflow:**
 1. Encontrar todos os arquivos de livros na pasta
 2. Extrair o texto de cada livro
-3. Executar NER para encontrar entidades nomeadas (PERSON, ORG, LOC, GPE, EVENT, FAC, PRODUCT)
+3. Executar NER: uma entrada por entidade (formas agrupadas pelo lema, a categoria da maioria das menções)
 4. Somar as contagens de todos os livros
 5. Filtrar pelos limites
-6. Traduzir os termos via LLM de revisão (proofread)
+6. Traduzir os termos via LLM de revisão (proofread) (ele só traduz; os gêneros vêm da verificação antes da tradução de cada livro)
 7. Salvar um `.dic` unificado
 
 **Saída:** um arquivo `.dic` comum (`source = target, category, gender, notes`). Nomes próprios mantêm as maiúsculas e todas as palavras (`John Smith`).

@@ -139,8 +139,9 @@ Dictionary file (`*.dic`) ensures terminology consistency:
 Alice = Алиса, PERSON, she, Main character
 ```
 
-- Created automatically on the first run via NER (named entities), then translated by the LLM. Frequent ordinary words are added only with `DICT_FREQUENT_WORDS=true` (or `--frequent-words` for `--build-dict`/`--build-series-dict`).
-- **Character genders** (`he`, `she`, `it`, `they`): if the dictionary does not specify a gender, the synopsis stage determines it from the text; characters with a proper name missing from the dictionary are added. A gender already in the file is never overwritten, so manual edits always win.
+- **Created automatically** on the first run (or with `--build-dict`): the spaCy model of the source language finds the names; the categories and genders are decided by the book itself (the majority of NER labels, the pronouns, forms of address like *Miss*/*Mr.*), the LLM only translates. An unsure gender stays empty, and the run stops so you can review the new `.dic`. Frequent ordinary words are added only with `DICT_FREQUENT_WORDS=true` (or `--frequent-words` for `--build-dict`/`--build-series-dict`).
+- **Checked against the book before every translation** (no LLM): sure findings — an empty gender, a gender or category the book contradicts — apply to that run only; the `.dic` is not changed, `<dic>.reviewed.dic` gets them. `--no-autofix` stops the run on a contradiction, `--force` translates anyway; the report is `<book>.dictcheck.txt`.
+- **Character genders** (`he`, `she`, `it`, `they`): every stage gets them written the target language's way (`Вашти — она (сказала)`), and the GENDER stage fixes sentences that contradict the dictionary. A gender in the file is never overwritten by a run; the synopsis fills in only empty ones, when two chunks agree.
 - **Coined words:** besides characters, the synopsis stage reports invented words with no ordinary translation (`spidergun`); they are added as `TERM`. Words the spaCy model already knows are dropped.
 - **No duplicates:** a candidate the dictionary already covers is not added — another case or inflected form of an entry (`Jain nodes` = `Jain node`, `Gabbleducks` = `gabbleduck`; a name only by inflection: `Jains` = `Jain`, but `Marie` ≠ `Mary`) or a phrase containing a known term (`Jain node`, `Jain-tech` when `Jain` is there). A hyphen, a space or no separator make different entries (`gabble-duck` ≠ `gabbleduck`); an ALL-CAPS acronym matches only itself (`ECS` ≠ `EC`).
 - **Where found entries go:** new names and terms join the in-memory dictionary at once — the following chunks of the run use them, and a resumed run restores them from the checkpoint. They are written to the `.dic` only with `DICT_AUTO_SAVE=true` (default `false`: the reviewed dictionary stays as it is).
@@ -151,6 +152,21 @@ Alice = Алиса, PERSON, she, Main character
 - **Explicit dictionary path:** by default the dictionary is looked up next to the book (`books/MyBook.fb2` → `books/MyBook.dic`). Set `DICTIONARY=path/to/file.dic` in `.env` or pass `--dictionary path/to/file.dic` (the CLI flag wins) to use another file, e.g. a shared series dictionary. Works in both pipelines; a missing file is created at that path (its directory must exist).
 
 **Format guide:** [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md)
+
+### Working with dictionaries
+
+| Task | Command / step |
+|---|---|
+| New book, no dictionary | `python app.py` (or `python app.py --build-dict books/MyBook.epub`) → `books/MyBook.dic` + `books/MyBook.dictcheck.txt` → fill in the empty genders you know → run again |
+| Translate with a dictionary | `python app.py` — the check runs first; read `<book>.dictcheck.txt`, take `<dic>.reviewed.dic` if you agree |
+| Strict mode | `python app.py --no-autofix` — stops on a contradiction (exit code 2); `--force` translates anyway |
+| Series of books | `python app.py --build-series-dict books/series/ --series-dict-output series.dic`, then each book with `--dictionary series.dic`; a run never changes `series.dic`, each book gets `series.<book>.reviewed.dic` |
+| Clean a dictionary | `python app.py dict clean books/MyBook.dic` → `MyBook.clean.dic` + report (duplicates, gender spellings, ordinary words) |
+| Check against the book without translating | `python app.py dict review books/MyBook.epub --dic books/MyBook.dic` → `MyBook.reviewed.dic` + report |
+| Another target language | `python app.py dict convert books/MyBook.dic fr es zh` |
+| Check a finished translation | `python app.py audit books/MyBook_ru.epub --dic books/MyBook_ru.dic --lang russian` |
+
+**Languages.** The dictionary is built and checked with the spaCy model of the **source** language (`NERMODEL`, chosen by `SOURCE_LANG`): `python -m spacy download en_core_web_lg` (English), `ru_core_news_lg`, `de_core_news_lg`, `fr_core_news_lg`, `es_core_news_lg`, `it_core_news_lg`, `pt_core_news_lg`, `pl_core_news_lg`, `uk_core_news_lg`, `ko_core_news_lg`, `ja_core_news_lg`, `zh_core_web_lg`; any other language uses `xx_ent_wiki_sm` (names only, no genders from pronouns). The gender check of the **translation** needs the model of the target language (`ru_core_news_sm`, `pl_core_news_sm`, `fr_core_news_sm`, …). Chinese, Japanese and Korean pronoun genders are read by their form; a book in a language without gendered pronouns (Turkish, Finnish, Hungarian) gives no genders — set them by hand.
 
 ---
 
@@ -214,10 +230,10 @@ A dictionary for a single book can be built with `--build-dict path/to/book`.
 **Workflow:**
 1. Find all book files in folder
 2. Extract text from each book
-3. Run NER to find named entities (PERSON, ORG, LOC, GPE, EVENT, FAC, PRODUCT)
+3. Run NER: one entry per entity (forms grouped by lemma, the category most mentions got)
 4. Aggregate counts across all books
 5. Filter by threshold criteria
-6. Translate terms via the proofread LLM
+6. Translate the terms via the proofread LLM (it only translates; genders are set by the check before each book's translation)
 7. Save unified `.dic` file
 
 **Output:** a regular `.dic` file (`source = target, category, gender, notes`). Proper names keep their capitalization and all their words (`John Smith`).

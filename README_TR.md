@@ -140,8 +140,9 @@ Sözlük dosyası (`*.dic`) terminoloji tutarlılığını sağlar:
 Alice = Alice, PERSON, she, Ana karakter
 ```
 
-- İlk çalıştırmada NER (adlandırılmış varlıklar) ile otomatik oluşturulur, ardından LLM tarafından çevrilir. Sık geçen sıradan sözcükler yalnızca `DICT_FREQUENT_WORDS=true` ile eklenir (`--build-dict`/`--build-series-dict` için `--frequent-words`).
-- **Karakter cinsiyetleri** (`he`, `she`, `it`, `they`): sözlükte cinsiyet yoksa özet aşaması metinden belirler; sözlükte olmayan, özel adı olan karakterler eklenir. Dosyadaki bir cinsiyet asla değiştirilmez, elle yapılan düzenlemeler her zaman önceliklidir.
+- **Otomatik oluşturulur:** ilk çalıştırmada (veya `--build-dict` ile) adları kaynak dilin spaCy modeli bulur; kategoriyi ve cinsiyeti kitabın kendisi belirler (NER etiketlerinin çoğunluğu, zamirler, *Miss*/*Mr.* gibi hitaplar), LLM yalnızca çevirir. Emin olunamayan cinsiyet boş kalır ve yeni `.dic` dosyasını gözden geçirebilmeniz için çalışma durur. Sık geçen sıradan sözcükler yalnızca `DICT_FREQUENT_WORDS=true` ile (veya `--build-dict`/`--build-series-dict` için `--frequent-words` ile) eklenir.
+- **Her çeviriden önce kitaba göre denetlenir** (LLM olmadan): kesin bulgular — boş bir cinsiyet, kitabın çeliştiği bir cinsiyet veya kategori — yalnızca o çalışmaya uygulanır; `.dic` değişmez, bulgular `<dic>.reviewed.dic` dosyasına yazılır. `--no-autofix` bir çelişkide çalışmayı durdurur, `--force` yine de çevirir; rapor: `<kitap>.dictcheck.txt`.
+- **Karakter cinsiyetleri** (`he`, `she`, `it`, `they`): her aşama cinsiyeti hedef dilin biçiminde alır (`Вашти — она (сказала)`), GENDER aşaması sözlükle çelişen cümleleri düzeltir. Dosyadaki bir cinsiyet çalışma sırasında asla değiştirilmez; özet yalnızca boş olanları, iki parça aynı fikirdeyse doldurur.
 - **Uydurma sözcükler:** özet aşaması, karakterlerin yanı sıra sıradan bir karşılığı olmayan icat edilmiş sözcükleri (`spidergun`) bildirir; `TERM` olarak eklenirler. spaCy modelinin zaten bildiği sözcükler atılır.
 - **Tekrar yok:** sözlüğün zaten kapsadığı bir aday eklenmez — bir girdinin başka büyük/küçük harfli veya çekimli biçimi (`Jain nodes` = `Jain node`, `Gabbleducks` = `gabbleduck`; bir ad yalnızca çekimiyle: `Jains` = `Jain`, ama `Marie` ≠ `Mary`) ya da bilinen bir terimi içeren ifade (`Jain` varken `Jain node`, `Jain-tech`). Kısa çizgi, boşluk veya bitişik yazım farklı girdilerdir (`gabble-duck` ≠ `gabbleduck`); BÜYÜK HARFLİ kısaltma yalnızca kendisiyle eşleşir (`ECS` ≠ `EC`).
 - **Bulunanlar nereye gider:** yeni adlar ve terimler hemen bellekteki sözlüğe girer, aynı çalıştırmanın sonraki parçaları onları kullanır ve kesintiden sonra devam ederken kontrol noktasından geri yüklenir. `.dic` dosyasına yalnızca `DICT_AUTO_SAVE=true` ile yazılırlar (varsayılan: `false`, gözden geçirilmiş sözlük olduğu gibi kalır).
@@ -152,6 +153,21 @@ Alice = Alice, PERSON, she, Ana karakter
 - **Açık sözlük yolu:** varsayılan olarak sözlük kitabın yanında aranır (`books/MyBook.fb2` → `books/MyBook.dic`). Başka bir dosya, örneğin ortak bir seri sözlüğü kullanmak için `.env` içinde `DICTIONARY=path/to/file.dic` ayarlayın veya `--dictionary path/to/file.dic` verin (CLI bayrağı önceliklidir). Her iki hatta çalışır; dosya yoksa o yolda oluşturulur (dizini mevcut olmalıdır).
 
 **Biçim kılavuzu:** [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md)
+
+### Sözlükle çalışma
+
+| Görev | Komut / adım |
+|---|---|
+| Yeni kitap, sözlük yok | `python app.py` (veya `python app.py --build-dict books/MyBook.epub`) → `books/MyBook.dic` + `books/MyBook.dictcheck.txt` → bildiğiniz boş cinsiyetleri doldurun → yeniden çalıştırın |
+| Sözlükle çeviri | `python app.py` — önce denetim çalışır; `<kitap>.dictcheck.txt` dosyasını okuyun, katılıyorsanız `<dic>.reviewed.dic` dosyasını kullanın |
+| Katı mod | `python app.py --no-autofix` — çelişkide durur (çıkış kodu 2); `--force` yine de çevirir |
+| Kitap serisi | `python app.py --build-series-dict books/series/ --series-dict-output series.dic`, ardından her kitap `--dictionary series.dic` ile; çalışma `series.dic` dosyasını asla değiştirmez, her kitap kendi `series.<kitap>.reviewed.dic` dosyasını alır |
+| Sözlüğü temizleme | `python app.py dict clean books/MyBook.dic` → `MyBook.clean.dic` + rapor (tekrarlar, cinsiyet yazımları, sıradan sözcükler) |
+| Çevirmeden kitaba göre denetleme | `python app.py dict review books/MyBook.epub --dic books/MyBook.dic` → `MyBook.reviewed.dic` + rapor |
+| Başka hedef dil | `python app.py dict convert books/MyBook.dic fr es zh` |
+| Bitmiş çeviriyi denetleme | `python app.py audit books/MyBook_ru.epub --dic books/MyBook_ru.dic --lang russian` |
+
+**Diller.** Sözlük **kaynak** dilin spaCy modeliyle oluşturulur ve denetlenir (`NERMODEL`, `SOURCE_LANG`'a göre seçilir): `python -m spacy download en_core_web_lg` (İngilizce), `ru_core_news_lg`, `de_core_news_lg`, `fr_core_news_lg`, `es_core_news_lg`, `it_core_news_lg`, `pt_core_news_lg`, `pl_core_news_lg`, `uk_core_news_lg`, `ko_core_news_lg`, `ja_core_news_lg`, `zh_core_web_lg`; diğer diller `xx_ent_wiki_sm` kullanır (yalnızca adlar, zamirlerden cinsiyet yok). **Çevirideki** cinsiyet denetimi hedef dilin modelini gerektirir (`ru_core_news_sm`, `pl_core_news_sm`, `fr_core_news_sm`, …). Çince, Japonca ve Korece zamirlerin cinsiyeti yazılışlarından okunur; zamirleri cinsiyetsiz bir dildeki (Türkçe, Fince, Macarca) kitap cinsiyet vermez — elle girin.
 
 ---
 
@@ -215,10 +231,10 @@ Tek bir kitabın sözlüğü `--build-dict path/to/book` ile oluşturulabilir.
 **İş akışı:**
 1. Klasördeki tüm kitap dosyalarını bul
 2. Her kitaptan metni çıkar
-3. Adlandırılmış varlıkları bulmak için NER çalıştır (PERSON, ORG, LOC, GPE, EVENT, FAC, PRODUCT)
+3. NER çalıştır: varlık başına bir girdi (biçimler köke göre birleştirilir, kategori geçişlerin çoğunluğuna göre)
 4. Tüm kitaplardaki sayıları birleştir
 5. Eşik ölçütlerine göre filtrele
-6. Terimleri düzeltme LLM'i ile çevir
+6. Terimleri düzeltme LLM'i ile çevir (yalnızca çevirir; cinsiyetleri her kitabın çeviri öncesi denetimi belirler)
 7. Ortak `.dic` dosyasını kaydet
 
 **Çıktı:** sıradan bir `.dic` dosyası (`source = target, category, gender, notes`). Özel adlar büyük harflerini ve tüm sözcüklerini korur (`John Smith`); baştaki tanımlık atılır (`a Jain` → `Jain`; İngilizce, Fransızca, Almanca, İspanyolca, Portekizce, İtalyanca, Çince).
