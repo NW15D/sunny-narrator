@@ -143,7 +143,7 @@ Alice = Alice, PERSON, she, Ana karakter
 ```
 
 - **Otomatik oluşturulur:** ilk çalıştırmada (veya `--build-dict` ile) adları kaynak dilin spaCy modeli bulur; kategoriyi ve cinsiyeti kitabın kendisi belirler (NER etiketlerinin çoğunluğu, zamirler, *Miss*/*Mr.* gibi hitaplar), LLM yalnızca çevirir. Emin olunamayan cinsiyet boş kalır ve yeni `.dic` dosyasını gözden geçirebilmeniz için çalışma durur. Sık geçen sıradan sözcükler yalnızca `DICT_FREQUENT_WORDS=true` ile (veya `--build-dict`/`--build-series-dict` için `--frequent-words` ile) eklenir.
-- **Her çeviriden önce kitaba göre denetlenir** (LLM olmadan): kesin bulgular — boş bir cinsiyet, kitabın çeliştiği bir cinsiyet veya kategori — yalnızca o çalışmaya uygulanır; `.dic` değişmez, bulgular `<dic>.reviewed.dic` dosyasına yazılır. `--no-autofix` bir çelişkide çalışmayı durdurur, `--force` yine de çevirir; rapor: `<kitap>.dictcheck.txt`.
+- **Her çeviriden önce kitaba göre denetlenir** (LLM olmadan): kesin bulgular — boş bir cinsiyet, kitabın çeliştiği bir cinsiyet veya kategori — yalnızca o çalışmaya uygulanır; `.dic` değişmez, bulgular `<dic>.reviewed.dic` dosyasına yazılır. `--no-autofix` `.dic` dosyasına olduğu gibi göre çevirir (`DICT_FORCE=false` ile bir çelişki çalışmayı durdurur); rapor: `<kitap>.dictcheck.txt`.
 - **Karakter cinsiyetleri** (`he`, `she`, `it`, `they`): her aşama cinsiyeti hedef dilin biçiminde alır (`Вашти — она (сказала)`), GENDER aşaması sözlükle çelişen cümleleri düzeltir. Dosyadaki bir cinsiyet çalışma sırasında asla değiştirilmez; özet yalnızca boş olanları, iki parça aynı fikirdeyse doldurur.
 - **Uydurma sözcükler:** özet aşaması, karakterlerin yanı sıra sıradan bir karşılığı olmayan icat edilmiş sözcükleri (`spidergun`) bildirir; `TERM` olarak eklenirler. spaCy modelinin zaten bildiği sözcükler atılır.
 - **Tekrar yok:** sözlüğün zaten kapsadığı bir aday eklenmez — bir girdinin başka büyük/küçük harfli veya çekimli biçimi (`Jain nodes` = `Jain node`, `Gabbleducks` = `gabbleduck`; bir ad yalnızca çekimiyle: `Jains` = `Jain`, ama `Marie` ≠ `Mary`) ya da bilinen bir terimi içeren ifade (`Jain` varken `Jain node`, `Jain-tech`). Kısa çizgi, boşluk veya bitişik yazım farklı girdilerdir (`gabble-duck` ≠ `gabbleduck`); BÜYÜK HARFLİ kısaltma yalnızca kendisiyle eşleşir (`ECS` ≠ `EC`).
@@ -162,7 +162,7 @@ Alice = Alice, PERSON, she, Ana karakter
 |---|---|
 | Yeni kitap, sözlük yok | `python app.py` (veya `python app.py --build-dict books/MyBook.epub`) → `books/MyBook.dic` + `books/MyBook.dictcheck.txt` → bildiğiniz boş cinsiyetleri doldurun → yeniden çalıştırın |
 | Sözlükle çeviri | `python app.py` — önce denetim çalışır; `<kitap>.dictcheck.txt` dosyasını okuyun, katılıyorsanız `<dic>.reviewed.dic` dosyasını kullanın |
-| Katı mod | `python app.py --no-autofix` — çelişkide durur (çıkış kodu 2); `--force` yine de çevirir |
+| Katı mod | `python app.py --no-autofix` — `.dic` olduğu gibi; `DICT_FORCE=false` — çelişkide durur (çıkış kodu 2) |
 | Kitap serisi | `python app.py --build-series-dict books/series/ --series-dict-output series.dic`, ardından her kitap `--dictionary series.dic` ile; çalışma `series.dic` dosyasını asla değiştirmez, her kitap kendi `series.<kitap>.reviewed.dic` dosyasını alır |
 | Sözlüğü temizleme | `python app.py dict clean books/MyBook.dic` → `MyBook.clean.dic` + rapor (tekrarlar, cinsiyet yazımları, sıradan sözcükler) |
 | Çevirmeden kitaba göre denetleme | `python app.py dict review books/MyBook.epub --dic books/MyBook.dic` → `MyBook.reviewed.dic` + rapor |

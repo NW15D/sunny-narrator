@@ -267,15 +267,18 @@ What happens with the findings:
 | Setting | Sure findings | The run |
 |---|---|---|
 | default (`DICT_AUTOFIX=true`) | applied **for this run** in memory; the `.dic` is not changed, `<dic>.reviewed.dic` gets them to take over (a series dictionary: `<dic>.<book>.reviewed.dic`, one per book) | goes on |
-| `--no-autofix` (`DICT_AUTOFIX=false`) | not applied | stops (exit code 2) when the dictionary contradicts the book: a category, a gender the book contradicts, a translation in two alphabets |
-| `--no-autofix --force` | not applied | goes on as is |
+| `--no-autofix` (`DICT_AUTOFIX=false`) | not applied | goes on as is (`DICT_FORCE=true`, the default) |
+| `--no-autofix` with `DICT_FORCE=false` | not applied | stops (exit code 2) when the dictionary contradicts the book: a category or a gender the book contradicts, a translation in two alphabets; filling an empty category or gender does not stop it |
 | a dictionary just built (`--build-dict` or a missing `.dic`) | written into the new file, it stops for review anyway | stops for review |
 
 The report with all the evidence (also the unsure findings and the
 characters not found in this book — normal for a series dictionary) is
 `<book>.dictcheck.txt` next to the book. The result is cached in
-`<book>.dictcheck.json` for this dictionary and book: a resumed run does not
-parse the book again. `DICT_CHECK=false` turns the check off.
+`<book>.dictcheck.json` for this dictionary and book: a resumed run, or one
+after editing a category or gender, does not parse the book again. A new or
+removed entry (a manual edit, `DICT_AUTO_SAVE`) parses the whole book again —
+minutes for a long book with a `*_lg` model on CPU. `DICT_CHECK=false` turns
+the check off.
 
 Languages: the NER labels of the spaCy models (OntoNotes `PERSON/GPE/ORG`,
 WikiNER `PER/LOC/ORG`, Polish `persName/placeName/orgName`, Korean

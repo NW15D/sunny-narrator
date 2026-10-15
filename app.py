@@ -1070,10 +1070,12 @@ def cli():
                              'Same as setting DICTIONARY in .env')
 
     parser.add_argument('--no-autofix', action='store_true',
-                        help='Do not apply the sure findings of the dictionary check for the run; '
-                             'a dictionary contradicting the book then stops the run (DICT_AUTOFIX=false)')
+                        help='Do not apply the sure findings of the dictionary check for the run: '
+                             'translate by the dictionary as it is (DICT_AUTOFIX=false); with '
+                             'DICT_FORCE=false a contradiction with the book stops the run')
     parser.add_argument('--force', action='store_true',
-                        help='With --no-autofix: translate even if the dictionary contradicts the book')
+                        help='With --no-autofix: translate even if the dictionary contradicts the book '
+                             '(DICT_FORCE=true, the default)')
     args, unknown = parser.parse_known_args()
     if unknown:
         print(f"Warning: ignoring unknown arguments: {' '.join(unknown)}")
@@ -1088,7 +1090,11 @@ def cli():
     import src.vocabulary_manager as vm
     if args.no_autofix:
         vm.config.dict_autofix = False
-    vm.config.dict_force = args.force
+    if args.force:
+        vm.config.dict_force = True
+        if vm.config.dict_autofix:
+            print("Warning: --force has no effect: the dictionary check applies its fixes for the run "
+                  "(DICT_AUTOFIX=true); add --no-autofix to translate by the .dic as it is")
 
     # --dictionary overrides DICTIONARY from .env (both pipelines)
     if args.dictionary:

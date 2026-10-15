@@ -200,10 +200,11 @@ class Config:
         # the book (src/dict_review.py): categories and genders by the NER of
         # the source and its pronouns. DICT_AUTOFIX: the sure findings are
         # applied for the run (the .dic is not changed; --no-autofix turns it
-        # off, then a contradiction stops the run unless --force).
+        # off). DICT_FORCE: without autofix the run translates by the .dic as
+        # it is, a contradiction is only reported; false stops the run.
         self.dict_check = _parse_bool_env('DICT_CHECK', 'true')
         self.dict_autofix = _parse_bool_env('DICT_AUTOFIX', 'true')
-        self.dict_force = False  # --force
+        self.dict_force = _parse_bool_env('DICT_FORCE', 'true')  # --force
         self.country = os.getenv('COUNTRY') or default_country(self.target_lang)
         
         # Determine default model from mapping if not specified in ENV

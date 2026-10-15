@@ -26,7 +26,8 @@ Before a translation (DICT_CHECK, on by default) the sure findings - an empty
 gender, a gender the book contradicts, a category - are applied to the
 dictionary in memory for the run (DICT_AUTOFIX, on by default; --no-autofix
 turns it off): the .dic stays as it is, `<dic>.reviewed.dic` gets them for the
-user to take. Without autofix a contradiction stops the run (--force goes on).
+user to take. Without autofix the run goes on by the .dic as it is
+(DICT_FORCE, on by default); DICT_FORCE=false stops it on a contradiction.
 A translation of an entry written in two alphabets is reported. What the book
 says of each entry is cached (`<book>.dictcheck.json`): a resumed run, or one
 after editing a category or gender, does not parse the book again, only a new
@@ -235,7 +236,8 @@ def collect(paragraphs: list, rows: list, nlp) -> dict:
 
 
 def _majority(counter: collections.Counter, min_votes: int, ratio: float):
-    """(winner, its votes, total) or None; winner only when it is sure."""
+    """(winner, its votes, total, sure) or None; sure: at least min_votes in
+    all and the winner's share at least ratio."""
     total = sum(counter.values())
     if not total:
         return None
@@ -419,11 +421,12 @@ def review_file(book: Path, dic: Path, output: Path = None, report_path: Path = 
 
 
 class DictionaryCheckFailed(Exception):
-    """The dictionary contradicts the book and autofix is off (--no-autofix)."""
+    """The dictionary contradicts the book, autofix is off (--no-autofix) and
+    DICT_FORCE=false."""
     def __init__(self, report_path, errors: int):
         self.report_path, self.errors = report_path, errors
         super().__init__(f"The dictionary contradicts the book in {errors} place(s): see {report_path}. "
-                         f"Fix the .dic, run without --no-autofix, or add --force.")
+                         f"Fix the .dic, run without --no-autofix, or with --force (DICT_FORCE=true).")
 
 
 def _best_effort(write, *args, **kwargs):
@@ -497,6 +500,11 @@ def _cached_evidence(cache_path: Path, source_text: str, model: str, rows: list)
             getattr(ev, f).update(item.get(f, {}))
         evidence[k] = ev
     return evidence
+
+
+def _fills_only(fix: dict) -> bool:
+    """Every field the fix changes (category, gender) was empty in the .dic."""
+    return all(old in ('', new) for old, new in zip(fix['was'], (fix['category'], fix['gender'])))
 
 
 def _rows_of(vocab: dict) -> list:
@@ -588,13 +596,14 @@ def _check(manager, source_text: Optional[str], config, write_back: bool) -> dic
         logger.info(f"Dictionary check: {summary}")
         return {'fixes': fixes, 'errors': errors, 'report': report_path}
 
-    blocking = len(fixes) - sum(1 for f in fixes if f['was'][1] == '' and f['category'] == f['was'][0]) \
+    # filling an empty category or gender is not a contradiction with the book
+    blocking = sum(1 for f in fixes if not _fills_only(f)) \
         + result['counts'].get('translation in two alphabets', 0)
     logger.info(f"Dictionary check (no autofix): {summary}")
     if blocking:
-        if getattr(config, 'dict_force', False):
+        if getattr(config, 'dict_force', True):
             logger.warning(f"Dictionary check: {blocking} contradiction(s) with the book, translating as is "
-                           f"(--force). Report: {report_path}")
+                           f"(DICT_FORCE). Report: {report_path}")
         else:
             raise DictionaryCheckFailed(report_path, blocking)
     return {'fixes': [], 'errors': blocking, 'report': report_path}

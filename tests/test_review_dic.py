@@ -200,6 +200,33 @@ def test_without_autofix_a_contradiction_stops_the_run_unless_forced(tmp_path, m
     assert manager.vocab['vashti'].gender == 'he'                     # as is
 
 
+@pytest.mark.skipif(not is_package("en_core_web_sm"), reason="en_core_web_sm not installed")
+def test_filling_an_empty_category_is_no_contradiction(tmp_path, monkeypatch):
+    import src.vocabulary_manager as vm
+    manager, _ = _manager(tmp_path, monkeypatch, "Vashti = Вашти, , she, \n", "en_core_web_sm")
+    monkeypatch.setattr(vm.config, 'dict_autofix', False)
+    manager.initialize(source_text=EN_TEXT)                           # does not stop
+    assert "— -> PERSON" in (tmp_path / "book.dictcheck.txt").read_text(encoding="utf-8")
+    assert manager.vocab['vashti'].category == ''                     # not applied: no autofix
+
+
+def test_dict_convert_returns_its_code(monkeypatch, tmp_path):
+    from src import commands, dict_convert
+    monkeypatch.setattr(dict_convert, 'make_client', lambda: None)
+    monkeypatch.setattr(dict_convert, 'convert', lambda dic, code, *a: code == 'fr')
+    dic = tmp_path / "book.dic"
+    assert commands.run(['dict', 'convert', str(dic), 'fr']) == 0
+    assert commands.run(['dict', 'convert', str(dic), 'fr', 'es']) == 1
+
+
+def test_dict_force_is_on_by_default(monkeypatch):
+    from src.config import Config
+    monkeypatch.delenv('DICT_FORCE', raising=False)
+    assert Config().dict_force is True                                # --no-autofix alone goes on
+    monkeypatch.setenv('DICT_FORCE', 'false')
+    assert Config().dict_force is False                               # stops on a contradiction
+
+
 @pytest.mark.skipif(not is_package("ru_core_news_sm"), reason="ru_core_news_sm not installed")
 def test_a_russian_source_book(tmp_path, monkeypatch):
     """ru morphology writes Person=Third, NER labels PER: both are understood."""

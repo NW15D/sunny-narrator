@@ -176,8 +176,8 @@ def main(argv=None):
     client = make_client()
     ok = [convert(args.dic, code.lower(), args.batch, args.force, client, args.source_lang, args.hint_lang)
           for code in args.langs]
-    sys.exit(0 if all(ok) else 1)
+    return 0 if all(ok) else 1
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

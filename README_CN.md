@@ -133,7 +133,7 @@ Alice = Алиса, PERSON, she, 主角
 ```
 
 - **自动创建**：首次运行时（或使用 `--build-dict`）由源语言的 spaCy 模型找出名称；类别和性别由书本身决定（NER 标签的多数、代词、*Miss*/*Mr.* 之类的称谓），LLM 只负责翻译。不确定的性别留空，运行会停止，以便你检查新的 `.dic`。只有设置 `DICT_FREQUENT_WORDS=true`（或对 `--build-dict`/`--build-series-dict` 使用 `--frequent-words`）时才会加入常见普通词。
-- **每次翻译前对照书本检查**（不使用 LLM）：可靠的发现——空的性别、与书矛盾的性别或类别——只用于本次运行；`.dic` 不会改变，这些修正写入 `<dic>.reviewed.dic`。`--no-autofix` 在出现矛盾时停止运行，`--force` 仍然翻译；报告为 `<书名>.dictcheck.txt`。
+- **每次翻译前对照书本检查**（不使用 LLM）：可靠的发现——空的性别、与书矛盾的性别或类别——只用于本次运行；`.dic` 不会改变，这些修正写入 `<dic>.reviewed.dic`。`--no-autofix` 按 `.dic` 原样翻译（设置 `DICT_FORCE=false` 时，出现矛盾会停止运行）；报告为 `<书名>.dictcheck.txt`。
 - **角色性别**（`he`、`she`、`it`、`they`）：所有阶段都以目标语言的形式获得性别（`Вашти — она (сказала)`），GENDER 阶段会修正与词典矛盾的句子。运行不会覆盖文件中已有的性别；摘要只在两个分块一致时填写空的性别。
 - **自造词：** 除角色外，摘要阶段还会报告没有常规译法的自造词（`spidergun`）；它们以 `TERM` 加入。spaCy 模型已认识的词会被丢弃。
 - **不重复：** 词典已覆盖的候选词不会加入——条目的其他大小写或屈折形式（`Jain nodes` = `Jain node`，`Gabbleducks` = `gabbleduck`；人名只按屈折：`Jains` = `Jain`，但 `Marie` ≠ `Mary`），或包含已知术语的短语（已有 `Jain` 时的 `Jain node`、`Jain-tech`）。连字符、空格或连写是不同条目（`gabble-duck` ≠ `gabbleduck`）；全大写缩写只匹配自身（`ECS` ≠ `EC`）。
@@ -152,7 +152,7 @@ Alice = Алиса, PERSON, she, 主角
 |---|---|
 | 新书，无词典 | `python app.py`（或 `python app.py --build-dict books/MyBook.epub`）→ `books/MyBook.dic` + `books/MyBook.dictcheck.txt` → 填写你已知的空性别 → 再次运行 |
 | 使用词典翻译 | `python app.py` —— 先进行检查；阅读 `<书名>.dictcheck.txt`，同意的话采用 `<dic>.reviewed.dic` |
-| 严格模式 | `python app.py --no-autofix` —— 出现矛盾时停止（退出码 2）；`--force` 仍然翻译 |
+| 严格模式 | `python app.py --no-autofix` —— 按 `.dic` 原样翻译；`DICT_FORCE=false` —— 出现矛盾时停止（退出码 2） |
 | 系列图书 | `python app.py --build-series-dict books/series/ --series-dict-output series.dic`，然后每本书使用 `--dictionary series.dic`；运行永远不会修改 `series.dic`，每本书得到 `series.<书名>.reviewed.dic` |
 | 清理词典 | `python app.py dict clean books/MyBook.dic` → `MyBook.clean.dic` + 报告（重复项、性别写法、普通词） |
 | 不翻译，只对照书本检查 | `python app.py dict review books/MyBook.epub --dic books/MyBook.dic` → `MyBook.reviewed.dic` + 报告 |
