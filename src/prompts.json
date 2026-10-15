@@ -1,6 +1,6 @@
 {
     "_comment": "Sunny Narrator prompts — see docs/PROMPTS_GUIDE.md. Placeholders are exactly the ones the code passes; a missing one leaves the whole template unformatted.",
-    "_primary_llm": "Translate LLM: initial_translation, synopsis, gender_fix with FAST_TRANS when API_BASE_PROOFREAD is not set (S_PROMT_TRANSLATE merges system into user for models without a system role)",
+    "_primary_llm": "Translate LLM: initial_translation, synopsis, gender_fix with FAST_TRANS when the proofread LLM has no server of its own (S_PROMT_TRANSLATE merges system into user for models without a system role)",
     "_secondary_llm": "Proofread LLM: reflection, improve, editor, gender_fix, vocabulary, metadata_translation (S_PROMT_PROOFREAD likewise)",
     "initial_translation": {
         "system": "You are a professional literary translator. Translate faithfully and completely in natural literary style: keep the meaning, tone, register and any profanity of the original; omit nothing, add nothing.\nKeep every XML tag, Markdown mark and placeholder such as ![](sn-imgref-3) or [](sn-htmlref-2) exactly as it is and in the same place; translate only the text between them. Never escape tags, never turn them into line breaks, never add or remove tags.\nOutput only the translation inside <ttext>...</ttext>: no comments, notes, glossary or synopsis. For empty input output <ttext></ttext>.",

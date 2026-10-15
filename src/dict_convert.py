@@ -18,10 +18,8 @@ MODEL_PROOFREAD / NOTHINK_PROOFREAD). Целевой файл переписыв
 LLM не перевела, в файл не попадают и переводятся при следующем запуске.
 """
 import argparse
-import csv
-import io
+import collections
 import json
-import os
 import re
 import sys
 import time
@@ -29,7 +27,7 @@ from pathlib import Path
 
 import openai
 
-from src import lexicon
+from src import dict_clean, lexicon
 from src.config import Config
 
 config = Config()
@@ -60,28 +58,15 @@ Items:
 
 
 def parse_dic(path: Path):
-    """[(source, target, category, gender, notes)] в формате `source = target, category, gender, notes`."""
-    entries = []
-    for line in path.read_text(encoding='utf-8-sig').splitlines():
-        line = line.strip()
-        if not line or line.startswith('#') or '=' not in line:
-            continue
-        source, rest = (p.strip() for p in line.split('=', 1))
-        if not source or not rest:
-            continue
-        try:
-            row = next(csv.reader([rest]))
-        except (StopIteration, csv.Error):
-            continue
-        row += [''] * (4 - len(row))
-        entries.append((source, *(c.strip() for c in row[:4])))
-    return entries
+    """[(source, target, category, gender, notes)]: the entries as
+    dict_clean.parse_dic reads them (one .dic reader for every command)."""
+    rows = dict_clean.parse_dic(path, collections.defaultdict(list))
+    return [(r['source'], r['target'], r['category'], r['gender'], r['notes']) for r in rows]
 
 
 def format_line(source, target, category, gender, notes):
-    buf = io.StringIO()
-    csv.writer(buf, quoting=csv.QUOTE_MINIMAL).writerow([target, category, gender, notes])
-    return f"{source} = {buf.getvalue().rstrip()}"
+    return dict_clean.format_line({'source': source, 'target': target, 'category': category,
+                                   'gender': gender, 'notes': notes})
 
 
 def make_client():
@@ -124,9 +109,7 @@ def write_dic(out_path: Path, src_name: str, code: str, entries, done, source_co
         "",
     ]
     lines += [format_line(e[0], done[e[0]], e[2], e[3], e[4]) for e in entries if e[0] in done]
-    tmp = out_path.with_suffix(out_path.suffix + ".building")
-    tmp.write_text("\n".join(lines) + "\n", encoding='utf-8')
-    os.replace(tmp, out_path)
+    dict_clean.write_atomic(out_path, "\n".join(lines) + "\n")
 
 
 def convert(src_path: Path, code: str, batch_size: int, force: bool, client,

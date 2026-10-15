@@ -105,7 +105,7 @@ authentication any non-empty API key will do.
 | `LENGTH_CHECK_THRESHOLD` | `20` | Allowed deviation (%) from the expected translation length before a chunk is split and retranslated |
 | `FAST_TRANS` | `false` | Skip stages 2-4 (both pipelines; `--fast-mode` turns it on too); the GENDER stage still runs |
 | `GENDER_CHECK` | `fix` | GENDER stage, both modes: a sentence where a dictionary character (gender `he`/`she`) is the subject and the verb or adjective has the other gender is found without an LLM (spaCy model of `TARGET_LANG` needed) and sent to the LLM for a fix (`fix`, the LLM is `GENDER_LLM`), only logged (`warn`), or not checked (`off`) |
-| `GENDER_LLM` | `auto` | LLM of the GENDER call: `auto` — proofread, with `FAST_TRANS` too when `API_BASE_PROOFREAD` is set, otherwise translate; `translate` — always translate (`FAST_TRANS` with only the translate model loaded); `proofread` — always proofread |
+| `GENDER_LLM` | `auto` | LLM of the GENDER call: `auto` — proofread, with `FAST_TRANS` too when `API_BASE_PROOFREAD` is another server than `API_BASE_TRANSLATE`, otherwise translate; `translate` — always translate (`FAST_TRANS` with only the translate model loaded); `proofread` — always proofread |
 
 **Details:** [RECHUNKING_GUIDE.md](RECHUNKING_GUIDE.md), [FAST_TRANS.md](FAST_TRANS.md)
 

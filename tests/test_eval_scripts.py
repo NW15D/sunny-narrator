@@ -117,3 +117,26 @@ def test_prompt_eval_variants_change_only_this_run(tmp_path, monkeypatch):
     monkeypatch.setattr(u.config, 'json_mode', True)
     with pytest.raises(SystemExit, match="JSON_MODE=false"):
         run("--no-glossary")
+
+
+@needs_ru
+def test_a_failing_passage_does_not_lose_the_others(tmp_path, monkeypatch):
+    import src.utils as u
+    book = tmp_path / "book.txt"
+    book.write_text("\n\n".join(f"Vashti spoke to Kuno, part {n}. She was tired." for n in range(3)), encoding="utf-8")
+    dic = tmp_path / "book_ru.dic"
+    dic.write_text(DIC, encoding="utf-8")
+    calls = []
+
+    def fake_translate_chunk(**kw):
+        calls.append(kw['source_text'])
+        if len(calls) == 2:
+            raise RuntimeError("API down")
+        return "Вашти устала.", ""
+
+    monkeypatch.setattr(u, 'translate_chunk', fake_translate_chunk)
+    out = tmp_path / "run.json"
+    prompt_eval.main([str(book), "--dic", str(dic), "--count", "3", "--size", "30", "--out", str(out)])
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert len(data["results"]) == 2 and len(data["failed"]) == 1
+    assert "API down" in data["failed"][0]["error"]

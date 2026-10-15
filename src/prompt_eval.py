@@ -81,6 +81,13 @@ def pick(chunks: list, names: list, source_lang: str, count: int) -> list:
     return sorted(i for _, i in sorted(scored)[:count])
 
 
+def _save_partial(out: Path, results: list):
+    """The passages done so far, so a crash later in the run loses nothing."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps({'summary': None, 'partial': True, 'results': results},
+                              ensure_ascii=False, indent=2), encoding='utf-8')
+
+
 def overlay_prompts(other: dict) -> set:
     """Use the templates of `other` instead of the current ones. Each one is
     formatted with the variables the code really passes; one that needs
@@ -163,10 +170,17 @@ def main(argv=None):
         used = set(lexicon.find_terms(source, [e.source for e in entries], config.source_lang))
         vocab = [e for e in entries if e.source in used]
         started = time.time()
-        translation, _ = utils.translate_chunk(
-            source_lang=config.source_lang, target_lang=config.target_lang, source_text=source,
-            outline_text='', vocab_dict={v.source: v.target for v in vocab}, vocab_entries=vocab,
-            country=config.country, style='text', fast_mode=config.fast_trans)
+        try:
+            translation, _ = utils.translate_chunk(
+                source_lang=config.source_lang, target_lang=config.target_lang, source_text=source,
+                outline_text='', vocab_dict={v.source: v.target for v in vocab}, vocab_entries=vocab,
+                country=config.country, style='text', fast_mode=config.fast_trans)
+        except Exception as e:  # an API outage, a model looping on one passage: the others go on
+            results.append({'index': i, 'seconds': round(time.time() - started, 1), 'source': source,
+                            'error': f"{type(e).__name__}: {e}"})
+            print(f"[{n}/{len(chosen)}] отрывок {i}: ошибка — {results[-1]['error'][:200]}")
+            _save_partial(args.out, results)
+            continue
         issues = gender_check.find_gender_issues(translation, vocab, config.target_lang)
         mixed = script_guard.find_mixed_words(translation, config.target_lang, [v.target for v in vocab])
         results.append({
@@ -177,6 +191,10 @@ def main(argv=None):
         })
         print(f"[{n}/{len(chosen)}] отрывок {i}: смешанных слов {len(mixed)}, ошибок пола {len(issues)}, "
               f"{results[-1]['seconds']} с")
+        _save_partial(args.out, results)
+
+    failed = [r for r in results if 'error' in r]
+    results = [r for r in results if 'error' not in r]
 
     pipeline = utils.metrics.get_report()
     summary = {
@@ -186,6 +204,7 @@ def main(argv=None):
         'passages': [r['index'] for r in results],
         # the skipped templates are known only after the run
         'variant': dict(variant, prompts_skipped=sorted(variant['prompts_skipped'])),
+        'failed': [r['index'] for r in failed],
         'mixed_words': sum(len(r['mixed_words']) for r in results),
         'gender_issues_left': sum(len(r['gender_issues']) for r in results),
         'gender_issues_found_in_pipeline': pipeline['gender_issues'],
@@ -193,7 +212,8 @@ def main(argv=None):
         'seconds': round(sum(r['seconds'] for r in results), 1),
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps({'summary': summary, 'results': results}, ensure_ascii=False,
+    args.out.write_text(json.dumps({'summary': summary, 'results': results, 'failed': failed},
+                                   ensure_ascii=False,
                                    indent=2), encoding='utf-8')
     md = args.out.with_suffix('.md')
     md.write_text('\n\n'.join(
@@ -208,7 +228,7 @@ def main(argv=None):
         print(f"Прошлый прогон: {previous.get('variant')}")
     print()
     for key, value in summary.items():
-        if key in ('passages', 'variant'):
+        if key in ('passages', 'variant', 'failed'):
             continue
         line = f"{key}: {value}"
         if previous is not None and isinstance(value, (int, float)) and not isinstance(value, bool) \

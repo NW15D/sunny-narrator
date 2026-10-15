@@ -815,7 +815,7 @@ _NUMBERED_RE = re.compile(r'^\s*(\d+)[.)]\s*(.+?)\s*$')
 def _gender_role(fast_mode: bool) -> LLMRole:
     """The LLM of the GENDER call (GENDER_LLM): the proofread one by default -
     it follows edit instructions better than a translation model - except
-    with FAST_TRANS and no proofread server set (API_BASE_PROOFREAD)."""
+    with FAST_TRANS and no proofread server of its own (config.proofread_configured)."""
     if config.gender_llm == 'translate':
         return LLMRole.TRANSLATE
     if config.gender_llm == 'proofread' or not fast_mode or config.proofread_configured:
@@ -859,9 +859,14 @@ def _gender_fix_ok(old: str, new: str, issues: List[Any], context: TranslationCo
     if len(script_guard.find_mixed_words(new, context.target_lang, targets)) > \
             len(script_guard.find_mixed_words(old, context.target_lang, targets)):
         return False
+    # no error left for the flagged characters, and none new for anyone else
+    # ("Вашти сказала, что Куно пришла": the LLM changed Kuno's verb too)
+    def found(text):
+        return {(i.name, tuple(i.words)) for i in
+                gender_check.find_gender_issues(text, context.vocab_entries, context.target_lang)}
+    before, after = found(old), found(new)
     names = {i.name for i in issues}
-    return not any(i.name in names for i in
-                   gender_check.find_gender_issues(new, context.vocab_entries, context.target_lang))
+    return not any(name in names for name, _ in after) and after <= before
 
 
 class TranslationPipeline:

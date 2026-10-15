@@ -27,9 +27,11 @@ gender, a gender the book contradicts, a category - are applied to the
 dictionary in memory for the run (DICT_AUTOFIX, on by default; --no-autofix
 turns it off): the .dic stays as it is, `<dic>.reviewed.dic` gets them for the
 user to take. Without autofix a contradiction stops the run (--force goes on).
-A translation of an entry written in two alphabets is reported. The result is
-cached per dictionary and book (`<book>.dictcheck.json`), so a resumed run
-does not parse the book again; the report is `<book>.dictcheck.txt`.
+A translation of an entry written in two alphabets is reported. What the book
+says of each entry is cached (`<book>.dictcheck.json`): a resumed run, or one
+after editing a category or gender, does not parse the book again, only a new
+entry does; the decisions are made every run. The report is
+`<book>.dictcheck.txt`.
 """
 import collections
 import hashlib
@@ -191,9 +193,10 @@ def collect(paragraphs: list, rows: list, nlp) -> dict:
             ev.mentions += 1
             j = i - 1
             if j >= 0 and doc[j].text == '.':
-                j -= 1  # "Mr. Andrews"
-            if j >= 0 and norm[j] in _HONORIFIC:
-                ev.honorifics[_HONORIFIC[norm[j]]] += 1
+                j -= 1  # "Mr . Andrews" split by a tokenizer
+            title = norm[j].rstrip('.') if j >= 0 else ''  # English keeps "Mr." one token
+            if title in _HONORIFIC:
+                ev.honorifics[_HONORIFIC[title]] += 1
             if lowercase:
                 ev.lowercase += 1
             label = LABELS.get(span[-1].ent_type_)
@@ -279,6 +282,12 @@ def review(rows: list, evidence: dict, min_votes: int, ratio: float, report: dic
                 why = f"NER {label} in {votes} of {total} tagged mentions ({ev.mentions} in all)"
                 if sure and old == 'PERSON' and person and person[3]:
                     why += f"; but the book calls it {person[0]} ({person[1]} of {pronouns} pronouns)"
+                    sure = False
+                elif sure and old == 'PERSON' and not promote_persons and (pronouns or row['gender']):
+                    # the user's dictionary says person: any he/she around the
+                    # name, or a gender set by hand, keeps it one
+                    why += (f"; but the .dic has a gender ({row['gender']})" if row['gender']
+                            else f"; but he/she in {pronouns} sentence(s) naming only it")
                     sure = False
                 if sure:
                     new = label
@@ -411,6 +420,16 @@ class DictionaryCheckFailed(Exception):
                          f"Fix the .dic, run without --no-autofix, or add --force.")
 
 
+def _best_effort(write, *args, **kwargs):
+    """A file of the check (report, reviewed copy) that cannot be written
+    (a read-only series dictionary, a shared mount) never stops the run:
+    the fixes are applied in memory anyway."""
+    try:
+        write(*args, **kwargs)
+    except OSError as e:
+        logger.warning(f"Dictionary check: {args[0] if args else ''} not written ({e})")
+
+
 def reviewed_path(manager) -> Path:
     """Where the check puts the fixed copy of the dictionary: next to it,
     `<dic>.reviewed.dic`; for a dictionary shared by a series (its name is
@@ -420,6 +439,48 @@ def reviewed_path(manager) -> Path:
     if dic.stem == manager.book_name:
         return dic.with_name(f"{dic.stem}.reviewed.dic")
     return dic.with_name(f"{dic.stem}.{manager.book_name}.reviewed.dic")
+
+
+_EVIDENCE_FIELDS = ('labels', 'pronouns', 'honorifics')
+
+
+def _book_key(source_text: str, model: str) -> str:
+    return hashlib.sha256(json.dumps([model, MIN_VOTES, RATIO]).encode('utf-8')
+                          + hashlib.sha256(source_text.encode('utf-8')).digest()).hexdigest()
+
+
+def _save_evidence(cache_path: Path, source_text: str, model: str, rows: list, evidence: dict):
+    """What the book says of each entry (by its source), not the decisions:
+    an edited category or gender reuses it, only a new entry parses again."""
+    data = {lexicon.word_key(row['source']): {
+        'mentions': ev.mentions, 'lowercase': ev.lowercase,
+        **{f: dict(getattr(ev, f)) for f in _EVIDENCE_FIELDS}}
+        for k, row in enumerate(rows) for ev in [evidence.get(k, Evidence())]}
+    write_atomic(cache_path, json.dumps({'book': _book_key(source_text, model), 'evidence': data},
+                                        ensure_ascii=False))
+
+
+def _cached_evidence(cache_path: Path, source_text: str, model: str, rows: list) -> Optional[dict]:
+    """The evidence per row index from the cache, or None when the book, the
+    model or any entry (a new one) is not in it."""
+    try:
+        cached = json.loads(cache_path.read_text(encoding='utf-8'))
+    except Exception:
+        return None
+    if cached.get('book') != _book_key(source_text, model):
+        return None
+    stored = cached.get('evidence', {})
+    evidence = {}
+    for k, row in enumerate(rows):
+        item = stored.get(lexicon.word_key(row['source']))
+        if item is None:
+            return None
+        ev = Evidence()
+        ev.mentions, ev.lowercase = item['mentions'], item['lowercase']
+        for f in _EVIDENCE_FIELDS:
+            getattr(ev, f).update(item.get(f, {}))
+        evidence[k] = ev
+    return evidence
 
 
 def _rows_of(vocab: dict) -> list:
@@ -460,22 +521,8 @@ def _check(manager, source_text: Optional[str], config, write_back: bool) -> dic
     cache_path = book_dir / f"{manager.book_name}.dictcheck.json"
     report_path = book_dir / f"{manager.book_name}.dictcheck.txt"
     model = config.nermodel
-    key = hashlib.sha256(json.dumps([rows, model, MIN_VOTES, RATIO, manager.target_lang, write_back],
-                                    ensure_ascii=False,
-                                    sort_keys=True).encode('utf-8')
-                         + hashlib.sha256(source_text.encode('utf-8')).digest()).hexdigest()
-
-    cached = None
-    try:
-        cached = json.loads(cache_path.read_text(encoding='utf-8'))
-        if cached.get('key') != key:
-            cached = None
-    except Exception:
-        cached = None
-    if cached is not None:
-        result = cached
-        logger.info(f"Dictionary check: the result for this dictionary and book is cached ({cache_path.name})")
-    else:
+    evidence = _cached_evidence(cache_path, source_text, model, rows)
+    if evidence is None:
         nlp = _load_model(model)
         if nlp is None:
             return {}
@@ -483,20 +530,22 @@ def _check(manager, source_text: Optional[str], config, write_back: bool) -> dic
         logger.info(f"Dictionary check: {len(rows)} entries against {len(paragraphs)} paragraphs "
                     f"of the book ({model})...")
         evidence = collect(paragraphs, rows, nlp)
-        report = collections.defaultdict(list)
-        originals = {r['key']: (r['category'], r['gender']) for r in rows}
-        review(rows, evidence, MIN_VOTES, RATIO, report, fix_conflicts=True, promote_persons=write_back)
-        _mixed_translations(rows, manager.target_lang, report)
-        fixes = [{'key': r['key'], 'source': r['source'], 'category': r['category'], 'gender': r['gender'],
-                  'was': list(originals[r['key']])} for r in rows if r.get('changed')]
-        errors = sum(len(report[k]) for k in ERRORS if report.get(k))
-        _write_report(report_path, report, title=f"Dictionary {manager.dict_file} against {manager.book_path}")
-        result = {'key': key, 'fixes': fixes, 'errors': errors,
-                  'counts': {k: len(report[k]) for k in REPORT_ORDER if report.get(k)}}
-        try:
-            write_atomic(cache_path, json.dumps(result, ensure_ascii=False, indent=1))
-        except OSError as e:
-            logger.debug(f"dictionary check cache not written: {e}")
+        _best_effort(_save_evidence, cache_path, source_text, model, rows, evidence)
+    else:
+        logger.info(f"Dictionary check: the evidence of this book is cached ({cache_path.name})")
+
+    # the decisions are cheap: made again every run, from the dictionary as it is now
+    report = collections.defaultdict(list)
+    originals = {r['key']: (r['category'], r['gender']) for r in rows}
+    review(rows, evidence, MIN_VOTES, RATIO, report, fix_conflicts=True, promote_persons=write_back)
+    _mixed_translations(rows, manager.target_lang, report)
+    fixes = [{'key': r['key'], 'source': r['source'], 'category': r['category'], 'gender': r['gender'],
+              'was': list(originals[r['key']])} for r in rows if r.get('changed')]
+    errors = sum(len(report[k]) for k in ERRORS if report.get(k))
+    _best_effort(_write_report, report_path, report,
+                 title=f"Dictionary {manager.dict_file} against {manager.book_path}")
+    result = {'fixes': fixes, 'errors': errors,
+              'counts': {k: len(report[k]) for k in REPORT_ORDER if report.get(k)}}
 
     fixes, errors = result['fixes'], result['errors']
     summary = ', '.join(f"{k}: {n}" for k, n in result['counts'].items()) or 'nothing found'
@@ -508,11 +557,11 @@ def _check(manager, source_text: Optional[str], config, write_back: bool) -> dic
         if fixes:
             manager.apply_review_fixes()
             if write_back:
-                _write_reviewed(Path(manager.dict_file), Path(manager.dict_file), fixes)
+                _best_effort(_write_reviewed, Path(manager.dict_file), Path(manager.dict_file), fixes)
                 where = f"written into {manager.dict_file}"
             else:
                 reviewed = reviewed_path(manager)
-                _write_reviewed(Path(manager.dict_file), reviewed, fixes)
+                _best_effort(_write_reviewed, Path(manager.dict_file), reviewed, fixes)
                 where = f"for this run; {Path(manager.dict_file).name} is unchanged, {reviewed.name} has them"
             logger.warning(f"Dictionary check: {len(fixes)} fix(es) applied {where}. Report: {report_path}")
             for fix in fixes:

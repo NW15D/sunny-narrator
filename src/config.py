@@ -103,9 +103,12 @@ class Config:
         # Proofread API (proofread model)
         self.api_key_proofread = os.getenv('API_KEY_PROOFREAD', os.getenv('API_KEY2', ''))
         self.base_url_proofread = os.getenv('API_BASE_PROOFREAD', os.getenv('API_BASE2', 'https://api.openai.com/v1'))
-        # A proofread server set explicitly: with FAST_TRANS the GENDER stage
-        # goes to it instead of the translate LLM
-        self.proofread_configured = bool(os.getenv('API_BASE_PROOFREAD') or os.getenv('API_BASE2'))
+        # A proofread server of its own: with FAST_TRANS (GENDER_LLM=auto) the
+        # GENDER stage goes to it instead of the translate LLM. The same
+        # server for both (one Ollama, env.sample) does not count: a call there
+        # would swap the loaded model every chunk with a gender error
+        self.proofread_configured = (bool(os.getenv('API_BASE_PROOFREAD') or os.getenv('API_BASE2'))
+                                     and self.base_url_proofread.rstrip('/') != self.base_url_translate.rstrip('/'))
         self.sys_not_promt_proofread = os.getenv('S_PROMT_PROOFREAD', os.getenv('S_PROMT2', '')).lower() in ('true', '1', 'on')
         self.model_proofread = os.getenv('MODEL_PROOFREAD', os.getenv('MODEL2', 'tencent/Hunyuan-MT-7B'))
         self.temp_proofread = _parse_numeric_env('TEMP_PROOFREAD', os.getenv('TEMP2', 0.7))

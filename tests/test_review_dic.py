@@ -35,7 +35,8 @@ def _row(source, category='PERSON', gender=''):
 
 def test_sure_findings_change_the_row_the_rest_goes_to_the_report():
     rows = [_row("Vashti"), _row("Vorta", gender='she'), _row("dracomen"), _row("Kuno"),
-            _row("Shelley", gender='she'), _row("Siren", category='TERM'), _row("Ghost")]
+            _row("Shelley", gender='she'), _row("Siren", category='TERM'), _row("Ghost"),
+            _row("Wessex")]
     evidence = {
         0: _ev(pronouns={'she': 41, 'he': 3}),
         1: _ev(labels={'ORG': 12, 'PERSON': 1}),
@@ -43,23 +44,25 @@ def test_sure_findings_change_the_row_the_rest_goes_to_the_report():
         3: _ev(pronouns={'he': 17, 'she': 14}),            # a two-person scene: not sure
         4: _ev(pronouns={'he': 5}),
         5: _ev(labels={'PERSON': 11, 'ORG': 1}, pronouns={'he': 7}),
+        7: _ev(labels={'LOC': 9}),
     }
     report = collections.defaultdict(list)
     changed = rd.review(rows, evidence, min_votes=5, ratio=0.85, report=report)
 
     assert [(r['source'], r['category'], r['gender']) for r in rows] == [
         ("Vashti", "PERSON", "she"),
-        ("Vorta", "ORG", ""),          # not a person: its gender goes too
+        ("Vorta", "PERSON", "she"),    # a gender set by hand keeps it a person, whatever NER says
         ("dracomen", "TERM", ""),      # written lowercase in the book
         ("Kuno", "PERSON", ""),
         ("Shelley", "PERSON", "she"),  # the .dic is the user's: only reported
         ("Siren", "PERSON", ""),       # a new person gets no gender in the same run
         ("Ghost", "PERSON", ""),
+        ("Wessex", "LOC", ""),         # NER says a place, nobody calls it he/she
     ]
     assert changed == 4
     assert report['gender conflict (not changed)'] == [
         "Shelley = Shelley: the .dic says she, the book he (he ×5)"]
-    assert report['gender cleared (not a person)'] == ["Vorta = Vorta: she"]
+    assert any("the .dic has a gender (she)" in line for line in report['category: not sure (not changed)'])
     assert report['not found in the book'] == ["Ghost = Ghost"]
     assert any(line.startswith("Kuno = Kuno") for line in report['gender not sure (not set)'])
 
@@ -91,7 +94,10 @@ def test_the_demo_book(tmp_path, monkeypatch):
                 "-o", str(out)]) == 0
     text = out.read_text(encoding="utf-8")
     assert "Vashti = Vashti,PERSON,she," in text and "Andrews = Andrews,PERSON,he," in text
-    assert "Vorta = Vorta,PERSON" not in text          # a village, not a character
+    # a village, but the user's dictionary says PERSON and people around it are
+    # he/she: the dictionary wins, the report asks
+    report = (out.with_name("em.reviewed.report.txt")).read_text(encoding="utf-8")
+    assert "Vorta = Vorta, PERSON: NER ORG" in report
     assert "Kuno = Kuno,PERSON,," in text               # the evidence is mixed: left empty
     report = out.with_name("em.reviewed.report.txt").read_text(encoding="utf-8")
     assert "## gender set" in report and "## gender not sure (not set)" in report
@@ -301,3 +307,49 @@ def test_a_series_dictionary_gets_a_reviewed_copy_per_book(tmp_path, monkeypatch
         assert (tmp_path / f"series.{name}.reviewed.dic").exists()
         assert (tmp_path / f"{name}.dictcheck.txt").exists()
     assert dic.read_text(encoding="utf-8") == before
+
+
+# --- ultrareview of 2026-10-15 -------------------------------------------------
+
+def test_a_dotted_title_is_a_form_of_address():
+    """English keeps "Mr." one token: "Mrs. Moore" must count."""
+    import spacy
+    nlp = spacy.blank("en")
+    nlp.add_pipe("sentencizer")
+    rows = [_row("Moore"), _row("Andrews")]
+    evidence = rd.collect(["Mrs. Moore smiled at him. Mr. Andrews left."] * 3, rows, nlp)
+    assert dict(evidence[0].honorifics) == {'she': 3} and dict(evidence[1].honorifics) == {'he': 3}
+
+
+def test_a_reviewed_person_keeps_its_category_with_any_he_or_she():
+    rows = [_row("Cog"), _row("Wheel")]
+    evidence = {0: _ev(labels={'ORG': 20}, pronouns={'he': 2}),     # too few to be sure, but some
+                1: _ev(labels={'ORG': 20})}
+    rd.review(rows, evidence, 4, 0.85, collections.defaultdict(list), fix_conflicts=True)
+    assert [r['category'] for r in rows] == ["PERSON", "ORG"]
+
+
+def test_reports_are_not_books_of_a_series(tmp_path):
+    import src.ner as ner
+    for name in ("book1.epub", "book2.txt", "book1.dictcheck.txt", "series.reviewed.report.txt"):
+        (tmp_path / name).write_text("x", encoding="utf-8")
+    assert [os.path.basename(f) for f in ner.series_book_files(str(tmp_path))] == ["book1.epub", "book2.txt"]
+
+
+@pytest.mark.skipif(not is_package("en_core_web_sm"), reason="en_core_web_sm not installed")
+def test_a_read_only_dictionary_does_not_stop_the_run(tmp_path, monkeypatch):
+    import src.vocabulary_manager as vm
+    manager, dic = _manager(tmp_path, monkeypatch, "Vashti = Вашти, PERSON, he, \n", "en_core_web_sm")
+    monkeypatch.setattr(rd, "_write_reviewed", lambda *a, **k: (_ for _ in ()).throw(PermissionError("ro")))
+    manager.initialize(source_text=EN_TEXT)
+    assert manager.vocab['vashti'].gender == 'she'
+
+
+@pytest.mark.skipif(not is_package("en_core_web_sm"), reason="en_core_web_sm not installed")
+def test_an_edited_gender_reuses_the_evidence_of_the_book(tmp_path, monkeypatch, caplog):
+    manager, dic = _manager(tmp_path, monkeypatch, "Vashti = Вашти, PERSON, he, \n", "en_core_web_sm")
+    manager.initialize(source_text=EN_TEXT)
+    dic.write_text("Vashti = Вашти, PERSON, she, \n", encoding="utf-8")   # the user fixes the .dic
+    caplog.set_level("INFO")
+    manager.initialize(source_text=EN_TEXT)
+    assert "evidence of this book is cached" in caplog.text

@@ -1,5 +1,7 @@
 from collections import Counter
 import logging
+import os
+from pathlib import Path
 import re
 from typing import Optional
 import spacy
@@ -804,6 +806,19 @@ def _preferred_form(forms, lemma_key):
     return max(forms, key=lambda f: (lexicon.normalize(f) == lemma_key, forms[f]))
 
 
+# Reports the dictionary tools write next to the books: not books
+_GENERATED_REPORTS = ('.dictcheck.txt', '.report.txt')
+
+
+def series_book_files(books_folder: str) -> list:
+    """The FB2/EPUB/TXT books of a series folder, without the reports the
+    check before a translation and `app.py dict` leave there (a rebuilt
+    series dictionary took their lines for names)."""
+    return [os.path.join(books_folder, f) for f in sorted(os.listdir(books_folder))
+            if Path(f).suffix.lower() in {'.fb2', '.epub', '.txt'}
+            and not f.lower().endswith(_GENERATED_REPORTS)]
+
+
 def create_series_vocab(
     books_folder: str,
     output_file: str = "series.dic",
@@ -850,11 +865,7 @@ def create_series_vocab(
         output_file = os.path.join(books_folder, output_file)
 
     # Find all book files
-    supported_exts = {'.fb2', '.epub', '.txt'}
-    book_files = []
-    for f in os.listdir(books_folder):
-        if Path(f).suffix.lower() in supported_exts:
-            book_files.append(os.path.join(books_folder, f))
+    book_files = series_book_files(books_folder)
 
     if not book_files:
         raise ValueError(f"No book files found in {books_folder}")

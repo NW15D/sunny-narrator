@@ -104,7 +104,7 @@ S_PROMT_PROOFREAD=false   # false = раздельные сообщения
 | `initial_translation` | `system`, `user_xml` (FB2), `user_text` (Markdown, Calibre), `user_hunyuan` (Hunyuan, не FB2) | `TranslationPipeline.initial_translation` |
 | `reflection`, `improve`, `editor` | `system`, `user_xml`, `user_text` (по `style` чанка) | стадии 2–4 |
 | `synopsis` | `system`, `user`, `dictionary_rules` (подставляется в конец `user`) | стадия 5 |
-| `gender_fix` | `system`, `user` | стадия GENDER: только предложения, где `gender_check` нашёл сказуемое другого рода (LLM — `GENDER_LLM`: по умолчанию proofread, при `FAST_TRANS` без `API_BASE_PROOFREAD` — translate) |
+| `gender_fix` | `system`, `user` | стадия GENDER: только предложения, где `gender_check` нашёл сказуемое другого рода (LLM — `GENDER_LLM`: по умолчанию proofread, при `FAST_TRANS`, если `API_BASE_PROOFREAD` не отдельный сервер, — translate) |
 | `*_json` | `system`, `user_text` | те же стадии при `JSON_MODE` |
 | `vocabulary`, `metadata_translation` | `user` (системного сообщения нет: `get_completion` шлёт только `user`) | перевод словаря, метаданные |
 | `image_generation` | `generation`, `variation` | обложка |
