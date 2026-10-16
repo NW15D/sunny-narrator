@@ -1191,13 +1191,11 @@ class TranslationPipeline:
         json_mode = config.json_mode
         if json_mode:
             # Convert reflection to list if it's a string
-            suggestions = reflection.split('\n') if isinstance(reflection, str) else reflection
+            # Only the target language reaches this stage: no source, glossary
+            # keys, country or language names
             json_input = json.dumps({
                 "translation": translation,
-                "suggestions": suggestions,
-                "target_lang": context.target_lang,
-                "country": context.country,
-                "vocabulary": context.vocab_dict or {},
+                "fixes": _fix_pairs(reflection),
                 "characters": characters_for_json(context)
             }, ensure_ascii=False)
             
@@ -1269,8 +1267,6 @@ class TranslationPipeline:
         if json_mode:
             json_input = json.dumps({
                 "translation": translation,
-                "target_lang": context.target_lang,
-                "country": context.country,
                 "characters": characters_for_json(context)
             }, ensure_ascii=False)
             
@@ -1975,6 +1971,35 @@ def _extract_json_brace(text: str) -> str:
     return ""
 
 
+def _clean_fixes(fixes: list) -> list:
+    """The usable {find, replace, reason} pairs of a reflection answer: both
+    sides non-empty and different (a pair that changes nothing is noise)."""
+    pairs = []
+    for fix in fixes:
+        if not isinstance(fix, dict):
+            continue
+        find, replace = str(fix.get('find') or '').strip(), str(fix.get('replace') or '').strip()
+        if find and replace and find != replace:
+            pairs.append({"find": find, "replace": replace,
+                          "reason": str(fix.get('reason') or '').strip()})
+    return pairs
+
+
+def _fix_pairs(reflection) -> list:
+    """The fixes for the improve stage: the pairs a JSON reflection stored, or
+    the lines of a text one without numbering and blanks."""
+    if isinstance(reflection, str):
+        try:
+            data = json.loads(reflection)
+        except ValueError:
+            data = None
+        if isinstance(data, list):
+            return data
+        lines = [re.sub(r'^\s*\d+[.)]\s*', '', line).strip() for line in reflection.split('\n')]
+        return [line for line in lines if line and line.upper() != 'NO CHANGES']
+    return list(reflection or [])
+
+
 def parse_json_response(text: str) -> tuple:
     """
     Parse JSON response from LLM.
@@ -2003,6 +2028,10 @@ def parse_json_response(text: str) -> tuple:
         if 'translation' in data:
             return data['translation'].strip(), True
         
+        # Check for fixes (REFLECTION stage): {find, replace, reason} pairs
+        if isinstance(data.get('fixes'), list):
+            return _clean_fixes(data['fixes']), True
+
         # Check for suggestions (REFLECTION stage)
         if 'suggestions' in data:
             suggestions = data['suggestions']
@@ -2124,10 +2153,12 @@ def remove_tags_with_check(text: str, stage_name: str = "", role: LLMRole = None
     
     # PRIORITY 1: Try JSON parsing first (JSON_MODE)
     parsed, is_json = parse_json_response(text)
-    if is_json and parsed:
-        # Handle list (suggestions from reflection) vs string (translation)
+    if is_json and (parsed or isinstance(parsed, list)):
+        # Handle list (fixes from reflection) vs string (translation)
         if isinstance(parsed, list):
             logger.debug(f"Extracted {len(parsed)} suggestions from JSON [{stage_name}]")
+            if parsed and all(isinstance(s, dict) for s in parsed):
+                return json.dumps(parsed, ensure_ascii=False)
             return '\n'.join(str(s) for s in parsed) if parsed else ""
         else:
             logger.debug(f"Extracted translation from JSON [{stage_name}]")

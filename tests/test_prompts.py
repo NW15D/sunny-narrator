@@ -5,6 +5,7 @@ get_prompt returns the raw template, and the model reads "{target_lang}"
 literally — reflection.system did so with {source_lang}, which its caller
 never passed.
 """
+import json
 import os
 import re
 import sys
@@ -12,6 +13,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from src.config import Config
+from src import utils as u
 
 config = Config()
 
@@ -104,9 +106,9 @@ def test_every_stage_that_shapes_the_text_knows_the_readers_country():
 SAME_RULES = {
     "initial_translation": ("profanity", "placeholder", "base form", "omit nothing", "add nothing",
                             "characters", "synopsis"),
-    "reflection": ("gender", "profanity", "Replace «X» with «Y»", "never quot"),
+    "reflection": ("gender", "profanity", "never quot"),
     "improve": ("grammar", "markup", "gender", "nothing else"),
-    "editor": ("names and acronyms", "profanity", "placeholder", "rewrite correct sentences",
+    "editor": ("profanity", "placeholder", "rewrite correct sentences",
                "add", "gender"),
 }
 
@@ -149,3 +151,42 @@ def test_prompts_stay_within_their_budget():
     for (category, key), budget in BUDGET.items():
         length = len(config.prompts[category][key])
         assert length <= budget, f"{category}.{key}: {length} > {budget}"
+
+
+# --- the last stages see the target language only (2026-10-16) -----------------
+
+def test_improve_and_editor_json_input_is_target_language_only(monkeypatch):
+    seen = {}
+
+    def fake_complete(**kw):
+        seen[kw['stage']] = kw['user_prompt']
+        return '{"translation": "ТР"}', 1
+
+    monkeypatch.setattr(u.llm_service, 'complete', fake_complete)
+    monkeypatch.setattr(u.config, 'json_mode', True)
+    ctx = u.TranslationContext(source_text="src", source_lang="english", target_lang="russian",
+                               country="Россия", vocab_dict={"directive": "директива"})
+    reflection = json.dumps([{"find": "а", "replace": "б", "reason": "причина"}], ensure_ascii=False)
+    pipeline = u.TranslationPipeline()
+    pipeline.improve_translation(ctx, "перевод", reflection)
+    pipeline.final_edit(ctx, "перевод")
+    for stage in (u.TranslationStage.IMPROVE, u.TranslationStage.FINAL):
+        data = json.loads(seen[stage].split("\n\n")[0])
+        assert not {"vocabulary", "country", "target_lang", "source", "source_lang"} & set(data), stage
+        assert "directive" not in seen[stage] and "english" not in seen[stage], stage
+    assert json.loads(seen[u.TranslationStage.IMPROVE])["fixes"][0]["replace"] == "б"
+
+
+def test_reflection_fixes_drop_pairs_that_change_nothing():
+    text = json.dumps({"fixes": [{"find": "дредноута", "replace": "дредноута", "reason": "x"},
+                                 {"find": "а", "replace": "", "reason": "x"},
+                                 {"find": "полного", "replace": "полнейшего", "reason": "стиль"}]},
+                      ensure_ascii=False)
+    out = u.remove_tags_with_check(text, "reflection", None)
+    assert json.loads(out) == [{"find": "полного", "replace": "полнейшего", "reason": "стиль"}]
+    assert u.remove_tags_with_check('{"fixes": []}', "reflection", None) == ""
+
+
+def test_text_reflection_lines_lose_numbers_and_blanks():
+    lines = u._fix_pairs("1. «а» → «б» — причина\n\n2) «в» → «г» — причина\nNO CHANGES")
+    assert lines == ["«а» → «б» — причина", "«в» → «г» — причина"]
