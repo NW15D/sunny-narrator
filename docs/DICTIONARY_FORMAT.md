@@ -1,8 +1,8 @@
-# Dictionary Format (.dic file)
+# Working with Dictionaries (.dic files)
 
-**Version:** 1.0 (CSV with commas)  
-**Last Updated:** 2026-10-02  
-**Issue:** Format mismatch fixed (was incorrectly documented as JSON)
+**Version:** 1.1 (CSV with commas)  
+**Last Updated:** 2026-10-16  
+**Issue:** Format mismatch fixed (was incorrectly documented as JSON). Moved here from the README: all dictionary commands and rules, the series workflow, and the spaCy / CUDA / CJK nuances of dictionary work.
 
 ---
 
@@ -13,6 +13,20 @@ The dictionary file (`*.dic`) ensures terminology consistency throughout transla
 - Geographic locations
 - Domain-specific terminology
 - Gender information for correct pronoun usage
+
+### Commands at a glance
+
+| Task | Command / step |
+|---|---|
+| New book, no dictionary | `python app.py` (or `python app.py --build-dict books/MyBook.epub`) → `books/MyBook.dic` + `books/MyBook.dictcheck.txt` → fill in the empty genders you know → run again |
+| Translate with a dictionary | `python app.py` — the check runs first; read `<book>.dictcheck.txt`, take `<dic>.reviewed.dic` if you agree |
+| Strict mode | `python app.py --no-autofix` — by the `.dic` as it is; `DICT_FORCE=false` — stops on a contradiction (exit code 2) |
+| Series of books | `python app.py --build-series-dict books/series/ --series-dict-output series.dic`, then each book with `--dictionary series.dic`; a run never changes `series.dic`, each book gets `series.<book>.reviewed.dic` |
+| Clean a dictionary | `python app.py dict clean books/MyBook.dic` → `MyBook.clean.dic` + report (duplicates, gender spellings, ordinary words) |
+| Check against the book without translating | `python app.py dict review books/MyBook.epub --dic books/MyBook.dic` → `MyBook.reviewed.dic` + report |
+| Another target language | `python app.py dict convert books/MyBook.dic fr es zh` |
+| Check a finished translation | `python app.py audit books/MyBook_ru.epub --dic books/MyBook_ru.dic --lang russian` |
+| Explicit dictionary path | by default the `.dic` is looked up next to the book; `DICTIONARY=path/to/file.dic` in `.env` or `--dictionary path/to/file.dic` (the CLI flag wins) uses another file, e.g. a shared series dictionary — both pipelines, a missing file is created at that path (its directory must exist) |
 
 ---
 
@@ -199,6 +213,36 @@ John = Джон, PERSON, he, Protagonist
 New York = Нью-Йорк, LOC, , 
 ```
 
+### Method 3: Series dictionary (`--build-series-dict`)
+
+Create a unified dictionary for a series of books to keep terminology
+consistent across all volumes:
+
+```bash
+# Basic usage
+python app.py --build-series-dict books/ --series-dict-output series.dic
+
+# With custom thresholds
+python app.py --build-series-dict books/ --series-dict-output series.dic --min-count-ner 3 --frequent-words --min-count-word 5
+```
+
+**Parameters:**
+- `--build-series-dict` — path to the folder containing FB2/EPUB/TXT books
+- `--series-dict-output` — output dictionary file (default: `series.dic`)
+- `--min-count-ner` — minimum occurrences for NER entities (default: 2)
+- `--frequent-words` — also add frequent ordinary words, not only named entities (default: off, `DICT_FREQUENT_WORDS`)
+- `--min-count-word` — minimum occurrences for common words with `--frequent-words` (default: 5)
+
+A dictionary for a single book can be built with `--build-dict path/to/book`.
+
+**Workflow:** find all book files → extract text → NER (one entry per entity,
+forms grouped by lemma, the category most mentions got) → aggregate counts
+across all books → filter by thresholds → translate the terms via the
+proofread LLM (it only translates; genders are set by the check before each
+book's translation) → save the unified `.dic` file. Proper names keep their
+capitalization and all their words (`John Smith`). The result is a regular
+`.dic` file (`source = target, category, gender, notes`).
+
 ---
 
 ## Using Dictionary
@@ -226,6 +270,39 @@ Wonderland = Страна Чудес, LOC,
 - For Korean, write names without the particle (`철수`, not `철수는`): the term is searched as a substring and matches every form.
 
 Details: [NER_GUIDE.md](NER_GUIDE.md#-lexical-matching-stage-1).
+
+---
+
+## Dictionary rules during a run
+
+- **Character genders** (`he`, `she`, `it`, `they`): every stage gets them
+  written the target language's way (`Вашти — она (сказала)`), and the GENDER
+  stage fixes sentences that contradict the dictionary. A gender in the file
+  is never overwritten by a run; the synopsis fills in only empty ones, when
+  two chunks agree.
+- **Coined words:** besides characters, the synopsis stage reports invented
+  words with no ordinary translation (`spidergun`); they are added as `TERM`.
+  Words the spaCy model already knows are dropped.
+- **No duplicates:** a candidate the dictionary already covers is not added —
+  another case or inflected form of an entry (`Jain nodes` = `Jain node`,
+  `Gabbleducks` = `gabbleduck`; a name only by inflection: `Jains` = `Jain`,
+  but `Marie` ≠ `Mary`) or a phrase containing a known term (`Jain node`,
+  `Jain-tech` when `Jain` is there). A hyphen, a space or no separator make
+  different entries (`gabble-duck` ≠ `gabbleduck`); an ALL-CAPS acronym
+  matches only itself (`ECS` ≠ `EC`).
+- **Where found entries go:** new names and terms join the in-memory
+  dictionary at once — the following chunks of the run use them, and a resumed
+  run restores them from the checkpoint. They are written to the `.dic` only
+  with `DICT_AUTO_SAVE=true` (default `false`: the reviewed dictionary stays
+  as it is).
+- **Term matching** (the same for every format): only the dictionary terms
+  found in a chunk go into its prompt. Inflected forms are found (`spidergun`
+  → `spiderguns`, `wolf` → `wolves`), Chinese/Japanese/Korean terms are matched
+  as substrings, and a term never matches inside another word (`Ann` / `Annoying`).
+- **A good dictionary after a fast pass:** run `FAST_TRANS=true` with
+  `DICT_AUTO_SAVE=true` — the synopsis stage still runs in fast mode, so new
+  names and terms are appended to the `.dic`; review it, then re-translate
+  with `FAST_TRANS=false` and `--fresh`.
 
 ---
 
@@ -325,9 +402,14 @@ So the next book starts from `series.dic` as you left it. To carry the
 findings of a book over to the next ones, take its reviewed copy (or the lines
 you agree with) into `series.dic`.
 
-Step by step before translating or retranslating a series: the README,
-section *Vocabulary* → *Before translating (or retranslating) a series* (in
-every README language).
+Step by step before translating or retranslating a series:
+
+1. Back up the dictionary: `cp series.dic series.dic.bak`.
+2. Clean it: `python app.py dict clean series.dic` — read the report, take over what you agree with.
+3. Check it against every book, each into its own file: `python app.py dict review book1.epub --dic series.dic -o series.book1.reviewed.dic` (the same for book2, …). Take over what the books agree on; decide the rest by hand — the `gender conflict` and `gender not sure` sections first.
+4. Fix by hand what no tool can: a female character whose name is a masculine noun in the target language (`Client` → `Клиентка`?), a species or a title marked PERSON (→ `TERM`), a gender that jumps between `it`/`he`/`they`.
+5. Translate the books in series order with `DICTIONARY=series.dic`, `DICT_AUTO_SAVE=false`, `--fresh`. Before the first chunk the dictionary is checked against that book; the sure fixes apply to that run only.
+6. After each book, before the next one: read the run report (*The translation disagrees with the dictionary*, *Genders filled in from the synopsis*, *Words in two alphabets*), `<book>.dictcheck.txt` and `series.<book>.reviewed.dic`, and take over what is right into `series.dic`. Compare with an older translation: `python app.py audit … --compare …`.
 
 ## Dictionary commands
 
@@ -388,10 +470,92 @@ All reading and writing of `.dic` files goes through
 
 ---
 
+## spaCy models and languages
+
+The dictionary is built and checked with the spaCy model of the **source**
+language (`NERMODEL`, chosen by `SOURCE_LANG`):
+`python -m spacy download en_core_web_lg` (English), `ru_core_news_lg`,
+`de_core_news_lg`, `fr_core_news_lg`, `es_core_news_lg`, `it_core_news_lg`,
+`pt_core_news_lg`, `pl_core_news_lg`, `uk_core_news_lg`, `ko_core_news_lg`,
+`ja_core_news_lg`, `zh_core_web_lg`; any other language uses `xx_ent_wiki_sm`
+(names only, no genders from pronouns).
+
+- The gender check of the **translation** (GENDER stage) needs the model of
+  the target language (`ru_core_news_sm`, `pl_core_news_sm`,
+  `fr_core_news_sm`, …).
+- Chinese, Japanese and Korean pronoun genders are read by their form.
+- A book in a language without gendered pronouns (Turkish, Finnish,
+  Hungarian) gives no genders — set them by hand.
+
+Full per-language verification status: [LANGUAGES.md](LANGUAGES.md).
+
+---
+
+## GPU (CUDA) and CPU nuances of dictionary work
+
+NER (dictionary creation) and the dictionary check run on **spaCy/PyTorch**,
+so the GPU/CPU choice is theirs, not the LLM's:
+
+- **CPU (default, works everywhere):** `pip install -e .` installs spaCy and
+  the PyPI torch wheel; dictionary building and checking are slower on CPU
+  (a full-book check with an `*_lg` model takes minutes — the result is
+  cached in `<book>.dictcheck.json`, so a resumed run does not reparse).
+- **GPU (CUDA 12.x):** add the cupy extra — `pip install -e ".[gpu]"`
+  (`cupy-cuda12x==14.1.1`). spaCy picks up whichever cupy is importable and
+  runs NER on the GPU. The GPU Docker image (`Dockerfile`,
+  `nvidia/cuda`-based) ships it already; `Dockerfile.cpu` deliberately does
+  not install cupy. `spacy[cuda12x]` is not used: its `cupy<13` pin conflicts
+  with the pinned cupy 14 (see the comments in `pyproject.toml`).
+- **Choosing/hiding the GPU for spaCy/PyTorch:** `CUDA_VISIBLE_DEVICES=0`
+  selects a GPU; `CUDA_VISIBLE_DEVICES=` (empty) forces CPU even on a GPU
+  host — handy when the GPU is busy serving the LLMs.
+- **GPU Docker requirements:** NVIDIA driver 525.60+ (CUDA 12 compatible) and
+  NVIDIA Container Toolkit; details in [GPU_DOCKER.md](GPU_DOCKER.md),
+  troubleshooting in [DOCKER_CPU_GUIDE.md](DOCKER_CPU_GUIDE.md).
+
+---
+
+## CJK sources (Korean, Japanese, Chinese)
+
+Books can be translated directly from CJK languages into any language, with a
+dictionary:
+
+- **NER:** `ko_core_news_lg` uses its own KLUE label scheme (`PS`/`LC`/`OG`) —
+  it is recognized and normalized to `PERSON`/`LOC`/`ORG`.
+- **Dictionary matching:** CJK terms are found as substrings — there are no
+  spaces between words, and Korean particles are glued to nouns (`철수는`).
+- **Models:** `python -m spacy download ko_core_news_lg` (nothing extra),
+  `ja_core_news_lg` and `zh_core_web_lg` need their tokenizers:
+  `pip install -e ".[cjk]"`.
+- **Korean particles:** entities are written to the dictionary without the
+  glued particle (`철수는` → `철수`, `서울에서` → `서울`), so a term matches
+  every form of the word. Because of the substring search a short name also
+  matches inside a longer one (`철수` in `김철수`) — check such terms in the
+  generated `.dic`.
+- **Priority:** the longest term wins (`魔王城` over `魔王`); a Latin term
+  inside CJK text (`ABC社`, full-width `ＡＢＣ` too) is substituted as a word
+  of its own.
+- **Frequent words** (only with `DICT_FREQUENT_WORDS=true`): minimum word
+  length is 2 characters instead of 5 (a CJK word is usually 1-3 characters).
+- **Length check:** a CJK text grows 2-4x in characters when translated into
+  alphabetic languages. The expected ratio is learned from the book itself —
+  the median of accepted chunks; the first 3 chunks are only checked for gross
+  failures (×0.25 … ×5).
+
+```bash
+SOURCE_LANG=korean
+TARGET_LANG=russian
+```
+
+---
+
 ## Related Documentation
 
 - [NER_GUIDE.md](NER_GUIDE.md) — Named Entity Recognition for vocabulary extraction
 - [PROMPTS_GUIDE.md](PROMPTS_GUIDE.md) — How vocabulary is used in prompts
+- [TRANSLATION_STAGES.md](TRANSLATION_STAGES.md) — The 5-stage pipeline and the GENDER stage
+- [LANGUAGES.md](LANGUAGES.md) — Per-language verification status
+- [DOCKER_CPU_GUIDE.md](DOCKER_CPU_GUIDE.md), [GPU_DOCKER.md](GPU_DOCKER.md) — CPU/GPU (CUDA) images
 - [INSTALLATION.md](INSTALLATION.md) — Setup and configuration
 
 ---
