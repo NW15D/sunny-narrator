@@ -66,7 +66,26 @@ Queen's Court = Двор Королевы, ORG, ,
 | **LOC** | Geographic locations | `Wonderland`, `Hogwarts`, `London` |
 | **ORG** | Organizations | `Queen's Court`, `Ministry of Magic` |
 | **TERM** | Domain-specific terms | `Quidditch`, `Portkey`, `Time Turner` |
-| **OTHER** | Other entities | `Galleon` (currency), `Owl` (animal) |
+
+**The category changes the translation.** Only `PERSON` has behaviour of its
+own: its gender goes into the `<characters>` block of every stage, the GENDER
+stage enforces it, the synopsis fills it in, the audit reports it when empty.
+`LOC`, `ORG` and `TERM` are plain glossary entries (source → translation,
+no gender). Where to put what:
+
+| The entry is | Category |
+|---|---|
+| a named character, even a non-human one (a gender is needed: `he`/`she`/`it`/`they`) | `PERSON` |
+| a race, species, people (`Prador`, `Jain`), a title, a technology, a coined word | `TERM` |
+| a planet, city, country, region, building | `LOC` |
+| an organization, a company, a fleet | `ORG` |
+
+A race or a title as `PERSON` gets a gender and the GENDER stage makes the
+sentences agree with it — wrong for a name of a kind. Moving an entry from
+`PERSON` to another category: clear its gender. NER labels are folded into
+these four when a dictionary is built (`GPE`/`FAC` → `LOC`; `NORP`, `MISC`,
+`PRODUCT`, `EVENT` → `TERM`); the loader reads any category as written, but
+only these four mean something to the pipeline.
 
 ---
 
