@@ -1181,7 +1181,7 @@ class TranslationPipeline:
             # "find" is not in the translation dropped (the editor after this
             # stage cannot apply them)
             text = remove_tags_with_check(text, "reflection", LLMRole.PROOFREAD)
-            text = _keep_applicable_fixes(text, translation)
+            text = _keep_applicable_fixes(text, translation, context.target_lang)
 
         return TranslationResult(
             stage=TranslationStage.REFLECTION,
@@ -1991,16 +1991,18 @@ def _clean_fixes(fixes: list) -> list:
     return pairs
 
 
-def _keep_applicable_fixes(reflection: str, translation: str) -> str:
+def _keep_applicable_fixes(reflection: str, translation: str, target_lang: str = "") -> str:
     """A JSON list of fixes without the ones whose "find" is absent from the
-    translation; other text is returned as it is."""
+    translation or whose "replace" has a word in two alphabets (a pseudo-fix
+    like «дредноута» -> «dредноута»); other text is returned as it is."""
     try:
         data = json.loads(reflection)
     except ValueError:
         return reflection
     if not (isinstance(data, list) and all(isinstance(f, dict) for f in data)):
         return reflection
-    kept = [f for f in data if f.get('find') in translation]
+    kept = [f for f in data if f.get('find') in translation
+            and not script_guard.find_mixed_words(str(f.get('replace') or ''), target_lang)]
     return json.dumps(kept, ensure_ascii=False) if kept else ""
 
 

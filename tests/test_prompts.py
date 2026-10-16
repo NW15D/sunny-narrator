@@ -200,6 +200,7 @@ def test_json_reflection_reaches_improve_as_clean_pairs(monkeypatch):
             return json.dumps({"fixes": [
                 {"find": "а", "replace": "а", "reason": "x"},
                 {"find": "нет такого", "replace": "есть", "reason": "x"},
+                {"find": "перевод", "replace": "dекст", "reason": "x"},
                 {"find": "перевод", "replace": "текст", "reason": "стиль"}]}, ensure_ascii=False), 1
         seen['improve'] = kw['user_prompt']
         return '{"translation": "ТР"}', 1
