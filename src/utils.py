@@ -1175,7 +1175,14 @@ class TranslationPipeline:
             stage=TranslationStage.REFLECTION,
             json_mode=json_mode
         )
-        
+
+        if json_mode:
+            # {"fixes": [...]} -> the usable pairs as JSON text, those whose
+            # "find" is not in the translation dropped (the editor after this
+            # stage cannot apply them)
+            text = remove_tags_with_check(text, "reflection", LLMRole.PROOFREAD)
+            text = _keep_applicable_fixes(text, translation)
+
         return TranslationResult(
             stage=TranslationStage.REFLECTION,
             llm_role=LLMRole.PROOFREAD,
@@ -1190,7 +1197,6 @@ class TranslationPipeline:
         # JSON mode: prepare structured JSON input
         json_mode = config.json_mode
         if json_mode:
-            # Convert reflection to list if it's a string
             # Only the target language reaches this stage: no source, glossary
             # keys, country or language names
             json_input = json.dumps({
@@ -1985,6 +1991,19 @@ def _clean_fixes(fixes: list) -> list:
     return pairs
 
 
+def _keep_applicable_fixes(reflection: str, translation: str) -> str:
+    """A JSON list of fixes without the ones whose "find" is absent from the
+    translation; other text is returned as it is."""
+    try:
+        data = json.loads(reflection)
+    except ValueError:
+        return reflection
+    if not (isinstance(data, list) and all(isinstance(f, dict) for f in data)):
+        return reflection
+    kept = [f for f in data if f.get('find') in translation]
+    return json.dumps(kept, ensure_ascii=False) if kept else ""
+
+
 def _fix_pairs(reflection) -> list:
     """The fixes for the improve stage: the pairs a JSON reflection stored, or
     the lines of a text one without numbering and blanks."""
@@ -1995,7 +2014,7 @@ def _fix_pairs(reflection) -> list:
             data = None
         if isinstance(data, list):
             return data
-        lines = [re.sub(r'^\s*\d+[.)]\s*', '', line).strip() for line in reflection.split('\n')]
+        lines = [re.sub(r'^\s*\d+[.)]\s+', '', line).strip() for line in reflection.split('\n')]
         return [line for line in lines if line and line.upper() != 'NO CHANGES']
     return list(reflection or [])
 
@@ -2036,6 +2055,8 @@ def parse_json_response(text: str) -> tuple:
         if 'suggestions' in data:
             suggestions = data['suggestions']
             if isinstance(suggestions, list):
+                if suggestions and all(isinstance(x, dict) for x in suggestions):
+                    return _clean_fixes(suggestions), True
                 return suggestions, True
             elif isinstance(suggestions, str) and suggestions.strip():
                 return suggestions.strip(), True

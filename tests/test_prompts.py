@@ -190,3 +190,28 @@ def test_reflection_fixes_drop_pairs_that_change_nothing():
 def test_text_reflection_lines_lose_numbers_and_blanks():
     lines = u._fix_pairs("1. «а» → «б» — причина\n\n2) «в» → «г» — причина\nNO CHANGES")
     assert lines == ["«а» → «б» — причина", "«в» → «г» — причина"]
+
+
+def test_json_reflection_reaches_improve_as_clean_pairs(monkeypatch):
+    seen = {}
+
+    def fake_complete(**kw):
+        if kw['stage'] == u.TranslationStage.REFLECTION:
+            return json.dumps({"fixes": [
+                {"find": "а", "replace": "а", "reason": "x"},
+                {"find": "нет такого", "replace": "есть", "reason": "x"},
+                {"find": "перевод", "replace": "текст", "reason": "стиль"}]}, ensure_ascii=False), 1
+        seen['improve'] = kw['user_prompt']
+        return '{"translation": "ТР"}', 1
+
+    monkeypatch.setattr(u.llm_service, 'complete', fake_complete)
+    monkeypatch.setattr(u.config, 'json_mode', True)
+    ctx = u.TranslationContext(source_text="src", source_lang="english", target_lang="russian",
+                               country="Россия")
+    pipeline = u.TranslationPipeline()
+    reflection = pipeline.reflection(ctx, "перевод").text
+    pipeline.improve_translation(ctx, "перевод", reflection)
+    assert json.loads(seen['improve'])["fixes"] == [
+        {"find": "перевод", "replace": "текст", "reason": "стиль"}]
+    monkeypatch.setattr(u.llm_service, 'complete', lambda **kw: ('{"fixes": []}', 1))
+    assert pipeline.reflection(ctx, "перевод").text == ""
