@@ -220,13 +220,27 @@ def test_warn_and_off_make_no_llm_call(monkeypatch):
         assert [c[0] for c in calls] == [u.TranslationStage.INITIAL]
 
 
-def test_mixed_alphabet_words_are_logged_not_changed(monkeypatch, caplog):
+def test_mixed_alphabet_words_are_logged_before_the_first_letter_is_fixed(monkeypatch, caplog):
     before = u.metrics.mixed_words
     text, _ = _run(monkeypatch, {u.TranslationStage.INITIAL: "<ttext>Куно dошёл до Gорода.</ttext>"},
                    fast_mode=True, gender_check="off")
-    assert text == "Куно dошёл до Gорода."
+    # The mixed-words metric counts the draft as it arrived (the log stays
+    # honest), then the deterministic autofix replaces the Latin FIRST letter
+    # of an otherwise-Cyrillic word with its homoglyph.
+    assert text == "Куно дошёл до Города."
     assert u.metrics.mixed_words - before == 2
     assert "Words in two alphabets: dошёл, Gорода" in caplog.text
+
+
+def test_mid_word_slips_are_logged_and_keep_their_shape(monkeypatch, caplog):
+    before = u.metrics.mixed_words
+    draft = "<ttext>\u0444\u043e\u0442o \u0438 FBI \u0432 G\u043e\u0440\u043e\u0434\u0435</ttext>"  # «фотo» with a LATIN o
+    text, _ = _run(monkeypatch, {u.TranslationStage.INITIAL: draft},
+                   fast_mode=True, gender_check="off")
+    # «фотo» (a Latin o mid-word) and the purely-Latin FBI are not first-letter
+    # slips: they stay in the text; «Gороде» is fixed.
+    assert text == "\u0444\u043e\u0442o \u0438 FBI \u0432 \u0413\u043e\u0440\u043e\u0434\u0435"
+    assert u.metrics.mixed_words - before == 2
 
 
 def test_synopsis_candidates_in_two_alphabets_do_not_enter_the_dictionary(monkeypatch):

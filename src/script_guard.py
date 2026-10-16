@@ -73,3 +73,46 @@ def find_mixed_words(text: str, target_lang: str, dictionary_targets: Iterable[s
     return [m.group() for start, end in lexicon.text_spans(text)
             for m in _WORD_RE.finditer(text, start, end)
             if is_mixed(m.group(), script) and lexicon.normalize(m.group()) not in protected]
+
+
+# --- TC-009: deterministic homoglyph autofix of the first letter -----------
+# A Latin first letter followed by an all-Cyrillic body is a keyboard-layout
+# slip; replace it with the Cyrillic homoglyph. Purely-Latin words (FBI,
+# iPhone) never match: the body must be entirely Cyrillic.
+_HOMOGLYPH_MAP = {
+    'd': 'д', 't': 'т', 'c': 'с', 'p': 'п', 'g': 'г',
+    'f': 'ф', 'e': 'э', 'y': 'у', 'x': 'х', 'k': 'к',
+    'b': 'б', 'h': 'н', 'm': 'м',
+}
+
+_MIXED_FIRST_RE = re.compile(r'\b([A-Za-z])([А-Яа-яЁё]+)\b')
+
+_LANG_ALIASES = {
+    'russian': 'ru', 'ukrainian': 'uk', 'belarusian': 'be',
+    'bulgarian': 'bg', 'serbian': 'sr', 'macedonian': 'mk', 'kazakh': 'kk',
+}
+
+
+def _is_cyrillic_target(target_lang: Optional[str]) -> bool:
+    code = (target_lang or '').strip().lower().replace('_', '-')
+    code = code.split('-')[0]
+    code = _LANG_ALIASES.get(code, code)
+    return code in CYRILLIC_LANGS
+
+
+def _fix_first_letter(m) -> str:
+    letter, rest = m.group(1), m.group(2)
+    mapped = _HOMOGLYPH_MAP.get(letter.lower())
+    if mapped is None:
+        # No unambiguous homoglyph (s, w, z, ...): leave it for the log.
+        return m.group(0)
+    return (mapped.upper() if letter.isupper() else mapped) + rest
+
+
+def fix_mixed_first_letter(text: str, target_lang: str) -> str:
+    """Cyrillic-homoglyph autofix of a Latin FIRST letter of an otherwise
+    all-Cyrillic word, case preserved. Noop for non-Cyrillic targets;
+    idempotent; mid-word Latin slips are not touched."""
+    if not text or not _is_cyrillic_target(target_lang):
+        return text
+    return _MIXED_FIRST_RE.sub(_fix_first_letter, text)

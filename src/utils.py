@@ -1808,6 +1808,10 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
     if mixed:
         metrics.log_mixed_words(mixed)
     
+    # TC-009: deterministic homoglyph autofix of the first letter;
+    # after the mixed-words metric above so detection stays honest.
+    state.final_translation = script_guard.fix_mixed_first_letter(
+        state.final_translation, target_lang)
     return state.final_translation, state.synopsis
 
 
@@ -1978,14 +1982,15 @@ def _extract_json_brace(text: str) -> str:
 
 
 def _clean_fixes(fixes: list) -> list:
-    """The usable {find, replace, reason} pairs of a reflection answer: both
-    sides non-empty and different (a pair that changes nothing is noise)."""
+    """The usable {find, replace, reason} pairs of a reflection answer: find
+    non-empty and different from replace (a pair that changes nothing is
+    noise); an empty replace is a legitimate deletion fix."""
     pairs = []
     for fix in fixes:
         if not isinstance(fix, dict):
             continue
         find, replace = str(fix.get('find') or '').strip(), str(fix.get('replace') or '').strip()
-        if find and replace and find != replace:
+        if find and find != replace:
             pairs.append({"find": find, "replace": replace,
                           "reason": str(fix.get('reason') or '').strip()})
     return pairs
@@ -1999,6 +2004,8 @@ def _keep_applicable_fixes(reflection: str, translation: str, target_lang: str =
         data = json.loads(reflection)
     except ValueError:
         return reflection
+    if isinstance(data, dict):
+        data = data.get('fixes', data)
     if not (isinstance(data, list) and all(isinstance(f, dict) for f in data)):
         return reflection
     kept = [f for f in data if f.get('find') in translation

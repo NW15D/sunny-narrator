@@ -5,11 +5,15 @@ All notable changes to Sunny Narrator.
 ## v2.9.2
 
 ### Words in two alphabets: the last stages see the target language only
+- The reflection fixes drop filter (`find` not in the translation, `replace` a word in two alphabets) is active only with `JSON_MODE=true` (default `false`); in text mode the prompts alone ask `improve` to skip unapplicable fixes.
 - `improve` and `editor` JSON input no longer carries the glossary (English keys), `country`, `target_lang` or the source language; reflection writes its fixes in the target language only. JSON mode: `{"fixes": [{"find", "replace", "reason"}]}` (pairs that change nothing, or whose `find` is not in the translation, are dropped in code); text mode: `«X» → «Y» — reason`. The "Y differs from X" rule and the "names and acronyms stay" exception of the editor are gone.
 - The translation prompts no longer say "exactly as given… keep them. Inflect" about terms already substituted into the source: such terms are ordinary target-language words to inflect.
 - Fixed: in JSON mode the reflection reply was never parsed, so `improve` received the raw JSON lines as fixes.
 - Reflection fixes whose `replace` is a word in two alphabets (`дредноута` -> `dредноута`) are dropped in code, like those whose `find` is not in the translation.
 - `improve` and `editor` prompts state that the fixes, the translation and the output are in the target language (the instructions stay English). Length budgets of `improve`/`editor` raised by 10-30 characters for this.
+- A Latin first letter of an otherwise all-Cyrillic word (`d`ойти, `T`акое) is a keyboard-layout slip and is now fixed deterministically (`script_guard.fix_mixed_first_letter`, applied after the mixed-words metric so the log stays honest): Cyrillic homoglyph substitution (d->д, t->т, c->с, …), case preserved, purely-Latin words untouched, noop for non-Cyrillic targets.
+- `untranslated words` in reflection and editor no longer covers names and acronyms: legitimate Latin `FBI`, `NATO`, `iPhone` must not be "translated" back into Cyrillic. A fix `find` may quote a source-language word left in the translation; `improve` JSON input no longer claims every field is in the target language.
+- Deletion fixes (empty `replace`) survive the parser; the `{"fixes": [...]}` wrapper is unwrapped inside the drop filter too. The Russian examples of the synopsis `dictionary_rules` became language-neutral placeholders.
 
 ### Dictionary
 - New `DICT_FORCE` (default `true`): without autofix (`--no-autofix`, `DICT_AUTOFIX=false`) the run translates by the `.dic` as it is and only reports a dictionary contradicting the book; `DICT_FORCE=false` stops the run on a contradiction (exit code 2), as `--no-autofix` alone did before. `--force` stays, the same as `DICT_FORCE=true`; without `--no-autofix` it has no effect and says so. `DICT_AUTOFIX` is still on by default.

@@ -106,7 +106,7 @@ def test_every_stage_that_shapes_the_text_knows_the_readers_country():
 SAME_RULES = {
     "initial_translation": ("profanity", "placeholder", "base form", "omit nothing", "add nothing",
                             "characters", "synopsis"),
-    "reflection": ("gender", "profanity", "never quot"),
+    "reflection": ("gender", "profanity", "not names or acronyms"),
     "improve": ("grammar", "markup", "gender", "nothing else"),
     "editor": ("profanity", "placeholder", "rewrite correct sentences",
                "add", "gender"),
@@ -183,7 +183,9 @@ def test_reflection_fixes_drop_pairs_that_change_nothing():
                                  {"find": "полного", "replace": "полнейшего", "reason": "стиль"}]},
                       ensure_ascii=False)
     out = u.remove_tags_with_check(text, "reflection", None)
-    assert json.loads(out) == [{"find": "полного", "replace": "полнейшего", "reason": "стиль"}]
+    # a deletion fix (empty replace) is a real change and survives
+    assert json.loads(out) == [{"find": "а", "replace": "", "reason": "x"},
+                               {"find": "полного", "replace": "полнейшего", "reason": "стиль"}]
     assert u.remove_tags_with_check('{"fixes": []}', "reflection", None) == ""
 
 
