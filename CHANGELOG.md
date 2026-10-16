@@ -2,8 +2,14 @@
 
 All notable changes to Sunny Narrator.
 
-## Unreleased
+## v2.9.2
 
+### Words in two alphabets: the last stages see the target language only
+- `improve` and `editor` JSON input no longer carries the glossary (English keys), `country`, `target_lang` or the source language; reflection writes its fixes in the target language only. JSON mode: `{"fixes": [{"find", "replace", "reason"}]}` (pairs that change nothing, or whose `find` is not in the translation, are dropped in code); text mode: `«X» → «Y» — reason`. The "Y differs from X" rule and the "names and acronyms stay" exception of the editor are gone.
+- The translation prompts no longer say "exactly as given… keep them. Inflect" about terms already substituted into the source: such terms are ordinary target-language words to inflect.
+- Fixed: in JSON mode the reflection reply was never parsed, so `improve` received the raw JSON lines as fixes.
+
+### Dictionary
 - New `DICT_FORCE` (default `true`): without autofix (`--no-autofix`, `DICT_AUTOFIX=false`) the run translates by the `.dic` as it is and only reports a dictionary contradicting the book; `DICT_FORCE=false` stops the run on a contradiction (exit code 2), as `--no-autofix` alone did before. `--force` stays, the same as `DICT_FORCE=true`; without `--no-autofix` it has no effect and says so. `DICT_AUTOFIX` is still on by default.
 - With `DICT_FORCE=false` filling an empty category from the book no longer stops the run (filling an empty gender did not): only a category or a gender the book contradicts does.
 - `app.py dict convert` returns its exit code like the other commands instead of calling `sys.exit` inside.
