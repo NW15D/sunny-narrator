@@ -337,9 +337,12 @@ def extract_metadata_from_opf(opf_content: str) -> dict:
             metadata[key] = _html_dec.unescape(metadata[key])
     
     # Extract description
-    desc_match = re.search(r'<dc:description[^>]*>([^<]+)</dc:description>', opf_content, re.IGNORECASE)
+    desc_match = re.search(r'<dc:description[^>]*>(.*?)</dc:description>', opf_content, re.IGNORECASE | re.DOTALL)
     if desc_match:
-        metadata["description"] = desc_match.group(1).strip()
+        from src.promo_filter import html_to_text
+        # Описание бывает экранированным HTML (<div><p><strong>): в титульный
+        # лист и метаданные оно должно попасть обычным текстом.
+        metadata["description"] = html_to_text(desc_match.group(1))
     
     return metadata
 
@@ -570,6 +573,8 @@ def convert_to_markdown(input_path: str) -> tuple[str, dict]:
             
             # Step 5: Clean Calibre markers
             markdown_text = _clean_calibre_markers(markdown_text)
+            from src.promo_filter import strip_promo_text
+            markdown_text = strip_promo_text(markdown_text)
             # Second sanitize pass after marker cleaning
             markdown_text = markdown_utils.sanitize_surrogates(markdown_text)
             
@@ -610,6 +615,8 @@ def _sanitize_source_html(html: str) -> str:
         return html
 
     try:
+        from src.promo_filter import strip_promo_markup
+        html = strip_promo_markup(html)
         soup = BeautifulSoup(html, 'html.parser')
 
         for node in soup.find_all(string=lambda t: isinstance(t, Comment)):

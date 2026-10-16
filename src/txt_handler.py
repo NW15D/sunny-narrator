@@ -139,6 +139,8 @@ def parse_txt(file_path):
         content = _read_with_fallback(file_path)
     except Exception as e:
         raise ValueError(f"Failed to read TXT file: {e}")
+    from src.promo_filter import strip_promo_text
+    content = strip_promo_text(content)
 
     # Create a simple header
     file_name = os.path.basename(file_path)
