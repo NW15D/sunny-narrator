@@ -134,6 +134,7 @@ Alice = Алиса, PERSON, she, 主角
 
 - **自动创建**：首次运行时（或使用 `--build-dict`）由源语言的 spaCy 模型找出名称；类别和性别由书本身决定（NER 标签的多数、代词、*Miss*/*Mr.* 之类的称谓），LLM 只负责翻译。不确定的性别留空，运行会停止，以便你检查新的 `.dic`。只有设置 `DICT_FREQUENT_WORDS=true`（或对 `--build-dict`/`--build-series-dict` 使用 `--frequent-words`）时才会加入常见普通词。
 - **每次翻译前对照书本检查**（不使用 LLM）：可靠的发现——空的性别、与书矛盾的性别或类别——只用于本次运行；`.dic` 不会改变，这些修正写入 `<dic>.reviewed.dic`。`--no-autofix` 按 `.dic` 原样翻译（设置 `DICT_FORCE=false` 时，出现矛盾会停止运行）；报告为 `<书名>.dictcheck.txt`。
+- **类别会改变条目的翻译方式。** 只有 `PERSON` 有自己的行为：它的性别会进入每个阶段的 `<characters>` 块，并由 GENDER 阶段强制执行。`LOC`、`ORG` 和 `TERM` 是没有性别的普通词汇表条目。因此，有名字的角色（即使不是人类）请写为带性别的 `PERSON`，而种族、物种、头衔、技术或自造词请写为 `TERM`：写成 `PERSON` 的种族会被赋予性别，句子也会随之做一致性处理。地点用 `LOC`，组织用 `ORG`。类别还决定翻译前的检查可以修改什么（见 `docs/DICTIONARY_FORMAT.md`）。
 - **角色性别**（`he`、`she`、`it`、`they`）：所有阶段都以目标语言的形式获得性别（`Вашти — она (сказала)`），GENDER 阶段会修正与词典矛盾的句子。运行不会覆盖文件中已有的性别；摘要只在两个分块一致时填写空的性别。
 - **自造词：** 除角色外，摘要阶段还会报告没有常规译法的自造词（`spidergun`）；它们以 `TERM` 加入。spaCy 模型已认识的词会被丢弃。
 - **不重复：** 词典已覆盖的候选词不会加入——条目的其他大小写或屈折形式（`Jain nodes` = `Jain node`，`Gabbleducks` = `gabbleduck`；人名只按屈折：`Jains` = `Jain`，但 `Marie` ≠ `Mary`），或包含已知术语的短语（已有 `Jain` 时的 `Jain node`、`Jain-tech`）。连字符、空格或连写是不同条目（`gabble-duck` ≠ `gabbleduck`）；全大写缩写只匹配自身（`ECS` ≠ `EC`）。
