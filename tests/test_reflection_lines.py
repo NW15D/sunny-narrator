@@ -35,3 +35,48 @@ def test_json_fixes_without_find_do_not_crash():
     raw = '[{"wrong": "a", "right": "b"}, {"find": "ждала", "replace": "ждал", "reason": "род"}]'
     assert '"find": "ждала"' in _keep_applicable_fixes(raw, TR, "russian")
     assert _keep_applicable_fixes('[{"find": "ждала", "replace": "ждала"}]', TR, "russian") == ""
+
+
+# --- the vocabulary is kept by the code (The Warship, 2026-10-17) -------------
+# Asked to check the terms, the reviewer listed every one as a fix that
+# changes nothing, twice over, until max_tokens; it no longer checks them, so
+# a fix that takes a dictionary translation out of the text is dropped here.
+
+TERMS = ["Трик", "ЮЗЕР", "Государство"]
+TR_TERMS = "Трик ждал. Помехи ЮЗЕРа росли. Флот Государства ушёл."
+
+
+def test_a_fix_that_replaces_a_term_is_dropped():
+    from src.utils import _keep_applicable_fixes
+    raw = ('[{"find": "Трик ждал", "replace": "Трайк ждал", "reason": "имя"},'
+           ' {"find": "Помехи ЮЗЕРа", "replace": "Помехи USER", "reason": "термин"}]')
+    assert _keep_applicable_fixes(raw, TR_TERMS, "russian", TERMS) == ""
+
+
+def test_a_fix_that_inflects_a_term_or_leaves_it_is_kept():
+    from src.utils import _keep_applicable_fixes
+    raw = ('[{"find": "Флот Государства ушёл", "replace": "Флот Государства улетел", "reason": "смысл"},'
+           ' {"find": "Трик ждал", "replace": "Трика ждали", "reason": "согласование"}]')
+    kept = _keep_applicable_fixes(raw, TR_TERMS, "russian", TERMS)
+    assert "улетел" in kept and "Трика ждали" in kept
+
+
+def test_text_mode_drops_a_line_that_replaces_a_term():
+    text = "Трик ждал → Трайк ждал — имя\nТрик ждал → Трик ждала — род"
+    assert _keep_applicable_lines(text, TR_TERMS, "russian", TERMS) == "Трик ждал → Трик ждала — род"
+
+
+def test_a_fix_with_a_source_language_word_is_dropped():
+    # IMPROVE given one such fix applied none of the 13 fixes of the chunk
+    from src.utils import _keep_applicable_fixes
+    raw = ('[{"find": "Флот Государства ушёл", "replace": "Флот Государства black-ops ушёл", "reason": "смысл"},'
+           ' {"find": "Трик ждал", "replace": "Трика ждали", "reason": "согласование"}]')
+    kept = _keep_applicable_fixes(raw, TR_TERMS, "russian", TERMS)
+    assert "black-ops" not in kept and "Трика ждали" in kept
+
+
+def test_a_dictionary_translation_in_latin_letters_is_not_foreign():
+    from src.utils import _keep_applicable_fixes
+    tr = "Ракета SpaceX взлетела."
+    raw = '[{"find": "Ракета SpaceX взлетела", "replace": "Ракета SpaceX стартовала", "reason": "смысл"}]'
+    assert "стартовала" in _keep_applicable_fixes(raw, tr, "russian", ["SpaceX"])

@@ -106,7 +106,7 @@ def test_every_stage_that_shapes_the_text_knows_the_readers_country():
 SAME_RULES = {
     "initial_translation": ("profanity", "placeholder", "base form", "omit nothing", "add nothing",
                             "characters", "synopsis"),
-    "reflection": ("gender", "profanity", "final", "source spelling"),
+    "reflection": ("gender", "profanity", "already checked", "report what is correct", "Each error once"),
     "improve": ("grammar", "markup", "gender", "nothing else"),
     "editor": ("profanity", "placeholder", "rewrite correct sentences",
                "add", "gender"),
@@ -139,9 +139,9 @@ def test_the_gender_rule_is_in_every_stage_that_writes_text():
 BUDGET = {
     ("initial_translation", "system"): 600, ("initial_translation", "user_xml"): 700,
     ("initial_translation", "user_text"): 700, ("initial_translation", "user_hunyuan"): 400,
-    ("reflection", "system"): 750, ("improve", "system"): 680, ("editor", "system"): 660,
+    ("reflection", "system"): 800, ("improve", "system"): 680, ("editor", "system"): 660,
     ("synopsis", "user"): 450, ("synopsis", "dictionary_rules"): 1400,
-    ("initial_translation_json", "system"): 700, ("reflection_json", "system"): 650,
+    ("initial_translation_json", "system"): 700, ("reflection_json", "system"): 760,
     ("improve_json", "system"): 550, ("editor_json", "system"): 510,
     ("gender_fix", "user"): 400, ("vocabulary", "user"): 720,
 }

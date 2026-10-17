@@ -442,6 +442,15 @@ def log_entry(func):
 # Constants
 MAX_TOKENS_PER_CHUNK = config.max_len_chunk * 2  # 2x chunk size for translation overhead
 
+def _presence_penalty(role: 'LLMRole', stage: 'TranslationStage' = None) -> float:
+    """presence_penalty of a request (see Config.presence_penalty_*)."""
+    if stage == TranslationStage.REFLECTION:
+        return config.presence_penalty_reflection
+    if role == LLMRole.TRANSLATE:
+        return config.presence_penalty_translate
+    return config.presence_penalty_proofread
+
+
 class TokenCalibration:
     """
     Output tokens per character of each LLM role, learned from this book's
@@ -672,6 +681,7 @@ class LLMService:
         comp_kwargs = {
             "model": model,
             "temperature": temp,
+            "presence_penalty": _presence_penalty(role, stage),
             "max_tokens": max_tokens,
             "messages": messages
         }
@@ -1244,9 +1254,11 @@ class TranslationPipeline:
             # "find" is not in the translation dropped (the editor after this
             # stage cannot apply them)
             text = remove_tags_with_check(text, "reflection", LLMRole.PROOFREAD)
-            text = _keep_applicable_fixes(text, translation, context.target_lang)
+            text = _keep_applicable_fixes(text, translation, context.target_lang,
+                                          _dictionary_targets(context))
         else:
-            text = _keep_applicable_lines(text, translation, context.target_lang)
+            text = _keep_applicable_lines(text, translation, context.target_lang,
+                                          _dictionary_targets(context))
 
         return TranslationResult(
             stage=TranslationStage.REFLECTION,
@@ -2063,10 +2075,35 @@ def _clean_fixes(fixes: list) -> list:
     return pairs
 
 
-def _keep_applicable_fixes(reflection: str, translation: str, target_lang: str = "") -> str:
+def _bad_replace(replace: str, target_lang: str, terms=()) -> bool:
+    """True when a fix's replacement is not wholly in the target language: a
+    word in two alphabets (the pseudo-fix «дредноута» -> «dредноута») or a
+    word of the other alphabet («Ударный корабль Государства black-ops»).
+    IMPROVE given one such fix applied none of the 13 fixes of the chunk."""
+    return bool(script_guard.find_mixed_words(replace, target_lang)
+                or script_guard.find_foreign_words(replace, target_lang, terms))
+
+
+def _drops_term(find: str, replace: str, terms, target_lang: str) -> bool:
+    """True when a fix takes a dictionary translation out of the text
+    («Трик» -> «Трайк»): the vocabulary is final. The reflection prompt does
+    not ask the model to check the terms (it looped listing each one as a
+    fix that changes nothing), so the code keeps them."""
+    if not terms:
+        return False
+    in_find = lexicon.find_terms(find, terms, target_lang)
+    if not in_find:
+        return False
+    kept = set(lexicon.find_terms(replace, in_find, target_lang)) if replace else set()
+    return any(term not in kept for term in in_find)
+
+
+def _keep_applicable_fixes(reflection: str, translation: str, target_lang: str = "",
+                           terms=()) -> str:
     """A JSON list of fixes without the ones whose "find" is absent from the
-    translation or whose "replace" has a word in two alphabets (a pseudo-fix
-    like «дредноута» -> «dредноута»); other text is returned as it is."""
+    translation, whose "replace" is not wholly in the target language
+    (_bad_replace) or drops one of `terms` (the dictionary translations,
+    _drops_term); other text is returned as it is."""
     try:
         data = json.loads(reflection)
     except ValueError:
@@ -2076,7 +2113,8 @@ def _keep_applicable_fixes(reflection: str, translation: str, target_lang: str =
     if not (isinstance(data, list) and all(isinstance(f, dict) for f in data)):
         return reflection
     kept = [f for f in _clean_fixes(data) if f['find'] in translation
-            and not script_guard.find_mixed_words(f['replace'], target_lang)]
+            and not _bad_replace(f['replace'], target_lang, terms)
+            and not _drops_term(f['find'], f['replace'], terms, target_lang)]
     return json.dumps(kept, ensure_ascii=False) if kept else ""
 
 
@@ -2085,11 +2123,13 @@ _FIX_MARKUP = re.compile(r'^\s*(?:\d+[.)]|[-*•–])\s+')
 _FIX_LINE = re.compile(r'^\s*(?:\d+[.)]\s+)?[«"“]?(?P<find>.+?)[»"”]?\s*(?:→|->)\s*[«"“]?(?P<replace>.*?)[»"”]?\s+[—–-]+\s+\S', re.S)
 
 
-def _keep_applicable_lines(reflection: str, translation: str, target_lang: str = "") -> str:
+def _keep_applicable_lines(reflection: str, translation: str, target_lang: str = "",
+                           terms=()) -> str:
     """The text-mode counterpart of _keep_applicable_fixes: the lines
     "X → Y — reason" without the ones whose X is absent from the translation,
-    equals Y, or whose Y has a word in two alphabets. A line of another shape
-    stays as it is; "NO CHANGES" is returned when no line is left."""
+    equals Y, whose Y is not wholly in the target language or that drop one
+    of `terms`. A line of another shape stays as it is; "NO CHANGES" is
+    returned when no line is left."""
     kept, seen = [], False
     for line in (reflection or '').split('\n'):
         if not line.strip() or line.strip().upper() == 'NO CHANGES':
@@ -2100,7 +2140,8 @@ def _keep_applicable_lines(reflection: str, translation: str, target_lang: str =
             seen = True
             find, replace = match.group('find').strip(), match.group('replace').strip()
             if (find == replace or find not in translation
-                    or script_guard.find_mixed_words(replace, target_lang)):
+                    or _bad_replace(replace, target_lang, terms)
+                    or _drops_term(find, replace, terms, target_lang)):
                 continue
         kept.append(line)
     if kept or not seen:

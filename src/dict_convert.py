@@ -86,6 +86,7 @@ def translate_batch(client, target_name, batch, source_name, hint_name):
     kwargs = dict(
         model=config.model_proofread,
         temperature=0.2,
+        presence_penalty=config.presence_penalty_proofread,
         messages=[{"role": "user", "content": PROMPT.format(
             lang=target_name, source=source_name, hint=hint_name, items=items)}],
         response_format={"type": "json_object"},

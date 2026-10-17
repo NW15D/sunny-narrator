@@ -5,7 +5,9 @@ word. No LLM stage notices it (the model reads "gолосом" as "голосо�
 
 The words are found and logged, not fixed: the cause is upstream, in the
 prompt or the model, and `app.py eval` (src/prompt_eval.py) looks for it (--prompts,
---no-glossary, --no-substitution). Checked:
+--no-glossary, --no-substitution). A reflection fix whose replacement has
+such a word, or a whole word of the other alphabet (find_foreign_words), is
+dropped before IMPROVE. Checked:
 
 - Cyrillic targets (ru, uk, be, bg, sr, mk, kk) and Greek: Latin letters
   inside a word of the target alphabet;
@@ -61,6 +63,21 @@ def is_mixed(word: str, script: str) -> bool:
 
 def _protected_words(dictionary_targets: Iterable[str]) -> Set[str]:
     return {lexicon.normalize(w) for t in dictionary_targets for w in _WORD_RE.findall(t or '')}
+
+
+def find_foreign_words(text: str, target_lang: str, dictionary_targets: Iterable[str] = ()) -> List[str]:
+    """The words of `text` written wholly in the alphabet that is a slip in
+    the target one (_FOREIGN: "black-ops" in Russian), in order; markup and
+    the words of dictionary translations ("SpaceX") skipped."""
+    script = target_script(target_lang)
+    if not script or not text:
+        return []
+    foreign = _FOREIGN[script]
+    protected = _protected_words(dictionary_targets)
+    return [m.group() for start, end in lexicon.text_spans(text)
+            for m in _WORD_RE.finditer(text, start, end)
+            if {_script(ch) for ch in m.group()} == {foreign}
+            and lexicon.normalize(m.group()) not in protected]
 
 
 def find_mixed_words(text: str, target_lang: str, dictionary_targets: Iterable[str] = ()) -> List[str]:

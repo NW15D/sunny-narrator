@@ -95,6 +95,14 @@ class Config:
         self.temp_translate = _parse_numeric_env('TEMP_TRANSLATE', os.getenv('TEMP', 0.01))
         self.timeout_translate = _parse_numeric_env('TIMEOUT_TRANSLATE', os.getenv('TIMEOUT', 6000), cast=int)
         self.nothink_translate = _parse_bool_env('NOTHINK_TRANSLATE', os.getenv('NOTHINK2', 'false'))
+        # presence_penalty, sent with every request instead of the server's
+        # default (llama.cpp with the Qwen preset: 1.5): a stage that writes
+        # the text again is penalized for the tokens of a word it just wrote
+        # and puts a Latin twin in («сприна» -> «спринa»). REFLECTION writes a
+        # list instead and needs the penalty: without it the list repeats
+        # until max_tokens (The Warship bench: 2 truncations in 24 chunks
+        # at 0, none at 1.5)
+        self.presence_penalty_translate = _parse_numeric_env('PRESENCE_PENALTY_TRANSLATE', 0.0)
         
         # Stage-specific temperatures (override general temp_translate/temp_proofread)
         # Stage 1: INITIAL translation
@@ -140,6 +148,8 @@ class Config:
         self.temp_proofread = _parse_numeric_env('TEMP_PROOFREAD', os.getenv('TEMP2', 0.7))
         self.timeout_proofread = _parse_numeric_env('TIMEOUT_PROOFREAD', os.getenv('TIMEOUT2', 6000), cast=int)
         self.nothink_proofread = _parse_bool_env('NOTHINK_PROOFREAD', os.getenv('NOTHINK', 'false'))
+        self.presence_penalty_proofread = _parse_numeric_env('PRESENCE_PENALTY_PROOFREAD', 0.0)
+        self.presence_penalty_reflection = _parse_numeric_env('PRESENCE_PENALTY_REFLECTION', 1.5)
 
         # Images API (Cover API)
         self.api_key_images = os.getenv('API_KEY_IMAGES', os.getenv('API_KEY3', ''))

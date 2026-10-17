@@ -474,14 +474,27 @@ JSON_MODE=true
   "source_lang": "en",
   "target_lang": "ru",
   "country": "RU",
-  "vocabulary": {}
+  "vocabulary": {"term": "translation"},
+  "characters": {"name": "gender"}
 }
 ```
 
 **JSON Output:**
 ```json
-{"suggestions": ["Replace 'X' with 'Y' (reason)"]}
+{"fixes": [{"find": "fragment of the translation", "replace": "its fix", "reason": "a few words"}]}
 ```
+
+The vocabulary is final and the reviewer is told not to check it: asked to
+check the terms, it listed each one as a fix that changes nothing, list after
+list, until `max_tokens` (all truncations of The Warship run). The code drops
+the fixes `improve` cannot or must not apply (`_keep_applicable_fixes`):
+`find` absent from the translation or equal to `replace`, `replace` not wholly
+in the target language (a word in two alphabets or of the other alphabet:
+IMPROVE given one fix with «black-ops» in it applied none of the chunk's
+fixes), or a fix that takes a dictionary translation out of the text
+(`_drops_term`: «Трик» -> «Трайк»; an inflected term stays). The stage keeps
+a presence penalty of its own (`PRESENCE_PENALTY_REFLECTION`, 1.5): without
+it the list of fixes repeats until `max_tokens`.
 
 ---
 

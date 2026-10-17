@@ -40,3 +40,13 @@ def test_other_scripts_are_not_checked():
     assert sg.target_script("japanese") is None
     assert sg.target_script("ukrainian") == "CYRILLIC" and sg.target_script("greek") == "GREEK"
     assert sg.find_mixed_words("Ο Γιάννης είπε Kαλημέρα.", "el") == ["Kαλημέρα"]
+
+
+def test_foreign_words_are_whole_words_of_the_other_alphabet():
+    # a reflection fix «Ударный корабль Государства black-ops» made IMPROVE
+    # skip every fix of the chunk
+    assert sg.find_foreign_words("Ударный корабль black-ops ушёл.", "ru") == ["black", "ops"]
+    assert sg.find_foreign_words("Ракета SpaceX и ![](sn-imgref-3) https://x.org", "ru", ["SpaceX"]) == []
+    assert sg.find_foreign_words("Gород", "ru") == []  # mixed, not foreign
+    assert sg.find_foreign_words("Il a dit привет.", "french") == ["привет"]
+    assert sg.find_foreign_words("他说black", "chinese") == []

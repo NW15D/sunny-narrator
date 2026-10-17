@@ -2,6 +2,31 @@
 
 All notable changes to Sunny Narrator.
 
+## Unreleased
+
+### Reflection: no more loops (The Warship, en->ru)
+All 32 rechunk events of the last The Warship run were REFLECTION answers cut at `max_tokens`, not length checks. The model looped in two ways, both from the vocabulary check the prompt asked for: it listed every vocabulary term as a fix that changes nothing ("здесь всё верно"), then listed them again; or it deliberated inside `reason` (15 841 characters on whether «Трик» should be «Трайк»). Measured on 24 chunks of the book (stage-1 drafts cached, Qwen3.6-35B, same drafts for every variant):
+
+| | truncated | answer, chars | time | fixes that change nothing | fixes kept by the filters |
+|---|---|---|---|---|---|
+| before | 3 | 246 864 | 1946 s | 96 | 127 |
+| now | 0 | 67 426 | 781 s | 25 | 239 |
+
+- `reflection_json` / `reflection`: the vocabulary is "already checked: do not check or report them"; only real errors that must change; X is the shortest wrong fragment, Y differs from X; never report what is correct; each error once; the reason under ten words. Asking it not to report what is correct while still asking it to check the terms made it worse (the check moved into `reason`), and dropping the vocabulary from the input made it change terms more often.
+- The vocabulary is kept by the code instead: a fix that takes a dictionary translation out of the text is dropped (`_drops_term`, word forms by `lexicon.find_terms`: «Трик» -> «Трайк», «ЮЗЕР» -> «USER», «Ю-подпись» -> «сигнатуру Ю-прыжка» dropped; «Государства» -> «Государству» kept).
+- A fix whose replacement has a word of the other alphabet is dropped (`script_guard.find_foreign_words`, dictionary translations such as `SpaceX` excepted): IMPROVE given one such fix («Ударный корабль Государства black-ops») applied none of the 13 fixes of the chunk, twice; without it, 11. All 22 such fixes of the 24-chunk run were reverts to English («Ю-прыжок» -> «U-jump», «Кейбл Хоуг» -> «Cable Hogue»).
+
+### presence_penalty is sent with every request
+- llama.cpp serves the Qwen preset with `presence_penalty 1.5` (window 64 tokens) unless the request says otherwise; a stage that writes a word it has just written gets a Latin twin («сприна» -> «спринa», the pseudo-fix the reflection filter already dropped). `PRESENCE_PENALTY_TRANSLATE` and `PRESENCE_PENALTY_PROOFREAD` (default 0) are now sent with every request.
+- REFLECTION keeps its own `PRESENCE_PENALTY_REFLECTION` (default 1.5): it writes a list, and without the penalty the list repeats. Same prompt, same 13 chunks: 0 truncations at 1.5, 7 at 0. For IMPROVE/FINAL_EDIT no difference was measurable on 8 chunks (no word in two alphabets at 1.5 or 0; the real run had them in 1 of 117 chunks).
+
+### Tried and not taken
+Each measured against the current prompt on the same chunks; none was better, so the prompts stay:
+- `editor_json` with agreement as the first rule (and a variant "change the verb, never the noun"): on 192 injected agreement errors (`сказала` -> `сказало`, `большую` -> `большая`) the current prompt fixed 168 and changed 35 other words, the variants 168/71 and 166/43. None of them fixes «сказал сани» (a talking sled, `it` in the source): the editor has no source and turns the noun into «сан»; a dictionary gender does it (`grav-sled = грави-сани,TERM,they`).
+- `improve_json` in the imperative: the same share of fixes applied (97 vs 96 of 114), more words changed outside them (45 vs 36).
+- `synopsis.dictionary_rules` 140 characters shorter: the `<genders>` block nearly vanished (8 lines instead of 119) and `<terms>` filled with ordinary words and glossary terms.
+- `initial_translation_json` in the imperative, or with one more rule ("every word in the letters of the target language: translate compound and hyphenated words whole", or "no word may mix two alphabets"): «оvoidные» and «Государствоblack-ops» went away, but substituted terms were left in base form after prepositions more often («от аккреционный диск», «из прадор»: 9-15 against 6 on 24 chunks; 4 against 2 on five chunks run twice). Both slips are rare and do not repeat run to run; reflection caught «оvoid-ные» on the old prompt.
+
 ## v2.9.3
 
 ### Glossary: acronyms

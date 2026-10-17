@@ -60,3 +60,37 @@ def test_reflection_call_uses_the_budget(calibration, monkeypatch):
     text = "Он открыл дверь и вошёл в комнату. " * 50
     utils.TranslationPipeline().reflection(ctx, text)
     assert seen['max_tokens'] == utils.reflection_token_budget(text)
+
+
+def test_presence_penalty_is_sent_for_each_role_and_reflection(monkeypatch):
+    """A server default (llama.cpp, Qwen preset: 1.5) penalizes the tokens of
+    a word just written: a stage that writes the text again puts a Latin
+    twin in. REFLECTION keeps a penalty of its own: without one its list of
+    fixes repeats until max_tokens."""
+    monkeypatch.setattr(utils.config, 'presence_penalty_translate', 0.0)
+    monkeypatch.setattr(utils.config, 'presence_penalty_proofread', 0.3)
+    monkeypatch.setattr(utils.config, 'presence_penalty_reflection', 1.5)
+    sent = []
+
+    class Choice:
+        finish_reason = 'stop'
+
+        class message:
+            content = 'ok'
+
+    class Response:
+        choices = [Choice]
+        usage = None
+        model = 'm'
+
+    def create(**kwargs):
+        sent.append(kwargs['presence_penalty'])
+        return Response
+
+    for client in (utils.llm_service._translate_client, utils.llm_service._proofread_client):
+        monkeypatch.setattr(client.chat.completions, 'create', create)
+    utils.llm_service.complete(role=utils.LLMRole.TRANSLATE, system_prompt='s', user_prompt='u')
+    utils.llm_service.complete(role=utils.LLMRole.PROOFREAD, system_prompt='s', user_prompt='u')
+    utils.llm_service.complete(role=utils.LLMRole.PROOFREAD, system_prompt='s', user_prompt='u',
+                               stage=utils.TranslationStage.REFLECTION)
+    assert sent == [0.0, 0.3, 1.5]
