@@ -15,3 +15,7 @@ def test_both_acronyms_in_one_chunk():
 
 def test_inflected_acronym_still_found():
     assert lexicon.find_terms("Three AIs arrived.", ['AI'], 'en') == ['AI']
+
+
+def test_shouted_long_word_keeps_its_inflections():
+    assert lexicon.find_terms("She screamed: the SPIDERGUNS are here!", ['spidergun'], 'en') == ['spidergun']

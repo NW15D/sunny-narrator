@@ -378,17 +378,23 @@ def _case_fits(term: str, term_words: Optional[List[str]], found: List[Optional[
     return all(_case_shape(t) == _case_shape(w) for t, w in zip(term_words, found))
 
 
+# Longer words in ALL CAPS are shouted or emphasised ("the SPIDERGUNS are
+# here"), not acronyms, and keep their inflections
+_ACRONYM_MAX = 5
+
+
 def _acronym_forms(surface: Optional[List[str]], count: int) -> List[Optional[str]]:
-    """The surface words that are acronyms, None for the others: a word in
-    ALL CAPS whose neighbours are not (in "SPIDER-GUNS" or a capitalised
-    heading the words are just upper-cased and keep their inflections)."""
+    """The surface words that are acronyms, None for the others: a word of up
+    to _ACRONYM_MAX letters in ALL CAPS whose neighbours are not (in
+    "SPIDER-GUNS" or a capitalised heading the words are just upper-cased and
+    keep their inflections)."""
     if not surface:
         return [None] * count
 
     def caps(i):
         return 0 <= i < len(surface) and len(surface[i]) > 1 and surface[i].isupper()
 
-    return [w if caps(i) and not caps(i - 1) and not caps(i + 1) else None
+    return [w if caps(i) and len(w) <= _ACRONYM_MAX and not caps(i - 1) and not caps(i + 1) else None
             for i, w in enumerate(surface)]
 
 

@@ -1559,10 +1559,16 @@ class TranslationPipeline:
             reflection_result = self.reflection(context, initial_result.text)
             state.add_result(reflection_result)
             
-            # Stage 3: Improve (proofread LLM)
-            improve_result = self.improve_translation(
-                context, initial_result.text, reflection_result.text
-            )
+            # Stage 3: Improve (proofread LLM); no call when the filters left
+            # no fix: it could only rewrite the translation
+            if _fix_pairs(reflection_result.text):
+                improve_result = self.improve_translation(
+                    context, initial_result.text, reflection_result.text
+                )
+            else:
+                improve_result = TranslationResult(
+                    stage=TranslationStage.IMPROVE, llm_role=LLMRole.PROOFREAD,
+                    text=initial_result.text, metadata={"skipped": "no fixes"})
             state.add_result(improve_result)
             
             # Stage 4: Final Edit (proofread LLM) - WITH vocab_dict
@@ -1872,11 +1878,7 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
                                                vocab_entries=vocab_entries or [])))
     if mixed:
         metrics.log_mixed_words(mixed)
-    
-    # TC-009: deterministic homoglyph autofix of the first letter;
-    # after the mixed-words metric above so detection stays honest.
-    state.final_translation = script_guard.fix_mixed_first_letter(
-        state.final_translation, target_lang)
+
     return state.final_translation, state.synopsis
 
 
@@ -2073,11 +2075,13 @@ def _keep_applicable_fixes(reflection: str, translation: str, target_lang: str =
         data = data.get('fixes', data)
     if not (isinstance(data, list) and all(isinstance(f, dict) for f in data)):
         return reflection
-    kept = [f for f in data if f.get('find') in translation
-            and not script_guard.find_mixed_words(str(f.get('replace') or ''), target_lang)]
+    kept = [f for f in _clean_fixes(data) if f['find'] in translation
+            and not script_guard.find_mixed_words(f['replace'], target_lang)]
     return json.dumps(kept, ensure_ascii=False) if kept else ""
 
 
+# A list marker or bold a model puts around a fix line: "- «X» → «Y»", "**«X»** → …"
+_FIX_MARKUP = re.compile(r'^\s*(?:\d+[.)]|[-*•–])\s+')
 _FIX_LINE = re.compile(r'^\s*(?:\d+[.)]\s+)?[«"“]?(?P<find>.+?)[»"”]?\s*(?:→|->)\s*[«"“]?(?P<replace>.*?)[»"”]?\s+[—–-]+\s+\S', re.S)
 
 
@@ -2090,6 +2094,7 @@ def _keep_applicable_lines(reflection: str, translation: str, target_lang: str =
     for line in (reflection or '').split('\n'):
         if not line.strip() or line.strip().upper() == 'NO CHANGES':
             continue
+        line = _FIX_MARKUP.sub('', line).replace('**', '')
         match = _FIX_LINE.match(line)
         if match:
             seen = True
