@@ -101,11 +101,11 @@ class Config:
         self.temp_initial = _parse_numeric_env('TEMP_INITIAL', self.temp_translate)
         
         # JSON mode control - use structured JSON for LLM input/output
-        # When JSON_MODE=true, JSON is enabled for all stages
-        self.json_mode = os.getenv('JSON_MODE', 'false').lower() in ['true', '1', 't', 'on', 'yes']
+        # JSON is on by default for all stages; JSON_MODE=false switches to
+        # the XML-tag prompts (the DISABLE_JSON_MODE_* switches then apply)
+        self.json_mode = os.getenv('JSON_MODE', 'true').lower() in ['true', '1', 't', 'on', 'yes']
         
-        # Legacy JSON mode controls (deprecated, ignored when JSON_MODE=true)
-        # Only used for backward compatibility when JSON_MODE is not set
+        # Legacy JSON mode controls (deprecated, ignored unless JSON_MODE=false)
         if self.json_mode:
             # JSON_MODE=true enables JSON for all stages, ignore DISABLE flags
             self.disable_json_mode_translate = False

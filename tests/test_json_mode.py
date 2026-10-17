@@ -96,7 +96,7 @@ def test_config_json_mode_flag():
         os.environ.pop('JSON_MODE', None)
     
     config = Config()
-    assert config.json_mode is False  # default
+    assert config.json_mode is True  # default
 
 
 def test_remove_tags_with_check_json_priority():

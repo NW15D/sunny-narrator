@@ -25,8 +25,8 @@ DISABLE_JSON_MODE_PROOFREAD=false   # игнорируется при JSON_MODE=
 
 | JSON_MODE | Результат |
 |-----------|-----------|
-| `true` | JSON включён для всех этапов (INITIAL, REFLECTION, IMPROVE, FINAL_EDIT) |
-| `false` или не задан | Используется традиционный формат с `<ttext>` тэгами |
+| `true` или не задан (по умолчанию) | JSON включён для всех этапов (INITIAL, REFLECTION, IMPROVE, FINAL_EDIT) |
+| `false` | Используется традиционный формат с `<ttext>` тэгами |
 
 ---
 
@@ -143,7 +143,7 @@ DISABLE_JSON_MODE_PROOFREAD=false   # игнорируется при JSON_MODE=
 
 ```python
 # JSON mode control
-self.json_mode = os.getenv('JSON_MODE', 'false').lower() in ['true', '1', 't', 'on', 'yes']
+self.json_mode = os.getenv('JSON_MODE', 'true').lower() in ['true', '1', 't', 'on', 'yes']
 
 # При JSON_MODE=true игнорируем legacy флаги
 if self.json_mode:

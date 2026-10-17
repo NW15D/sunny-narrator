@@ -2,6 +2,21 @@
 
 All notable changes to Sunny Narrator.
 
+## Unreleased
+
+### Glossary: acronyms
+- Fixed: a longer acronym shadowed a shorter one through the stem (`ECS` -> stem `ec` matched the word `EC`), so `EC` dropped out of the chunk glossary, was not substituted before stage 1 and stayed in Latin in the book (The Warship: `EC` in 0 of 117 chunks). A word in ALL CAPS whose neighbours are not is an acronym and matches only itself, on both the text and the term side; upper-cased headings and `SPIDER-GUNS` keep their inflections.
+
+### Reflection
+- Prompts rewritten in the imperative and shorter. The `<vocabulary>` is final: a term stands exactly as listed even in the source spelling (`HOOPER = HOOPER`), and names and acronyms are kept unless the vocabulary translates them. The subjective "unnatural phrasing" left the list of errors. Text mode: `«wrong» → «right» — reason`; the reasons are asked in the target language, one short sentence, no deliberation (text and JSON).
+- Text mode now drops the fix lines whose X is not in the translation, equals Y, or whose Y has a word in two alphabets (`_keep_applicable_lines`), like the JSON fixes. On eternal-moment (en->ru/fr, 1000-character passages) a third of the text-mode lines quoted fragments absent from the translation.
+- `improve` takes fix lines with or without `«»`, as reflection actually writes them.
+- REFLECTION, the stage that loops (all 23 truncations of The Warship run), gets `max_tokens` from the translation it reviews instead of the whole `MAX_LEN_CHUNK * 2`: the largest legitimate answer (every sentence fixed: the fragment twice plus a one-sentence reason) times the tokens per character learned from the proofread model's own answers in this book (`TokenCalibration`, 0.35 until three answers). A loop is cut about 2-3 times sooner; the chunk is split as before. Not applied with thinking on.
+- The `replace_vocab_in_text` docstring said stages 2-4 see the source: only reflection does.
+
+### JSON mode by default
+- `JSON_MODE` defaults to `true`; only `JSON_MODE=false` switches to the XML-tag prompts (and enables the legacy `DISABLE_JSON_MODE_*`).
+
 ## v2.9.2
 
 ### Words in two alphabets: the last stages see the target language only
