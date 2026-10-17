@@ -38,7 +38,7 @@ from src.p_tags_processor import post_process_p_tags
 from src import gender_check, lexicon, script_guard
 from src.term_substitution import replace_vocab_in_text
 from src.stage_pipeline import PipelineAborted, current_slot
-from src.fb2_structure import join_paragraph_halves, markup_tags, split_in_two, split_paragraph_in_two
+from src.fb2_structure import join_paragraph_halves, split_in_two, split_paragraph_in_two
 
 # LLMService, TranslationPipeline, translate_chunk are defined in this module
 

@@ -69,6 +69,8 @@ dev = [
     "pytest",
     "pytest-timeout",
     "pytest-cov",
+    # Same version as .github/workflows/ruff.yml: a newer ruff has other rules.
+    "ruff==0.4.4",
 ]
 
 [tool.pytest.ini_options]

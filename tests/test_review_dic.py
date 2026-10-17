@@ -368,7 +368,6 @@ def test_reports_are_not_books_of_a_series(tmp_path):
 
 @pytest.mark.skipif(not is_package("en_core_web_sm"), reason="en_core_web_sm not installed")
 def test_a_read_only_dictionary_does_not_stop_the_run(tmp_path, monkeypatch):
-    import src.vocabulary_manager as vm
     manager, dic = _manager(tmp_path, monkeypatch, "Vashti = Вашти, PERSON, he, \n", "en_core_web_sm")
     monkeypatch.setattr(rd, "_write_reviewed", lambda *a, **k: (_ for _ in ()).throw(PermissionError("ro")))
     manager.initialize(source_text=EN_TEXT)

@@ -4,10 +4,8 @@ Russian/English defaults, checks that assume a non-Latin target, English
 labels inside the translated book, English-only chapter markers, an English
 NER model for every unknown source language, an en=ru dictionary converter.
 """
-import importlib.util
 import os
 import sys
-from pathlib import Path
 from types import SimpleNamespace
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))

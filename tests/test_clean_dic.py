@@ -1,7 +1,6 @@
 """app.py dict clean (src/dict_clean.py): the cleaned .dic loads back without losing fields."""
 import os
 import sys
-from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
@@ -72,7 +71,6 @@ def test_keep_and_lowercase_term_category(tmp_path, monkeypatch):
 
 
 def test_source_file_is_not_overwritten(tmp_path, monkeypatch):
-    import pytest
     src = tmp_path / 'book.dic'
     src.write_text(SOURCE, encoding='utf-8')
     assert commands.run(['dict', 'clean', str(src), '-o', str(src)]) == 2
