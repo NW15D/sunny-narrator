@@ -1,6 +1,6 @@
 # Configuration Guide — Complete Parameter Reference
 
-**Version:** 2.9.2  
+**Version:** 2.9.3  
 **Updated:** 2026-10-10
 
 ---

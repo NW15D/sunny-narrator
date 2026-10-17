@@ -2,7 +2,7 @@
 
 All notable changes to Sunny Narrator.
 
-## Unreleased
+## v2.9.3
 
 ### Glossary: acronyms
 - Fixed: a longer acronym shadowed a shorter one through the stem (`ECS` -> stem `ec` matched the word `EC`), so `EC` dropped out of the chunk glossary, was not substituted before stage 1 and stayed in Latin in the book (The Warship: `EC` in 0 of 117 chunks). A word in ALL CAPS whose neighbours are not is an acronym and matches only itself, on both the text and the term side; upper-cased headings and `SPIDER-GUNS` keep their inflections.
@@ -16,6 +16,17 @@ All notable changes to Sunny Narrator.
 
 ### JSON mode by default
 - `JSON_MODE` defaults to `true`; only `JSON_MODE=false` switches to the XML-tag prompts (and enables the legacy `DISABLE_JSON_MODE_*`).
+
+### Removed
+- The homoglyph autofix of a Latin first letter (`script_guard.fix_mixed_first_letter`, v2.9.2): its table mapped `e`->`э`, `p`->`п`, `B`->`Б` and wrote wrong words into the book silently. Words in two alphabets are found and logged again, the text is not changed.
+- The promo filter (`oceanofpdf.com` and the like): it deleted a whole paragraph of book text glued to a promo stamp and left unbalanced Markdown. The plain-text book description stays (`src/html_text.py`).
+- Dead fields: `Character.first_mention_section/_chunk` (the first of `mentions`), `ValidationIssue.file_line` (never set).
+
+### Fixes after review
+- Text-mode reflection: a fix line with a list marker (`- `, `* `, `1.`) or in bold is no longer dropped as "X not in the translation".
+- JSON reflection: fix objects without `find` (`{"wrong": …}`) no longer raise `TypeError` and abort the chunk; pairs that change nothing are dropped on this path too.
+- IMPROVE is skipped when the filters left no fix: no LLM call that could only rewrite the translation.
+- Acronyms (exact match only) are words of up to 5 letters: a shouted `SPIDERGUNS` finds the term `spidergun` again.
 
 ## v2.9.2
 
