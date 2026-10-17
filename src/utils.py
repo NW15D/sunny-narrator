@@ -442,6 +442,64 @@ def log_entry(func):
 # Constants
 MAX_TOKENS_PER_CHUNK = config.max_len_chunk * 2  # 2x chunk size for translation overhead
 
+class TokenCalibration:
+    """
+    Output tokens per character of each LLM role, learned from this book's
+    own responses (usage.completion_tokens / len(text)): the tokenizer and
+    the target language decide it (~0.2 for Chinese, ~0.35 for Russian or
+    French on Gemma 4 and Qwen 3.6). Until WARMUP responses DEFAULT is used.
+    """
+    WARMUP = 3
+    DEFAULT = 0.35
+    MIN_CHARS = 200  # shorter answers have noisy ratios
+    KEEP = 50
+
+    def __init__(self):
+        self.ratios: Dict[str, collections.deque] = {}
+        self._lock = threading.Lock()
+
+    def reset(self):
+        with self._lock:
+            self.ratios.clear()
+
+    def record(self, role: str, tokens: int, text: str):
+        if tokens > 0 and text and len(text) >= self.MIN_CHARS:
+            with self._lock:
+                self.ratios.setdefault(role, collections.deque(maxlen=self.KEEP)).append(tokens / len(text))
+
+    def tokens_per_char(self, role: str) -> float:
+        with self._lock:
+            ordered = sorted(self.ratios.get(role, ()))
+        if len(ordered) < self.WARMUP:
+            return self.DEFAULT
+        mid = len(ordered) // 2
+        return ordered[mid] if len(ordered) % 2 else (ordered[mid - 1] + ordered[mid]) / 2
+
+
+token_calibration = TokenCalibration()
+
+# REFLECTION is the stage that loops (all 23 truncations of a 117-chunk run of
+# The Warship): its max_tokens follows the translation it reviews instead of
+# the whole MAX_TOKENS_PER_CHUNK, so a loop is cut sooner and the chunk is
+# split as before. The number of fixes is not limited, so the budget is the
+# largest legitimate answer: every sentence fixed, each fix quoting its
+# fragment twice (find and replace) plus a one-sentence reason and the JSON
+# around it. Not applied with thinking on: the reasoning shares max_tokens.
+REFLECTION_CHARS_PER_FIX = 160
+REFLECTION_MIN_TOKENS = 1024
+_SENTENCE_END = re.compile(r'[.!?…。！？]+')
+
+
+def reflection_token_budget(translation: str) -> int:
+    """max_tokens of the REFLECTION call for this translation."""
+    if not config.nothink_proofread:
+        return MAX_TOKENS_PER_CHUNK
+    translation = translation or ''
+    sentences = max(1, len(_SENTENCE_END.findall(translation)))
+    chars = 2 * len(translation) + REFLECTION_CHARS_PER_FIX * sentences
+    budget = chars * token_calibration.tokens_per_char(LLMRole.PROOFREAD.value)
+    return int(min(MAX_TOKENS_PER_CHUNK, max(REFLECTION_MIN_TOKENS, budget)))
+
 
 # =============================================================================
 # Dual-LLM Translation Pipeline
@@ -709,6 +767,11 @@ class LLMService:
             if config.debug:
                 logger.debug(f"LLM Response [{role.value}]: {len(result) if result else 0} chars")
         
+        # Tokens per character for the REFLECTION budget; with thinking on
+        # completion_tokens also count the reasoning
+        if nothink_enabled or (chat_template_kwargs or {}).get("enable_thinking") is False:
+            token_calibration.record(role.value, tokens_output, result or "")
+
         # Log LLM call if not a retry (avoid duplicate logs)
         if retry_count == 0 and config.llm_logging_enabled:
             duration_ms = int((time.time() - call_start_time) * 1000)
@@ -1171,7 +1234,7 @@ class TranslationPipeline:
             role=LLMRole.PROOFREAD,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
-            max_tokens=MAX_TOKENS_PER_CHUNK,
+            max_tokens=reflection_token_budget(translation),
             stage=TranslationStage.REFLECTION,
             json_mode=json_mode
         )
@@ -1182,6 +1245,8 @@ class TranslationPipeline:
             # stage cannot apply them)
             text = remove_tags_with_check(text, "reflection", LLMRole.PROOFREAD)
             text = _keep_applicable_fixes(text, translation, context.target_lang)
+        else:
+            text = _keep_applicable_lines(text, translation, context.target_lang)
 
         return TranslationResult(
             stage=TranslationStage.REFLECTION,
@@ -2011,6 +2076,31 @@ def _keep_applicable_fixes(reflection: str, translation: str, target_lang: str =
     kept = [f for f in data if f.get('find') in translation
             and not script_guard.find_mixed_words(str(f.get('replace') or ''), target_lang)]
     return json.dumps(kept, ensure_ascii=False) if kept else ""
+
+
+_FIX_LINE = re.compile(r'^\s*(?:\d+[.)]\s+)?[«"“]?(?P<find>.+?)[»"”]?\s*(?:→|->)\s*[«"“]?(?P<replace>.*?)[»"”]?\s+[—–-]+\s+\S', re.S)
+
+
+def _keep_applicable_lines(reflection: str, translation: str, target_lang: str = "") -> str:
+    """The text-mode counterpart of _keep_applicable_fixes: the lines
+    "X → Y — reason" without the ones whose X is absent from the translation,
+    equals Y, or whose Y has a word in two alphabets. A line of another shape
+    stays as it is; "NO CHANGES" is returned when no line is left."""
+    kept, seen = [], False
+    for line in (reflection or '').split('\n'):
+        if not line.strip() or line.strip().upper() == 'NO CHANGES':
+            continue
+        match = _FIX_LINE.match(line)
+        if match:
+            seen = True
+            find, replace = match.group('find').strip(), match.group('replace').strip()
+            if (find == replace or find not in translation
+                    or script_guard.find_mixed_words(replace, target_lang)):
+                continue
+        kept.append(line)
+    if kept or not seen:
+        return '\n'.join(kept) if kept else (reflection or '')
+    return 'NO CHANGES'
 
 
 def _fix_pairs(reflection) -> list:

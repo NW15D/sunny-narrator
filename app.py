@@ -124,6 +124,7 @@ class TranslationEngine:
 
         # Expected translation length ratio is learned per book
         ta.length_calibration.reset()
+        ta.token_calibration.reset()
 
         # Character registry (shared between synopsis and vocabulary)
         reset_character_registry()

@@ -44,7 +44,7 @@ except ImportError:
     pypandoc = None
 
 # Import existing utilities
-from src.utils import config, validate_translation_length, translate_chunk, translate_metadata, length_calibration
+from src.utils import config, validate_translation_length, translate_chunk, translate_metadata, length_calibration, token_calibration
 from src.utils import _pipeline  # noqa: F401  (tests monkeypatch cp._pipeline.execute)
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
@@ -914,6 +914,7 @@ def translate_chunks(
     chunks = _split_into_chunks_md(markdown_text, max_chunk_size)
     total_chunks = len(chunks)
     length_calibration.reset()  # expected length ratio is learned per book
+    token_calibration.reset()
     
     if logger:
         logger.info(f"Text length: {len(markdown_text):,} chars, max_chunk_size: {max_chunk_size}")
