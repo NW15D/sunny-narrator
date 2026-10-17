@@ -81,9 +81,6 @@ def parse_xml(file_path: str) -> tuple:
     body = content[end_start_body:end_body]
     footer = content[end_body_tag + len('</body>'):]
 
-    from src.promo_filter import strip_promo_markup
-    body = strip_promo_markup(body)
-
     # Remove namespaces
     body = re.sub(r'\sxmlns="[^"]+"', '', body, count=1)
     body = re.sub(r'<myheader>.*?</myheader>', '', body, flags=re.DOTALL)

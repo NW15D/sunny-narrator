@@ -87,7 +87,7 @@ def extract_epub_metadata(book) -> dict:
     
     # Description/Annotation
     description = book.get_metadata('DC', 'description')
-    from src.promo_filter import html_to_paragraphs
+    from src.html_text import html_to_paragraphs
     metadata['annotation'] = html_to_paragraphs(description[0][0]) if description else []
     
     # Language

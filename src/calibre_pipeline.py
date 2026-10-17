@@ -171,7 +171,6 @@ class ValidationIssue:
     severity: str  # "error" or "warning"
     message: str
     details: str = ""
-    file_line: int = 0
 
 
 @dataclass
@@ -183,9 +182,9 @@ class ValidationReport:
     format: str = ""
     issues: List[ValidationIssue] = field(default_factory=list)
 
-    def add_issue(self, severity: str, message: str, details: str = "", line: int = 0):
+    def add_issue(self, severity: str, message: str, details: str = ""):
         """Add an issue to the report."""
-        self.issues.append(ValidationIssue(severity, message, details, line))
+        self.issues.append(ValidationIssue(severity, message, details))
 
     def has_errors(self) -> bool:
         """Check if report has any errors (not warnings)."""
@@ -339,7 +338,7 @@ def extract_metadata_from_opf(opf_content: str) -> dict:
     # Extract description
     desc_match = re.search(r'<dc:description[^>]*>(.*?)</dc:description>', opf_content, re.IGNORECASE | re.DOTALL)
     if desc_match:
-        from src.promo_filter import html_to_text
+        from src.html_text import html_to_text
         # Описание бывает экранированным HTML (<div><p><strong>): в титульный
         # лист и метаданные оно должно попасть обычным текстом.
         metadata["description"] = html_to_text(desc_match.group(1))
@@ -573,8 +572,6 @@ def convert_to_markdown(input_path: str) -> tuple[str, dict]:
             
             # Step 5: Clean Calibre markers
             markdown_text = _clean_calibre_markers(markdown_text)
-            from src.promo_filter import strip_promo_text
-            markdown_text = strip_promo_text(markdown_text)
             # Second sanitize pass after marker cleaning
             markdown_text = markdown_utils.sanitize_surrogates(markdown_text)
             
@@ -615,8 +612,6 @@ def _sanitize_source_html(html: str) -> str:
         return html
 
     try:
-        from src.promo_filter import strip_promo_markup
-        html = strip_promo_markup(html)
         soup = BeautifulSoup(html, 'html.parser')
 
         for node in soup.find_all(string=lambda t: isinstance(t, Comment)):

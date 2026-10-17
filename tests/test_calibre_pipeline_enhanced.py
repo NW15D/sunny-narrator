@@ -181,14 +181,13 @@ class TestValidationReport:
     def test_add_issue(self):
         """add_issue() should append ValidationIssue to the list."""
         report = ValidationReport()
-        report.add_issue("error", "Something broke", details="detail info", line=42)
+        report.add_issue("error", "Something broke", details="detail info")
 
         assert len(report.issues) == 1
         issue = report.issues[0]
         assert issue.severity == "error"
         assert issue.message == "Something broke"
         assert issue.details == "detail info"
-        assert issue.file_line == 42
 
     def test_has_errors_true(self):
         """has_errors() returns True when at least one error-severity issue exists."""
@@ -232,7 +231,6 @@ class TestValidationReport:
         """ValidationIssue fields have sensible defaults."""
         issue = ValidationIssue(severity="warning", message="test")
         assert issue.details == ""
-        assert issue.file_line == 0
 
 
 # ===========================================================================
