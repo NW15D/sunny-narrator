@@ -106,7 +106,7 @@ def test_every_stage_that_shapes_the_text_knows_the_readers_country():
 SAME_RULES = {
     "initial_translation": ("profanity", "placeholder", "base form", "omit nothing", "add nothing",
                             "characters", "synopsis"),
-    "reflection": ("gender", "profanity", "not names or acronyms"),
+    "reflection": ("gender", "profanity", "final", "source spelling"),
     "improve": ("grammar", "markup", "gender", "nothing else"),
     "editor": ("profanity", "placeholder", "rewrite correct sentences",
                "add", "gender"),

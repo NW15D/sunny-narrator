@@ -88,8 +88,9 @@ def replace_vocab_in_text(source_text: str, vocab_dict: Dict[str, str], xml: boo
     Replace glossary terms in source_text with their translations.
 
     Called BEFORE Stage 1 (INITIAL) translation so the LLM sees the
-    translated terms in context. Stages 2-4 (reflection, improve, final_edit)
-    see the ORIGINAL source_text, which lets them verify the result.
+    translated terms in context. Only stage 2 (reflection) sees the ORIGINAL
+    source_text, which lets it verify the result; improve gets the translation
+    and the remarks, final_edit only the translation.
 
     Args:
         source_text: Original text to translate
