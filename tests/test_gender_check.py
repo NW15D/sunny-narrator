@@ -491,7 +491,7 @@ def test_auto_gender_llm_needs_a_proofread_server_of_its_own(monkeypatch):
     for translate, proofread, usable in [
         ('http://localhost:11434/v1', 'http://localhost:11434/v1', False),   # one Ollama: models would swap
         ('http://localhost:11434/v1', 'http://127.0.0.1:11434', False),      # the same server written another way
-        ('http://192.168.0.55:6155/v1', 'http://192.168.0.55:6150/v1', True),  # two llama.cpp servers
+        ('http://10.0.0.5:8080/v1', 'http://10.0.0.5:8081/v1', True),          # two llama.cpp servers
         ('https://openrouter.ai/api/v1', 'https://openrouter.ai/api/v1', True),  # a hosted API swaps nothing
     ]:
         monkeypatch.setenv('API_BASE_TRANSLATE', translate)

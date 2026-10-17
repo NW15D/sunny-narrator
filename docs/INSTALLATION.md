@@ -16,7 +16,7 @@
 
 ```bash
 # Clone repository
-git clone https://gt.farhome.ru/sn/sunny-narrator.git
+git clone https://github.com/NW15D/sunny-narrator.git
 cd sunny-narrator
 
 # Create virtual environment
