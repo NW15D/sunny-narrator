@@ -12,355 +12,143 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **Sürüm:** 2.9.3  
-**Sözlük güdümlü yapay zekâ kitap çevirmeni (AI book translator)** — FB2/TXT/EPUB/DOCX/PDF için, iki LLM'li çeviri ve 5 aşamalı kalite kontrolü olan, LLM tabanlı bir kurgu kitap çevirmeni.
+FB2/TXT/EPUB/DOCX/PDF için **sözlük odaklı yapay zekâ kitap çevirmeni (AI book translator)** — iki LLM ile çeviri ve 5 aşamalı kalite kontrolü yapan, LLM tabanlı bir edebiyat çevirmeni.
 
 🖥️ **Konsol uygulaması (CLI)** — grafik arayüz yoktur; temel komut satırı deneyimi önerilir.
 
-**Ne için tasarlandı:**
-- 📚 Kitap serilerinin sözlük güdümlü çevirisi (tüm ciltlerde tutarlı terminoloji)
-- 🔨 Kitap ve seri çevirileri için sözlük oluşturma
-- 💻 llama.cpp, Ollama, LM Studio vb. ile yerel GPU'lar (16-24 GB VRAM) ve OpenAI uyumlu her API (kitap başına 3-4 milyon token)
-- ☁️ API üzerinden çevrimiçi çeviri hizmetleri
-- 🎓 Profesyonel ve amatör çevirmenler — kitap çevirisi taslakları ve sözlükler hazırlamak için
+**Neden denemeye değer:**
+- 📚 **Sözlük odaklı** — bir `.dic` sözlüğü terminolojiyi bütün kitap ve bütün seri boyunca tutarlı tutar
+- 🔨 **Gelişmiş sözlük çalışması** — sözlük kitaba göre doğrulanabilir (`dict review`, `dict clean`), her çalıştırmadan önce denetlenir ve her kaydın **kategorisini ve cinsiyetini kitabın kendisinden otomatik olarak düzeltmeye çalışır** (`DICT_AUTOFIX`)
+- 🔁 **İki LLM, 5 aşama** — bir LLM çevirir, ikincisi gözden geçirip cilalar; her parça INITIAL → REFLECTION → IMPROVE → FINAL_EDIT → GENDER → SYNOPSIS aşamalarından geçer
+- 💻 **Yerel GPU'lar (16-24 GB VRAM)** — llama.cpp, Ollama, LM Studio vb. ve OpenAI uyumlu her API (kitap başına 3-4 milyon token) ya da ☁️ herhangi bir bulut API
+- 💾 **Çökmeye dayanıklı** — her parçadan sonra kontrol noktası; yeniden başlatılan çalışma kaldığı yerden devam eder
+- 🎓 Profesyonel ve amatör çevirmenler için — taslaklar ve sözlükler dahil
 
-## 🔄 Genel İş Akışı
+## 🚀 Hızlı başlangıç — 5 adımda ilk çeviri
 
-### Desteklenen Biçimler
+1. **Klonlayın ve kurun**
+   ```bash
+   git clone https://github.com/NW15D/sunny-narrator && cd sunny-narrator
+   pip install -e .
+   # DOCX/EPUB/PDF girdisi için ayrıca: sudo apt install pandoc calibre
+   ```
+2. **Yapılandırın** — `cp env.sample .env`, `API_KEY_*`, `API_BASE_*`, `MODEL_*`, `SOURCE_LANG`, `TARGET_LANG`, `FILE=books/mybook.fb2` değerlerini doldurun. Biçim uzantıdan anlaşılır (FB2/TXT → klasik işlem hattı, DOCX/EPUB/PDF → Calibre işlem hattı).
+3. **Sözlüğü oluşturun** — `python app.py`, `books/mybook.dic` dosyasını oluşturur ve inceleme için durur.
+4. **Sözlüğü düzenleyin** — hataları silin, çevirileri ve cinsiyetleri düzeltin (çalıştırma neyin belirsiz olduğunu söyler).
+5. **Çevirin** — `python app.py` komutunu tekrar çalıştırın; sonuç, dil işaretiyle birlikte kaynak dosyanın yanında oluşur. Ardından kitabı gözden geçirin.
 
-| Girdi biçimi | İşlem hattı |
-|--------------|-------------|
-| **FB2, TXT** | Klasik hat (doğrudan XML — poem/stanza/v yapısını korur) |
-| **DOCX, EPUB, PDF** | Calibre hattı (ara biçim HTMLZ üzerinden) |
+**Yalnızca CPU ya da conda olmadan GPU mu?** Docker kullanın (sonraki bölüm). **İnceleme aşamaları olmadan taslak mı?** `FAST_TRANS=true` (~2,5 kat daha hızlı).
 
-İşlem hattı dosya uzantısına göre otomatik seçilir — `--pipeline` bayrağı gerekmez.
+## 🐳 Docker
 
-```mermaid
-flowchart LR
-    A[1. Depoyu klonla] --> B[2. Bağımlılıkları kur]
-    B --> C[3. .env dosyasını ayarla]
-    C --> D[4. FILE ile kitabı belirt]
-    D --> E[5. python app.py → book.dic]
-    E --> F[6. Sözlüğü gözden geçir/temizle]
-    F --> G[7. python app.py → çeviri]
-    G --> H[8. Kitabın son okuması]
-```
-
-**Adım adım:**
-1. **Depoyu klonlayın** — projeyi `git clone` ile indirin
-2. **Bağımlılıkları kurun** — `pip install -e .` (`pyproject.toml` kullanılır); DOCX/EPUB/PDF için ayrıca `pandoc` ve `calibre` kurun
-3. **Ayarlayın** — `env.sample` dosyasından `.env` oluşturun, API anahtarlarını ve `SOURCE_LANG`/`TARGET_LANG` değerlerini girin
-4. **Kitabı seçin** — `FILE=path/to/book.fb2` (veya `.txt`, `.epub`, `.docx`, `.pdf`)
-5. **Sözlüğü oluşturun** — `python app.py` kitabın yanında `book.dic` dosyasını oluşturur (kaynak dilin spaCy modeli otomatik indirilir). Gözden geçirebilmeniz için çalışma burada durur (tüm biçimlerde)
-6. **Sözlüğü düzenleyin** — `book.dic` dosyasını gözden geçirip temizleyin (hataları silin, çevirileri düzeltin, cinsiyetleri belirtin)
-7. **Çevirin** — `python app.py` komutunu tekrar çalıştırın; sonuç, adında dil işareti bulunan bir dosya olarak kaynak dosyanın yanına yazılır
-8. **Okuyun ve düzeltin** — çevrilmiş kitabın son kontrolü
-
----
-
-## 🚀 Hızlı Başlangıç
+Hazır imajlar (ikisinde de Calibre ve pandoc var; `Dockerfile` / `Dockerfile.cpu` dosyalarından derlenir, `main` dalına her gönderimde test edilir):
 
 ```bash
-# Bağımlılıkları kurun
-pip install -e .
+# 1. İmajı indirin (GPU veya yalnızca CPU)
+docker pull ghcr.io/nw15d/sunny-narrator:main        # GPU
+docker pull ghcr.io/nw15d/sunny-narrator:main-cpu    # CPU
 
-# .env dosyasını ayarlayın
+# 2. Klasörleri ve yapılandırmayı hazırlayın (ana makinede)
+mkdir -p books output logs
 cp env.sample .env
-# .env içinde: API anahtarları, SOURCE_LANG, TARGET_LANG
+# .env dosyasını düzenleyin: API anahtarları, MODEL_*, SOURCE_LANG/TARGET_LANG, FILE=books/mybook.fb2
+cp mybook.fb2 books/
 
-# Her biçimde: ilk çalıştırma sözlüğü oluşturur, ikincisi çevirir
-FILE=books/mybook.fb2 python app.py
+# 3. Çalıştırın — ilk geçiş books/mybook.dic oluşturur; inceleyin ve çeviri için tekrar çalıştırın
+docker run --rm --gpus all \
+  --env-file .env \
+  -v "$PWD/books:/app/books" \
+  -v "$PWD/output:/app/output" \
+  -v "$PWD/logs:/app/logs" \
+  ghcr.io/nw15d/sunny-narrator:main
+
+# CPU imajı: --gpus all seçeneğini kaldırın ve ...sunny-narrator:main-cpu kullanın
 ```
 
-**Tüm belgeler:** [docs/](docs/)
+Compose ile alternatif (`.env` yapılandırması otomatik okunur): `docker-compose up -d` (GPU) veya `docker-compose -f docker-compose.cpu.yml up -d`.
 
----
+**Kılavuzlar:** [docs/DOCKER_CPU_GUIDE.md](docs/DOCKER_CPU_GUIDE.md), [docs/GPU_DOCKER.md](docs/GPU_DOCKER.md)
 
 ## 📋 Yapılandırma
 
-Paketle gelen `env.sample` dosyasını `.env` olarak kopyalayın. Bu, eksiksiz ve çalışan bir yapılandırmadır: **Gemma 4** çevirir, **Qwen 3.6** düzeltir; ikisi de OpenAI uyumlu bir sunucu üzerinden çalışır (llama.cpp, Ollama, LM Studio, vLLM veya barındırılan bir API). Her seçenek dosyanın içinde açıklanmıştır; dosyanın sonunda hazır varyantlar bulunur: iki llama.cpp sunucusu, tek Ollama sunucusu, İngilizce kaynak, FB2 → EPUB ve hızlı taslak.
+`env.sample` eksiksiz ve açıklamalı bir başvuru kaynağıdır: sistemin her parametresi açıklaması ve varsayılan değeriyle orada listelenir; dosyanın sonunda hazır varyantlar bulunur (iki llama.cpp sunucusu, bir Ollama, İngilizce kaynak, FB2 → EPUB, hızlı taslak). Temel seçenekler:
 
 ```bash
-cp env.sample .env
-```
-
-Ardından en azından şu anahtarları ayarlayın:
-
-```bash
-# Çeviri LLM'i — Gemma 4
-API_KEY_TRANSLATE=your-api-key-here        # yerel sunucu için boş olmayan herhangi bir dize
+API_KEY_TRANSLATE=your-api-key-here     # yerel sunucu için boş olmayan herhangi bir dize
 API_BASE_TRANSLATE=http://localhost:11434/v1
-MODEL_TRANSLATE=Gemma4-26B                 # sunucunuzun bildirdiği ad
-
-# Düzeltme LLM'i — Qwen 3.6
-API_KEY_PROOFREAD=your-api-key-here
+MODEL_TRANSLATE=Gemma4-26B              # çeviri LLM'i (Gemma 4)
 API_BASE_PROOFREAD=http://localhost:11434/v1
-MODEL_PROOFREAD=Qwen36-35B
-
-# Kitap ve diller
+MODEL_PROOFREAD=Qwen36-35B              # düzelti LLM'i (Qwen 3.6)
 FILE=books/mybook.fb2
-SOURCE_LANG=english
-TARGET_LANG=turkish
-# COUNTRY boş bırakılırsa hedef dilden belirlenir (turkish → Türkiye)
-
-# Çıktı: FB2/TXT için fb2 veya epub; EPUB/DOCX/PDF için epub, docx veya pdf
-OUTPUT_FORMAT=fb2
+SOURCE_LANG=ko
+TARGET_LANG=ru
+OUTPUT_FORMAT=fb2                       # FB2/TXT için fb2|epub; EPUB/DOCX/PDF için epub|docx|pdf
 ```
 
 **Tüm seçenekler:** [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
 
----
+## 📎 Sözlük (kalitenin kalbi)
 
-## ⚡ FAST_TRANS Modu
+- İlk çalıştırma `book.dic` dosyasını otomatik oluşturur: kaynak dilin spaCy modeli adları bulur; kategoriler ve cinsiyetler kitabın kendisine göre belirlenir, LLM yalnızca çevirir.
+- Her çeviriden önce sözlük **kitaba göre denetlenir** (LLM olmadan): kesin bulgular o çalıştırma için kategori/cinsiyeti düzeltir; `.dic` dosyası asla sessizce değiştirilmez — bulgular `<dic>.reviewed.dic` dosyasına yazılır.
+- `PERSON` kayıtları cinsiyeti her aşamanın istemine taşır ve GENDER aşaması buna uyulmasını sağlar; ırkları, türleri ve uydurma sözcükleri `TERM` olarak yazın.
+- Bütün seri için sözlük: `--build-series-dict`, ardından tüm ciltler için tek bir `series.dic` (`DICTIONARY=series.dic`).
+- Bağımsız araçlar: `dict clean`, `dict review`, `dict convert`, `audit`.
 
-**`FAST_TRANS=true` (veya `--fast-mode`) şunlar için:**
-- ✅ Taslak çeviri
-- ✅ Teknik belgeler
-- ❌ Son yayın veya edebî çeviri için DEĞİL
+**Komutlar, kurallar, seri iş akışı, spaCy/CUDA/CJK ayrıntıları:** [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md)
 
-**Hız:** ~2,5 kat daha hızlı (5 yerine 2 aşama)
+## ✏️ İstemler
 
-**💡 Püf noktası — ilk hızlı geçişten sonra iyi bir sözlük:** hızlı çeviriyi `DICT_AUTO_SAVE=true` ile çalıştırın. Özet aşaması hızlı modda da çalışır, bu yüzden yeni adlar ve terimler `.dic` dosyasına eklenir (yalnızca sözlüğün henüz kapsamadıkları; mevcut bir kaydın boş cinsiyet alanı doldurulabilir). Sözlüğü gözden geçirip düzeltin, ardından kitabı `FAST_TRANS=false` ve `--fresh` ile ikinci kez çevirin — tutarlı terminolojiyle kaliteli bir çeviri elde edersiniz. `--fresh`, yarıda kalan hızlı geçişin parçalarının ve terimlerinin geri gelmesini önler. Tüm biçimlerde çalışır (FB2/TXT ve DOCX/EPUB/PDF).
+Tüm aşama istemleri **`src/prompts.json`** dosyasındadır — çeviri üslubunu, tonu ve terimlerin ele alınışını değiştirmek için düzenleyin: düzenlemeler tüm işlem hattının kalitesini etkiler (varyantları `python app.py eval` ile karşılaştırın). Docker'da dosya depodan bağlanır, bu yüzden ana makinedeki düzenlemeler bir sonraki çalıştırmada geçerli olur.
 
-**Ayrıntılar:** [docs/FAST_TRANS.md](docs/FAST_TRANS.md)
+**Her istemin kılavuzu:** [docs/PROMPTS_GUIDE.md](docs/PROMPTS_GUIDE.md)
 
----
+## ⚡ FAST_TRANS
 
-## 📏 Parça Uzunluğu Kalibrasyonu
+`FAST_TRANS=true` (veya `--fast-mode`) yalnızca INITIAL + GENDER + SYNOPSIS aşamalarını çalıştırır — ~2,5 kat daha hızlıdır; taslaklar ve teknik metinler içindir, nihai yayın için **değildir**. İpucu: `DICT_AUTO_SAVE=true` ile birlikte kullanın, sözlüğü inceleyin, ardından kalite için `--fresh` ile yeniden çevirin. [Ayrıntılar](docs/FAST_TRANS.md)
 
-Her parça çevrildikten sonra uzunluğu, kesilmiş veya şişmiş çıktıyı yakalamak için beklenen kaynak→hedef oranıyla karşılaştırılır. Sabit bir eşik yerine oran her kitap için otomatik ayarlanır: kabul edilen ilk 3 parça yalnızca kaba hatalar için denetlenir (×0,25 … ×5), ardından beklenen oran o ana kadar kabul edilen parçaların medyanı olur.
+## 💾 Devam etme, parçalama ve günlükler
 
-**Ayrıntılar:** [docs/RECHUNKING_GUIDE.md](docs/RECHUNKING_GUIDE.md)
+- Çökme veya Ctrl+C: düz bir `python app.py` son kontrol noktasından devam eder (`--fresh` baştan başlatır). [Ayrıntılar](docs/RESUME.md)
+- Parça uzunluğu her kitap için otomatik kalibre edilir (kabul edilen parçaların oran medyanı; ilk 3 parça yalnızca kaba hatalar için denetlenir). [Ayrıntılar](docs/RECHUNKING_GUIDE.md)
+- Konsol her adımı gösterir; tam izleme için `DEBUG=on`, `LLM_LOGGING=true`. [Ayrıntılar](docs/LOGGING.md)
 
----
-
-## 📎 Sözlük
-
-Sözlük dosyası (`*.dic`) terminoloji tutarlılığını sağlar:
-
-```dic
-# Format: source = target, category, gender, notes
-Alice = Alice, PERSON, she, Ana karakter
-```
-
-- **Otomatik oluşturulur:** ilk çalıştırmada (veya `--build-dict` ile) adları kaynak dilin spaCy modeli bulur; kategoriyi ve cinsiyeti kitabın kendisi belirler (NER etiketlerinin çoğunluğu, zamirler, *Miss*/*Mr.* gibi hitaplar), LLM yalnızca çevirir. Emin olunamayan cinsiyet boş kalır ve yeni `.dic` dosyasını gözden geçirebilmeniz için çalışma durur. Sık geçen sıradan sözcükler yalnızca `DICT_FREQUENT_WORDS=true` ile (veya `--build-dict`/`--build-series-dict` için `--frequent-words` ile) eklenir.
-- **Her çeviriden önce kitaba göre denetlenir** (LLM olmadan): kesin bulgular — boş bir cinsiyet, kitabın çeliştiği bir cinsiyet veya kategori — yalnızca o çalışmaya uygulanır; `.dic` değişmez, bulgular `<dic>.reviewed.dic` dosyasına yazılır. `--no-autofix` `.dic` dosyasına olduğu gibi göre çevirir (`DICT_FORCE=false` ile bir çelişki çalışmayı durdurur); rapor: `<kitap>.dictcheck.txt`.
-- **Kategori, girdinin çevirisini değiştirir.** Yalnızca `PERSON`'ın kendine özgü davranışı vardır: cinsiyeti her aşamanın `<characters>` bloğuna girer ve GENDER aşaması tarafından uygulanır. `LOC`, `ORG` ve `TERM` cinsiyetsiz, sıradan sözlük girdileridir. Bu yüzden adlandırılmış bir karakteri (insan olmasa bile) cinsiyetiyle `PERSON` olarak, bir ırkı, türü, unvanı, teknolojiyi veya uydurma kelimeyi `TERM` olarak yazın: `PERSON` yazılan bir ırka cinsiyet atanır ve cümleler ona uydurulur. Yerler `LOC`, kuruluşlar `ORG`'dur. Kategori ayrıca çeviri öncesi denetimin neyi değiştirebileceğini de belirler (bkz. `docs/DICTIONARY_FORMAT.md`).
-- **Karakter cinsiyetleri** (`he`, `she`, `it`, `they`): her aşama cinsiyeti hedef dilin biçiminde alır (`Вашти — она (сказала)`), GENDER aşaması sözlükle çelişen cümleleri düzeltir. Dosyadaki bir cinsiyet çalışma sırasında asla değiştirilmez; özet yalnızca boş olanları, iki parça aynı fikirdeyse doldurur.
-- **Uydurma sözcükler:** özet aşaması, karakterlerin yanı sıra sıradan bir karşılığı olmayan icat edilmiş sözcükleri (`spidergun`) bildirir; `TERM` olarak eklenirler. spaCy modelinin zaten bildiği sözcükler atılır.
-- **Tekrar yok:** sözlüğün zaten kapsadığı bir aday eklenmez — bir girdinin başka büyük/küçük harfli veya çekimli biçimi (`Jain nodes` = `Jain node`, `Gabbleducks` = `gabbleduck`; bir ad yalnızca çekimiyle: `Jains` = `Jain`, ama `Marie` ≠ `Mary`) ya da bilinen bir terimi içeren ifade (`Jain` varken `Jain node`, `Jain-tech`). Kısa çizgi, boşluk veya bitişik yazım farklı girdilerdir (`gabble-duck` ≠ `gabbleduck`); BÜYÜK HARFLİ kısaltma yalnızca kendisiyle eşleşir (`ECS` ≠ `EC`).
-- **Bulunanlar nereye gider:** yeni adlar ve terimler hemen bellekteki sözlüğe girer, aynı çalıştırmanın sonraki parçaları onları kullanır ve kesintiden sonra devam ederken kontrol noktasından geri yüklenir. `.dic` dosyasına yalnızca `DICT_AUTO_SAVE=true` ile yazılırlar (varsayılan: `false`, gözden geçirilmiş sözlük olduğu gibi kalır).
-- **Terim eşleştirme:** her biçimde aynıdır — prompta yalnızca parçada bulunan sözlük terimleri girer. Çekimli biçimler bulunur (`spidergun` → `spiderguns`, `wolf` → `wolves`), Çince/Japonca/Korece terimler alt dize olarak eşleşir ve bir terim asla başka bir sözcüğün içinde eşleşmez (`Ann` / `Annoying`).
-- **Önce çok sözcüklü terimler:** daha çok sözcüklü terim, içerdiği kısa terimleri geçer (`Hatter` yerine `Mad Hatter`), sonra daha uzun olan kazanır. Yalnızca daha uzun bir terimin içinde geçen kısa terim prompta konmaz; model bir ifadenin iki çevirisini asla almaz.
-- **Terimler çeviriden önce yerleştirilir:** parçada bulunan sözlük terimlerinin çevirileri ilk aşamadan önce kaynak metne konur, böylece model onları atlayamaz (sonraki aşamalar özgün metni görür). İşaretleme, bağlantılar ve URL'lere asla dokunulmaz; küçük harfli terim her durumda, ad ise yazıldığı gibi veya TAMAMEN BÜYÜK harfle eşleşir. Büyük harfler hedef dilin kurallarına uyar (Türkçe `iksir` → `İksir`).
-- **Başka hedef dil:** `python app.py dict convert books/MyBook.dic fr es zh` hazır bir sözlüğü, mevcut çeviriyi ipucu olarak kullanarak başka dillere dönüştürür (`MyBook_fr.dic`, …).
-- **Açık sözlük yolu:** varsayılan olarak sözlük kitabın yanında aranır (`books/MyBook.fb2` → `books/MyBook.dic`). Başka bir dosya, örneğin ortak bir seri sözlüğü kullanmak için `.env` içinde `DICTIONARY=path/to/file.dic` ayarlayın veya `--dictionary path/to/file.dic` verin (CLI bayrağı önceliklidir). Her iki hatta çalışır; dosya yoksa o yolda oluşturulur (dizini mevcut olmalıdır).
-
-**Biçim kılavuzu:** [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md)
-
-### Sözlükle çalışma
-
-| Görev | Komut / adım |
-|---|---|
-| Yeni kitap, sözlük yok | `python app.py` (veya `python app.py --build-dict books/MyBook.epub`) → `books/MyBook.dic` + `books/MyBook.dictcheck.txt` → bildiğiniz boş cinsiyetleri doldurun → yeniden çalıştırın |
-| Sözlükle çeviri | `python app.py` — önce denetim çalışır; `<kitap>.dictcheck.txt` dosyasını okuyun, katılıyorsanız `<dic>.reviewed.dic` dosyasını kullanın |
-| Katı mod | `python app.py --no-autofix` — `.dic` olduğu gibi; `DICT_FORCE=false` — çelişkide durur (çıkış kodu 2) |
-| Kitap serisi | `python app.py --build-series-dict books/series/ --series-dict-output series.dic`, ardından her kitap `--dictionary series.dic` ile; çalışma `series.dic` dosyasını asla değiştirmez, her kitap kendi `series.<kitap>.reviewed.dic` dosyasını alır |
-| Sözlüğü temizleme | `python app.py dict clean books/MyBook.dic` → `MyBook.clean.dic` + rapor (tekrarlar, cinsiyet yazımları, sıradan sözcükler) |
-| Çevirmeden kitaba göre denetleme | `python app.py dict review books/MyBook.epub --dic books/MyBook.dic` → `MyBook.reviewed.dic` + rapor |
-| Başka hedef dil | `python app.py dict convert books/MyBook.dic fr es zh` |
-| Bitmiş çeviriyi denetleme | `python app.py audit books/MyBook_ru.epub --dic books/MyBook_ru.dic --lang russian` |
-
-**Diller.** Sözlük **kaynak** dilin spaCy modeliyle oluşturulur ve denetlenir (`NERMODEL`, `SOURCE_LANG`'a göre seçilir): `python -m spacy download en_core_web_lg` (İngilizce), `ru_core_news_lg`, `de_core_news_lg`, `fr_core_news_lg`, `es_core_news_lg`, `it_core_news_lg`, `pt_core_news_lg`, `pl_core_news_lg`, `uk_core_news_lg`, `ko_core_news_lg`, `ja_core_news_lg`, `zh_core_web_lg`; diğer diller `xx_ent_wiki_sm` kullanır (yalnızca adlar, zamirlerden cinsiyet yok). **Çevirideki** cinsiyet denetimi hedef dilin modelini gerektirir (`ru_core_news_sm`, `pl_core_news_sm`, `fr_core_news_sm`, …). Çince, Japonca ve Korece zamirlerin cinsiyeti yazılışlarından okunur; zamirleri cinsiyetsiz bir dildeki (Türkçe, Fince, Macarca) kitap cinsiyet vermez — elle girin.
-
-### Bir seriyi çevirmeden (veya yeniden çevirmeden) önce
-
-1. Sözlüğün yedeğini alın: `cp series.dic series.dic.bak`.
-2. Temizleyin: `python app.py dict clean series.dic` — raporu okuyun, katıldıklarınızı aktarın.
-3. Her kitapla, her biri kendi dosyasına olacak şekilde denetleyin: `python app.py dict review book1.epub --dic series.dic -o series.book1.reviewed.dic` (book2 vb. için aynı). Kitapların uzlaştığını aktarın; gerisine elle karar verin — önce `gender conflict` ve `gender not sure` bölümleri.
-4. Hiçbir aracın çözemeyeceğini elle düzeltin: adı hedef dilde eril bir isim olan kadın karakter (`Client` → `Клиентка`?), PERSON olarak işaretlenmiş bir tür veya unvan (→ `TERM`), `it`/`he`/`they` arasında gidip gelen cinsiyet.
-5. Kitapları seri sırasıyla `DICTIONARY=series.dic`, `DICT_AUTO_SAVE=false`, `--fresh` ile çevirin. İlk parçadan önce sözlük o kitaba göre denetlenir; kesin düzeltmeler yalnızca o çalışmaya uygulanır.
-6. Her kitaptan sonra, bir sonrakinden önce: çalışma raporunu (*The translation disagrees with the dictionary*, *Genders filled in from the synopsis*, *Words in two alphabets*), `<kitap>.dictcheck.txt` ve `series.<kitap>.reviewed.dic` dosyalarını okuyun, doğru olanı `series.dic`'e aktarın. Eski çeviriyle karşılaştırın: `python app.py audit … --compare …`.
-
----
-
-## 🈶 CJK Dilleri (Korece, Japonca, Çince)
-
-Kitaplar CJK dillerinden doğrudan herhangi bir dile, sözlükle birlikte çevrilebilir:
-
-- **NER:** `ko_core_news_lg` kendi KLUE etiket şemasını (`PS`/`LC`/`OG`) kullanır — tanınır ve `PERSON`/`LOC`/`ORG` olarak normalleştirilir.
-- **Sözlük eşleştirme:** CJK terimleri alt dize olarak bulunur — sözcükler arasında boşluk yoktur ve Korece ekler isimlere bitişiktir (`철수는`).
-- **Modeller:** `python -m spacy download ko_core_news_lg` (ek bir şey gerekmez); `ja_core_news_lg` ve `zh_core_web_lg` kendi belirteçleyicilerine ihtiyaç duyar: `pip install -e ".[cjk]"`.
-- **Korece ekler:** varlıklar sözlüğe bitişik ek olmadan yazılır (`철수는` → `철수`, `서울에서` → `서울`), böylece terim sözcüğün her biçimiyle eşleşir. Alt dize araması nedeniyle kısa bir ad daha uzun bir adın içinde de eşleşir (`김철수` içinde `철수`) — bu tür terimleri oluşturulan `.dic` dosyasında kontrol edin.
-- **Öncelik:** en uzun terim kazanır (`魔王` yerine `魔王城`); CJK metni içindeki Latin terim (`ABC社`, tam genişlikli `ＡＢＣ` de) ayrı bir sözcük olarak yerleştirilir.
-- **Sık sözcükler** (yalnızca `DICT_FREQUENT_WORDS=true` ile): en kısa sözcük uzunluğu 5 yerine 2 karakterdir (bir CJK sözcüğü genellikle 1-3 karakterdir).
-- **Uzunluk denetimi:** CJK metni alfabetik dillere çevrildiğinde karakter sayısı 2-4 kat artar. Beklenen oran kitabın kendisinden öğrenilir — kabul edilen parçaların medyanı; ilk 3 parça yalnızca kaba hatalar için denetlenir (×0,25 … ×5).
+## 📖 Sözlük odaklı seri çevirisi
 
 ```bash
-SOURCE_LANG=korean
-TARGET_LANG=turkish
+python app.py --build-series-dict books/ --series-dict-output series.dic \
+  # seçenekler: --min-count-ner 2  --frequent-words  --min-count-word 5
+python app.py --dictionary series.dic   # her kitap için; çalıştırma series.dic dosyasını asla değiştirmez
 ```
 
----
-
-## 🌍 Test Edilen Diller
-
-LLM'in yazabildiği her dil hedef olarak çalışır; sözlük kodu dili hesaba katar. Şimdiye kadar doğrulananlar:
-
-| | Diller |
-|---|---|
-| **Gerçek kitap çevirileri** | İngilizce → Rusça, Korece → Rusça |
-| **Kaynak, gerçek spaCy modeli** (NER, terim biçimleri, tanımlık/ek temizliği) | İngilizce, Korece, Japonca, Çince, Rusça, Almanca, Fransızca, İspanyolca, Portekizce, İtalyanca |
-| **Kaynak, sınırlı** | Türkçe (çok dilli NER; terim yalnızca `.dic` dosyasında yazılı biçimiyle bulunur) |
-| **Hedef, otomatik testler** | Rusça, Türkçe (beş aşamanın tamamı, taklit LLM ile), Almanca, Çince |
-
-**Ayrıntılar ve sınırlar:** [docs/LANGUAGES.md](docs/LANGUAGES.md)
-
----
-
-## 📖 Sözlük Güdümlü Çeviri (Kitap Serileri)
-
-Tüm ciltlerde tutarlı terminoloji için bir kitap serisine ortak sözlük oluşturun.
-
-### Seri Sözlüğü Oluşturma
-
-```bash
-# Temel kullanım
-python app.py --build-series-dict books/ --series-dict-output series.dic
-
-# Özel eşiklerle
-python app.py --build-series-dict books/ --series-dict-output series.dic --min-count-ner 3 --frequent-words --min-count-word 5
-```
-
-**Parametreler:**
-- `--build-series-dict` — FB2/EPUB/TXT kitaplarının bulunduğu klasörün yolu
-- `--series-dict-output` — Çıktı sözlük dosyası (varsayılan: `series.dic`)
-- `--min-count-ner` — NER varlıkları için en az geçiş sayısı (varsayılan: 2)
-- `--frequent-words` — Yalnızca adlandırılmış varlıkları değil, sık geçen sıradan sözcükleri de ekle (varsayılan: kapalı, `DICT_FREQUENT_WORDS`)
-- `--min-count-word` — `--frequent-words` ile sıradan sözcükler için en az geçiş sayısı (varsayılan: 5)
-
-Tek bir kitabın sözlüğü `--build-dict path/to/book` ile oluşturulabilir.
-
-**İş akışı:**
-1. Klasördeki tüm kitap dosyalarını bul
-2. Her kitaptan metni çıkar
-3. NER çalıştır: varlık başına bir girdi (biçimler köke göre birleştirilir, kategori geçişlerin çoğunluğuna göre)
-4. Tüm kitaplardaki sayıları birleştir
-5. Eşik ölçütlerine göre filtrele
-6. Terimleri düzeltme LLM'i ile çevir (yalnızca çevirir; cinsiyetleri her kitabın çeviri öncesi denetimi belirler)
-7. Ortak `.dic` dosyasını kaydet
-
-**Çıktı:** sıradan bir `.dic` dosyası (`source = target, category, gender, notes`). Özel adlar büyük harflerini ve tüm sözcüklerini korur (`John Smith`); baştaki tanımlık atılır (`a Jain` → `Jain`; İngilizce, Fransızca, Almanca, İspanyolca, Portekizce, İtalyanca, Çince).
-
----
-
-## 💾 Çökmeden Sonra Devam Etme
-
-İlerleme her parçadan sonra otomatik kaydedilir:
-
-```bash
-# %50'de kesildi
-python app.py  # Ctrl+C
-
-# Otomatik devam
-python app.py  # ✓ Resuming from chunk 51/100
-```
-
-`--fresh` kontrol noktasını yok sayar ve baştan başlar (her iki işlem hattı).
-
-**Ayrıntılar:** [docs/RESUME.md](docs/RESUME.md)
-
----
-
-## 🐳 Docker
-
-**GPU (NVIDIA):**
-```bash
-docker-compose up -d
-```
-
-**Yalnızca CPU:**
-```bash
-docker-compose -f docker-compose.cpu.yml up -d
-```
-
-**Hazır imajlar** ([GitHub Container Registry](https://github.com/NW15D/sunny-narrator/pkgs/container/sunny-narrator), `main` dalına her gönderimde `Dockerfile` / `Dockerfile.cpu` dosyalarından derlenir ve test edilir; ikisinde de Calibre ve pandoc vardır):
-```bash
-docker pull ghcr.io/nw15d/sunny-narrator:main       # GPU
-docker pull ghcr.io/nw15d/sunny-narrator:main-cpu   # CPU
-```
-
-**Kılavuzlar:** [docs/DOCKER_CPU_GUIDE.md](docs/DOCKER_CPU_GUIDE.md), [docs/GPU_DOCKER.md](docs/GPU_DOCKER.md)
-
----
-
-## 🔄 Calibre Hattı (DOCX/EPUB/PDF)
-
-**DOCX/EPUB/PDF** dosyalarını doğrudan kabul eder — elle dönüştürme gerekmez.
-`.docx`, `.epub` veya `.pdf` uzantılı bir dosya verdiğinizde hat otomatik seçilir.
-
-```bash
-# Sistem bağımlılıklarını kurun
-sudo apt install pandoc calibre
-pip install -e .
-
-# DOCX/EPUB/PDF çevirisi (uzantıdan otomatik algılanır)
-FILE=books/mybook.epub python app.py --output-format epub
-```
-
-**Hat:** DOCX/EPUB/PDF → Calibre → HTML → Markdown → Çeviri → HTML → Calibre → DOCX/EPUB/PDF
-
-Calibre'nin hizmet işaretlemesi (`calibre_link-*` çapaları, `.calibre` sınıfları) otomatik kaldırılır ve içindekiler tablosu çevrilmiş başlıklardan yeniden oluşturulur.
-
-> ⚠️ **FB2, Calibre hattı tarafından DESTEKLENMEZ.** FB2'nin zengin yapısı
-> (poem/stanza/v), Calibre'nin ara biçimi HTMLZ'de düz paragraflara
-> dönüşür — geri alınamaz bir kalite kaybı. FB2 için **klasik hattı**
-> (`.fb2` ve `.txt` dosyaları için varsayılan) kullanın: XML'i doğrudan işler
-> ve kitabın tüm yapısını korur.
-
-**FB2 → EPUB:** `FILE=books/mybook.fb2 python app.py --output-format epub` (veya `.env` içinde `OUTPUT_FORMAT=epub`). Klasik hat FB2'yi çevirir ve EPUB'u doğrudan ondan oluşturur: iç içe içindekiler, dipnotlar, kapak, resimler, şiirler ve epigraflar.
-
-**Tam kılavuz:** [docs/INSTALLATION.md](docs/INSTALLATION.md#-calibre-pipeline-auto-detected)
-
----
-
-## 📜 Günlük Kaydı
-
-Konsol günlüğü çevirinin her adımını gösterir: kalibre edilmiş oranla uzunluk denetimleri, sözlüğe yazılan cinsiyetler, parçada eşleşen sözlük terimleri, kontrol noktaları.
-
-![Korece → Rusça çevirinin konsol günlüğü](logging.png)
-
-- `DEBUG=on` — ayrıntılı günlük (uzunluk denetimleri, sözlük eşleştirme, özet)
-- `DEBUG_HTTP=on` — ek olarak LLM istemcilerinin ham HTTP izleri
-- `LLM_LOGGING=true` — her LLM çağrısı (promptlar, yanıt, tokenlar, süre) `logs/llm_calls_YYYY-MM-DD.log` içinde JSON satırları olarak (dizin: `LLM_LOGGING_DIR`)
-
-**Ayrıntılar:** [docs/LOGGING.md](docs/LOGGING.md)
-
----
+Seri sözlüğünün adım adım hazırlanışı [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md#a-dictionary-shared-by-a-series) dosyasındadır.
 
 ## 📚 Belgeler
 
 | Konu | Dosya |
 |------|-------|
-| **Kurulum** | [docs/INSTALLATION.md](docs/INSTALLATION.md) |
+| **Kurulum** (Calibre işlem hattı dahil) | [docs/INSTALLATION.md](docs/INSTALLATION.md) |
 | **Yapılandırma** | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) |
-| **FAST_TRANS Modu** | [docs/FAST_TRANS.md](docs/FAST_TRANS.md) |
-| **Çeviri Aşamaları** | [docs/TRANSLATION_STAGES.md](docs/TRANSLATION_STAGES.md) |
-| **Sıcaklık Stratejisi** | [docs/TEMPERATURE_STRATEGY.md](docs/TEMPERATURE_STRATEGY.md) |
-| **Yeniden Parçalama** | [docs/RECHUNKING_GUIDE.md](docs/RECHUNKING_GUIDE.md) |
+| **Sözlüklerle çalışma** | [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md) |
+| **Çeviri aşamaları** (GENDER dahil) | [docs/TRANSLATION_STAGES.md](docs/TRANSLATION_STAGES.md) |
+| **İstem kılavuzu** | [docs/PROMPTS_GUIDE.md](docs/PROMPTS_GUIDE.md) |
+| **FAST_TRANS modu** | [docs/FAST_TRANS.md](docs/FAST_TRANS.md) |
+| **Sıcaklık stratejisi** | [docs/TEMPERATURE_STRATEGY.md](docs/TEMPERATURE_STRATEGY.md) |
+| **Yeniden parçalama** | [docs/RECHUNKING_GUIDE.md](docs/RECHUNKING_GUIDE.md) |
 | **NER** | [docs/NER_GUIDE.md](docs/NER_GUIDE.md) |
-| **Sözlük Biçimi** | [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md) |
-| **Çökmeden Sonra Devam** | [docs/RESUME.md](docs/RESUME.md) |
-| **Günlük Kaydı** | [docs/LOGGING.md](docs/LOGGING.md) |
+| **Çökmeden sonra devam** | [docs/RESUME.md](docs/RESUME.md) |
+| **Günlükler** | [docs/LOGGING.md](docs/LOGGING.md) |
 | **Docker (CPU)** | [docs/DOCKER_CPU_GUIDE.md](docs/DOCKER_CPU_GUIDE.md) |
 | **Docker (GPU)** | [docs/GPU_DOCKER.md](docs/GPU_DOCKER.md) |
-| **JSON Modu** | [docs/JSON_MODE_ANALYSIS.md](docs/JSON_MODE_ANALYSIS.md) |
-| **Prompt Kılavuzu** | [docs/PROMPTS_GUIDE.md](docs/PROMPTS_GUIDE.md) |
-| **Test Edilen Diller** | [docs/LANGUAGES.md](docs/LANGUAGES.md) |
+| **JSON modu** | [docs/JSON_MODE_ANALYSIS.md](docs/JSON_MODE_ANALYSIS.md) |
+| **Test edilen diller** | [docs/LANGUAGES.md](docs/LANGUAGES.md) |
 
-Belgeler İngilizce ve Rusçadır.
+## 🈶 CJK kaynaklar (Korece, Japonca, Çince)
+
+CJK'den herhangi bir dile doğrudan çeviri kutudan çıktığı gibi desteklenir: `ja`/`zh` modelleri için `pip install -e ".[cjk]"` gerekir (Korece için ek bir şey gerekmez); terimler alt dize olarak eşleşir, Korece ekler sözlük yazılırken kesilir ve öğrenilen uzunluk oranı metnin 2-4 kat büyümesini karşılar. **Tüm ayrıntılar:** [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md#cjk-sources-korean-japanese-chinese)
 
 ---
 
-## 📝 Değişiklik Günlüğü
+## 📝 Değişiklik günlüğü
 
 Sürüm geçmişi: [CHANGELOG.md](CHANGELOG.md)
