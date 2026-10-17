@@ -312,6 +312,29 @@ Return ONLY the corrected translation.
 
 ---
 
+## 🔒 GENDER (runs after the last text stage — in FAST_TRANS too)
+
+The GENDER stage always runs before SYNOPSIS, **including FAST_TRANS mode**
+(fast = INITIAL + GENDER + SYNOPSIS). Without an LLM it finds sentences where
+a dictionary `PERSON` with gender `he`/`she` is the subject and the verb or
+adjective has the other gender ("Вашти сказал"); such sentences go to the LLM
+in one short call per chunk that fixes them.
+
+- Needs the spaCy model of the **target** language
+  (`python -m spacy download ru_core_news_sm`); without it the check is skipped.
+- `GENDER_CHECK=fix` (default) | `warn` (log only) | `off`.
+- `GENDER_LLM=auto` (default; proofread LLM, with FAST_TRANS too unless it is
+  another model on the same local server) | `translate` | `proofread`.
+- `TEMP_GENDER` — temperature of the fix call (default 0.05).
+- Languages with something to check: Slavic (verb gender),
+  French/Spanish/Portuguese/Italian/Catalan/Romanian/Greek (participles,
+  adjectives); the others have nothing to check.
+- Enforces the dictionary genders from the `<characters>` block of every
+  stage: a wrong gender in the `.dic` is enforced throughout the book —
+  this stage fixes sentences, not the dictionary.
+
+---
+
 ## 📖 Stage 5: SYNOPSIS (Synopsis)
 
 **LLM:** Proofread (Mistral/Qwen/etc.)  
@@ -391,6 +414,7 @@ Court hearing in Texas. Court secretary Rolando Ortellia questions witness Henry
 | **2. REFLECTION** | Proofread | 0.4 | source, translation | suggestions (list) | reflection |
 | **3. IMPROVE** | Proofread | 0.4 | translation, suggestions | improved_translation | improve |
 | **4. FINAL_EDIT** | Proofread | 0.15 | improved_translation, source | final_translation | editor |
+| **GENDER** (both modes, FAST_TRANS too) | code + proofread LLM (or `GENDER_LLM`) | 0.05 | final_translation, dictionary characters | final_translation with gender errors fixed | — (short fix call) |
 | **5. SYNOPSIS** | **Translate** | 0.15 | final_translation | synopsis | synopsis |
 
 ---
