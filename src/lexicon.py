@@ -378,16 +378,32 @@ def _case_fits(term: str, term_words: Optional[List[str]], found: List[Optional[
     return all(_case_shape(t) == _case_shape(w) for t, w in zip(term_words, found))
 
 
+def _acronym_forms(surface: Optional[List[str]], count: int) -> List[Optional[str]]:
+    """The surface words that are acronyms, None for the others: a word in
+    ALL CAPS whose neighbours are not (in "SPIDER-GUNS" or a capitalised
+    heading the words are just upper-cased and keep their inflections)."""
+    if not surface:
+        return [None] * count
+
+    def caps(i):
+        return 0 <= i < len(surface) and len(surface[i]) > 1 and surface[i].isupper()
+
+    return [w if caps(i) and not caps(i - 1) and not caps(i + 1) else None
+            for i, w in enumerate(surface)]
+
+
 def _keys(word: str, code: str, lemma_map: Optional[Dict[str, Set[str]]],
-          stop_words: FrozenSet[str]) -> Set[str]:
+          stop_words: FrozenSet[str], surface: Optional[str] = None) -> Set[str]:
     """Match keys of one word: its surface form, plus stem and lemma forms.
 
     A stop word, or a stem/lemma that is a stop word, contributes only its
     surface form: otherwise a name ending in -s collapses onto a common word
     (stem("Ares") == "are", "Wells" -> "well") and lands in every chunk.
+    So does an acronym (`surface` in ALL CAPS): "ECS" is not "EC", though
+    the stem of "ecs" is "ec" (the longer term used to shadow the shorter).
     """
     keys = {word}
-    if word in stop_words:
+    if word in stop_words or (surface and len(surface) > 1 and surface.isupper()):
         return keys
     forms = [word, *(lemma_map.get(word, ()) if lemma_map else ())]
     for form in forms:
@@ -468,14 +484,17 @@ def resolve_terms(text: str, terms: Iterable[str], lang: str,
                     text_keys.append(frozenset())
                     text_words.append(None)
                 words = tokenize(seg)
-                text_keys += [_keys(w, code, lemma_map, stop_words) for w in words]
-                text_words += _surface_words(seg) or [None] * len(words)
+                surface = _surface_words(seg)
+                text_keys += [_keys(w, code, lemma_map, stop_words, s)
+                              for w, s in zip(words, _acronym_forms(surface, len(words)))]
+                text_words += surface or [None] * len(words)
             for pos, keys in enumerate(text_keys):
                 for key in keys:
                     index.setdefault(key, set()).add(pos)
 
-        term_keys = [_keys(w, code, lemma_map, stop_words) for w in term_words]
         term_surface = _surface_words(term)
+        term_keys = [_keys(w, code, lemma_map, stop_words, s)
+                     for w, s in zip(term_words, _acronym_forms(term_surface, len(term_words)))]
         starts = set()
         for key in term_keys[0]:
             starts |= index.get(key, set())
