@@ -34,8 +34,6 @@ class Character:
     aliases: List[str] = field(default_factory=list)  # Alternative names
     
     # Tracking
-    first_mention_section: int = -1
-    first_mention_chunk: int = -1
     mentions: List[Tuple[int, int]] = field(default_factory=list)  # (section, chunk) list
     
     # Context
@@ -57,11 +55,6 @@ class Character:
         mention = (section_idx, chunk_idx)
         if mention not in self.mentions:
             self.mentions.append(mention)
-            
-            # Update first mention if not set
-            if self.first_mention_section == -1:
-                self.first_mention_section = section_idx
-                self.first_mention_chunk = chunk_idx
     
     def get_mention_count(self) -> int:
         """Get total number of mentions."""

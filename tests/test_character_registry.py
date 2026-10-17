@@ -47,11 +47,11 @@ def test_mention_tracking():
                                          section_idx=0, chunk_idx=0)
     assert {c.name for c in mentioned} == {"Alice", "Bob"}
     assert alice.get_mention_count() == 1 and bob.get_mention_count() == 1
-    assert (alice.first_mention_section, alice.first_mention_chunk) == (0, 0)
+    assert alice.mentions[0] == (0, 0)
 
     registry.detect_mentions("Bob and Alice went home together.", section_idx=0, chunk_idx=1)
     assert alice.get_mention_count() == 2 and bob.get_mention_count() == 2
-    assert (alice.first_mention_section, alice.first_mention_chunk) == (0, 0)
+    assert alice.mentions[0] == (0, 0)
 
 
 def test_synopsis_context():
