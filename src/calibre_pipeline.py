@@ -46,6 +46,7 @@ except ImportError:
 # Import existing utilities
 from src.utils import (config, validate_translation_length, translate_chunk, translate_metadata,
                        length_calibration, token_calibration, LLMAccessError)
+from src.utils import CREDIT_LINE, GITHUB_URL, credit_comment
 from src.utils import _pipeline  # noqa: F401  (tests monkeypatch cp._pipeline.execute)
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
@@ -142,12 +143,11 @@ _PANDOC_MD_FORMAT = (
     '-fenced_divs-bracketed_spans-link_attributes-header_attributes'
 )
 
-# Same credit the classic FB2 pipeline injects via
-# src.fb2_handler.add_translator_info() (kept as a literal here rather than
-# imported, since that module's version lives inline in a function body,
-# not as a reusable constant) — keeps the "translated by" credit consistent
-# across both pipelines' output formats.
-_TRANSLATOR_CREDIT = "Sunny narrator opensource AI translator"
+# Credit the AI translator. Single source of truth is src.utils (issue #65);
+# this alias is kept because call sites and tests import _TRANSLATOR_CREDIT
+# from this module. The credit reaches the output via --book-producer and
+# --comments (see build_output and src.utils.credit_comment).
+_TRANSLATOR_CREDIT = CREDIT_LINE
 
 @dataclass
 class TranslationStats:
@@ -1519,9 +1519,14 @@ def build_output(
                 cmd += ["--language", str(metadata['language'])]
             if cover_tmp_path:
                 cmd += ["--cover", cover_tmp_path]
-            # Credit the AI translator (same text the classic FB2 pipeline
-            # writes into <translator> — see _TRANSLATOR_CREDIT above).
+            # Credit the AI translator (single source: src.utils).
             cmd += ["--book-producer", _TRANSLATOR_CREDIT]
+            # Issue #65: the credit must also land in the output's annotation
+            # slot. ebook-convert has no --contributor; --comments feeds the
+            # EPUB/DOCX description. credit_comment() appends the credit
+            # exactly once — descriptions that already carry the link pass
+            # through unchanged (idempotent across re-runs).
+            cmd += ["--comments", credit_comment(metadata.get('description', ''))]
 
             # B4: Calibre builds no table of contents unless asked to. Its
             # default chapter detection matches an English keyword list
@@ -1624,8 +1629,11 @@ def _generate_title_page(metadata: dict) -> str:
         html += f"<p>{description}</p>\n"
 
     # Same credit the classic FB2 pipeline adds via
-    # fb2_handler.add_translator_info() — see _TRANSLATOR_CREDIT.
-    html += f"<p><em>{_e(_TRANSLATOR_CREDIT)}</em></p>\n"
+    # fb2_handler.add_translator_info() — single source: src.utils.
+    # Skipped when the description already carries the link (FB2 annotations
+    # include it) so the title page shows the credit exactly once.
+    if GITHUB_URL not in description:
+        html += f"<p><em>{_e(_TRANSLATOR_CREDIT)}</em></p>\n"
 
     html += "</div>"
     

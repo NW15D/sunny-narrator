@@ -22,6 +22,7 @@ from ebooklib import epub
 
 from src import lexicon
 from src.config import Config
+from src.utils import CREDIT_LINE, GITHUB_URL, epub_contributor
 from src.xml_utils import IMAGE_EXTENSIONS, sniff_image_type
 
 config = Config()
@@ -527,8 +528,16 @@ def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) 
     book.set_language(meta['lang'])
     for i, author in enumerate(meta['authors'], 1):
         book.add_author(author, uid=f'creator{i}')
+    # Open-source credit (always on, issue #65): the metadata contributor,
+    # plus one credit line at the end of the description. The FB2 annotation
+    # carries the same line since dc-004, so only append when the URL is not
+    # already in the description - re-runs stay free of duplicates.
+    book.add_metadata('DC', 'contributor', epub_contributor())
     if meta['description']:
-        book.add_metadata('DC', 'description', meta['description'])
+        description = meta['description']
+        if GITHUB_URL not in description:
+            description = f'{description} {CREDIT_LINE}'
+        book.add_metadata('DC', 'description', description)
     for genre in meta['genres']:
         book.add_metadata('DC', 'subject', genre)
     if meta['publisher']:

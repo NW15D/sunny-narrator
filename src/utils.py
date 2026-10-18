@@ -45,6 +45,50 @@ from src.fb2_structure import join_paragraph_halves, split_in_two, split_paragra
 
 
 # =============================================================================
+# Open-source credit (always on)
+# =============================================================================
+# Single source of truth for the credit every converted book carries:
+# the FB2 <home-page> link and the one-line annotation credit. The credit
+# is always on - there is no env/CLI flag to disable it (issue #65).
+
+GITHUB_URL = 'https://github.com/NW15D/sunny-narrator'
+CREDIT_LINE = f'Sunny Narrator: {GITHUB_URL}'
+
+
+def fb2_home_page() -> str:
+    """<home-page> value for the FB2 <translator> credit block."""
+    return GITHUB_URL
+
+
+def annotation_credit_text() -> str:
+    """One-line credit added as the last <p> of the FB2 <annotation>."""
+    return CREDIT_LINE
+
+
+def epub_contributor() -> str:
+    """dc:contributor value for the EPUB metadata watermark (name + link)."""
+    return f'Sunny Narrator ({GITHUB_URL})'
+
+
+def credit_comment(description: str) -> str:
+    """`--comments` value for the Calibre pipeline: the description with the
+    credit appended exactly once.
+
+    ebook-convert has no `--contributor`; `--comments` is what reaches the
+    output's annotation slot (EPUB/DOCX). Descriptions that already carry the
+    GitHub link (FB2 annotations include the credit line; re-runs over our own
+    output) are returned unchanged so the credit never duplicates; a missing
+    description yields the credit alone (issue #65: always on).
+    """
+    text = str(description or '').strip()
+    if not text:
+        return CREDIT_LINE
+    if GITHUB_URL in text:
+        return text
+    return f'{text} {CREDIT_LINE}'
+
+
+# =============================================================================
 # Translation Metrics Tracker
 # =============================================================================
 

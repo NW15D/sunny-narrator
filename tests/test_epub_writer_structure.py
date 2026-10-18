@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from epub_checks import EPUB_NS, XHTML, check_epub, fb2_file_to_epub, fragment_to_html
 from src.epub_writer import config, create_epub_from_fb2
+from src.utils import CREDIT_LINE
 
 RICH = os.path.join(os.path.dirname(__file__), 'data', 'rich_book.fb2')
 OPF_NS = '{http://www.idpf.org/2007/opf}'
@@ -125,7 +126,8 @@ def test_metadata_cover_and_series(rich_epub):
     assert md.find(f'{DC}identifier').text.startswith('urn:uuid:')
     assert md.find(f'{DC}language').text == 'en'
     assert md.find(f'{DC}title').text == 'The Rich Book & Its Parts'
-    assert md.find(f'{DC}description').text == 'A test book. Second line.'
+    # description keeps the book text; the always-on credit is appended once
+    assert md.find(f'{DC}description').text == f'A test book. Second line. {CREDIT_LINE}'
     metas = {m.get('name'): m.get('content') for m in md.findall(f'{OPF_NS}meta') if m.get('name')}
     assert metas['calibre:series'] == 'Test Series' and metas['calibre:series_index'] == '2'
     cover = next(i for i in opf.iterfind(f'.//{OPF_NS}item') if i.get('properties') == 'cover-image')
