@@ -20,13 +20,13 @@ echo "   ✓ Build complete"
 echo ""
 echo "2. Testing GPU access inside container..."
 docker-compose -f $COMPOSE_FILE run --rm --entrypoint python3 sunny-narrator -c "
-import torch
-print(f'PyTorch version: {torch.__version__}')
-print(f'CUDA available: {torch.cuda.is_available()}')
-if torch.cuda.is_available():
-    print(f'CUDA version: {torch.version.cuda}')
-    print(f'GPU: {torch.cuda.get_device_name(0)}')
-    print(f'GPU memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.2f} GB')
+import cupy
+n = cupy.cuda.runtime.getDeviceCount()
+print(f'CUDA devices: {n}')
+if n:
+    props = cupy.cuda.runtime.getDeviceProperties(0)
+    print('GPU:', props['name'].decode())
+    print('GPU memory: %.2f GB' % (props['totalGlobalMem'] / 1024**3))
 "
 echo "   ✓ GPU test complete"
 

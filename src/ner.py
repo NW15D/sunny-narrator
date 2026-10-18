@@ -6,7 +6,6 @@ import re
 from typing import Optional
 import spacy
 import spacy.cli
-import torch
 import numpy as np
 
 try:
@@ -23,6 +22,17 @@ logger = logging.getLogger(__name__)
 
 # Initialize config
 config = Config()
+
+def gpu_available() -> bool:
+    """A CUDA device CuPy can use (extra [gpu]); False without CuPy, a driver
+    or a device."""
+    if not CUPY_AVAILABLE:
+        return False
+    try:
+        return cp.cuda.runtime.getDeviceCount() > 0
+    except Exception:
+        return False
+
 
 # Module-level cache for spaCy models (Problem 3 fix)
 _nlp_cache = {}
@@ -214,18 +224,10 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
         stop_words = lexicon.normalize_words(stop_words)
 
     try:
-        # Ensure PyTorch is using CUDA
-        if not torch.cuda.is_available():
-            if config.debug:
-                print("CUDA is not available. Falling back to CPU.")
-        else:
-            if config.debug:
-                print("CUDA is available. Using GPU.")
-
-        # Prefer GPU usage in spaCy
+        # spaCy on the GPU when CuPy is installed (extra [gpu]) and sees a device
         gpu = spacy.prefer_gpu()
         if config.debug:
-            print(gpu)
+            print("spaCy on the GPU" if gpu else "spaCy on the CPU")
         nlp = _get_nlp(config.nermodel, max_length=200000)
 
         # Split text into chunks (100k chars per chunk for balance of speed/memory)

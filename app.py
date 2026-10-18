@@ -13,7 +13,6 @@ import os
 import sys
 import signal
 import time
-import warnings
 import base64
 import logging
 import json
@@ -23,13 +22,6 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
 from datetime import datetime
 from typing import Dict, List
-
-# Suppress FutureWarning from transformers/torch interaction.
-# This warning is triggered by torch.utils._pytree._register_pytree_node
-# during import of transformers. It's harmless but noisy in logs.
-# Kept targeted to this specific message to avoid hiding other warnings.
-warnings.filterwarnings("ignore", category=FutureWarning,
-                       message=".*torch.utils._pytree._register_pytree_node.*")
 
 # Import local modules
 import src.utils as ta

@@ -30,26 +30,20 @@ dependencies = [
     "EbookLib==0.20",
     "Pillow==12.3.0",
     "pypandoc==1.17",
-    # NER / spaCy. src/ner.py imports spacy and torch unconditionally, so both
-    # belong in the base set; the CUDA-specific builds live in the [gpu] extra
-    # below. Plain PyPI wheels here, because a pinned CUDA wheel URL is
-    # interpreter-specific and makes the whole project uninstallable on any
-    # other Python -- which is exactly what used to happen (see [gpu]).
+    # NER / spaCy. No torch: the *_sm/*_lg pipelines run on thinc (NumPy, or
+    # CuPy with the [gpu] extra); torch was only asked whether CUDA is there,
+    # and its default Linux wheel pulled about 3 GB of CUDA libraries into
+    # every install, a cloud one without a GPU too.
     "spacy==3.8.13",
     "thinc==8.3.13",
-    "torch>=2.5.1",
     # Encoding detection
     "charset-normalizer==3.4.6",
     "chardet==4.0.0",
 ]
 
 [project.optional-dependencies]
-# GPU acceleration for NER and cosine similarity. torch is deliberately NOT
-# pinned here to a download.pytorch.org wheel URL any more: that pin named a
-# cp311 build, so pip rejected the whole project on every other interpreter
-# and `pip install -e .` could not succeed at all on Python 3.12. The default
-# PyPI torch wheels for Linux already bundle a CUDA 12.x runtime, so the base
-# "torch>=2.5.1" covers the GPU case and only cupy stays CUDA-specific.
+# GPU acceleration for NER and cosine similarity: CuPy only - spaCy uses
+# whichever cupy is importable, and ner.gpu_available() asks CuPy for a device.
 # The spacy[cuda12x] extra is deliberately NOT used: spaCy 3.8.13 caps it at
 # cupy-cuda12x<13, which cannot be satisfied together with the pinned
 # cupy 14.1.1 (pip: ResolutionImpossible, the Docker build failed on it).

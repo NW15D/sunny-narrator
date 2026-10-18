@@ -73,9 +73,8 @@ docker-compose exec sunny-narrator python3 -c "import spacy; print('spaCy CPU: O
 **Установка зависимостей:**
 ```dockerfile
 # CPU версии
-pip install spacy
-pip install torch  # CPU version
-# cupy-cuda12x НЕ устанавливается (только для GPU)
+pip install .
+# cupy-cuda12x НЕ устанавливается (только для GPU), torch проекту не нужен
 ```
 
 ---
@@ -93,9 +92,7 @@ pip install torch  # CPU version
 **Установка зависимостей:**
 ```dockerfile
 # GPU версии
-pip install "spacy[cuda121]"
-pip install torch --index-url https://download.pytorch.org/whl/cu121
-pip install cupy-cuda12x
+pip install ".[gpu]"   # cupy-cuda12x; torch проекту не нужен
 ```
 
 ---
@@ -196,7 +193,7 @@ docker run --rm --gpus all nvidia/cuda:12.1.0-base-ubuntu22.04 nvidia-smi
 
 # Проверить что docker-compose.yml работает
 docker-compose -f docker-compose.yml up -d
-docker-compose -f docker-compose.yml exec sunny-narrator python3 -c "import torch; print(f'CUDA: {torch.cuda.is_available()}')"
+docker-compose -f docker-compose.yml exec sunny-narrator python3 -c "import spacy; print(f'spaCy GPU: {spacy.prefer_gpu()}')"
 ```
 
 ---

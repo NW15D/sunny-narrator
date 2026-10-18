@@ -6,7 +6,7 @@ Skipped without en_core_web_lg (python -m spacy download en_core_web_lg) and,
 for the GPU case, without CuPy and a CUDA device (extra [gpu]).
 The GPU case loads the model after spacy.prefer_gpu(), as the first chunk of
 a real run does, so the vectors live on the GPU. VocabularyManager takes
-the GPU variant only with CuPy AND a CUDA build of torch.
+the GPU variant only when CuPy is installed AND sees a CUDA device.
 """
 import os
 import sys
@@ -35,15 +35,6 @@ VOCAB = {
 }
 
 
-def _gpu_available():
-    if not getattr(ner, 'CUPY_AVAILABLE', False):
-        return False
-    try:
-        return ner.cp.cuda.runtime.getDeviceCount() > 0
-    except Exception:
-        return False
-
-
 @pytest.fixture
 def fresh_model(monkeypatch):
     from thinc.api import get_current_ops, set_current_ops
@@ -68,7 +59,7 @@ def test_cpu_variant(fresh_model):
     assert 'Hatter' not in found and 'cucumber' not in found
 
 
-@pytest.mark.skipif(not _gpu_available(), reason="CuPy or a CUDA device is not available")
+@pytest.mark.skipif(not ner.gpu_available(), reason="CuPy or a CUDA device is not available")
 def test_gpu_variant_matches_cpu(fresh_model, monkeypatch):
     cpu = _cpu()
     monkeypatch.setattr(ner, '_nlp_cache', {})  # reload on the GPU
@@ -93,15 +84,23 @@ def _manager(tmp_path, monkeypatch):
     return manager
 
 
-@pytest.mark.parametrize("cupy, cuda, expected", [
-    (True, True, "gpu"), (True, False, "cpu"), (False, True, "cpu")])
-def test_chunk_lookup_picks_gpu_only_with_cupy_and_cuda_torch(tmp_path, monkeypatch, cupy, cuda, expected):
-    import torch
+class _FakeCupy:
+    """cp.cuda.runtime.getDeviceCount(): a number, or an error (no driver)."""
+    def __init__(self, devices):
+        def count():
+            if devices is None:
+                raise RuntimeError("cudaErrorNoDevice")
+            return devices
+        self.cuda = type('cuda', (), {'runtime': type('runtime', (), {'getDeviceCount': staticmethod(count)})})
 
+
+@pytest.mark.parametrize("cupy, devices, expected", [
+    (True, 1, "gpu"), (True, 0, "cpu"), (True, None, "cpu"), (False, 1, "cpu")])
+def test_chunk_lookup_picks_gpu_only_with_cupy_and_a_device(tmp_path, monkeypatch, cupy, devices, expected):
     manager = _manager(tmp_path, monkeypatch)
     called = []
     monkeypatch.setattr(ner, 'CUPY_AVAILABLE', cupy)
-    monkeypatch.setattr(torch.cuda, 'is_available', lambda: cuda)
+    monkeypatch.setattr(ner, 'cp', _FakeCupy(devices))
     monkeypatch.setattr(ner, 'find_matching_words_with_cosine_similarity',
                         lambda *a, **kw: called.append("gpu") or ['Jain'])
     monkeypatch.setattr(ner, 'find_matching_words_with_cosine_similarity_cpu',
@@ -110,16 +109,8 @@ def test_chunk_lookup_picks_gpu_only_with_cupy_and_cuda_torch(tmp_path, monkeypa
     assert called == [expected]
 
 
-def _cuda_torch():
-    try:
-        import torch
-        return torch.cuda.is_available()
-    except ImportError:
-        return False
-
-
-@pytest.mark.skipif(not (_gpu_available() and _cuda_torch()),
-                    reason="needs CuPy and a CUDA build of torch")
+@pytest.mark.skipif(not ner.gpu_available(),
+                    reason="needs CuPy and a CUDA device")
 def test_real_run_uses_the_gpu_matcher(tmp_path, monkeypatch, fresh_model):
     manager = _manager(tmp_path, monkeypatch)
     real_gpu = ner.find_matching_words_with_cosine_similarity

@@ -2,7 +2,7 @@
 # Requires NVIDIA GPU + nvidia-container-toolkit on host
 
 # CUDA 12.6 runtime libraries come from the base image (cupy uses them
-# directly); torch is the matching cu126 build. Ubuntu 24.04: Python 3.12.
+# directly). Ubuntu 24.04: Python 3.12.
 FROM nvidia/cuda:12.6.3-runtime-ubuntu24.04
 
 # Set environment variables
@@ -51,12 +51,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends calibre \
 # Upgrade pip
 RUN pip install --upgrade pip setuptools wheel
 
-# torch first, from the CUDA 12.6 index (same CUDA as the base image and as
-# cupy-cuda12x); then the project from pyproject.toml - [gpu] adds cupy.
+# The project from pyproject.toml; [gpu] adds cupy-cuda12x (no torch: spaCy
+# runs on thinc with CuPy).
 COPY pyproject.toml .
-RUN pip install --no-cache-dir "torch==2.14.1+cu126" \
-        --index-url https://download.pytorch.org/whl/cu126 --extra-index-url https://pypi.org/simple && \
-    pip install --no-cache-dir ".[gpu]"
+RUN pip install --no-cache-dir ".[gpu]"
 
 # Download spaCy models (multi-language support)
 RUN python3 -m spacy download en_core_web_lg && \
@@ -71,7 +69,7 @@ RUN mkdir -p /app/books /app/output /app/logs
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD python3 -c "import torch; print('CUDA:', torch.cuda.is_available())" || exit 1
+    CMD python3 -c "import cupy; print('CUDA devices:', cupy.cuda.runtime.getDeviceCount())" || exit 1
 
 # Default entrypoint
 ENTRYPOINT ["python3", "app.py"]

@@ -64,52 +64,29 @@ Should show:
 - Driver Version: 525.60+ 
 - CUDA Version: 12.0+
 
-### Step 2: Install PyTorch with CUDA 12.1
+### Step 2: Install the GPU extra
 
 ```bash
-# Uninstall CPU version
-pip uninstall torch torchvision torchaudio -y
-
-# Install GPU version
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+pip install -e ".[gpu]"     # cupy-cuda12x: spaCy runs NER and word vectors on the GPU
 ```
 
-### Step 3: Install spaCy with CUDA
+No torch is needed: spaCy's `*_sm`/`*_lg` pipelines run on thinc, with NumPy
+on the CPU and CuPy on the GPU.
 
-```bash
-# Uninstall CPU version
-pip uninstall spacy spacy-transformers -y
-
-# Install GPU version
-pip install "spacy[cuda12x]"
-python -m spacy download en_core_web_lg
-```
-
-### Step 4: Install CuPy (for NER acceleration)
-
-```bash
-# Get GPU compute capability
-nvidia-smi --query-gpu=compute_cap --format=csv,noheader
-
-# Install cupy with CUDA 12
-pip install cupy-cuda12x
-```
-
-### Step 5: Verify GPU
+### Step 3: Verify GPU
 
 ```bash
 python3 -c "
-import torch
 import spacy
-
-print('PyTorch CUDA:', torch.cuda.is_available())
+from src import ner
+print('CuPy sees a CUDA device:', ner.gpu_available())
 print('spaCy GPU:', spacy.prefer_gpu())
 "
 ```
 
 Should output:
 ```
-PyTorch CUDA: True
+CuPy sees a CUDA device: True
 spaCy GPU: True
 ```
 
@@ -151,24 +128,16 @@ NER will work on CPU (slightly slower but stable).
 
 ### Issue: CUDA Not Available
 
-```
-CUDA is not available. Falling back to CPU.
-```
+With `DEBUG=1` the dictionary build prints `spaCy on the CPU`.
 
 **Check:**
 ```bash
-# Verify PyTorch CUDA version
-python3 -c "import torch; print(torch.version.cuda)"
-
-# Should show: 12.1 (not None)
+nvidia-smi                                              # the driver sees the GPU
+python3 -c "import cupy; print(cupy.cuda.runtime.getDeviceCount())"   # CuPy sees it (1 or more)
 ```
 
-**Fix:**
-```bash
-# Reinstall PyTorch with CUDA
-pip uninstall torch -y
-pip install torch --index-url https://download.pytorch.org/whl/cu121
-```
+**Fix:** install the GPU extra (`pip install -e ".[gpu]"`); `CUDA_VISIBLE_DEVICES`
+must not be empty. Without a GPU everything works on the CPU.
 
 ### Issue: spaCy Model Not Found
 
@@ -190,8 +159,7 @@ python -m spacy download en_core_web_lg
 | Package | Purpose |
 |---------|---------|
 | `openai` | LLM API client |
-| `spacy` | NER (Named Entity Recognition) |
-| `torch` | Vector similarity (CPU) |
+| `spacy` | NER (Named Entity Recognition), word vectors |
 | `beautifulsoup4` | XML/HTML parsing |
 | `pydantic` | Data validation |
 | `python-dotenv` | Environment config |
@@ -201,8 +169,7 @@ python -m spacy download en_core_web_lg
 | Package | Purpose | Notes |
 |---------|---------|-------|
 | `cupy-cuda12x` | GPU acceleration for NER | May cause NVRTC errors |
-| `spacy-transformers` | Transformer-based NER | Not needed for standard NER |
-| `torch (CUDA)` | GPU vectors | Install from pytorch.org |
+| `spacy-curated-transformers`, `torch` | `*_trf` models | Not installed by the project, see [DICTIONARY_FORMAT.md](DICTIONARY_FORMAT.md#gpu-cuda-and-cpu-nuances-of-dictionary-work) |
 
 ### CPU vs GPU Performance
 
@@ -359,7 +326,7 @@ python3 -c "import spacy; nlp = spacy.load('en_core_web_lg'); print('✓ OK')"
 ### Test 3: CUDA (if GPU installed)
 
 ```bash
-python3 -c "import torch; print('CUDA:', torch.cuda.is_available())"
+python3 -c "import cupy; print('CUDA devices:', cupy.cuda.runtime.getDeviceCount())"
 ```
 
 ### Test 4: NER
@@ -405,7 +372,6 @@ DEBUG=off
 
 ## 📚 Additional Resources
 
-- [PyTorch CUDA Installation](https://pytorch.org/get-started/locally/)
 - [spaCy GPU Setup](https://spacy.io/usage#gpu)
 - [CuPy Installation](https://docs.cupy.dev/en/stable/install.html)
 - [NVIDIA CUDA Compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/)

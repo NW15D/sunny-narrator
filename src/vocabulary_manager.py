@@ -1035,13 +1035,7 @@ class VocabularyManager:
             mode = "lexical"
         else:
             # cupy is optional even on a CUDA machine (extra [gpu])
-            use_gpu = getattr(ner_module, 'CUPY_AVAILABLE', False)
-            if use_gpu:
-                try:
-                    import torch
-                    use_gpu = torch.cuda.is_available()
-                except ImportError:
-                    use_gpu = False
+            use_gpu = ner_module.gpu_available()
             match_fn = (ner_module.find_matching_words_with_cosine_similarity if use_gpu
                         else ner_module.find_matching_words_with_cosine_similarity_cpu)
             matched = match_fn(chunk_text, self._vocab_to_ner_format(), self.source_lang)

@@ -44,13 +44,9 @@ RUN python3 -m pip install --upgrade pip setuptools wheel
 # Copy the dependency manifest first for better layer caching
 COPY pyproject.toml .
 
-# Install Python dependencies (CPU-only). torch comes from PyTorch's CPU
-# index first, so the project install below is already satisfied and does not
-# pull the much larger default CUDA build. The [gpu] extra is deliberately
-# not installed here - use the GPU Dockerfile for that.
-RUN python3 -m pip install --no-cache-dir \
-        --index-url https://download.pytorch.org/whl/cpu torch && \
-    python3 -m pip install --no-cache-dir .
+# Install Python dependencies (CPU-only, no torch). The [gpu] extra is
+# deliberately not installed here - use the GPU Dockerfile for that.
+RUN python3 -m pip install --no-cache-dir .
 
 # Download spaCy models (multi-language support)
 RUN python3 -m spacy download en_core_web_lg && \

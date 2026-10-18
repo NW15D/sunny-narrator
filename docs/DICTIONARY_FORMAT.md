@@ -603,8 +603,12 @@ so the GPU/CPU choice is theirs, not the LLM's:
   gender check of a translation load their model on the CPU. Even on the GPU an
   `*_sm`/`*_lg` model keeps the GPU almost idle: tokenizing, the lemmatizer and
   the rules run on the CPU, only the small networks run on the GPU (a 150k-char
-  book with `en_core_web_lg`: 4.9 s on CPU, 4.2 s on GPU). spaCy takes **GPU 0**:
-  on a host with several GPUs watch that one (`nvidia-smi -i 0`).
+  book with `en_core_web_lg`: 4.9 s on CPU, 4.2 s on GPU). spaCy takes CUDA
+  device 0, and CUDA numbers the GPUs **fastest first** - on a host with several
+  GPUs that is not necessarily `nvidia-smi`'s GPU 0 (here CUDA's 0 is an RTX 4080,
+  `nvidia-smi -i 1`). `CUDA_DEVICE_ORDER=PCI_BUS_ID` makes both numberings the
+  same; `CUDA_VISIBLE_DEVICES` then picks the GPU. No torch is involved: spaCy
+  runs on thinc with CuPy.
 - **Transformer models (`*_trf`):** `en_core_web_trf` 3.8 needs
   `spacy-curated-transformers>=0.2.2,<0.3` with `curated-transformers<0.2`
   (not `spacy-transformers`, and not the 2.x releases: they fail with `E002

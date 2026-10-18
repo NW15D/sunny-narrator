@@ -26,7 +26,7 @@ docker-compose -f docker-compose.yml up --build
 
 - base `nvidia/cuda:12.6.3-runtime-ubuntu24.04` — the CUDA 12.6 runtime libraries
   that `cupy-cuda12x` uses, Python 3.12;
-- the project in a venv (`/opt/venv`): `torch==2.14.1+cu126`, then `pip install ".[gpu]"`;
+- the project in a venv (`/opt/venv`): `pip install ".[gpu]"` (cupy-cuda12x; no torch);
 - Calibre (`ebook-convert`) from Ubuntu and pandoc 3.12 (`PANDOC_VERSION` build arg),
   headless (`QT_QPA_PLATFORM=offscreen`);
 - spaCy models `en_core_web_lg`, `ru_core_news_lg`;
