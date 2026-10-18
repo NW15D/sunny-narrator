@@ -20,7 +20,7 @@
 - 📚 **Guiado por glossário** — um dicionário `.dic` mantém a terminologia consistente no livro inteiro e na série inteira
 - 🔨 **Trabalho avançado com o dicionário** — o dicionário pode ser verificado contra o livro (`dict review`, `dict clean`), é validado antes de cada execução e **tenta corrigir automaticamente a categoria e o gênero** de cada entrada a partir do próprio livro (`DICT_AUTOFIX`)
 - 🔁 **Dois LLMs, 5 estágios** — um LLM traduz, outro revisa e refina; cada trecho passa por INITIAL → REFLECTION → IMPROVE → FINAL_EDIT → GENDER → SYNOPSIS
-- 💻 **GPUs locais (16-24 GB de VRAM)** via llama.cpp, Ollama, LM Studio etc. e qualquer API compatível com OpenAI (3-4 milhões de tokens por livro), ou ☁️ qualquer API hospedada
+- ☁️ **[OpenRouter](https://openrouter.ai)** ou 💻 **GPUs locais (16-24 GB de VRAM)** via llama.cpp, Ollama, LM Studio etc. e qualquer API compatível com OpenAI (3-4 milhões de tokens por livro), ou qualquer API hospedada
 - 💾 **À prova de falhas** — checkpoint após cada trecho; uma nova execução continua de onde parou
 - 🎓 Para tradutores profissionais e não profissionais — rascunhos e dicionários incluídos
 

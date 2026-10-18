@@ -20,7 +20,7 @@
 - 📚 **Glossary-driven** — a `.dic` dictionary keeps terminology consistent across a whole book and a whole series
 - 🔨 **Extended dictionary work** — the dictionary can be verified against the book (`dict review`, `dict clean`), it is validated before every run, and it **automatically tries to fix the category and the gender** of every entry from the book itself (`DICT_AUTOFIX`)
 - 🔁 **Dual-LLM, 5 stages** — one LLM translates, a second one reviews and polishes; every chunk passes INITIAL → REFLECTION → IMPROVE → FINAL_EDIT → GENDER → SYNOPSIS
-- 💻 **Local GPUs (16-24GB VRAM)** via llama.cpp, Ollama, LM Studio etc. and any OpenAI-compatible API (3-4M tokens per book), or ☁️ any hosted API
+- ☁️ **[OpenRouter](https://openrouter.ai)** or 💻 **local GPUs (16-24GB VRAM)** via llama.cpp, Ollama, LM Studio etc. and any OpenAI-compatible API (3-4M tokens per book), or any hosted API
 - 💾 **Crash-proof** — progress checkpoints after every chunk, a resumed run continues where it stopped
 - 🎓 For professional and non-professional translators alike — drafts and dictionaries included
 

@@ -20,7 +20,7 @@ FB2/TXT/EPUB/DOCX/PDF için **sözlük odaklı yapay zekâ kitap çevirmeni (AI 
 - 📚 **Sözlük odaklı** — bir `.dic` sözlüğü terminolojiyi bütün kitap ve bütün seri boyunca tutarlı tutar
 - 🔨 **Gelişmiş sözlük çalışması** — sözlük kitaba göre doğrulanabilir (`dict review`, `dict clean`), her çalıştırmadan önce denetlenir ve her kaydın **kategorisini ve cinsiyetini kitabın kendisinden otomatik olarak düzeltmeye çalışır** (`DICT_AUTOFIX`)
 - 🔁 **İki LLM, 5 aşama** — bir LLM çevirir, ikincisi gözden geçirip cilalar; her parça INITIAL → REFLECTION → IMPROVE → FINAL_EDIT → GENDER → SYNOPSIS aşamalarından geçer
-- 💻 **Yerel GPU'lar (16-24 GB VRAM)** — llama.cpp, Ollama, LM Studio vb. ve OpenAI uyumlu her API (kitap başına 3-4 milyon token) ya da ☁️ herhangi bir bulut API
+- ☁️ **[OpenRouter](https://openrouter.ai)** ya da 💻 **yerel GPU'lar (16-24 GB VRAM)** — llama.cpp, Ollama, LM Studio vb. ve OpenAI uyumlu her API (kitap başına 3-4 milyon token) ya da herhangi bir bulut API
 - 💾 **Çökmeye dayanıklı** — her parçadan sonra kontrol noktası; yeniden başlatılan çalışma kaldığı yerden devam eder
 - 🎓 Profesyonel ve amatör çevirmenler için — taslaklar ve sözlükler dahil
 

@@ -20,7 +20,7 @@
 - 📚 **术语表驱动** —— `.dic` 词典让整本书乃至整个系列的术语保持一致
 - 🔨 **完善的词典工作流** —— 词典可以对照书籍校验（`dict review`、`dict clean`），每次运行前都会检查，并会**根据书籍本身自动修正**每个条目的**类别和性别**（`DICT_AUTOFIX`）
 - 🔁 **双 LLM、5 个阶段** —— 一个 LLM 负责翻译，另一个负责审校润色；每个分块依次经过 INITIAL → REFLECTION → IMPROVE → FINAL_EDIT → GENDER → SYNOPSIS
-- 💻 **本地 GPU（16-24GB 显存）**：通过 llama.cpp、Ollama、LM Studio 等以及任何 OpenAI 兼容 API（每本书约 300-400 万 token），或 ☁️ 任何云端 API
+- ☁️ **[OpenRouter](https://openrouter.ai)** 或 💻 **本地 GPU（16-24GB 显存）**：通过 llama.cpp、Ollama、LM Studio 等以及任何 OpenAI 兼容 API（每本书约 300-400 万 token），或任何云端 API
 - 💾 **防崩溃** —— 每个分块后保存检查点，重新运行时从中断处继续
 - 🎓 适合专业与非专业译者 —— 提供草稿与词典
 
