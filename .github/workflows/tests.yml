@@ -31,8 +31,6 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # CPU-only PyTorch first (src.ner imports torch at module level; no CUDA needed)
-          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
           # Pinned project deps + dev extras (pytest, pytest-timeout, pytest-cov),
           # same as .gitlab-ci.yml.
           python -m pip install -e '.[dev]'

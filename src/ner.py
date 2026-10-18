@@ -155,6 +155,28 @@ def _get_nlp(model_name, max_length=200000):
             _nlp_cache[model_name].max_length = max_length
     return _nlp_cache[model_name]
 
+def ensure_model(name: str) -> bool:
+    """Whether the spaCy pipeline `name` is installed, downloading it first
+    when it is not (SPACY_AUTO_DOWNLOAD, on by default): the dictionary check
+    and the gender check of a fresh install run before any chunk would fetch
+    the model. A failed download (offline, a name spaCy does not publish) is
+    logged, not raised - spacy.cli.download exits the interpreter on it."""
+    import importlib
+    from spacy.util import is_package
+    if is_package(name):
+        return True
+    if not config.spacy_auto_download:
+        return False
+    logger.info(f"spaCy model {name} is not installed: downloading it (first use)")
+    try:
+        spacy.cli.download(name)
+    except (Exception, SystemExit) as e:
+        logger.warning(f"spaCy model {name} could not be downloaded: {e}")
+        return False
+    importlib.invalidate_caches()
+    return is_package(name)
+
+
 def load_spacy_model(model_name):
     """
     Attempts to load a spaCy model. If not found, downloads it and tries again.

@@ -17,3 +17,11 @@ def _no_dictionary_check(monkeypatch):
     # tests/test_dict_review.py turns it on where it is the subject.
     import src.vocabulary_manager as vm
     monkeypatch.setattr(vm.config, 'dict_check', False)
+
+
+@pytest.fixture(autouse=True)
+def _no_model_downloads(monkeypatch):
+    # A missing spaCy model is downloaded on first use (ner.ensure_model);
+    # tests skip without their models instead of fetching hundreds of MB.
+    import src.ner as ner
+    monkeypatch.setattr(ner.config, 'spacy_auto_download', False)

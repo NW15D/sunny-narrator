@@ -234,6 +234,9 @@ class Config:
         # applied for the run (the .dic is not changed; --no-autofix turns it
         # off). DICT_FORCE: without autofix the run translates by the .dic as
         # it is, a contradiction is only reported; false stops the run.
+        # SPACY_AUTO_DOWNLOAD: a missing spaCy model is downloaded on first use
+        # (the dictionary check, the gender check, NER); false - only logged
+        self.spacy_auto_download = _parse_bool_env('SPACY_AUTO_DOWNLOAD', 'true')
         self.dict_check = _parse_bool_env('DICT_CHECK', 'true')
         self.dict_autofix = _parse_bool_env('DICT_AUTOFIX', 'true')
         self.dict_force = _parse_bool_env('DICT_FORCE', 'true')  # --force

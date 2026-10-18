@@ -175,3 +175,9 @@ cython_debug/
 
 # Run logs, audits, prompt evaluations (app.py audit/eval, demo.sh): local data
 logs/
+
+# What a run leaves next to a book: the extracted images (rebuilt from the
+# book on every conversion), checkpoints and the dictionary check
+books/*_images/
+books/*.checkpoint.json
+books/*.dictcheck.*

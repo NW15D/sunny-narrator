@@ -44,7 +44,8 @@ except ImportError:
     pypandoc = None
 
 # Import existing utilities
-from src.utils import config, validate_translation_length, translate_chunk, translate_metadata, length_calibration, token_calibration
+from src.utils import (config, validate_translation_length, translate_chunk, translate_metadata,
+                       length_calibration, token_calibration, LLMAccessError)
 from src.utils import _pipeline  # noqa: F401  (tests monkeypatch cp._pipeline.execute)
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
@@ -1059,6 +1060,8 @@ def translate_chunks(
                         outline_text = synopsis or ""
                     break  # Success
 
+                except LLMAccessError:
+                    raise  # the key, the access or the model: no chunk can succeed
                 except Exception as e:
                     logger.warning(f"Translation attempt {attempt + 1} failed for chunk {i + 1} ({type(e).__name__}): {e}")
                     if attempt < 2:

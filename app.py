@@ -25,6 +25,7 @@ from typing import Dict, List
 
 # Import local modules
 import src.utils as ta
+from src.utils import LLMAccessError
 import src.xmlcheck as xc
 import src.fb2_handler as fb2
 import src.epub_handler as epub
@@ -318,6 +319,8 @@ class TranslationEngine:
 
                     break
 
+            except LLMAccessError:
+                raise  # the key, the access or the model: no chunk can succeed
             except Exception as e:
                 logger.warning(f"Translation attempt {attempt + 1} failed: {e}")
                 retry_count += 1
@@ -1241,6 +1244,9 @@ def cli():
         except DictionaryCheckFailed as e:
             print(f"\n✗ {e}")
             sys.exit(2)
+        except LLMAccessError as e:
+            print(f"\n✗ Stopped: {e}")
+            sys.exit(3)
         except Exception as e:
             print(f"\n✗ Pipeline failed: {e}")
             import traceback
@@ -1256,7 +1262,11 @@ def cli():
             print(f"Error: {e}")
             sys.exit(1)
         print(f"Output format: {config.output_format}")
-        main(fresh=args.fresh)
+        try:
+            main(fresh=args.fresh)
+        except LLMAccessError as e:
+            print(f"\n✗ Stopped: {e}")
+            sys.exit(3)
     else:
         print(f"Error: Unsupported input format: {input_ext}")
         print(f"Supported formats: DOCX, EPUB, PDF (Calibre pipeline), FB2, TXT (Classic pipeline)")

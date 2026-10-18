@@ -106,6 +106,9 @@ _VERB_AGREES = {'ru', 'uk', 'be', 'bg', 'sr', 'mk', 'pl', 'cs', 'sk', 'hr', 'sl'
                 'he', 'ar', 'hi'}
 # Predicative adjectives agree with the subject
 _ADJ_AGREES = _VERB_AGREES | {'fr', 'es', 'pt', 'it', 'ca', 'ro', 'el'}
+# The checked languages spaCy publishes a pipeline with a parser for: the
+# small one is downloaded when none is installed
+_DOWNLOADABLE = {'ru', 'uk', 'pl', 'hr', 'sl', 'lt', 'mk', 'fr', 'es', 'pt', 'it', 'ca', 'ro', 'el'}
 # A participle agrees only with these auxiliaries ("elle est allée", but
 # "elle a mangé")
 _AGREEING_AUX = {
@@ -223,7 +226,8 @@ class GenderIssue:
 @lru_cache(maxsize=None)
 def _target_nlp(code: str):
     """An installed spaCy pipeline of `code` with a parser, smallest first;
-    None (logged once) when there is none. Never downloads."""
+    without one, <code>_core_news_sm is downloaded (SPACY_AUTO_DOWNLOAD) for a
+    language spaCy has it for; None (logged once) when there is none."""
     try:
         import spacy
         from spacy.util import is_package
@@ -240,6 +244,14 @@ def _target_nlp(code: str):
                     continue
                 if 'parser' in nlp.pipe_names:
                     return nlp
+    if code in _DOWNLOADABLE:
+        from src import ner  # spaCy and the configuration: imported on first use
+        name = f"{code}_core_news_sm"
+        if ner.ensure_model(name):
+            try:
+                return spacy.load(name, exclude=['ner'])
+            except Exception as e:
+                logger.warning(f"[gender] spaCy model {name} failed to load: {e}")
     logger.info(f"[gender] no spaCy model with a parser for '{code}': gender agreement is not checked "
                 f"(python -m spacy download {code}_core_news_sm)")
     return None

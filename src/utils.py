@@ -21,6 +21,7 @@ import json
 import io
 import base64
 import httpx
+import openai
 import time
 import collections
 import dataclasses
@@ -54,6 +55,27 @@ class TruncatedResponseError(ValueError):
     loop (repeating text), not that the translation needs more room;
     translate_chunk answers by halving the chunk, which changes the input.
     """
+
+
+class LLMAccessError(PipelineAborted):
+    """The API refused the request itself - the key (401), the access (403) or
+    the model (404). No retry, split or other chunk can succeed, so the run
+    stops instead of keeping the original text chunk after chunk. A
+    PipelineAborted, so the handlers that let an abort through pass it too."""
+
+
+# The API errors no retry can fix
+_FATAL_API_ERRORS = (openai.AuthenticationError, openai.PermissionDeniedError, openai.NotFoundError)
+
+
+def _access_error(error: Exception, role: 'LLMRole', model: str, base_url) -> LLMAccessError:
+    role_name = role.value.upper()
+    hint = {401: f"check API_KEY_{role_name}",
+            403: f"the key has no access, or the network blocks {base_url} "
+                 f"(OpenRouter answers 'Access denied by security policy' to blocked networks: try ProxyAPI)",
+            404: f"check MODEL_{role_name} and API_BASE_{role_name}"}.get(getattr(error, 'status_code', None), "")
+    return LLMAccessError(f"the {role.value} LLM refused the request ({type(error).__name__}, "
+                          f"model {model} at {base_url}): {error}" + (f"; {hint}" if hint else ""))
 
 
 class TranslationMetrics:
@@ -728,6 +750,8 @@ class LLMService:
             try:
                 response = client.chat.completions.create(**comp_kwargs)
                 break
+            except _FATAL_API_ERRORS as e:
+                raise _access_error(e, role, model, getattr(client, 'base_url', '')) from e
             except Exception as e:
                 if attempt == max_retries - 1:
                     raise
@@ -2559,6 +2583,8 @@ def translate_metadata(metadata: dict, source_lang: str, target_lang: str,
         
         return json.loads(clean_json)
         
+    except LLMAccessError:
+        raise  # the first request of a run: stop before the book
     except Exception as e:
         logger.error(f"Error translating metadata: {e}")
         return metadata

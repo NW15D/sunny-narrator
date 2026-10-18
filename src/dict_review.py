@@ -378,6 +378,7 @@ def _load_model(name: str):
     a sentencizer, the gender evidence is per sentence."""
     try:
         import spacy
+        ner.ensure_model(name)  # a fresh install: before the first chunk would fetch it
         nlp = spacy.load(name)
         if not ({'parser', 'senter', 'sentencizer'} & set(nlp.pipe_names)):
             nlp.add_pipe('sentencizer')

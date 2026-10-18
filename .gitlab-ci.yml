@@ -8,10 +8,6 @@
 #   openai SDK rejects empty keys; no network calls are made (all LLM
 #   traffic is mocked in the unit tests).
 #
-# Why torch comes from the CPU index:
-#   src.ner imports torch at module level; no CUDA is needed on CI, and the
-#   default PyPI wheels would pull multi-GB CUDA runtimes.
-#
 # Why pandoc is apt-installed:
 #   tests/test_feature_parity.py and tests/test_toc_feature.py call
 #   pypandoc.convert_text for real. GitHub ubuntu runners ship pandoc
@@ -67,9 +63,7 @@ tests:
     - python -m pip install --upgrade pip
 
   script:
-    # 1) CPU-only PyTorch first, so pip never considers the CUDA wheels.
-    - python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-    # 2) Project deps (pinned) + dev extras (pytest, pytest-timeout, pytest-cov, ruff).
+    # 1) Project deps (pinned) + dev extras (pytest, pytest-timeout, pytest-cov, ruff).
     #    Rare fallback: on a missing wheel pip tries an sdist build that needs
     #    cargo; bootstrap a minimal Rust toolchain and retry once.
     - |
@@ -82,10 +76,10 @@ tests:
         fi;
         python -m pip install -e '.[dev]';
       fi
-    # 3) Lint, the same check as .github/workflows/ruff.yml (ruff is pinned
+    # 2) Lint, the same check as .github/workflows/ruff.yml (ruff is pinned
     #    in the dev extras), so unused imports fail here and not on GitHub.
     - ruff check src tests
-    # 4) Full suite. pyproject's addopts already ignores the non-pytest
+    # 3) Full suite. pyproject's addopts already ignores the non-pytest
     #    tests/test_calibre_cleanup.py and sets timeout=120 for every test.
     - python -m pytest tests/ -q --junitxml=report.xml
 
