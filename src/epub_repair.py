@@ -131,8 +131,10 @@ def _validate_xml(content: bytes, context: str) -> List[str]:
             recover=False,  # strict mode for validation
         )
         etree.fromstring(content, parser)
-    except etree.XMLSyntaxError as e:
-        for error in e.error_log:
+    except etree.XMLSyntaxError:
+        # this parser's own log: XMLSyntaxError.error_log is lxml's log of
+        # the thread, with the errors of every earlier parse in it
+        for error in parser.error_log:
             errors.append(f"{context} - Line {error.line}: {error.message}")
     except Exception as e:
         errors.append(f"{context} - Error: {e}")
