@@ -24,20 +24,29 @@
 - 💾 **防崩溃** —— 每个分块后保存检查点，重新运行时从中断处继续
 - 🎓 适合专业与非专业译者 —— 提供草稿与词典
 
-## 🚀 快速开始 —— 5 步完成首次翻译
+## 🚀 快速开始 —— 运行两次，得到译好的书
 
-1. **克隆并安装**
+默认使用云端模型 —— 无需显卡，也无需本地 LLM 服务器：[OpenRouter](https://openrouter.ai) 提供负责翻译的 [Gemma 4 26B A4B](https://openrouter.ai/google/gemma-4-26b-a4b-it) 和负责校对的 [Qwen 3.6 35B A3B](https://openrouter.ai/qwen/qwen3.6-35b-a3b)，与参考本地配置使用的模型相同。
+
+1. **安装**（Python 3.11+；依赖来自 `pyproject.toml`）
    ```bash
    git clone https://github.com/NW15D/sunny-narrator && cd sunny-narrator
+   python3 -m venv .venv && source .venv/bin/activate
    pip install -e .
-   # 输入 DOCX/EPUB/PDF 还需要：sudo apt install pandoc calibre
+   sudo apt install calibre pandoc     # EPUB/DOCX/PDF；macOS: brew install --cask calibre && brew install pandoc
    ```
-2. **配置** —— `cp env.sample .env`，填写 `API_KEY_*`、`API_BASE_*`、`MODEL_*`、`SOURCE_LANG`、`TARGET_LANG`、`FILE=books/mybook.fb2`。格式按扩展名自动识别（FB2/TXT → 经典流水线，DOCX/EPUB/PDF → Calibre 流水线）。
-3. **构建词典** —— `python app.py` 生成 `books/mybook.dic` 并暂停，等待你检查。
-4. **编辑词典** —— 删除错误条目，修正译名和性别（运行时会提示哪些条目不确定）。
-5. **翻译** —— 再次运行 `python app.py`；结果出现在源文件旁边，文件名带语言标记。之后请校对全书。
+2. **密钥和书** —— 在 [openrouter.ai/keys](https://openrouter.ai/keys) 创建密钥并充值几美元。`cp env.cloud.sample .env`，把密钥填入 `API_KEY_TRANSLATE` 和 `API_KEY_PROOFREAD`，书填入 `FILE=books/mybook.epub`，语言填入 `SOURCE_LANG` / `TARGET_LANG`。
+3. **第一次运行 —— 词典。** `python app.py` 找出书中的人名和术语（源语言的 spaCy 模型在首次使用时自动下载），翻译它们，写入 `books/mybook.dic` 后停止。请检查词典：译名、类别、人物性别 —— `books/mybook.dictcheck.txt` 列出了书中无法确定的内容。
+4. **第二次运行 —— 整本书。** `python app.py` 翻译整本书；结果保存在原文件旁边，`books/<书名>_<语言>.epub`。尽情阅读吧。
 
-**只有 CPU，或 GPU 但没有 conda？** 使用 Docker（见下节）。**只要草稿、不需要审校阶段？** `FAST_TRANS=true`（约快 2.5 倍）。
+一部 450 页的小说约 1 美元（根据一次真实运行的 token 数估算；准确费用见 OpenRouter 的 Activity 页面）。`env.cloud.sample` 关闭了模型的思考模式，并只使用提供完整权重（bf16/fp8）且支持请求全部参数的服务商。
+
+**通往完美译本的路 —— 先做词典。** 词典对翻译质量的影响最大：每个片段都从中获取人名、术语和人物性别，所以词典里的每处修改都会体现在每一页上。想要最好的结果，请走更长的路：
+1. 第一次运行后，用快速草稿扩充词典：`FAST_TRANS=true DICT_AUTO_SAVE=true python app.py` —— 概要阶段会加入整本书的人名和自创术语，并补全空缺的性别（已有条目不会被改写）；比完整翻译快约 2.5 倍。
+2. 检查词典：`python app.py dict clean books/mybook.dic` 和 `python app.py dict review books/mybook.epub --dic books/mybook.dic`（旁边会生成清理 / 审查后的副本和报告），再手动修正剩下的问题 —— 先看性别。
+3. 用完善的词典从头翻译：`python app.py --fresh`。
+
+**用本地模型代替云端：** `env.sample`（llama.cpp、Ollama、LM Studio；16–24 GB 显存）；Docker 镜像见下一节。**只要草稿？** `FAST_TRANS=true`。
 
 ## 🐳 Docker
 
@@ -142,6 +151,7 @@ python app.py --dictionary series.dic   # 逐本翻译；运行绝不会修改 s
 | **Docker（GPU）** | [docs/GPU_DOCKER.md](docs/GPU_DOCKER.md) |
 | **JSON 模式** | [docs/JSON_MODE_ANALYSIS.md](docs/JSON_MODE_ANALYSIS.md) |
 | **已测试语言** | [docs/LANGUAGES.md](docs/LANGUAGES.md) |
+| **参与贡献** | [CONTRIBUTING.md](CONTRIBUTING.md) |
 
 ## 🈶 CJK 源文本（韩语、日语、中文）
 

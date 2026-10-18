@@ -451,6 +451,24 @@ def _presence_penalty(role: 'LLMRole', stage: 'TranslationStage' = None) -> floa
     return config.presence_penalty_proofread
 
 
+def _extra_body(role: 'LLMRole', chat_template_kwargs: dict = None) -> dict:
+    """The fields the OpenAI SDK has no argument for (it rejects unknown
+    kwargs, so they go in extra_body): EXTRA_BODY_* of the role, and with
+    NOTHINK_* (the default) thinking turned off - chat_template_kwargs for
+    llama.cpp (Gemma 4, Qwen 3), reasoning.effort "none" for OpenRouter,
+    ProxyAPI and the like, where Qwen 3.6 thinks unless told not to. Each
+    server ignores the other's field."""
+    translate = role == LLMRole.TRANSLATE
+    extra = getattr(config, 'extra_body_translate' if translate else 'extra_body_proofread', None)
+    body = dict(extra) if isinstance(extra, dict) else {}
+    if chat_template_kwargs is not None:
+        body["chat_template_kwargs"] = chat_template_kwargs
+    elif config.nothink_translate if translate else config.nothink_proofread:
+        body["chat_template_kwargs"] = {"enable_thinking": False}
+        body["reasoning"] = {"effort": "none"}
+    return body
+
+
 class TokenCalibration:
     """
     Output tokens per character of each LLM role, learned from this book's
@@ -693,22 +711,9 @@ class LLMService:
         if json_mode:
             comp_kwargs["response_format"] = {"type": "json_object"}
         
-        # FIX: Disable thinking mode for local LLMs (gemma4, qwen3) when nothink config is True.
-        # chat_template_kwargs is a llama.cpp-specific parameter, NOT a standard OpenAI API param.
-        # The OpenAI Python SDK rejects unknown kwargs, so we must pass it via extra_body.
-        nothink_enabled = False
-        if role == LLMRole.TRANSLATE and config.nothink_translate:
-            nothink_enabled = True
-        elif role == LLMRole.PROOFREAD and config.nothink_proofread:
-            nothink_enabled = True
-        
-        # If explicit chat_template_kwargs was passed, use it
-        if chat_template_kwargs is not None:
-            comp_kwargs["extra_body"] = {"chat_template_kwargs": chat_template_kwargs}
-        elif nothink_enabled:
-            comp_kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
-            if config.debug:
-                logger.debug(f"Thinking mode DISABLED for [{role.value}] via nothink config (extra_body)")
+        extra_body = _extra_body(role, chat_template_kwargs)
+        if extra_body:
+            comp_kwargs["extra_body"] = extra_body
         
         if config.debug:
             logger.debug(f"LLM Request [{role.value}]: {model}, {len(user_prompt)} chars, temp={temp:.2f}, sys_not_promt={use_sys_not_promt}, json_mode={json_mode}")
@@ -779,7 +784,7 @@ class LLMService:
         
         # Tokens per character for the REFLECTION budget; with thinking on
         # completion_tokens also count the reasoning
-        if nothink_enabled or (chat_template_kwargs or {}).get("enable_thinking") is False:
+        if (extra_body.get("chat_template_kwargs") or {}).get("enable_thinking") is False:
             token_calibration.record(role.value, tokens_output, result or "")
 
         # Log LLM call if not a retry (avoid duplicate logs)

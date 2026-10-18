@@ -24,20 +24,29 @@
 - 💾 **Crash-proof** — progress checkpoints after every chunk, a resumed run continues where it stopped
 - 🎓 For professional and non-professional translators alike — drafts and dictionaries included
 
-## 🚀 Quick Start — first translation in 5 steps
+## 🚀 Quick Start — a translated book in two runs
 
-1. **Clone and install**
+By default the models run in the cloud — no GPU and no local LLM server: [OpenRouter](https://openrouter.ai) serves [Gemma 4 26B A4B](https://openrouter.ai/google/gemma-4-26b-a4b-it), which translates, and [Qwen 3.6 35B A3B](https://openrouter.ai/qwen/qwen3.6-35b-a3b), which proofreads — the same models as the reference local setup.
+
+1. **Install** (Python 3.11+; the dependencies come from `pyproject.toml`)
    ```bash
    git clone https://github.com/NW15D/sunny-narrator && cd sunny-narrator
+   python3 -m venv .venv && source .venv/bin/activate
    pip install -e .
-   # DOCX/EPUB/PDF input also needs: sudo apt install pandoc calibre
+   sudo apt install calibre pandoc     # EPUB/DOCX/PDF; macOS: brew install --cask calibre && brew install pandoc
    ```
-2. **Configure** — `cp env.sample .env`, fill in `API_KEY_*`, `API_BASE_*`, `MODEL_*`, `SOURCE_LANG`, `TARGET_LANG`, `FILE=books/mybook.fb2`. Formats are auto-detected by extension (FB2/TXT → classic pipeline, DOCX/EPUB/PDF → Calibre pipeline).
-3. **Build the dictionary** — `python app.py` creates `books/mybook.dic` and stops for review.
-4. **Edit the dictionary** — remove errors, fix translations and genders (the run tells you what is unsure).
-5. **Translate** — run `python app.py` again; the result appears next to the source file with a language marker. Then proofread the book.
+2. **Key and book** — create a key at [openrouter.ai/keys](https://openrouter.ai/keys) and top up a few dollars. `cp env.cloud.sample .env`, put the key into `API_KEY_TRANSLATE` and `API_KEY_PROOFREAD`, the book into `FILE=books/mybook.epub`, the languages into `SOURCE_LANG` / `TARGET_LANG`.
+3. **First run — the dictionary.** `python app.py` finds the names and terms of the book (the spaCy model of the source language is downloaded on first use), translates them, writes `books/mybook.dic` and stops. Look it through: the translations, the categories, the genders of the characters — `books/mybook.dictcheck.txt` lists what the book does not settle.
+4. **Second run — the book.** `python app.py` translates the whole book; the result is next to the source, `books/<title>_<lang>.epub`. Enjoy reading.
 
-**CPU-only or GPU without conda?** Use Docker (next section). **Draft without review stages?** `FAST_TRANS=true` (~2.5x faster).
+A 450-page novel costs about $1 (an estimate from the tokens of a real run; the OpenRouter activity page shows the exact cost). `env.cloud.sample` turns the models' thinking off and keeps to providers that serve the full weights (bf16/fp8) and support every parameter of the request.
+
+**The way to a perfect book — the dictionary first.** The dictionary decides the quality more than anything else: every chunk takes its names, terms and genders from it, so every fix in it shows on every page. For the best result take the longer way:
+1. After the first run, a fast draft that grows the dictionary: `FAST_TRANS=true DICT_AUTO_SAVE=true python app.py` — the synopsis stage adds the names and coined terms of the whole book and fills in empty genders (existing lines are never rewritten); about 2.5x faster than a full run.
+2. Check the dictionary: `python app.py dict clean books/mybook.dic` and `python app.py dict review books/mybook.epub --dic books/mybook.dic` (a cleaned / reviewed copy and a report next to it), then fix by hand what is left — the genders first.
+3. Translate from scratch with the finished dictionary: `python app.py --fresh`.
+
+**Local models instead of the cloud:** `env.sample` (llama.cpp, Ollama, LM Studio; 16–24 GB VRAM); Docker images — next section. **A draft only?** `FAST_TRANS=true`.
 
 ## 🐳 Docker
 
@@ -142,6 +151,7 @@ Step-by-step preparation of a series dictionary lives in [docs/DICTIONARY_FORMAT
 | **Docker (GPU)** | [docs/GPU_DOCKER.md](docs/GPU_DOCKER.md) |
 | **JSON Mode** | [docs/JSON_MODE_ANALYSIS.md](docs/JSON_MODE_ANALYSIS.md) |
 | **Tested Languages** | [docs/LANGUAGES.md](docs/LANGUAGES.md) |
+| **Contributing** | [CONTRIBUTING.md](CONTRIBUTING.md) |
 
 ## 🈶 CJK sources (Korean, Japanese, Chinese)
 

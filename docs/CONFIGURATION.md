@@ -38,7 +38,8 @@ authentication any non-empty API key will do.
 | `MODEL_TRANSLATE` | `Mistral` | Model name (reference setup: Gemma 4) |
 | `TEMP_TRANSLATE` | `0.01` | Base temperature (fallback for `TEMP_INITIAL`) |
 | `TIMEOUT_TRANSLATE` | `6000` | Request timeout, seconds |
-| `NOTHINK_TRANSLATE` | `false` | Disable the model's thinking/reasoning mode |
+| `NOTHINK_TRANSLATE` | `true` | Thinking/reasoning off: `chat_template_kwargs.enable_thinking=false` (llama.cpp) and `reasoning.effort=none` (OpenRouter, ProxyAPI) in every request; `false` lets the model think (slower, paid tokens) |
+| `EXTRA_BODY_TRANSLATE` | — | A JSON object added to every request body, e.g. the OpenRouter provider choice `{"provider": {"require_parameters": true, "quantizations": ["bf16", "fp8"]}}` (see `env.cloud.sample`) |
 | `S_PROMT_TRANSLATE` | `false` | `true` for models without system-prompt support (the system prompt is merged into the user message) |
 
 ### Proofread LLM — stages 2-4 (REFLECTION, IMPROVE, FINAL_EDIT)
@@ -50,7 +51,8 @@ authentication any non-empty API key will do.
 | `MODEL_PROOFREAD` | `tencent/Hunyuan-MT-7B` | Model name (reference setup: Qwen 3.6) |
 | `TEMP_PROOFREAD` | `0.7` | Base temperature |
 | `TIMEOUT_PROOFREAD` | `6000` | Request timeout, seconds |
-| `NOTHINK_PROOFREAD` | `false` | Disable thinking mode |
+| `NOTHINK_PROOFREAD` | `true` | Same as `NOTHINK_TRANSLATE` |
+| `EXTRA_BODY_PROOFREAD` | — | Same as `EXTRA_BODY_TRANSLATE` |
 | `S_PROMT_PROOFREAD` | `false` | Same as `S_PROMT_TRANSLATE` |
 
 ### Images LLM — cover (classic pipeline, optional)

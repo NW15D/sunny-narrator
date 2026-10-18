@@ -24,20 +24,29 @@ FB2/TXT/EPUB/DOCX/PDF için **sözlük odaklı yapay zekâ kitap çevirmeni (AI 
 - 💾 **Çökmeye dayanıklı** — her parçadan sonra kontrol noktası; yeniden başlatılan çalışma kaldığı yerden devam eder
 - 🎓 Profesyonel ve amatör çevirmenler için — taslaklar ve sözlükler dahil
 
-## 🚀 Hızlı başlangıç — 5 adımda ilk çeviri
+## 🚀 Hızlı başlangıç — iki çalıştırmada çevrilmiş bir kitap
 
-1. **Klonlayın ve kurun**
+Modeller varsayılan olarak bulutta çalışır — GPU ve yerel LLM sunucusu gerekmez: [OpenRouter](https://openrouter.ai) çeviriyi yapan [Gemma 4 26B A4B](https://openrouter.ai/google/gemma-4-26b-a4b-it) ile düzeltmeyi yapan [Qwen 3.6 35B A3B](https://openrouter.ai/qwen/qwen3.6-35b-a3b) modellerini sunar — referans yerel kurulumdaki modellerin aynısı.
+
+1. **Kurulum** (Python 3.11+; bağımlılıklar `pyproject.toml` dosyasından gelir)
    ```bash
    git clone https://github.com/NW15D/sunny-narrator && cd sunny-narrator
+   python3 -m venv .venv && source .venv/bin/activate
    pip install -e .
-   # DOCX/EPUB/PDF girdisi için ayrıca: sudo apt install pandoc calibre
+   sudo apt install calibre pandoc     # EPUB/DOCX/PDF; macOS: brew install --cask calibre && brew install pandoc
    ```
-2. **Yapılandırın** — `cp env.sample .env`, `API_KEY_*`, `API_BASE_*`, `MODEL_*`, `SOURCE_LANG`, `TARGET_LANG`, `FILE=books/mybook.fb2` değerlerini doldurun. Biçim uzantıdan anlaşılır (FB2/TXT → klasik işlem hattı, DOCX/EPUB/PDF → Calibre işlem hattı).
-3. **Sözlüğü oluşturun** — `python app.py`, `books/mybook.dic` dosyasını oluşturur ve inceleme için durur.
-4. **Sözlüğü düzenleyin** — hataları silin, çevirileri ve cinsiyetleri düzeltin (çalıştırma neyin belirsiz olduğunu söyler).
-5. **Çevirin** — `python app.py` komutunu tekrar çalıştırın; sonuç, dil işaretiyle birlikte kaynak dosyanın yanında oluşur. Ardından kitabı gözden geçirin.
+2. **Anahtar ve kitap** — [openrouter.ai/keys](https://openrouter.ai/keys) adresinden bir anahtar oluşturun ve birkaç dolar yükleyin. `cp env.cloud.sample .env` yapın, anahtarı `API_KEY_TRANSLATE` ve `API_KEY_PROOFREAD` alanlarına, kitabı `FILE=books/mybook.epub` satırına, dilleri `SOURCE_LANG` / `TARGET_LANG` alanlarına yazın.
+3. **Birinci çalıştırma — sözlük.** `python app.py` kitaptaki isimleri ve terimleri bulur (kaynak dilin spaCy modeli ilk kullanımda indirilir), bunları çevirir, `books/mybook.dic` dosyasını yazar ve durur. Sözlüğü gözden geçirin: çeviriler, kategoriler, karakterlerin cinsiyeti — `books/mybook.dictcheck.txt` kitabın netleştirmediği noktaları listeler.
+4. **İkinci çalıştırma — kitap.** `python app.py` kitabın tamamını çevirir; sonuç kaynağın yanında, `books/<başlık>_<dil>.epub`. Keyifli okumalar.
 
-**Yalnızca CPU ya da conda olmadan GPU mu?** Docker kullanın (sonraki bölüm). **İnceleme aşamaları olmadan taslak mı?** `FAST_TRANS=true` (~2,5 kat daha hızlı).
+450 sayfalık bir roman yaklaşık 1 $ tutar (gerçek bir çalıştırmanın token sayısından tahmin; kesin tutar OpenRouter etkinlik sayfasındadır). `env.cloud.sample` modellerin akıl yürütmesini kapatır ve yalnızca tam ağırlıkları (bf16/fp8) sunan, isteğin tüm parametrelerini destekleyen sağlayıcıları kullanır.
+
+**Kusursuz bir kitabın yolu — önce sözlük.** Çevirinin kalitesini en çok sözlük belirler: her parça isimleri, terimleri ve karakterlerin cinsiyetini ondan alır, bu yüzden sözlükteki her düzeltme her sayfada görünür. En iyi sonuç için uzun yolu izleyin:
+1. Birinci çalıştırmadan sonra sözlüğü büyüten hızlı bir taslak: `FAST_TRANS=true DICT_AUTO_SAVE=true python app.py` — özet aşaması tüm kitabın isimlerini ve uydurma terimlerini ekler, boş cinsiyetleri doldurur (mevcut satırlar asla yeniden yazılmaz); tam çeviriden yaklaşık 2,5 kat daha hızlıdır.
+2. Sözlüğü kontrol edin: `python app.py dict clean books/mybook.dic` ve `python app.py dict review books/mybook.epub --dic books/mybook.dic` (yanına temizlenmiş / gözden geçirilmiş bir kopya ve bir rapor yazılır), ardından kalanları elle düzeltin — önce cinsiyetleri.
+3. Hazır sözlükle baştan çevirin: `python app.py --fresh`.
+
+**Bulut yerine yerel modeller:** `env.sample` (llama.cpp, Ollama, LM Studio; 16–24 GB VRAM); Docker imajları — sonraki bölüm. **Yalnızca taslak mı?** `FAST_TRANS=true`.
 
 ## 🐳 Docker
 
@@ -142,6 +151,7 @@ Seri sözlüğünün adım adım hazırlanışı [docs/DICTIONARY_FORMAT.md](doc
 | **Docker (GPU)** | [docs/GPU_DOCKER.md](docs/GPU_DOCKER.md) |
 | **JSON modu** | [docs/JSON_MODE_ANALYSIS.md](docs/JSON_MODE_ANALYSIS.md) |
 | **Test edilen diller** | [docs/LANGUAGES.md](docs/LANGUAGES.md) |
+| **Katkıda bulunmak** | [CONTRIBUTING.md](CONTRIBUTING.md#sunny-narratora-katkıda-bulunmak) |
 
 ## 🈶 CJK kaynaklar (Korece, Japonca, Çince)
 

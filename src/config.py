@@ -36,6 +36,22 @@ def _same_local_server(url_a: str, url_b: str) -> bool:
         return False  # a hosted API by name
 
 
+def _parse_json_env(name) -> dict:
+    """A JSON object from an env var ({} when unset): EXTRA_BODY_* is merged
+    into every request body of that model."""
+    import json
+    raw = os.getenv(name, '').strip()
+    if not raw:
+        return {}
+    try:
+        value = json.loads(raw)
+    except ValueError as e:
+        raise ValueError(f"{name} is not valid JSON: {e}") from None
+    if not isinstance(value, dict):
+        raise ValueError(f"{name} must be a JSON object, got: {raw}")
+    return value
+
+
 def _parse_numeric_env(name, default, cast=float):
     """Parse numeric env var with fallback to default on invalid values."""
     try:
@@ -94,7 +110,12 @@ class Config:
         self.model_translate = os.getenv('MODEL_TRANSLATE', os.getenv('MODEL', 'Mistral'))
         self.temp_translate = _parse_numeric_env('TEMP_TRANSLATE', os.getenv('TEMP', 0.01))
         self.timeout_translate = _parse_numeric_env('TIMEOUT_TRANSLATE', os.getenv('TIMEOUT', 6000), cast=int)
-        self.nothink_translate = _parse_bool_env('NOTHINK_TRANSLATE', os.getenv('NOTHINK2', 'false'))
+        # Thinking is off unless asked for: the stages expect the answer
+        # itself, and a hosted Qwen 3.6 thinks by default (paid tokens)
+        self.nothink_translate = _parse_bool_env('NOTHINK_TRANSLATE', os.getenv('NOTHINK2', 'true'))
+        # EXTRA_BODY_*: a JSON object added to every request body, e.g. the
+        # OpenRouter provider choice {"provider": {"require_parameters": true}}
+        self.extra_body_translate = _parse_json_env('EXTRA_BODY_TRANSLATE')
         # presence_penalty, sent with every request instead of the server's
         # default (llama.cpp with the Qwen preset: 1.5): a stage that writes
         # the text again is penalized for the tokens of a word it just wrote
@@ -147,7 +168,8 @@ class Config:
                                               and self.model_proofread != self.model_translate))
         self.temp_proofread = _parse_numeric_env('TEMP_PROOFREAD', os.getenv('TEMP2', 0.7))
         self.timeout_proofread = _parse_numeric_env('TIMEOUT_PROOFREAD', os.getenv('TIMEOUT2', 6000), cast=int)
-        self.nothink_proofread = _parse_bool_env('NOTHINK_PROOFREAD', os.getenv('NOTHINK', 'false'))
+        self.nothink_proofread = _parse_bool_env('NOTHINK_PROOFREAD', os.getenv('NOTHINK', 'true'))
+        self.extra_body_proofread = _parse_json_env('EXTRA_BODY_PROOFREAD')
         self.presence_penalty_proofread = _parse_numeric_env('PRESENCE_PENALTY_PROOFREAD', 0.0)
         self.presence_penalty_reflection = _parse_numeric_env('PRESENCE_PENALTY_REFLECTION', 1.5)
 

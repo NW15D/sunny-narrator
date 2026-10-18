@@ -2,6 +2,14 @@
 
 All notable changes to Sunny Narrator.
 
+## Unreleased
+
+### Cloud models by default
+- `env.cloud.sample`: Gemma 4 26B A4B (translate) and Qwen 3.6 35B A3B (proofread) at OpenRouter, the models of the reference local setup; a ProxyAPI block (rubles, from Russia). Only the keys and the book need to be filled in.
+- Quick Start of every README rewritten: cloud models, `pip install -e .`, EPUB; the first run builds the dictionary, the second translates the book; the longer way to a perfect book (a `FAST_TRANS` + `DICT_AUTO_SAVE` draft grows the dictionary, `dict clean` / `dict review`, then `--fresh`). The Russian README recommends ProxyAPI.
+- `NOTHINK_TRANSLATE` / `NOTHINK_PROOFREAD` default to `true`, and a request without thinking also carries `reasoning: {"effort": "none"}`: a hosted Qwen 3.6 thinks unless told not to (paid tokens, the REFLECTION budget counts them). llama.cpp accepts and ignores the field.
+- `EXTRA_BODY_TRANSLATE` / `EXTRA_BODY_PROOFREAD`: a JSON object merged into every request body. The cloud sample uses it for the OpenRouter provider choice (`require_parameters`, `bf16`/`fp8`): by default OpenRouter takes the cheapest provider - for Qwen 3.6 an fp4 one, some without JSON mode.
+
 ## v2.9.4
 
 ### `app.py dict extend`: a dictionary carried over to new books
