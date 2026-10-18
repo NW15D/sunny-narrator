@@ -29,7 +29,7 @@ import src.vocabulary_manager as vm
 def test_manager_path_precedence(tmp_path, monkeypatch):
     book = str(tmp_path / "book.fb2")
     monkeypatch.setattr(vm.config, 'dictionary', None)
-    assert vm.VocabularyManager(book).dict_file == str(tmp_path / "book.dic")
+    assert vm.VocabularyManager(book).dict_file == str(tmp_path / "book_ru.dic")
 
     monkeypatch.setattr(vm.config, 'dictionary', str(tmp_path / "env.dic"))
     assert vm.VocabularyManager(book).dict_file == str(tmp_path / "env.dic")
@@ -48,7 +48,7 @@ def test_get_manager_rebuilds_when_path_changes(tmp_path, monkeypatch):
 
     # Dropping the override must not keep serving the stale explicit path
     second = vm.get_vocabulary_manager(book)
-    assert second.dict_file == str(tmp_path / "book.dic")
+    assert second.dict_file == str(tmp_path / "book_ru.dic")
 
     # Same resolved path -> cached instance is reused
     assert vm.get_vocabulary_manager(book) is second
@@ -85,7 +85,7 @@ def test_classic_main_creates_dictionary_at_explicit_path(tmp_path, monkeypatch)
     assert exc.value.code == 0  # "review and restart"
     assert explicit.exists(), "dictionary must be created at DICTIONARY path"
     assert "Alice = Алиса" in explicit.read_text(encoding='utf-8')
-    assert not (tmp_path / "book.dic").exists(), "auto path must stay untouched"
+    assert not (tmp_path / "book_ru.dic").exists(), "auto path must stay untouched"
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +142,7 @@ def test_calibre_builds_missing_dictionary_at_explicit_path(tmp_path, monkeypatc
     assert exc.value.dict_path == str(explicit)
     assert build_mock.call_count == 1
     assert explicit.exists(), "Step 2 must write the dictionary to dict_file"
-    assert not (tmp_path / "book.dic").exists()
+    assert not (tmp_path / "book_ru.dic").exists()
     translate_mock.assert_not_called()
     metadata_mock.assert_not_called()
 
@@ -158,7 +158,7 @@ def test_cli_exits_cleanly_after_calibre_dictionary_creation(tmp_path, monkeypat
     monkeypatch.setattr(cp, 'check_calibre_installed', lambda: True)
 
     def _stop(**kw):
-        raise vm.DictionaryCreatedSignal(str(tmp_path / "book.dic"))
+        raise vm.DictionaryCreatedSignal(str(tmp_path / "book_ru.dic"))
     monkeypatch.setattr(cp, 'run_pipeline', _stop)
 
     with pytest.raises(SystemExit) as exc:
@@ -177,7 +177,7 @@ def test_calibre_skips_build_when_explicit_dictionary_exists(tmp_path, monkeypat
                     skip_validation=True, dict_file=str(explicit))
 
     build_mock.assert_not_called()
-    assert not (tmp_path / "book.dic").exists()
+    assert not (tmp_path / "book_ru.dic").exists()
     metadata_vocab = metadata_mock.call_args.args[4]
     assert [e.source for e in metadata_vocab] == ["Alice"]
 
@@ -194,3 +194,24 @@ def test_calibre_uses_config_dictionary_by_default(tmp_path, monkeypatch):
                     skip_validation=True)
 
     assert translate_mock.call_args.kwargs['dict_file'] == str(explicit)
+
+
+def test_the_dictionary_of_a_book_carries_the_target_language(tmp_path, monkeypatch):
+    """<book>_<ISO code>.dic: a dictionary translates into one language, and a
+    <book>.dic without the code (the demo had a French one) is never taken
+    for a Russian run - a new <book>_ru.dic is built and then picked up."""
+    monkeypatch.setattr(vm.config, 'dictionary', None)
+    book = str(tmp_path / "eternal-moment.pg.epub")
+    (tmp_path / "eternal-moment.pg.dic").write_text("Feo = Féo,PERSON,he,\n", encoding='utf-8')
+    assert vm.dictionary_path(book, "russian") == str(tmp_path / "eternal-moment.pg_ru.dic")
+    assert vm.dictionary_path(book, "fr") == str(tmp_path / "eternal-moment.pg_fr.dic")
+    assert vm.VocabularyManager(book, target_lang="russian").dict_file == str(tmp_path / "eternal-moment.pg_ru.dic")
+    assert vm.VocabularyManager(book, target_lang="tr").dict_file == str(tmp_path / "eternal-moment.pg_tr.dic")
+
+
+def test_dict_convert_writes_the_name_a_run_looks_up(tmp_path):
+    from pathlib import Path
+    from src.dict_convert import converted_path
+    assert converted_path(Path("books/x_ru.dic"), "fr", "russian") == Path("books/x_fr.dic")
+    assert converted_path(Path("books/x.dic"), "fr", "russian") == Path("books/x_fr.dic")
+    assert converted_path(Path("books/x_en.dic"), "fr", "russian") == Path("books/x_en_fr.dic")

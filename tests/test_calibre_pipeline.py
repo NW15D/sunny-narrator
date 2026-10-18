@@ -585,7 +585,7 @@ def test_full_pipeline_integration(tmp_path):
         input_path.write_bytes(b"fake epub content")
         # A reviewed dictionary already exists; a missing one would stop the
         # run for review (DictionaryCreatedSignal) before translation.
-        (tmp_path / "book.dic").write_text("test = тест, TERM\n", encoding='utf-8')
+        (tmp_path / "book_ru.dic").write_text("test = тест, TERM\n", encoding='utf-8')
 
         output = run_pipeline(
             input_path=str(input_path),
@@ -693,7 +693,7 @@ def test_translate_chunks_uses_book_dictionary(tmp_path, monkeypatch):
 
     book = tmp_path / "book.epub"
     book.write_bytes(b"fake")
-    (tmp_path / "book.dic").write_text(
+    (tmp_path / "book_ru.dic").write_text(
         "dragon = дракон, TERM\nknight = рыцарь, TERM\nelf = эльф, TERM\n", encoding='utf-8')
     monkeypatch.setattr(vm, '_vocabulary_manager', None)
     monkeypatch.setattr(vm.config, 'dictionary', None)

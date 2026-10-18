@@ -125,7 +125,7 @@ authentication any non-empty API key will do.
 | `DICT_AUTOFIX` | `true` | Apply the sure findings of that check for the run (the `.dic` is not changed). `false` / `--no-autofix`: translate by the `.dic` as it is |
 | `DICT_FORCE` | `true` | Without autofix: a dictionary contradicting the book is only reported. `false`: the run stops (exit code 2). CLI: `--force` (`true`) |
 | `DICT_AUTO_SAVE` | `false` | Write the names and coined terms the synopsis stage finds while translating into the `.dic`. Off: they join the in-memory dictionary for the rest of the run (and its resume, via the checkpoint), but the file stays as you reviewed it. A candidate already covered by the dictionary is never added — neither another case or inflected form of an entry (`Jain nodes`, `Gabbleducks`) nor a phrase containing a known term (`Jain node`, `Jain-tech` when `Jain` is there). A hyphen, a space or no separator make different entries (`gabble-duck` is not `gabbleduck`). Works the same with `FAST_TRANS=on`: the synopsis stage is kept, so the dictionary grows in fast mode too (see [FAST_TRANS.md](FAST_TRANS.md)) |
-| `DICTIONARY` | empty | Explicit path to the `.dic` file instead of `<book>.dic` next to the book. CLI: `--dictionary <path>` (wins over `.env`). Both pipelines |
+| `DICTIONARY` | empty | Explicit path to the `.dic` file instead of `<book>_<lang>.dic` next to the book (`<lang>` — the ISO code of `TARGET_LANG`; built there when missing, a `<book>.dic` without the code is not used). CLI: `--dictionary <path>` (wins over `.env`). Both pipelines |
 
 **Details:** [NER_GUIDE.md](NER_GUIDE.md), [DICTIONARY_FORMAT.md](DICTIONARY_FORMAT.md)
 

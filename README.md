@@ -36,14 +36,14 @@ By default the models run in the cloud — no GPU and no local LLM server: [Open
    sudo apt install calibre pandoc     # EPUB/DOCX/PDF; macOS: brew install --cask calibre && brew install pandoc
    ```
 2. **Key and book** — create a key at [openrouter.ai/keys](https://openrouter.ai/keys) and top up a few dollars. `cp env.cloud.sample .env`, put the key into `API_KEY_TRANSLATE` and `API_KEY_PROOFREAD`, the book into `FILE=books/mybook.epub`, the languages into `SOURCE_LANG` / `TARGET_LANG`.
-3. **First run — the dictionary.** `python app.py` finds the names and terms of the book (the spaCy model of the source language is downloaded on first use), translates them, writes `books/mybook.dic` and stops. Look it through: the translations, the categories, the genders of the characters — `books/mybook.dictcheck.txt` lists what the book does not settle.
-4. **Second run — the book.** `python app.py` translates the whole book; the result is next to the source, `books/<title>_<lang>.epub`. Enjoy reading.
+3. **First run — the dictionary.** `python app.py` finds the names and terms of the book (the spaCy model of the source language is downloaded on first use), translates them, writes `books/mybook_ru.dic` (`ru` — the code of `TARGET_LANG`: each target language has its own dictionary) and stops. Look it through: the translations, the categories, the genders of the characters — `books/mybook_ru.dictcheck.txt` lists what the book does not settle.
+4. **Second run — the book.** `python app.py` picks up `books/mybook_ru.dic` and translates the whole book; the result is next to the source, `books/<title>_<lang>.epub`. Enjoy reading.
 
 A 450-page novel costs about $1 (an estimate from the tokens of a real run; the OpenRouter activity page shows the exact cost). `env.cloud.sample` turns the models' thinking off and keeps to providers that support every parameter of the request (JSON mode).
 
 **The way to a perfect book — the dictionary first.** The dictionary decides the quality more than anything else: every chunk takes its names, terms and genders from it, so every fix in it shows on every page. For the best result take the longer way:
 1. After the first run, a fast draft that grows the dictionary: `FAST_TRANS=true DICT_AUTO_SAVE=true python app.py` — the synopsis stage adds the names and coined terms of the whole book and fills in empty genders (existing lines are never rewritten); about 2.5x faster than a full run.
-2. Check the dictionary: `python app.py dict clean books/mybook.dic` and `python app.py dict review books/mybook.epub --dic books/mybook.dic` (a cleaned / reviewed copy and a report next to it), then fix by hand what is left — the genders first.
+2. Check the dictionary: `python app.py dict clean books/mybook_ru.dic` and `python app.py dict review books/mybook.epub --dic books/mybook_ru.dic` (a cleaned / reviewed copy and a report next to it), then fix by hand what is left — the genders first.
 3. Translate from scratch with the finished dictionary: `python app.py --fresh`.
 
 **Local models instead of the cloud:** `env.sample` (llama.cpp, Ollama, LM Studio; 16–24 GB VRAM); Docker images — next section. **A draft only?** `FAST_TRANS=true`.
@@ -63,7 +63,7 @@ cp env.sample .env
 # edit .env: API keys, MODEL_*, SOURCE_LANG/TARGET_LANG, FILE=books/mybook.fb2
 cp mybook.fb2 books/
 
-# 3. Run — first pass builds books/mybook.dic, review it, run again to translate
+# 3. Run — first pass builds books/mybook_ru.dic, review it, run again to translate
 docker run --rm --gpus all \
   --env-file .env \
   -v "$PWD/books:/app/books" \

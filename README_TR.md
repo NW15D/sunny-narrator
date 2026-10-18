@@ -36,14 +36,14 @@ Modeller varsayılan olarak bulutta çalışır — GPU ve yerel LLM sunucusu ge
    sudo apt install calibre pandoc     # EPUB/DOCX/PDF; macOS: brew install --cask calibre && brew install pandoc
    ```
 2. **Anahtar ve kitap** — [openrouter.ai/keys](https://openrouter.ai/keys) adresinden bir anahtar oluşturun ve birkaç dolar yükleyin. `cp env.cloud.sample .env` yapın, anahtarı `API_KEY_TRANSLATE` ve `API_KEY_PROOFREAD` alanlarına, kitabı `FILE=books/mybook.epub` satırına, dilleri `SOURCE_LANG` / `TARGET_LANG` alanlarına yazın.
-3. **Birinci çalıştırma — sözlük.** `python app.py` kitaptaki isimleri ve terimleri bulur (kaynak dilin spaCy modeli ilk kullanımda indirilir), bunları çevirir, `books/mybook.dic` dosyasını yazar ve durur. Sözlüğü gözden geçirin: çeviriler, kategoriler, karakterlerin cinsiyeti — `books/mybook.dictcheck.txt` kitabın netleştirmediği noktaları listeler.
-4. **İkinci çalıştırma — kitap.** `python app.py` kitabın tamamını çevirir; sonuç kaynağın yanında, `books/<başlık>_<dil>.epub`. Keyifli okumalar.
+3. **Birinci çalıştırma — sözlük.** `python app.py` kitaptaki isimleri ve terimleri bulur (kaynak dilin spaCy modeli ilk kullanımda indirilir), bunları çevirir, `books/mybook_ru.dic` dosyasını yazar (`ru` — `TARGET_LANG` kodu: her hedef dilin kendi sözlüğü vardır) ve durur. Sözlüğü gözden geçirin: çeviriler, kategoriler, karakterlerin cinsiyeti — `books/mybook_ru.dictcheck.txt` kitabın netleştirmediği noktaları listeler.
+4. **İkinci çalıştırma — kitap.** `python app.py` `books/mybook_ru.dic` sözlüğünü kendisi bulur ve kitabın tamamını çevirir; sonuç kaynağın yanında, `books/<başlık>_<dil>.epub`. Keyifli okumalar.
 
 450 sayfalık bir roman yaklaşık 1 $ tutar (gerçek bir çalıştırmanın token sayısından tahmin; kesin tutar OpenRouter etkinlik sayfasındadır). `env.cloud.sample` modellerin akıl yürütmesini kapatır ve yalnızca isteğin tüm parametrelerini (JSON modu) destekleyen sağlayıcıları kullanır.
 
 **Kusursuz bir kitabın yolu — önce sözlük.** Çevirinin kalitesini en çok sözlük belirler: her parça isimleri, terimleri ve karakterlerin cinsiyetini ondan alır, bu yüzden sözlükteki her düzeltme her sayfada görünür. En iyi sonuç için uzun yolu izleyin:
 1. Birinci çalıştırmadan sonra sözlüğü büyüten hızlı bir taslak: `FAST_TRANS=true DICT_AUTO_SAVE=true python app.py` — özet aşaması tüm kitabın isimlerini ve uydurma terimlerini ekler, boş cinsiyetleri doldurur (mevcut satırlar asla yeniden yazılmaz); tam çeviriden yaklaşık 2,5 kat daha hızlıdır.
-2. Sözlüğü kontrol edin: `python app.py dict clean books/mybook.dic` ve `python app.py dict review books/mybook.epub --dic books/mybook.dic` (yanına temizlenmiş / gözden geçirilmiş bir kopya ve bir rapor yazılır), ardından kalanları elle düzeltin — önce cinsiyetleri.
+2. Sözlüğü kontrol edin: `python app.py dict clean books/mybook_ru.dic` ve `python app.py dict review books/mybook.epub --dic books/mybook_ru.dic` (yanına temizlenmiş / gözden geçirilmiş bir kopya ve bir rapor yazılır), ardından kalanları elle düzeltin — önce cinsiyetleri.
 3. Hazır sözlükle baştan çevirin: `python app.py --fresh`.
 
 **Bulut yerine yerel modeller:** `env.sample` (llama.cpp, Ollama, LM Studio; 16–24 GB VRAM); Docker imajları — sonraki bölüm. **Yalnızca taslak mı?** `FAST_TRANS=true`.
@@ -63,7 +63,7 @@ cp env.sample .env
 # .env dosyasını düzenleyin: API anahtarları, MODEL_*, SOURCE_LANG/TARGET_LANG, FILE=books/mybook.fb2
 cp mybook.fb2 books/
 
-# 3. Çalıştırın — ilk geçiş books/mybook.dic oluşturur; inceleyin ve çeviri için tekrar çalıştırın
+# 3. Çalıştırın — ilk geçiş books/mybook_ru.dic oluşturur; inceleyin ve çeviri için tekrar çalıştırın
 docker run --rm --gpus all \
   --env-file .env \
   -v "$PWD/books:/app/books" \

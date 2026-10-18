@@ -49,7 +49,7 @@ NERMODEL=en_core_web_lg     # Large model with vectors (required)
 # Spanish:  es_core_news_lg
 
 # DICTIONARY: use an explicit .dic file instead of the automatic
-# <book_name>.dic lookup next to the source file. Empty = auto lookup.
+# <book_name>_<lang>.dic lookup next to the source file. Empty = auto lookup.
 # Also settable per run via --dictionary <path> (CLI wins over .env).
 DICTIONARY=
 ```
@@ -57,7 +57,7 @@ DICTIONARY=
 ### Explicit dictionary path (`DICTIONARY` / `--dictionary`)
 
 By default the vocabulary file is found automatically next to the source
-book: `books/MyBook.fb2` → `books/MyBook.dic` (see step 1 in the workflow
+book: `books/MyBook.fb2` with `TARGET_LANG=ru` → `books/MyBook_ru.dic` — one dictionary per target language, a `books/MyBook.dic` without the code is not used (see step 1 in the workflow
 above). Setting `DICTIONARY=/path/to/some.dic` in `.env`, or passing
 `--dictionary /path/to/some.dic` on the command line, overrides that lookup
 and uses the given file instead — for both the classic (FB2/TXT) and the
@@ -65,7 +65,7 @@ Calibre (DOCX/EPUB/PDF) pipeline. The CLI flag takes precedence over the
 `.env` value. This is useful for reusing a shared/series dictionary
 (built with `--build-series-dict`) or for keeping the `.dic` outside the
 book's own folder. If the file does not exist yet, both pipelines build it
-at that path, exactly as they would at the default `<book_name>.dic`
+at that path, exactly as they would at the default `<book_name>_<lang>.dic`
 location, and both pipelines stop after creating it so you can review it. The directory of the
 given path must already exist, otherwise `app.py` exits with an error.
 

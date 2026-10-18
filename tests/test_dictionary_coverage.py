@@ -118,7 +118,7 @@ def test_person_with_a_known_part_is_not_added_but_its_own_form_gets_gender(tmp_
 def _manager(tmp_path, monkeypatch, dic_text, auto_save=False):
     book = tmp_path / "book.fb2"
     book.write_bytes(b"fake")
-    dic = tmp_path / "book.dic"
+    dic = tmp_path / "book_ru.dic"
     dic.write_text(dic_text, encoding="utf-8")
     monkeypatch.setattr(vm, '_vocabulary_manager', None)
     monkeypatch.setattr(vm.config, 'dictionary', None)

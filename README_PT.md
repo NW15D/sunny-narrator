@@ -36,14 +36,14 @@ Por padrão os modelos rodam na nuvem — sem GPU e sem servidor LLM local: o [O
    sudo apt install calibre pandoc     # EPUB/DOCX/PDF; macOS: brew install --cask calibre && brew install pandoc
    ```
 2. **Chave e livro** — crie uma chave em [openrouter.ai/keys](https://openrouter.ai/keys) e coloque alguns dólares de crédito. `cp env.cloud.sample .env`, coloque a chave em `API_KEY_TRANSLATE` e `API_KEY_PROOFREAD`, o livro em `FILE=books/mybook.epub` e os idiomas em `SOURCE_LANG` / `TARGET_LANG`.
-3. **Primeira execução — o dicionário.** `python app.py` encontra os nomes e termos do livro (o modelo spaCy do idioma de origem é baixado no primeiro uso), traduz esses termos, grava `books/mybook.dic` e para. Revise-o: as traduções, as categorias, o gênero dos personagens — `books/mybook.dictcheck.txt` lista o que o livro não deixa claro.
-4. **Segunda execução — o livro.** `python app.py` traduz o livro inteiro; o resultado fica ao lado do original, `books/<título>_<idioma>.epub`. Boa leitura.
+3. **Primeira execução — o dicionário.** `python app.py` encontra os nomes e termos do livro (o modelo spaCy do idioma de origem é baixado no primeiro uso), traduz esses termos, grava `books/mybook_ru.dic` (`ru` — o código de `TARGET_LANG`: cada idioma de destino tem o seu dicionário) e para. Revise-o: as traduções, as categorias, o gênero dos personagens — `books/mybook_ru.dictcheck.txt` lista o que o livro não deixa claro.
+4. **Segunda execução — o livro.** `python app.py` usa `books/mybook_ru.dic` e traduz o livro inteiro; o resultado fica ao lado do original, `books/<título>_<idioma>.epub`. Boa leitura.
 
 Um romance de 450 páginas custa cerca de US$ 1 (estimativa a partir dos tokens de uma execução real; a página de atividade do OpenRouter mostra o custo exato). O `env.cloud.sample` desativa o raciocínio dos modelos e usa apenas provedores que aceitam todos os parâmetros da requisição (modo JSON).
 
 **O caminho para um livro perfeito — primeiro o dicionário.** O dicionário é o que mais decide a qualidade: cada trecho tira dele os nomes, os termos e o gênero dos personagens, então cada correção nele aparece em todas as páginas. Para o melhor resultado, siga o caminho mais longo:
 1. Depois da primeira execução, um rascunho rápido que faz o dicionário crescer: `FAST_TRANS=true DICT_AUTO_SAVE=true python app.py` — a etapa de sinopse acrescenta os nomes e termos inventados do livro inteiro e preenche os gêneros vazios (linhas existentes nunca são reescritas); cerca de 2,5x mais rápido que a tradução completa.
-2. Verifique o dicionário: `python app.py dict clean books/mybook.dic` e `python app.py dict review books/mybook.epub --dic books/mybook.dic` (uma cópia limpa / revisada e um relatório ao lado), depois corrija à mão o que restar — o gênero primeiro.
+2. Verifique o dicionário: `python app.py dict clean books/mybook_ru.dic` e `python app.py dict review books/mybook.epub --dic books/mybook_ru.dic` (uma cópia limpa / revisada e um relatório ao lado), depois corrija à mão o que restar — o gênero primeiro.
 3. Traduza do zero com o dicionário pronto: `python app.py --fresh`.
 
 **Modelos locais em vez da nuvem:** `env.sample` (llama.cpp, Ollama, LM Studio; 16–24 GB de VRAM); imagens Docker — próxima seção. **Só um rascunho?** `FAST_TRANS=true`.
@@ -63,7 +63,7 @@ cp env.sample .env
 # edite .env: chaves de API, MODEL_*, SOURCE_LANG/TARGET_LANG, FILE=books/mybook.fb2
 cp mybook.fb2 books/
 
-# 3. Executar — a primeira passada cria books/mybook.dic; revise-o e execute de novo para traduzir
+# 3. Executar — a primeira passada cria books/mybook_ru.dic; revise-o e execute de novo para traduzir
 docker run --rm --gpus all \
   --env-file .env \
   -v "$PWD/books:/app/books" \

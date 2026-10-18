@@ -3,7 +3,7 @@
 files=("books/eternal-moment.pg.epub" "books/forster-short-fiction.se.epub" )
 
 # Target languages in order: "TARGET_LANG:COUNTRY". The dictionary for each is
-# books/<book>_<TARGET_LANG>.dic (DICTIONARY env overrides the <book>.dic lookup).
+# books/<book>_<TARGET_LANG>.dic - the name a run looks it up by anyway.
 langs=(
   "ru:Россия"
   "es:España"

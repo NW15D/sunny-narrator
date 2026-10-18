@@ -114,11 +114,21 @@ def write_dic(out_path: Path, src_name: str, code: str, entries, done, source_co
     dict_clean.write_atomic(out_path, "\n".join(lines) + "\n")
 
 
+def converted_path(src_path: Path, code: str, hint_lang: str) -> Path:
+    """<book>_<code>.dic, the name a run looks the dictionary up by: the
+    language code of the source dictionary is replaced (MyBook_ru.dic ->
+    MyBook_fr.dic), a name without one gets the code (MyBook.dic -> MyBook_fr.dic)."""
+    stem, hint = src_path.stem, f"_{lexicon.lang_code(hint_lang)}"
+    if stem.endswith(hint):
+        stem = stem[:-len(hint)]
+    return src_path.with_name(f"{stem}_{code}{src_path.suffix}")
+
+
 def convert(src_path: Path, code: str, batch_size: int, force: bool, client,
             source_lang: str, hint_lang: str):
     target_name, source_name, hint_name = lang_name(code), lang_name(source_lang), lang_name(hint_lang)
     source_code = lexicon.lang_code(source_lang)
-    out_path = src_path.with_name(f"{src_path.stem}_{code}{src_path.suffix}")
+    out_path = converted_path(src_path, code, hint_lang)
     entries = parse_dic(src_path)
 
     done = {}

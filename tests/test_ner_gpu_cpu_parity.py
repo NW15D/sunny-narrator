@@ -74,7 +74,7 @@ def _manager(tmp_path, monkeypatch):
 
     book = tmp_path / "book.fb2"
     book.write_bytes(b"fake")
-    (tmp_path / "book.dic").write_text("Jain = Джайны, ORG, they, \n", encoding="utf-8")
+    (tmp_path / "book_ru.dic").write_text("Jain = Джайны, ORG, they, \n", encoding="utf-8")
     monkeypatch.setattr(vm, '_vocabulary_manager', None)
     monkeypatch.setattr(vm.config, 'dictionary', None)
     monkeypatch.setattr(vm.config, 'ner_opt', True)

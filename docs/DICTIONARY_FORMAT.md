@@ -18,16 +18,16 @@ The dictionary file (`*.dic`) ensures terminology consistency throughout transla
 
 | Task | Command / step |
 |---|---|
-| New book, no dictionary | `python app.py` (or `python app.py --build-dict books/MyBook.epub`) → `books/MyBook.dic` + `books/MyBook.dictcheck.txt` → fill in the empty genders you know → run again |
+| New book, no dictionary | `python app.py` (or `python app.py --build-dict books/MyBook.epub`) → `books/MyBook_ru.dic` + `books/MyBook_ru.dictcheck.txt` → fill in the empty genders you know → run again |
 | Translate with a dictionary | `python app.py` — the check runs first; read `<book>.dictcheck.txt`, take `<dic>.reviewed.dic` if you agree |
 | Strict mode | `python app.py --no-autofix` — by the `.dic` as it is; `DICT_FORCE=false` — stops on a contradiction (exit code 2) |
 | Series of books | `python app.py --build-series-dict books/series/ --series-dict-output series.dic`, then each book with `--dictionary series.dic`; a run never changes `series.dic`, each book gets `series.<book>.reviewed.dic` |
-| Clean a dictionary | `python app.py dict clean books/MyBook.dic` → `MyBook.clean.dic` + report (duplicates, gender spellings, ordinary words) |
+| Clean a dictionary | `python app.py dict clean books/MyBook_ru.dic` → `MyBook_ru.clean.dic` + report (duplicates, gender spellings, ordinary words) |
 | Next volume of a series / new books of the same universe | `python app.py dict extend series.dic --book vol3.epub` → `series.extended/series.dic` + `series.extend.report.txt`; the existing entries stay, the new ones follow under `# new words <date>` (see *Method 4*) |
-| Check against the book without translating | `python app.py dict review books/MyBook.epub --dic books/MyBook.dic` → `MyBook.reviewed.dic` + report |
-| Another target language | `python app.py dict convert books/MyBook.dic fr es zh` |
+| Check against the book without translating | `python app.py dict review books/MyBook.epub --dic books/MyBook_ru.dic` → `MyBook_ru.reviewed.dic` + report |
+| Another target language | `python app.py dict convert books/MyBook_ru.dic fr es zh` |
 | Check a finished translation | `python app.py audit books/MyBook_ru.epub --dic books/MyBook_ru.dic --lang russian` |
-| Explicit dictionary path | by default the `.dic` is looked up next to the book; `DICTIONARY=path/to/file.dic` in `.env` or `--dictionary path/to/file.dic` (the CLI flag wins) uses another file, e.g. a shared series dictionary — both pipelines, a missing file is created at that path (its directory must exist) |
+| Explicit dictionary path | by default the dictionary is `<book>_<lang>.dic` next to the book (`<lang>` — the ISO code of `TARGET_LANG`; one dictionary per target language, a `<book>.dic` without the code is not used); `DICTIONARY=path/to/file.dic` in `.env` or `--dictionary path/to/file.dic` (the CLI flag wins) uses another file, e.g. a shared series dictionary — both pipelines, a missing file is created at that path (its directory must exist) |
 
 ---
 
@@ -339,7 +339,7 @@ ordinary words and cut variants in the base are reported, not removed (that is
 
 ## Using Dictionary
 
-Dictionary is automatically loaded if `.dic` file exists:
+The dictionary `<book>_<lang>.dic` next to the book (`books/MyBook.epub`, `TARGET_LANG=ru` → `books/MyBook_ru.dic`) is loaded automatically; without it the first run builds it there and stops for review:
 
 ```bash
 # Translation with dictionary
@@ -510,13 +510,13 @@ All of them write next to their input (`dict extend` — into a folder next to i
 
 ```bash
 # duplicates (by lexicon.word_key), gender spellings, ordinary words, cut variants
-python app.py dict clean books/MyBook.dic            # -> MyBook.clean.dic + report
+python app.py dict clean books/MyBook_ru.dic            # -> MyBook_ru.clean.dic + report
 # categories and genders against the book (what the check before a translation does)
-python app.py dict review books/MyBook.epub --dic books/MyBook.dic   # -> MyBook.reviewed.dic + report
+python app.py dict review books/MyBook.epub --dic books/MyBook_ru.dic   # -> MyBook_ru.reviewed.dic + report
 # the dictionary carried over to new books / dictionaries (into a folder, see Method 4)
 python app.py dict extend series.dic --book vol3.epub [--merge other.dic]   # -> series.extended/
 # the dictionary into other target languages (proofread LLM from .env)
-python app.py dict convert books/MyBook.dic fr es zh # -> MyBook_fr.dic, ...
+python app.py dict convert books/MyBook_ru.dic fr es zh # -> MyBook_fr.dic, ... (the name a run looks up)
 # a finished translation: words in two alphabets, gender errors, characters without gender
 python app.py audit books/MyBook_ru.epub --dic books/MyBook_ru.dic --lang russian --json audit.json
 # passages through the real pipeline with the .env models (A/B of prompts and settings)

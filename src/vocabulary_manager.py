@@ -47,6 +47,16 @@ def min_word_length_for(source_lang: str) -> int:
     return 2 if lexicon.lang_code(source_lang) in _CJK_LANGUAGES else 5
 
 
+def dictionary_path(book_path: str, target_lang: Optional[str] = None) -> str:
+    """The dictionary of a book for a target language, next to the book:
+    <book>_<ISO code>.dic (books/x.epub, russian -> books/x_ru.dic). It is
+    looked up there and built there when missing; the translations of a
+    dictionary are in one language, so a <book>.dic without the code is
+    never taken for it."""
+    stem = os.path.splitext(book_path)[0]
+    return f"{stem}_{config.lang_marker(target_lang)}.dic"
+
+
 def term_chunks(lines: List[str]) -> List[str]:
     """Glossary lines in portions of MAX_LEN_CHUNK characters for the LLM
     (build_dictionary, dict_extend)."""
@@ -332,9 +342,9 @@ class VocabularyManager:
         self.country = country or config.country
         self.book_dir = os.path.dirname(book_path)
         self.book_name = Path(book_path).stem
-        # Explicit dict_file argument > DICTIONARY env/config > auto lookup
-        # next to the source file (<book_name>.dic).
-        self.dict_file = dict_file or config.dictionary or os.path.join(self.book_dir, f"{self.book_name}.dic")
+        # Explicit dict_file argument > DICTIONARY env/config > next to the
+        # source file, <book_name>_<target language code>.dic (dictionary_path)
+        self.dict_file = dict_file or config.dictionary or dictionary_path(book_path, self.target_lang)
         
         self.vocab: Dict[str, VocabEntry] = {}
         self.characters: Dict[str, Character] = {}

@@ -54,9 +54,9 @@ In `.env`:
 - ProxyAPI instead of OpenRouter: uncomment the `PROXYAPI` block at the end;
 - `FILE=books/<book>.epub`, `SOURCE_LANG`, `TARGET_LANG` (names or ISO codes:
   `en`, `ru`, `english`, …);
-- the demo: `FILE=books/eternal-moment.pg.epub` with
-  `DICTIONARY=books/eternal-moment.pg_ru.dic` (English → Russian, a ready
-  dictionary).
+- the demo: `FILE=books/eternal-moment.pg.epub`, `TARGET_LANG=ru` (its
+  dictionary `books/eternal-moment.pg_ru.dic` is ready: the first run
+  translates at once).
 
 Every option is documented in `env.sample` and
 [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
@@ -66,12 +66,14 @@ Every option is documented in `env.sample` and
 Run from the repository root, with the venv active.
 
 1. **First run — the dictionary.** `python app.py` finds the names and terms
-   of the book, translates them, writes `books/<book>.dic` and stops with
+   of the book, translates them, writes `books/<book>_<lang>.dic` (`<lang>` —
+   the code of `TARGET_LANG`, one dictionary per target language) and stops with
    "Dictionary created". Not an error: show the user the dictionary and
    `books/<book>.dictcheck.txt` (what the book does not settle — genders of
    characters first) and let them correct it. Do not edit the dictionary for
    them without asking.
-2. **Second run — the book.** `python app.py` translates the whole book; the
+2. **Second run — the book.** `python app.py` picks the dictionary up by that
+   name and translates the whole book; the
    result is next to the source, `books/<title>_<lang>.epub`.
 
 A run is long (tens of minutes for the demo book, hours for a novel): start it
@@ -81,8 +83,8 @@ checkpoint when started again; `--fresh` starts over.
 
 For the best quality (the user's call, it costs a second pass): a fast draft
 grows the dictionary — `FAST_TRANS=true DICT_AUTO_SAVE=true python app.py` —
-then `python app.py dict clean books/<book>.dic` and
-`python app.py dict review books/<book>.epub --dic books/<book>.dic`, the user
+then `python app.py dict clean books/<book>_<lang>.dic` and
+`python app.py dict review books/<book>.epub --dic books/<book>_<lang>.dic`, the user
 reviews, then `python app.py --fresh`.
 
 ### Read the result

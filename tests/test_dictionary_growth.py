@@ -20,7 +20,7 @@ import src.vocabulary_manager as vm
 def _setup(tmp_path, monkeypatch, book_name):
     book = tmp_path / book_name
     book.write_bytes(b"fake")
-    dic = tmp_path / (os.path.splitext(book_name)[0] + ".dic")
+    dic = tmp_path / (os.path.splitext(book_name)[0] + "_ru.dic")
     dic.write_text("dragon = дракон, TERM, , \n", encoding='utf-8')
     monkeypatch.setattr(vm, '_vocabulary_manager', None)
     monkeypatch.setattr(vm.config, 'dictionary', None)

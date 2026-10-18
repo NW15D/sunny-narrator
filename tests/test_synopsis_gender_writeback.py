@@ -71,7 +71,7 @@ def test_translate_chunk_fills_candidate_sink(monkeypatch):
 
 
 def _write(tmp_path, body):
-    path = tmp_path / "book.dic"
+    path = tmp_path / "book_ru.dic"
     path.write_text("# Vocabulary\n# Format: source = target, category, gender, notes\n\n" + body, encoding='utf-8')
     return str(path)
 

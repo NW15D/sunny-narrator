@@ -61,7 +61,7 @@ def book(tmp_path):
         text = f.read().replace(TAIL, '').replace('9lonely', 'lonely')
     path = tmp_path / 'book.fb2'
     path.write_text(text, encoding='cp1251')
-    (tmp_path / 'book.dic').write_text('# reviewed, no terms\n', encoding='utf-8')
+    (tmp_path / 'book_ru.dic').write_text('# reviewed, no terms\n', encoding='utf-8')
     return path
 
 
@@ -163,7 +163,7 @@ def test_interrupted_run_resumes_to_the_same_book(book, run_main, tmp_path):
     reference = tmp_path / 'reference'
     reference.mkdir()
     shutil.copy(book, reference / 'book.fb2')
-    shutil.copy(book.parent / 'book.dic', reference / 'book.dic')
+    shutil.copy(book.parent / 'book_ru.dic', reference / 'book_ru.dic')
     run_main(reference / 'book.fb2')
     [expected] = _outputs(reference, 'fb2')
 
@@ -191,7 +191,7 @@ def test_fresh_ignores_the_checkpoint_and_translates_every_chunk(book, run_main,
     reference = tmp_path / 'reference'
     reference.mkdir()
     shutil.copy(book, reference / 'book.fb2')
-    shutil.copy(book.parent / 'book.dic', reference / 'book.dic')
+    shutil.copy(book.parent / 'book_ru.dic', reference / 'book_ru.dic')
     full = {'n': 0}
     translate_all = _fake_translate()
 
@@ -431,7 +431,7 @@ def test_sigterm_saves_a_checkpoint_and_the_run_resumes(book, run_main, tmp_path
     reference = tmp_path / 'reference'
     reference.mkdir()
     shutil.copy(book, reference / 'book.fb2')
-    shutil.copy(book.parent / 'book.dic', reference / 'book.dic')
+    shutil.copy(book.parent / 'book_ru.dic', reference / 'book_ru.dic')
     run_main(reference / 'book.fb2')
     [expected] = _outputs(reference, 'fb2')
 
@@ -463,7 +463,7 @@ def test_sigterm_saves_a_checkpoint_and_the_run_resumes(book, run_main, tmp_path
 def test_first_run_creates_the_dictionary_and_stops(book, run_main, monkeypatch):
     import src.vocabulary_manager as vm
     monkeypatch.setattr(vm.config, 'ner_opt', False)   # no spaCy model in the test env: empty template
-    os.remove(book.parent / 'book.dic')
+    os.remove(book.parent / 'book_ru.dic')
 
     def no_llm(*args, **kwargs):
         raise AssertionError('nothing is translated before the dictionary is reviewed')
@@ -471,5 +471,5 @@ def test_first_run_creates_the_dictionary_and_stops(book, run_main, monkeypatch)
     with pytest.raises(SystemExit) as exc:
         run_main(book, translate=no_llm)
     assert exc.value.code == 0
-    assert (book.parent / 'book.dic').exists()
+    assert (book.parent / 'book_ru.dic').exists()
     assert not _outputs(book.parent, 'fb2') and not _outputs(book.parent, 'epub')

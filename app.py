@@ -34,7 +34,7 @@ from src.config import Config
 from src.synopsis_manager import SynopsisManager
 from src.stage_pipeline import StageSequencer, chunk_slot, current_slot, COMMITTED
 from src.llm_logger import init_llm_logger
-from src.vocabulary_manager import get_vocabulary_manager, DictionaryCreatedSignal, VocabularyManager
+from src.vocabulary_manager import get_vocabulary_manager, DictionaryCreatedSignal, VocabularyManager, dictionary_path
 from src.dict_review import DictionaryCheckFailed
 from src.character_registry import get_character_registry, reset_character_registry
 from src.epub_writer import create_epub_from_fb2
@@ -1138,8 +1138,8 @@ def cli():
         if not os.path.exists(book_path):
             print(f"Error: Book file not found: {book_path}")
             sys.exit(1)
-        # Determine output dict path
-        dict_path = args.book_dict_output or f"{os.path.splitext(book_path)[0]}.dic"
+        # Determine output dict path: <book>_<lang>.dic, where a run looks it up
+        dict_path = args.book_dict_output or dictionary_path(book_path)
         print(f"Building dictionary for book: {book_path}")
         print(f"Output dictionary: {dict_path}")
         # Parse book body (reuse same logic as main)

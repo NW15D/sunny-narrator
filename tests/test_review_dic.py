@@ -90,7 +90,7 @@ def test_rows_keep_their_lines_and_gender_spellings_are_normalized(tmp_path):
 def test_the_demo_book(tmp_path, monkeypatch):
     out = tmp_path / "em.reviewed.dic"
     assert commands.run(['dict', 'review', str(ROOT / "books/eternal-moment.pg.epub"),
-                "--dic", str(ROOT / "books/eternal-moment.pg.dic"), "--model", "en_core_web_lg",
+                "--dic", str(ROOT / "books/eternal-moment.pg_fr.dic"), "--model", "en_core_web_lg",
                 "-o", str(out)]) == 0
     text = out.read_text(encoding="utf-8")
     assert "Vashti = Vashti,PERSON,she," in text and "Andrews = Andrews,PERSON,he," in text
