@@ -39,7 +39,7 @@ Modeller varsayılan olarak bulutta çalışır — GPU ve yerel LLM sunucusu ge
 3. **Birinci çalıştırma — sözlük.** `python app.py` kitaptaki isimleri ve terimleri bulur (kaynak dilin spaCy modeli ilk kullanımda indirilir), bunları çevirir, `books/mybook.dic` dosyasını yazar ve durur. Sözlüğü gözden geçirin: çeviriler, kategoriler, karakterlerin cinsiyeti — `books/mybook.dictcheck.txt` kitabın netleştirmediği noktaları listeler.
 4. **İkinci çalıştırma — kitap.** `python app.py` kitabın tamamını çevirir; sonuç kaynağın yanında, `books/<başlık>_<dil>.epub`. Keyifli okumalar.
 
-450 sayfalık bir roman yaklaşık 1 $ tutar (gerçek bir çalıştırmanın token sayısından tahmin; kesin tutar OpenRouter etkinlik sayfasındadır). `env.cloud.sample` modellerin akıl yürütmesini kapatır ve yalnızca tam ağırlıkları (bf16/fp8) sunan, isteğin tüm parametrelerini destekleyen sağlayıcıları kullanır.
+450 sayfalık bir roman yaklaşık 1 $ tutar (gerçek bir çalıştırmanın token sayısından tahmin; kesin tutar OpenRouter etkinlik sayfasındadır). `env.cloud.sample` modellerin akıl yürütmesini kapatır ve yalnızca isteğin tüm parametrelerini (JSON modu) destekleyen sağlayıcıları kullanır.
 
 **Kusursuz bir kitabın yolu — önce sözlük.** Çevirinin kalitesini en çok sözlük belirler: her parça isimleri, terimleri ve karakterlerin cinsiyetini ondan alır, bu yüzden sözlükteki her düzeltme her sayfada görünür. En iyi sonuç için uzun yolu izleyin:
 1. Birinci çalıştırmadan sonra sözlüğü büyüten hızlı bir taslak: `FAST_TRANS=true DICT_AUTO_SAVE=true python app.py` — özet aşaması tüm kitabın isimlerini ve uydurma terimlerini ekler, boş cinsiyetleri doldurur (mevcut satırlar asla yeniden yazılmaz); tam çeviriden yaklaşık 2,5 kat daha hızlıdır.

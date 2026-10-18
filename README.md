@@ -39,7 +39,7 @@ By default the models run in the cloud — no GPU and no local LLM server: [Open
 3. **First run — the dictionary.** `python app.py` finds the names and terms of the book (the spaCy model of the source language is downloaded on first use), translates them, writes `books/mybook.dic` and stops. Look it through: the translations, the categories, the genders of the characters — `books/mybook.dictcheck.txt` lists what the book does not settle.
 4. **Second run — the book.** `python app.py` translates the whole book; the result is next to the source, `books/<title>_<lang>.epub`. Enjoy reading.
 
-A 450-page novel costs about $1 (an estimate from the tokens of a real run; the OpenRouter activity page shows the exact cost). `env.cloud.sample` turns the models' thinking off and keeps to providers that serve the full weights (bf16/fp8) and support every parameter of the request.
+A 450-page novel costs about $1 (an estimate from the tokens of a real run; the OpenRouter activity page shows the exact cost). `env.cloud.sample` turns the models' thinking off and keeps to providers that support every parameter of the request (JSON mode).
 
 **The way to a perfect book — the dictionary first.** The dictionary decides the quality more than anything else: every chunk takes its names, terms and genders from it, so every fix in it shows on every page. For the best result take the longer way:
 1. After the first run, a fast draft that grows the dictionary: `FAST_TRANS=true DICT_AUTO_SAVE=true python app.py` — the synopsis stage adds the names and coined terms of the whole book and fills in empty genders (existing lines are never rewritten); about 2.5x faster than a full run.

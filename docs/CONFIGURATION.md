@@ -39,7 +39,7 @@ authentication any non-empty API key will do.
 | `TEMP_TRANSLATE` | `0.01` | Base temperature (fallback for `TEMP_INITIAL`) |
 | `TIMEOUT_TRANSLATE` | `6000` | Request timeout, seconds |
 | `NOTHINK_TRANSLATE` | `true` | Thinking/reasoning off: `chat_template_kwargs.enable_thinking=false` (llama.cpp) and `reasoning.effort=none` (OpenRouter, ProxyAPI) in every request; `false` lets the model think (slower, paid tokens) |
-| `EXTRA_BODY_TRANSLATE` | — | A JSON object added to every request body, e.g. the OpenRouter provider choice `{"provider": {"require_parameters": true, "quantizations": ["bf16", "fp8"]}}` (see `env.cloud.sample`) |
+| `EXTRA_BODY_TRANSLATE` | — | A JSON object added to every request body, e.g. the OpenRouter provider choice `{"provider": {"require_parameters": true}}` (only providers that support every parameter of the request) (see `env.cloud.sample`) |
 | `S_PROMT_TRANSLATE` | `false` | `true` for models without system-prompt support (the system prompt is merged into the user message) |
 
 ### Proofread LLM — stages 2-4 (REFLECTION, IMPROVE, FINAL_EDIT)

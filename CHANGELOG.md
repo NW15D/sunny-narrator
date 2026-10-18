@@ -14,7 +14,7 @@ All notable changes to Sunny Narrator.
 - `books/`: the extracted images (`<book>_images/`) and the checkpoints of earlier runs are no longer in the repository - a run rewrote them, and a committed checkpoint made a new French or Turkish run resume an old one; the demo translations moved to `books/samples/`.
 - `AGENTS.md`: how an AI agent installs Sunny Narrator and translates a book for a user - what to ask first, install, configure, the two runs, exit codes, the metrics report, the usual failures.
 - Docs: CUDA numbers the GPUs fastest first, so spaCy's device 0 is not necessarily `nvidia-smi`'s GPU 0 (`CUDA_DEVICE_ORDER=PCI_BUS_ID`).
-- `EXTRA_BODY_TRANSLATE` / `EXTRA_BODY_PROOFREAD`: a JSON object merged into every request body. The cloud sample uses it for the OpenRouter provider choice (`require_parameters`, `bf16`/`fp8`): by default OpenRouter takes the cheapest provider - for Qwen 3.6 an fp4 one, some without JSON mode.
+- `EXTRA_BODY_TRANSLATE` / `EXTRA_BODY_PROOFREAD`: a JSON object merged into every request body. The cloud sample uses it for the OpenRouter provider choice (`require_parameters`): by default OpenRouter takes the cheapest provider, and some providers of Qwen 3.6 have no JSON mode. Any quantization is allowed (a 4-bit one translates well).
 
 ## v2.9.4
 
