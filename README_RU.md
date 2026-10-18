@@ -11,7 +11,7 @@
 [![Last commit](https://img.shields.io/github/last-commit/NW15D/sunny-narrator)](https://github.com/NW15D/sunny-narrator/commits/main)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Версия:** 2.9.4  
+**Версия:** 2.10.0  
 **AI-переводчик книг с глоссарием (AI book translator)** для FB2/TXT/EPUB/DOCX/PDF — переводчик художественной литературы на базе LLM с двумя независимыми LLM и 5-стадийным контролем качества.
 
 🖥️ **Консольная утилита (CLI)** — без графического интерфейса, нужен базовый опыт работы с командной строкой.

@@ -11,7 +11,7 @@
 [![Last commit](https://img.shields.io/github/last-commit/NW15D/sunny-narrator)](https://github.com/NW15D/sunny-narrator/commits/main)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**版本:** 2.9.4  
+**版本:** 2.10.0  
 **基于术语表的 AI 书籍翻译器（AI book translator）**，支持 FB2/TXT/EPUB/DOCX/PDF —— 基于 LLM 的小说/文学翻译工具，采用双 LLM 翻译与 5 阶段质量控制。
 
 🖥️ **命令行工具（CLI）** —— 无图形界面，需要一定的命令行使用经验。

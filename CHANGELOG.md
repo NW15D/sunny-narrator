@@ -2,7 +2,12 @@
 
 All notable changes to Sunny Narrator.
 
-## Unreleased
+## v2.10.0
+
+### Breaking
+- The dictionary of a book is `<book>_<lang>.dic` (`books/x.epub` with `TARGET_LANG=ru` → `books/x_ru.dic`); a `<book>.dic` without the language code is no longer used, and a missing dictionary is built anew. Rename an existing dictionary: `mv books/x.dic books/x_ru.dic` (or point `DICTIONARY` at it).
+- `NOTHINK_TRANSLATE` / `NOTHINK_PROOFREAD` default to `true` (thinking off).
+- torch is no longer installed; nothing in the project needs it.
 
 ### Cloud models by default
 - `env.cloud.sample`: Gemma 4 26B A4B (translate) and Qwen 3.6 35B A3B (proofread) at OpenRouter, the models of the reference local setup; a ProxyAPI block (rubles, from Russia). Only the keys and the book need to be filled in.
