@@ -25,7 +25,7 @@ def test_series_vocab_with_malformed_json():
     with tempfile.TemporaryDirectory() as tmpdir:
         # Copy sample books
         shutil.copy(os.path.join(project_root, 'books', 'eternal-moment.pg.epub'), tmpdir)
-        shutil.copy(os.path.join(project_root, 'books', 'ExampleBook.fb2'), tmpdir)
+        shutil.copy(os.path.join(project_root, 'tests', 'data', 'ExampleBook.fb2'), tmpdir)
         
         output_file = os.path.join(tmpdir, 'test_series.dic')
         

@@ -1,7 +1,5 @@
 # Logging — Console Log and LLM Call Log
 
-**Version:** 2.2
-
 Sunny Narrator writes two independent logs:
 
 | Log | Where | Enabled by |
@@ -28,14 +26,14 @@ LLM_LOGGING_DIR=logs
 
 Format: `timestamp - LEVEL - message`.
 
-![Console log of a Korean → Russian translation with DEBUG=on](../logging.png)
+![Console log of a Korean → Russian translation with DEBUG=on](../assets/logging.png)
 
-What the screenshot shows (Korean → Russian, `DEBUG=on`):
+What the screenshot shows (Korean → Russian, `DEBUG=on`, an older version):
 
 | Line | Meaning |
 |------|---------|
 | `[FINAL] 8075 → 16619 chars (×2.06, calibrating) ✓ OK` | Length check of the final translation. `calibrating` — fewer than 3 chunks accepted so far, only gross failures are rejected; afterwards it reads `expected ×N.NN` (the book's median ratio) |
-| `Dictionary …/weed.dic: gender set for 0, added 2 character(s)` | Genders reported by the synopsis were written into the dictionary: empty gender fields filled, new characters appended |
+| `Dictionary …/weed.dic: gender set for 0, added 2 character(s)` | With `DICT_AUTO_SAVE=true`: genders and characters reported by the synopsis written into the `.dic`. By default they only join the in-memory dictionary (`[gender] Janet = she: from the synopsis (2 chunks agree)`, `Dictionary: added …`) |
 | `Loaded 67 entries from CSV format` / `Extracted 52 characters, synced with registry` | The dictionary is reloaded so the next chunk already sees the new genders |
 | `Chunk 1 (depth 0): 8075 → 16619 chars (105.8%)` | Chunk summary: source → translation length. `depth` > 0 means the chunk was split (rechunking) |
 | `[CharacterRegistry] Detected 12 characters …` / `[Synopsis] … added 430 chars synopsis` | Characters found in the chunk and the synopsis carried to the next chunk |
@@ -51,6 +49,17 @@ What the screenshot shows (Korean → Russian, `DEBUG=on`):
 | `RECHUNK FAIL-FAST …` | ERROR | Half of a split chunk came back empty — the chunk is not assembled from partial results |
 | `LLM call cap (…) reached` | WARNING | The per-chunk LLM call limit was hit; check the model and the chunk |
 | `Empty synopsis returned` | WARNING | The next chunk is translated without synopsis context |
+| `Words in two alphabets: dверей, …` | WARNING | Words the model wrote half in Latin reached the book; they are listed in the report at the end — fix them by search. `[improve_translation] words in two alphabets` (INFO) is an intermediate stage, the next stage often fixes them |
+| `Dictionary check skipped: spaCy model … is not available` | WARNING | Offline or `SPACY_AUTO_DOWNLOAD=false`: download the model (`python -m spacy download …`) |
+| `✗ Stopped: the … LLM refused the request (…)` | exit code 3 | The API refused the key (401), the access (403) or the model (404); the message names the variable to check |
+
+### The report at the end of a run
+
+`TRANSLATION METRICS REPORT`: successful and failed chunks, total tokens, how
+many chunks were split, words in two alphabets, gender errors found and fixed
+by the GENDER stage, the characters the translation keeps disagreeing with the
+dictionary on (check their gender in the `.dic`), the genders the synopsis
+filled in, the elapsed time and the output file.
 
 ## 📄 LLM Call Log
 

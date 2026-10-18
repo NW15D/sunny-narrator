@@ -29,7 +29,7 @@ from src.utils import CREDIT_LINE, CREDIT_NAME, GITHUB_URL, credit_comment, is_c
 
 RICH = os.path.join(os.path.dirname(__file__), 'data', 'rich_book.fb2')
 LEGACY = ('<translator><nickname>Sunny narrator opensource AI translator</nickname>'
-          '<email>n@uwns.org</email></translator>')
+          '<email>translator@example.org</email></translator>')
 OUR_BLOCK = f'<translator><nickname>{CREDIT_NAME}</nickname><home-page>{GITHUB_URL}</home-page></translator>'
 BODY = '<section><title><p>Глава 1</p></title><p>Привет.</p></section>'
 
@@ -103,7 +103,7 @@ def test_the_legacy_block_is_rewritten_and_a_foreign_one_kept():
     other = '<translator><first-name>Jane</first-name><last-name>Doe</last-name></translator>'
     credited = fb2.add_credit(_header(title_info_tail=other + LEGACY))
     assert other in credited and OUR_BLOCK in credited
-    assert 'n@uwns.org' not in credited and 'opensource AI translator' not in credited
+    assert 'translator@example.org' not in credited and 'opensource AI translator' not in credited
     assert credited.count('<translator>') == 2
 
 

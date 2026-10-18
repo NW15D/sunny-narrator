@@ -1,24 +1,18 @@
 # Configuration Guide — Complete Parameter Reference
 
-**Version:** 2.9.4  
-**Updated:** 2026-10-10
-
----
-
 ## 📋 Overview
 
-All settings are read from `.env` in the project root (see `src/config.py`).
-Start from the bundled [`env.sample`](../env.sample): it is a complete working
-configuration — **Gemma 4** translates, **Qwen 3.6** proofreads, both through an
-OpenAI-compatible server — with every option documented inline and ready-made
-variants at the end of the file.
+All settings are read from `.env` in the project root (see `src/config.py`);
+an environment variable of the same name wins over `.env`. Two starting points:
 
-```bash
-cp env.sample .env
-```
+- [`env.cloud.sample`](../env.cloud.sample) — cloud models (OpenRouter, or
+  ProxyAPI from Russia): only the keys and the book need to be filled in;
+- [`env.sample`](../env.sample) — every option documented inline, set up for
+  your own OpenAI-compatible servers, with ready-made variants at the end.
 
-Minimal changes: the two API blocks (`API_KEY_*`, `API_BASE_*`, `MODEL_*`),
-`FILE`, `SOURCE_LANG`, `TARGET_LANG`.
+Both use the reference pair: **Gemma 4 26B A4B** translates, **Qwen 3.6 35B
+A3B** proofreads. The defaults in the tables below are the code's own, used
+when a variable is not set at all — the samples set the important ones.
 
 ---
 
@@ -29,26 +23,26 @@ LM Studio, vLLM, hosted APIs. `MODEL_*` must be the model name exactly as the
 server reports it (`GET <API_BASE>/models`). For a local server without
 authentication any non-empty API key will do.
 
-### Translate LLM — stage 1 (INITIAL) and 5 (SYNOPSIS)
+### Translate LLM — INITIAL and SYNOPSIS
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `API_KEY_TRANSLATE` | — | API key |
 | `API_BASE_TRANSLATE` | `http://localhost:11434/v1` | Base URL |
-| `MODEL_TRANSLATE` | `Mistral` | Model name (reference setup: Gemma 4) |
+| `MODEL_TRANSLATE` | `Mistral` | Model name as the server reports it; reference: Gemma 4 (`google/gemma-4-26b-a4b-it` in the cloud) |
 | `TEMP_TRANSLATE` | `0.01` | Base temperature (fallback for `TEMP_INITIAL`) |
 | `TIMEOUT_TRANSLATE` | `6000` | Request timeout, seconds |
 | `NOTHINK_TRANSLATE` | `true` | Thinking/reasoning off: `chat_template_kwargs.enable_thinking=false` (llama.cpp) and `reasoning.effort=none` (OpenRouter, ProxyAPI) in every request; `false` lets the model think (slower, paid tokens) |
 | `EXTRA_BODY_TRANSLATE` | — | A JSON object added to every request body, e.g. the OpenRouter provider choice `{"provider": {"require_parameters": true}}` (only providers that support every parameter of the request) (see `env.cloud.sample`) |
 | `S_PROMT_TRANSLATE` | `false` | `true` for models without system-prompt support (the system prompt is merged into the user message) |
 
-### Proofread LLM — stages 2-4 (REFLECTION, IMPROVE, FINAL_EDIT)
+### Proofread LLM — REFLECTION, IMPROVE, FINAL_EDIT, GENDER, dictionary and metadata translation
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `API_KEY_PROOFREAD` | — | API key |
 | `API_BASE_PROOFREAD` | `https://api.openai.com/v1` | Base URL |
-| `MODEL_PROOFREAD` | `tencent/Hunyuan-MT-7B` | Model name (reference setup: Qwen 3.6) |
+| `MODEL_PROOFREAD` | `tencent/Hunyuan-MT-7B` | Model name as the server reports it; reference: Qwen 3.6 (`qwen/qwen3.6-35b-a3b` in the cloud) |
 | `TEMP_PROOFREAD` | `0.7` | Base temperature |
 | `TIMEOUT_PROOFREAD` | `6000` | Request timeout, seconds |
 | `NOTHINK_PROOFREAD` | `true` | Same as `NOTHINK_TRANSLATE` |
@@ -64,7 +58,7 @@ authentication any non-empty API key will do.
 | `MODEL_IMAGES` | `gpt-image-1.5` | Model name |
 | `TIMEOUT_IMAGES` | `600` | Request timeout, seconds |
 
-### Stage temperatures
+### Sampling
 
 | Parameter | Default | Stage |
 |-----------|---------|-------|
@@ -74,6 +68,9 @@ authentication any non-empty API key will do.
 | `TEMP_FINAL_EDIT` | `0.15` | 4 — final proofreading |
 | `TEMP_SYNOPSIS` | `0.15` | 5 — synopsis for the next chunk |
 | `TEMP_GENDER` | `0.05` | GENDER — fix of the gender errors found |
+| `PRESENCE_PENALTY_TRANSLATE` | `0` | presence_penalty of the translate LLM's requests |
+| `PRESENCE_PENALTY_PROOFREAD` | `0` | presence_penalty of the proofread LLM's requests |
+| `PRESENCE_PENALTY_REFLECTION` | `1.5` | presence_penalty of REFLECTION: without it the list of fixes repeats |
 
 **Details:** [TEMPERATURE_STRATEGY.md](TEMPERATURE_STRATEGY.md)
 
@@ -81,10 +78,10 @@ authentication any non-empty API key will do.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `JSON_MODE` | `false` | Structured JSON input/output for all stages (**recommended: `true`**) |
-| `DISABLE_JSON_MODE_TRANSLATE` / `DISABLE_JSON_MODE_PROOFREAD` | `true` | Per-role switches, used only when `JSON_MODE` is not `true` |
+| `JSON_MODE` | `true` | Structured JSON input/output for the text stages; `false` — the text prompts |
+| `DISABLE_JSON_MODE_TRANSLATE` / `DISABLE_JSON_MODE_PROOFREAD` | `true` | Per-role switches, used only when `JSON_MODE=false` |
 
-**Details:** [JSON_MODE_ANALYSIS.md](JSON_MODE_ANALYSIS.md)
+**Details:** [PROMPTS_GUIDE.md](PROMPTS_GUIDE.md#json-mode)
 
 ---
 
@@ -92,7 +89,7 @@ authentication any non-empty API key will do.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `FILE` | `books/ExampleBook.fb2` | The book. `.fb2`/`.txt` → classic pipeline, `.epub`/`.docx`/`.pdf` → Calibre pipeline |
+| `FILE` | `books/ExampleBook.fb2` (not in the repository: set it) | The book. `.fb2`/`.txt` → classic pipeline, `.epub`/`.docx`/`.pdf` → Calibre pipeline. The demo books: `books/eternal-moment.pg.epub`, `books/forster-short-fiction.se.epub` |
 | `SOURCE_LANG` | `english` | Full name or ISO code (`korean`/`ko`, `english`/`en`, ...). Also selects the spaCy model and the CJK adaptations. Verified languages: [LANGUAGES.md](LANGUAGES.md) |
 | `TARGET_LANG` | `russian` | Full name or ISO code. Verified languages: [LANGUAGES.md](LANGUAGES.md) |
 | `COUNTRY` | by `TARGET_LANG` | Country for localization context in prompts; empty = derived from the target language (`ru` → Россия, `tr` → Türkiye, `de` → Deutschland, …; a language without one country → `<Language>-speaking countries`) |
@@ -107,6 +104,7 @@ authentication any non-empty API key will do.
 | `LENGTH_CHECK_THRESHOLD` | `20` | Allowed deviation (%) from the expected translation length before a chunk is split and retranslated |
 | `FAST_TRANS` | `false` | Skip stages 2-4 (both pipelines; `--fast-mode` turns it on too); the GENDER stage still runs |
 | `GENDER_CHECK` | `fix` | GENDER stage, both modes: a sentence where a dictionary character (gender `he`/`she`) is the subject and the verb or adjective has the other gender is found without an LLM (spaCy model of `TARGET_LANG` needed) and sent to the LLM for a fix (`fix`, the LLM is `GENDER_LLM`), only logged (`warn`), or not checked (`off`) |
+| `PARALLEL_STAGES` | `1` | `2`: the next chunk's translation starts while the proofread LLM still works on this one (two LLM servers or a hosted API; ~1.4–1.5× faster). The next chunk then gets the synopsis of this chunk's draft. No effect with `FAST_TRANS` |
 | `GENDER_LLM` | `auto` | LLM of the GENDER call: `auto` — proofread, with `FAST_TRANS` too, unless it is another model on the same local server as the translate LLM (one Ollama would swap the models every chunk), then translate; `translate` — always translate (`FAST_TRANS` with only the translate model loaded); `proofread` — always proofread |
 
 **Details:** [RECHUNKING_GUIDE.md](RECHUNKING_GUIDE.md), [FAST_TRANS.md](FAST_TRANS.md)
@@ -194,6 +192,6 @@ python3 -c "from src.config import Config; c = Config(); print(c.model_translate
 ## 📚 Related documentation
 
 - [INSTALLATION.md](INSTALLATION.md) — installation
-- [TRANSLATION_STAGES.md](TRANSLATION_STAGES.md) — 5-stage pipeline
+- [TRANSLATION_STAGES.md](TRANSLATION_STAGES.md) — the stages of a chunk
 - [RESUME.md](RESUME.md) — resume after a crash
-- [DOCKER_CPU_GUIDE.md](DOCKER_CPU_GUIDE.md), [GPU_DOCKER.md](GPU_DOCKER.md) — Docker
+- [DOCKER.md](DOCKER.md) — Docker

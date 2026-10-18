@@ -74,9 +74,9 @@ docker run --rm --gpus all \
 # CPU-образ: уберите --gpus all и используйте ...sunny-narrator:main-cpu
 ```
 
-Вариант с compose (конфиг `.env` читается автоматически): `docker-compose up -d` (GPU) или `docker-compose -f docker-compose.cpu.yml up -d`.
+Вариант с compose (конфиг `.env` читается автоматически): `docker compose run --rm sunny-narrator` (GPU) или `docker compose -f docker-compose.cpu.yml run --rm sunny-narrator`.
 
-**Руководства:** [docs/DOCKER_CPU_GUIDE.md](docs/DOCKER_CPU_GUIDE.md), [docs/GPU_DOCKER.md](docs/GPU_DOCKER.md)
+**Руководства:** [docs/DOCKER.md](docs/DOCKER.md)
 
 ## 📋 Конфигурация
 
@@ -142,14 +142,12 @@ python app.py --dictionary series.dic   # для каждой книги; зап
 | **Стадии перевода** (в т.ч. GENDER) | [docs/TRANSLATION_STAGES.md](docs/TRANSLATION_STAGES.md) |
 | **Руководство по промптам** | [docs/PROMPTS_GUIDE.md](docs/PROMPTS_GUIDE.md) |
 | **Режим FAST_TRANS** | [docs/FAST_TRANS.md](docs/FAST_TRANS.md) |
-| **Температуры** | [docs/TEMPERATURE_STRATEGY.md](docs/TEMPERATURE_STRATEGY.md) |
+| **Сэмплинг (температуры, presence_penalty, рассуждения)** | [docs/TEMPERATURE_STRATEGY.md](docs/TEMPERATURE_STRATEGY.md) |
 | **Повторная нарезка** | [docs/RECHUNKING_GUIDE.md](docs/RECHUNKING_GUIDE.md) |
 | **NER** | [docs/NER_GUIDE.md](docs/NER_GUIDE.md) |
 | **Продолжение после сбоя** | [docs/RESUME.md](docs/RESUME.md) |
 | **Логирование** | [docs/LOGGING.md](docs/LOGGING.md) |
-| **Docker (CPU)** | [docs/DOCKER_CPU_GUIDE.md](docs/DOCKER_CPU_GUIDE.md) |
-| **Docker (GPU)** | [docs/GPU_DOCKER.md](docs/GPU_DOCKER.md) |
-| **JSON-режим** | [docs/JSON_MODE_ANALYSIS.md](docs/JSON_MODE_ANALYSIS.md) |
+| **Docker** | [docs/DOCKER.md](docs/DOCKER.md) |
 | **Проверенные языки** | [docs/LANGUAGES.md](docs/LANGUAGES.md) |
 | **Участие в проекте** | [CONTRIBUTING.md](CONTRIBUTING.md#участие-в-sunny-narrator) |
 | **Для ИИ-агентов** | [AGENTS.md](AGENTS.md) |

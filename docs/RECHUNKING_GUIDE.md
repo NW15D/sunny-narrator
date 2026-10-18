@@ -1,8 +1,5 @@
 # Rechunking Guide — Chunking and Length Validation
 
-**Version:** 2.9.4  
-**Updated:** 2026-10-10
-
 ## 📋 Overview
 
 A book is translated in chunks of about `MAX_LEN_CHUNK` source characters.
@@ -26,7 +23,10 @@ levels).
 - a single block bigger than `MAX_LEN_CHUNK` stays whole.
 
 **Calibre pipeline (EPUB/DOCX/PDF)** — `src/markdown_utils.py`: Markdown is cut
-between structural blocks (headings, paragraphs, lists, tables, code).
+between structural blocks (headings, paragraphs, lists, tables, code). pandoc
+writes every paragraph as one line (`--wrap=none`), so a paragraph longer than
+a chunk is cut at sentence ends; the next piece of a quote or a list item
+keeps its `> ` or indent.
 
 ## 🎯 Length check
 
@@ -49,7 +49,7 @@ Implementation: `src/utils.py` — `validate_translation_length()`,
 | FB2/TXT, several blocks | between blocks (or stanzas), as close to the middle as possible — both halves stay well-formed |
 | FB2/TXT, one huge paragraph | at the sentence end nearest the middle, never inside `<emphasis>`/`<strong>`; the two translations are joined back into **one** paragraph |
 | FB2/TXT, one block that cannot be split (no sentence end, a table, ...) | not split; the translation is kept and a warning is logged |
-| Calibre (Markdown) | nearest to the middle within the central half, preferring a paragraph break, then the end of a closing tag, a sentence end (incl. CJK `。！？`), a line break, a space between words; never inside a tag or a ``` code block. Only text with none of these is cut in the middle (`split_text_smartly`) |
+| Calibre (Markdown) | nearest to the middle within the central half, preferring a paragraph break, then the end of a closing tag, a sentence end (incl. CJK `。！？`), a line break, a space between words; never inside a tag or a ``` code block. Only text with none of these is cut in the middle (`split_text_smartly`). Halves cut at a paragraph break come back as two paragraphs, halves cut inside a paragraph are joined with a space |
 
 ### Per-book length calibration
 
@@ -93,5 +93,6 @@ token limit, otherwise most chunks end up being split.
 ## 📚 Related documentation
 
 - [CONFIGURATION.md](CONFIGURATION.md) — all options
-- [TEMPERATURE_STRATEGY.md](TEMPERATURE_STRATEGY.md) — stage temperatures
+- [TEMPERATURE_STRATEGY.md](TEMPERATURE_STRATEGY.md) — temperatures, presence_penalty, thinking
+- [TRANSLATION_STAGES.md](TRANSLATION_STAGES.md) — the stages of a chunk and what happens when one fails
 - [RESUME.md](RESUME.md) — resume after a crash

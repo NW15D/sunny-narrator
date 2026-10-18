@@ -121,7 +121,7 @@ class Config:
         # the text again is penalized for the tokens of a word it just wrote
         # and puts a Latin twin in («сприна» -> «спринa»). REFLECTION writes a
         # list instead and needs the penalty: without it the list repeats
-        # until max_tokens (The Warship bench: 2 truncations in 24 chunks
+        # until max_tokens (a novel's bench: 2 truncations in 24 chunks
         # at 0, none at 1.5)
         self.presence_penalty_translate = _parse_numeric_env('PRESENCE_PENALTY_TRANSLATE', 0.0)
         

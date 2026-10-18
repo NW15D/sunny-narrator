@@ -23,7 +23,7 @@ def test_create_series_vocab_finds_files():
     with tempfile.TemporaryDirectory() as tmpdir:
         # Copy sample books
         shutil.copy('books/eternal-moment.pg.epub', tmpdir)
-        shutil.copy('books/ExampleBook.fb2', tmpdir)
+        shutil.copy('tests/data/ExampleBook.fb2', tmpdir)
         
         output = os.path.join(tmpdir, 'test.dic')
         
@@ -47,7 +47,7 @@ def test_series_vocab_aggregation():
     from src.ner import extract_text_from_book, make_vocab
     
     # Process two books
-    books = ['books/eternal-moment.pg.epub', 'books/ExampleBook.fb2']
+    books = ['books/eternal-moment.pg.epub', 'tests/data/ExampleBook.fb2']
     
     all_entities = []
     

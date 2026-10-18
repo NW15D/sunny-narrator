@@ -570,7 +570,7 @@ class TokenCalibration:
 token_calibration = TokenCalibration()
 
 # REFLECTION is the stage that loops (all 23 truncations of a 117-chunk run of
-# The Warship): its max_tokens follows the translation it reviews instead of
+# a novel): its max_tokens follows the translation it reviews instead of
 # the whole MAX_TOKENS_PER_CHUNK, so a loop is cut sooner and the chunk is
 # split as before. The number of fixes is not limited, so the budget is the
 # largest legitimate answer: every sentence fixed, each fix quoting its

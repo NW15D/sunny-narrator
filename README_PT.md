@@ -74,9 +74,9 @@ docker run --rm --gpus all \
 # Imagem CPU: remova --gpus all e use ...sunny-narrator:main-cpu
 ```
 
-Alternativa com compose (a configuração `.env` é lida automaticamente): `docker-compose up -d` (GPU) ou `docker-compose -f docker-compose.cpu.yml up -d`.
+Alternativa com compose (a configuração `.env` é lida automaticamente): `docker compose run --rm sunny-narrator` (GPU) ou `docker compose -f docker-compose.cpu.yml run --rm sunny-narrator`.
 
-**Guias:** [docs/DOCKER_CPU_GUIDE.md](docs/DOCKER_CPU_GUIDE.md), [docs/GPU_DOCKER.md](docs/GPU_DOCKER.md)
+**Guias:** [docs/DOCKER.md](docs/DOCKER.md)
 
 ## 📋 Configuração
 
@@ -142,14 +142,12 @@ A preparação passo a passo de um dicionário de série está em [docs/DICTIONA
 | **Estágios da tradução** (incl. GENDER) | [docs/TRANSLATION_STAGES.md](docs/TRANSLATION_STAGES.md) |
 | **Guia de prompts** | [docs/PROMPTS_GUIDE.md](docs/PROMPTS_GUIDE.md) |
 | **Modo FAST_TRANS** | [docs/FAST_TRANS.md](docs/FAST_TRANS.md) |
-| **Estratégia de temperatura** | [docs/TEMPERATURE_STRATEGY.md](docs/TEMPERATURE_STRATEGY.md) |
+| **Amostragem (temperaturas, presence_penalty, raciocínio)** | [docs/TEMPERATURE_STRATEGY.md](docs/TEMPERATURE_STRATEGY.md) |
 | **Nova divisão em trechos** | [docs/RECHUNKING_GUIDE.md](docs/RECHUNKING_GUIDE.md) |
 | **NER** | [docs/NER_GUIDE.md](docs/NER_GUIDE.md) |
 | **Retomada após falha** | [docs/RESUME.md](docs/RESUME.md) |
 | **Logs** | [docs/LOGGING.md](docs/LOGGING.md) |
-| **Docker (CPU)** | [docs/DOCKER_CPU_GUIDE.md](docs/DOCKER_CPU_GUIDE.md) |
-| **Docker (GPU)** | [docs/GPU_DOCKER.md](docs/GPU_DOCKER.md) |
-| **Modo JSON** | [docs/JSON_MODE_ANALYSIS.md](docs/JSON_MODE_ANALYSIS.md) |
+| **Docker** | [docs/DOCKER.md](docs/DOCKER.md) |
 | **Idiomas testados** | [docs/LANGUAGES.md](docs/LANGUAGES.md) |
 | **Contribuir** | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | **Para agentes de IA** | [AGENTS.md](AGENTS.md) |

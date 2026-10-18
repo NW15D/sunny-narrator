@@ -1,11 +1,5 @@
 # Working with Dictionaries (.dic files)
 
-**Version:** 1.2 (CSV with commas)  
-**Last Updated:** 2026-10-18  
-**Issue:** Format mismatch fixed (was incorrectly documented as JSON). Moved here from the README: all dictionary commands and rules, the series workflow, and the spaCy / CUDA / CJK nuances of dictionary work. v2.9.4: extending a dictionary with new books (`dict extend`).
-
----
-
 ## Overview
 
 The dictionary file (`*.dic`) ensures terminology consistency throughout translation. It contains:
@@ -167,8 +161,7 @@ NERMODEL=en_core_web_lg
 
 # Run translation
 python app.py
-# Vocabulary created: books/ExampleBook.dic
-# Please review and restart.
+# Dictionary created at books/MyBook_ru.dic. Review it, then re-run to start translation.
 ```
 
 **Process:**
@@ -361,7 +354,7 @@ Wonderland = Страна Чудес, LOC,
 - Case: a lowercase source (`spidergun`) matches in any case; a source with capitals (`Will`) matches as written or in ALL CAPS, so it does not replace "will".
 - For Korean, write names without the particle (`철수`, not `철수는`): the term is searched as a substring and matches every form.
 
-Details: [NER_GUIDE.md](NER_GUIDE.md#-lexical-matching-stage-1).
+Details: [NER_GUIDE.md](NER_GUIDE.md#lexical-matching-stage-1).
 
 ---
 
@@ -588,11 +581,12 @@ Full per-language verification status: [LANGUAGES.md](LANGUAGES.md).
 
 ## GPU (CUDA) and CPU nuances of dictionary work
 
-NER (dictionary creation) and the dictionary check run on **spaCy/PyTorch**,
-so the GPU/CPU choice is theirs, not the LLM's:
+NER (dictionary creation) and the dictionary check run on **spaCy** (thinc:
+NumPy on the CPU, CuPy on the GPU), so the GPU/CPU choice is theirs, not the
+LLM's:
 
-- **CPU (default, works everywhere):** `pip install -e .` installs spaCy and
-  the PyPI torch wheel; dictionary building and checking are slower on CPU
+- **CPU (default, works everywhere):** `pip install -e .` installs spaCy;
+  dictionary building and checking are slower on CPU
   (a full-book check with an `*_lg` model takes minutes — the result is
   cached in `<book>.dictcheck.json`, so a resumed run does not reparse).
 - **GPU (CUDA 12.x):** add the cupy extra — `pip install -e ".[gpu]"`
@@ -600,13 +594,13 @@ so the GPU/CPU choice is theirs, not the LLM's:
   runs NER on the GPU. What runs there: NER and word vectors of `--build-dict`,
   `--build-series-dict`, `dict clean`, `dict extend` (its NER) and the
   per-chunk term lookup. The check before a translation, `dict review` and the
-  gender check of a translation load their model on the CPU. Even on the GPU an
+  gender check of a translation load their model without asking for the GPU. Even on the GPU an
   `*_sm`/`*_lg` model keeps the GPU almost idle: tokenizing, the lemmatizer and
   the rules run on the CPU, only the small networks run on the GPU (a 150k-char
   book with `en_core_web_lg`: 4.9 s on CPU, 4.2 s on GPU). spaCy takes CUDA
   device 0, and CUDA numbers the GPUs **fastest first** - on a host with several
-  GPUs that is not necessarily `nvidia-smi`'s GPU 0 (here CUDA's 0 is an RTX 4080,
-  `nvidia-smi -i 1`). `CUDA_DEVICE_ORDER=PCI_BUS_ID` makes both numberings the
+  GPUs that is not necessarily `nvidia-smi`'s GPU 0 (with a slower card at
+  `nvidia-smi -i 0`, spaCy runs on the faster one at `-i 1`). `CUDA_DEVICE_ORDER=PCI_BUS_ID` makes both numberings the
   same; `CUDA_VISIBLE_DEVICES` then picks the GPU. No torch is involved: spaCy
   runs on thinc with CuPy.
 - **Transformer models (`*_trf`):** `en_core_web_trf` 3.8 needs
@@ -621,12 +615,11 @@ so the GPU/CPU choice is theirs, not the LLM's:
   `nvidia/cuda`-based) ships it already; `Dockerfile.cpu` deliberately does
   not install cupy. `spacy[cuda12x]` is not used: its `cupy<13` pin conflicts
   with the pinned cupy 14 (see the comments in `pyproject.toml`).
-- **Choosing/hiding the GPU for spaCy/PyTorch:** `CUDA_VISIBLE_DEVICES=0`
+- **Choosing/hiding the GPU for spaCy:** `CUDA_VISIBLE_DEVICES=0`
   selects a GPU; `CUDA_VISIBLE_DEVICES=` (empty) forces CPU even on a GPU
   host — handy when the GPU is busy serving the LLMs.
 - **GPU Docker requirements:** NVIDIA driver 525.60+ (CUDA 12 compatible) and
-  NVIDIA Container Toolkit; details in [GPU_DOCKER.md](GPU_DOCKER.md),
-  troubleshooting in [DOCKER_CPU_GUIDE.md](DOCKER_CPU_GUIDE.md).
+  NVIDIA Container Toolkit; details in [DOCKER.md](DOCKER.md).
 
 ---
 
@@ -670,7 +663,7 @@ TARGET_LANG=russian
 - [PROMPTS_GUIDE.md](PROMPTS_GUIDE.md) — How vocabulary is used in prompts
 - [TRANSLATION_STAGES.md](TRANSLATION_STAGES.md) — The 5-stage pipeline and the GENDER stage
 - [LANGUAGES.md](LANGUAGES.md) — Per-language verification status
-- [DOCKER_CPU_GUIDE.md](DOCKER_CPU_GUIDE.md), [GPU_DOCKER.md](GPU_DOCKER.md) — CPU/GPU (CUDA) images
+- [DOCKER.md](DOCKER.md) — the CPU and GPU (CUDA) images
 - [INSTALLATION.md](INSTALLATION.md) — Setup and configuration
 
 ---
@@ -679,4 +672,4 @@ TARGET_LANG=russian
 - **2026-03-30:** Fixed format documentation (was incorrectly described as JSON)
 - **v1.0:** Initial CSV format specification
 
-**See also:** [books/eternal-moment.pg.dic](../books/eternal-moment.pg.dic) — Example dictionary file
+**See also:** [tests/data/eternal-moment.pg_fr.dic](../tests/data/eternal-moment.pg_fr.dic) — an example dictionary (English → French)

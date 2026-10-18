@@ -1,154 +1,46 @@
-# NER Guide — Named Entity Recognition for Vocabulary Matching
+# NER Guide — Names and Terms of a Book
 
-## 📋 Overview
+spaCy does two jobs in Sunny Narrator, without an LLM:
 
-Sunny Narrator uses **Named Entity Recognition (NER)** to automatically identify and match vocabulary terms in each chunk before translation.
+1. **Building a dictionary** — the named entities of a book (people, places,
+   organizations, coined terms) become the entries of a new `.dic`; the
+   proofread LLM only translates them. Categories and genders come from the
+   book itself (see [DICTIONARY_FORMAT.md](DICTIONARY_FORMAT.md)).
+2. **Matching per chunk** — before a chunk is translated, the dictionary
+   entries that occur in it are found (in any inflected form), put into the
+   prompt and substituted into the source.
 
-Languages verified on real spaCy models (NER, term forms, article/particle
-cleanup) and their limits: [LANGUAGES.md](LANGUAGES.md).
+Both pipelines (FB2/TXT and EPUB/DOCX/PDF) use the same code:
+`VocabularyManager` (`src/vocabulary_manager.py`), `src/lexicon.py`,
+`src/ner.py`. Languages verified on real spaCy models and their limits:
+[LANGUAGES.md](LANGUAGES.md).
 
-## 🎯 How It Works
+## Configuration
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ 1. Load vocabulary from .dic file                               │
-│    └─ Dictionary with source=target terms                       │
-│                                                                 │
-│ 2. For each chunk:                                              │
-│    ├─ Extract text from chunk                                   │
-│    ├─ Lexical match: word forms / lemmas, substring for CJK     │
-│    ├─ Cosine similarity for the remaining terms (GPU or CPU)    │
-│    └─ Cache results for this chunk                              │
-│                                                                 │
-│ 3. Format matched terms for model                               │
-│    ├─ Hunyuan:  Alice=Алиса(PERSON)                             │
-│    ├─ Gemma:    Alice → Алиса                                   │
-│    └─ Standard: Alice = Алиса (PERSON) [she]                    │
-│                                                                 │
-│ 4. Inject into translation prompt                               │
-│    └─ <vocabulary>{formatted_vocab}</vocabulary>                │
-└─────────────────────────────────────────────────────────────────┘
-```
+| Variable | Default | Meaning |
+|---|---|---|
+| `NER` | `true` | Build a missing dictionary with NER; `false` — an empty template (`--build-dict` runs NER anyway) |
+| `NERMODEL` | by `SOURCE_LANG` | The spaCy model of the source language: `en_core_web_lg`, `ru_core_news_lg`, `ko_core_news_lg`, `ja_core_news_lg`, `zh_core_web_lg`, … (`Config.lang_model_map`); a language without its own pipeline gets `xx_ent_wiki_sm` |
+| `SPACY_AUTO_DOWNLOAD` | `true` | A missing model is downloaded on first use |
+| `DICTIONARY` | — | An explicit `.dic` instead of `<book>_<lang>.dic` next to the book (see [DICTIONARY_FORMAT.md](DICTIONARY_FORMAT.md)) |
+| `DICT_FREQUENT_WORDS` | `false` | Also put frequent ordinary words into a new dictionary |
 
-## ⚙️ Configuration
+**Model size matters for one thing — word vectors.** `*_lg` and `*_md`
+models have them, `*_sm` and `*_trf` do not. Without vectors the cosine stage
+of the matching finds nothing and `dict clean` / `dict extend` cannot tell an
+ordinary word from a coined one; NER and the lexical stage work with any
+model.
 
-### Environment Variables (.env)
+### GPU
 
-```bash
-# Enable/disable NER
-NER=true                    # true=enabled, false=disabled
+Optional: `pip install -e ".[gpu]"` (CuPy for CUDA 12). spaCy then runs NER
+and the word vectors on the GPU; the per-chunk matcher takes its GPU variant
+when CuPy sees a device (`ner.gpu_available()`). No torch is needed. With an
+`*_sm`/`*_lg` model the GPU stays almost idle — only the small networks run
+there — and the gain is small; CUDA numbers the GPUs fastest first, so check
+the right one (see [DICTIONARY_FORMAT.md](DICTIONARY_FORMAT.md#gpu-cuda-and-cpu-nuances-of-dictionary-work)).
 
-# spaCy model for NER
-NERMODEL=en_core_web_lg     # Large model with vectors (required)
-
-# Model selection by language
-# English:  en_core_web_lg
-# Russian:  ru_core_news_lg
-# German:   de_core_news_lg
-# French:   fr_core_news_lg
-# Spanish:  es_core_news_lg
-
-# DICTIONARY: use an explicit .dic file instead of the automatic
-# <book_name>_<lang>.dic lookup next to the source file. Empty = auto lookup.
-# Also settable per run via --dictionary <path> (CLI wins over .env).
-DICTIONARY=
-```
-
-### Explicit dictionary path (`DICTIONARY` / `--dictionary`)
-
-By default the vocabulary file is found automatically next to the source
-book: `books/MyBook.fb2` with `TARGET_LANG=ru` → `books/MyBook_ru.dic` — one dictionary per target language, a `books/MyBook.dic` without the code is not used (see step 1 in the workflow
-above). Setting `DICTIONARY=/path/to/some.dic` in `.env`, or passing
-`--dictionary /path/to/some.dic` on the command line, overrides that lookup
-and uses the given file instead — for both the classic (FB2/TXT) and the
-Calibre (DOCX/EPUB/PDF) pipeline. The CLI flag takes precedence over the
-`.env` value. This is useful for reusing a shared/series dictionary
-(built with `--build-series-dict`) or for keeping the `.dic` outside the
-book's own folder. If the file does not exist yet, both pipelines build it
-at that path, exactly as they would at the default `<book_name>_<lang>.dic`
-location, and both pipelines stop after creating it so you can review it. The directory of the
-given path must already exist, otherwise `app.py` exits with an error.
-
-### GPU vs CPU Mode
-
-**Automatic detection** — system selects best available mode:
-
-| Mode | Speed | Requirements | Function |
-|------|-------|--------------|----------|
-| **GPU** | Fast (10-50x) | CUDA, cupy | `find_matching_words_with_cosine_similarity()` |
-| **CPU** | Slower | NumPy only | `find_matching_words_with_cosine_similarity_cpu()` |
-
-**No configuration needed** — automatically detected at runtime.
-
-## 🔧 Installation
-
-### With GPU Support
-
-```bash
-# Install spaCy with CUDA support
-pip install spacy[cuda11x]
-
-# Download large model with vectors
-python -m spacy download en_core_web_lg
-
-# Verify GPU is available
-python -c "import torch; print(torch.cuda.is_available())"
-```
-
-### CPU-Only
-
-```bash
-# Install spaCy (CPU version)
-pip install spacy
-
-# Download large model with vectors
-python -m spacy download en_core_web_lg
-
-# Verify installation
-python -c "import spacy; nlp = spacy.load('en_core_web_lg'); print('OK')"
-```
-
-## 📊 NER Workflow
-
-### 1. Dictionary Initialization
-
-```python
-from src.vocabulary_manager import VocabularyManager
-
-manager = VocabularyManager(book_path="books/MyBook.fb2")
-vocab = manager.initialize()
-
-# If .dic file exists: loads from file
-# If .dic missing: creates from NER (requires user approval)
-```
-
-### 2. Per-Chunk Vocabulary Matching
-
-```python
-# For each chunk, get relevant vocabulary
-entries = manager.get_vocab_for_chunk(chunk_text, s_idx=0, c_idx=0)
-
-# Returns: List[VocabEntry] with matched terms
-# Example: [VocabEntry('Alice', 'Алиса', 'PERSON', 'she'), ...]
-```
-
-### 3. Format for Model
-
-```python
-# Format matched terms for specific model
-formatted = manager.format_for_model(entries, model="Hunyuan")
-
-# Output: "Alice=Алиса(PERSON) | Wonderland=Страна Чудес(LOC)"
-```
-
-### 4. Inject into Prompt
-
-```python
-# Prompt template uses {vocab_dict} placeholder
-# Automatically replaced with formatted vocabulary
-```
-
-## 🔤 Lexical Matching (stage 1)
+## Lexical matching (stage 1)
 
 The same matcher runs for every input format — FB2/TXT (classic pipeline)
 and EPUB/DOCX/PDF (Calibre pipeline) both go through
@@ -201,7 +93,15 @@ pl, uk, hr, lt, mk) for the source language, plus fiction-specific extras for
 English. They are casefolded, so look words up with `lexicon.is_stop_word()`
 (German `daß` → `dass`).
 
-## 🏗 Building a Dictionary
+## Cosine matching (stage 2)
+
+The terms stage 1 did not find are compared by word vectors: the mean vector of
+the term's words against the chunk's words, cosine similarity above 0.8. It
+catches a term written differently (a synonym the vectors put close), costs
+almost nothing, and is skipped with a model without vectors. The GPU and CPU
+variants give the same result (`tests/test_ner_gpu_cpu_parity.py`).
+
+## Building a dictionary
 
 `VocabularyManager.build_dictionary()` builds every dictionary — a translation
 run of any format and `--build-dict`; `--build-series-dict` uses
@@ -219,280 +119,6 @@ of `run_pipeline()`; default `SOURCE_LANG`/`TARGET_LANG`/`COUNTRY`).
 entity forms by the lemmas of all their words and writes the form that is its
 own lemma (else the most frequent one) with its original capitalization:
 `John Smith`, `Иван` — not `john`.
-
-## 🧠 Cosine Similarity Matching (stage 2)
-
-Terms not found in stage 1 are compared by word vectors.
-
-### How It Works
-
-1. **Tokenize** chunk text into words
-2. **Generate vectors** using spaCy word embeddings
-3. **Compare** with vocabulary term vectors
-4. **Match** if cosine similarity > threshold (0.8)
-
-### Example
-
-```python
-# Chunk text: "Alice went to Wonderland and met the Queen"
-# Vocabulary: {
-#   "alice": {"english": "Alice", "russian": "Алиса"},
-#   "wonderland": {"english": "Wonderland", "russian": "Страна Чудес"},
-#   "queen": {"english": "Queen", "russian": "Королева"}
-# }
-
-# Matching process:
-# 1. Tokenize: ["Alice", "went", "to", "Wonderland", "and", "met", "the", "Queen"]
-# 2. Generate vectors for each token
-# 3. Compare with vocabulary vectors:
-#    - "Alice" vs "Alice" → similarity=0.98 ✓ MATCH
-#    - "Wonderland" vs "Wonderland" → similarity=0.95 ✓ MATCH
-#    - "Queen" vs "Queen" → similarity=0.92 ✓ MATCH
-# 4. Return matched terms: ["Alice", "Wonderland", "Queen"]
-```
-
-### Threshold Tuning
-
-```bash
-# Default threshold: 0.8
-# Higher = more precise, fewer matches
-# Lower = more matches, possible false positives
-
-# Adjust in src/ner.py if needed:
-threshold=0.85  # More strict
-threshold=0.75  # More lenient
-```
-
-## 📈 Performance
-
-### GPU Mode (Recommended)
-
-| Chunk Size | Time | Speed |
-|------------|------|-------|
-| 1000 chars | 10ms | Fast |
-| 5000 chars | 50ms | Fast |
-| 10000 chars | 100ms | Fast |
-
-### CPU Mode (Fallback)
-
-| Chunk Size | Time | Speed |
-|------------|------|-------|
-| 1000 chars | 100ms | OK |
-| 5000 chars | 500ms | OK |
-| 10000 chars | 1000ms | Slow |
-
-**Recommendation:** Use GPU for large books (>100k chars).
-
-## 🐛 Troubleshooting
-
-### Issue: NER Not Working
-
-**Symptoms:**
-- No vocabulary terms matched
-- `get_vocab_for_chunk()` returns empty list
-
-**Check:**
-```bash
-# 1. Is NER enabled?
-grep NER .env
-# Should be: NER=true
-
-# 2. Is spaCy model installed?
-python -m spacy validate
-
-# 3. Does model have vectors?
-python -c "import spacy; nlp = spacy.load('en_core_web_lg'); print(nlp('test').has_vector)"
-# Should be: True
-```
-
-**Solution:**
-```bash
-# Install model with vectors
-python -m spacy download en_core_web_lg
-```
-
-### Issue: GPU Not Detected
-
-**Symptoms:**
-- Logs show "CPU mode" instead of "GPU mode"
-- Slow vocabulary matching
-
-**Check:**
-```bash
-# 1. Is CUDA available?
-python -c "import torch; print(torch.cuda.is_available())"
-
-# 2. Is cupy installed?
-python -c "import cupy; print(cupy.__version__)"
-```
-
-**Solution:**
-```bash
-# Install cupy for CUDA
-pip install cupy-cuda11x  # For CUDA 11.x
-pip install cupy-cuda12x  # For CUDA 12.x
-```
-
-### Issue: Too Many/Few Matches
-
-**Symptoms:**
-- Vocabulary includes irrelevant terms
-- Important terms not matched
-
-**Solution:**
-```python
-# Adjust threshold in src/ner.py
-# Default: threshold=0.8
-
-# More strict (fewer matches)
-threshold=0.85
-
-# More lenient (more matches)
-threshold=0.75
-```
-
-## 📝 API Reference
-
-### ner.py Functions
-
-#### `find_matching_words_with_cosine_similarity()`
-
-GPU-accelerated vocabulary matching.
-
-```python
-from src import ner as ner_module
-
-matched = ner_module.find_matching_words_with_cosine_similarity(
-    text=chunk_text,
-    vocab=vocab_dict,
-    lng="english",
-    threshold=0.8,
-    batch_size=1024
-)
-```
-
-#### `find_matching_words_with_cosine_similarity_cpu()`
-
-CPU-only vocabulary matching (fallback).
-
-```python
-matched = ner_module.find_matching_words_with_cosine_similarity_cpu(
-    text=chunk_text,
-    vocab=vocab_dict,
-    lng="english",
-    threshold=0.8,
-    batch_size=256  # Smaller batch for CPU
-)
-```
-
-### vocabulary_manager.py Methods
-
-#### `get_vocab_for_chunk()`
-
-Get vocabulary entries for a chunk (auto-selects GPU/CPU).
-
-```python
-entries = manager.get_vocab_for_chunk(
-    chunk_text=chunk,
-    s_idx=0,
-    c_idx=0
-)
-```
-
-#### `format_for_model()`
-
-Format vocabulary for specific model.
-
-```python
-formatted = manager.format_for_model(
-    entries=entries,
-    model="Hunyuan"  # or "Gemma", "Mistral", etc.
-)
-```
-
-## 📊 Statistics & Monitoring
-
-### Enable Debug Logging
-
-```bash
-DEBUG=on
-```
-
-### Output Example
-
-```
-DEBUG: Chunk 0-0 (GPU): 5 vocab terms matched
-DEBUG: Chunk 0-1 (GPU): 3 vocab terms matched
-DEBUG: Chunk 0-2 (CPU): 4 vocab terms matched  # GPU unavailable
-```
-
-### Metrics to Track
-
-```python
-ner_stats = {
-    'total_chunks': 100,
-    'chunks_with_vocab': 75,
-    'total_matches': 350,
-    'avg_matches_per_chunk': 3.5,
-    'gpu_mode': True,
-    'avg_match_time_ms': 50
-}
-```
-
-## 🎯 Best Practices
-
-### 1. Always Use Large spaCy Models
-
-```bash
-# Good (has vectors)
-en_core_web_lg
-ru_core_news_lg
-de_core_news_lg
-
-# Bad (no vectors)
-en_core_web_sm
-en_core_web_md
-```
-
-### 2. Keep Vocabulary Focused
-
-```dic
-# Good (specific terms)
-Alice = Алиса | PERSON | she
-Wonderland = Страна Чудес | LOC
-
-# Bad (common words)
-the = the | |
-and = и | |
-```
-
-### 3. Monitor Match Quality
-
-```bash
-# Check if matched terms are relevant
-grep "vocab terms matched" logs/*.log
-
-# If too many false positives:
-# - Increase threshold to 0.85
-# - Clean up dictionary
-```
-
-### 4. Cache is Your Friend
-
-```python
-# Vocabulary matching is cached per chunk
-# No need to re-match same chunk
-# Cache key: (s_idx, c_idx)
-```
-
-## 📝 Changelog
-
-- **2026-10-02:** Multi-word terms take priority (`lexicon.resolve_terms`, `term_rank`); substitution into the source rewritten (`term_substitution.py`); Korean particles stripped from entities; `[cjk]` extra
-- **2026-10-01:** One matcher for all formats (Calibre pipeline now uses `VocabularyManager`); lexical stage matches inflected forms and CJK without regex; stop words for the source language instead of English only
-- **2026-03-29:** Added CPU fallback mode (`find_matching_words_with_cosine_similarity_cpu()`)
-- **2026-03-29:** Automatic GPU/CPU detection in `get_vocab_for_chunk()`
-- **Previous:** Initial NER implementation with GPU support
-
 
 ## Substitution before the first stage
 
@@ -535,3 +161,12 @@ see the original.
 - **Known limits:** NER quality depends on the model (`韩梅梅` may come out as
   `韩梅`); `ner.known_words` filters coined one-word terms by word vectors,
   so a word the model knows (`거미총` in ko) is treated as an ordinary word.
+
+## Troubleshooting
+
+| Symptom | Check |
+|---|---|
+| A term of the dictionary never reaches the prompt | Is it shadowed by a longer term that contains it (`DEBUG=1` prints the lexical matches of every chunk)? Is its case right — `Will` does not match "will"? |
+| Ordinary words in a new dictionary | `dict clean` drops them (needs a model with vectors); `DICT_FREQUENT_WORDS` must be `false` |
+| `spaCy model … is not available` | Offline or `SPACY_AUTO_DOWNLOAD=false`: `python -m spacy download <model>` |
+| Japanese/Chinese model fails to load | `pip install -e ".[cjk]"` |

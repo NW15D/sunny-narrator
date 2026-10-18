@@ -1,313 +1,114 @@
-# Prompts Guide — Sunny Narrator
+# Prompts Guide
 
-## 📋 Структура промптов
+All prompts live in `src/prompts.json`. The code fills their `{placeholders}`;
+a literal brace is written `{{ }}`. `tests/test_prompts.py` checks every
+template against the variables its call site passes (a missing variable would
+reach the model as a literal `{target_lang}`), that no key is unused, that the
+text and JSON variants of a stage carry the same rules, and that each prompt
+stays within its length budget.
 
-Все промпты хранятся в `src/prompts.json` и разделены по категориям:
+## Categories
 
-### Translate LLM (Translation)
-- `initial_translation` — Первичный перевод текста
-- `synopsis` — Создание синопсиса для контекста
+| Category | Keys | Used by | LLM |
+|---|---|---|---|
+| `initial_translation` | `system`, `user_xml` (FB2), `user_text` (Markdown: EPUB/DOCX/PDF), `user_hunyuan` (only `MODEL_TRANSLATE=Hunyuan`) | INITIAL, text mode | translate |
+| `reflection`, `improve`, `editor` | `system`, `user_xml`, `user_text` | REFLECTION, IMPROVE, FINAL_EDIT, text mode | proofread |
+| `initial_translation_json`, `reflection_json`, `improve_json`, `editor_json` | `system`, `user_text` | the same stages in JSON mode (the default) | as above |
+| `gender_fix` | `system`, `user` | GENDER: only the sentences `gender_check` flagged | `GENDER_LLM` (proofread by default) |
+| `synopsis` | `system`, `user`, `dictionary_rules` (appended to `user`) | SYNOPSIS: context for the next chunk, new dictionary candidates | translate |
+| `vocabulary` | `user` | translating a new dictionary (`--build-dict`, `dict extend`) | proofread |
+| `metadata_translation` | `user` | title, annotation, other metadata | proofread |
+| `image_generation` | `generation`, `variation` | the cover (only with `API_KEY_IMAGES`) | images |
 
-### Proofread LLM (Quality/Editing)
-- `reflection` — Анализ качества перевода
-- `improve` — Применение замечаний
-- `editor` — Финальная вычитка (Stage 5)
+`vocabulary` and `metadata_translation` have no system message.
 
-### Utilities
-- `vocabulary` — Генерация словаря терминов
-- `metadata_translation` — Перевод метаданных
-- `image_generation` — Генерация обложек
+## The pipeline and what each stage sees
 
----
-
-## 🔧 Режим sys_not_promt (System Prompt Merging)
-
-### Проблема
-
-Некоторые LLM модели **не поддерживают** отдельный системный промпт (role: "system"):
-
-| Модель | Системный промпт | Примечания |
-|--------|------------------|------------|
-| **Gemma 2** | ❌ НЕ поддерживает | Требует объединения с user prompt |
-| **Gemma 3** | ❌ НЕ поддерживает | Требует объединения с user prompt |
-| **Mistral 7B** | ✅ Поддерживает | Стандартный режим |
-| **Mistral Large** | ✅ Поддерживает | Стандартный режим |
-| **Llama 3.2** | ✅ Поддерживает | Стандартный режим |
-| **Llama 3.3** | ✅ Поддерживает | Стандартный режим |
-| **Hunyuan** | ✅ Поддерживает | Стандартный режим |
-| **Qwen** | ✅ Поддерживает | Стандартный режим |
-
-### Решение
-
-Для моделей без поддержки системного промпта используется режим `sys_not_promt`:
-- Системный промпт **объединяется** с пользовательским
-- Формат: `"{system_prompt}\n\n{user_prompt}"`
-- Отправляется как одно сообщение с role: "user"
-
-### Настройка
-
-В `.env` файле укажите флаги для Translate и Proofread LLM:
-
-```bash
-# Translate LLM (Translation) — эталонная связка из env.sample
-MODEL_TRANSLATE=Gemma4-26B
-S_PROMT_TRANSLATE=false   # Gemma 4 принимает system; true только для Gemma 2/3
-
-# Proofread LLM (Proofreading)
-MODEL_PROOFREAD=Qwen36-35B
-S_PROMT_PROOFREAD=false   # false = раздельные сообщения
+```
+source chunk ── terms of the dictionary substituted (base form)
+  │
+  ├─ INITIAL      translate LLM   source + vocabulary + characters + synopsis → translation
+  ├─ REFLECTION   proofread LLM   source + translation + vocabulary + characters → fixes
+  ├─ IMPROVE      proofread LLM   translation + fixes + characters → translation   (skipped when no fix is left)
+  ├─ FINAL_EDIT   proofread LLM   translation + characters → translation
+  ├─ GENDER       GENDER_LLM      only flagged sentences + characters → fixed sentences
+  └─ SYNOPSIS     translate LLM   source + translation + characters + glossary → synopsis, <genders>, <terms>
 ```
 
-### Переменные окружения
+With `FAST_TRANS=true` only INITIAL, GENDER and SYNOPSIS run.
 
-| Переменная | Описание | Значения |
-|------------|----------|----------|
-| `S_PROMT_TRANSLATE` | Режим для Translate LLM | `true` / `false` |
-| `S_PROMT_PROOFREAD` | Режим для Proofread LLM | `true` / `false` |
+Agreements between the stages:
 
----
+- **Before INITIAL** the translations of the dictionary terms found in the chunk
+  are substituted into the source in their base form; the prompt asks the model
+  to inflect them. Only INITIAL and REFLECTION see the source.
+- **REFLECTION** lists only real errors as pairs: the shortest wrong fragment
+  copied from the translation, its fix, a reason under ten words. The
+  vocabulary is "already checked": the prompt does not ask the model to check
+  it — asking made the model list every term as a fix that changes nothing,
+  until `max_tokens`. The code keeps the vocabulary instead: a fix that removes
+  a dictionary translation, contains a word of the other alphabet or changes
+  nothing is dropped before IMPROVE.
+- **IMPROVE** applies the fixes left and nothing else; with no fix left it is not
+  called at all (it could only rewrite the text).
+- **FINAL_EDIT** polishes without the source: it keeps names, acronyms and markup
+  and does not shorten or add.
+- **GENDER** gets only the sentences where a dictionary character is the
+  subject and the verb or adjective has the other gender; a failure keeps the
+  translation as it is.
+- **SYNOPSIS** writes the context for the next chunk and two blocks of
+  dictionary candidates (rules: `synopsis.dictionary_rules`): `<genders>` —
+  characters whose gender the source shows, `<terms>` — coined words. See
+  [DICTIONARY_FORMAT.md](DICTIONARY_FORMAT.md).
 
-## 📊 Рекомендации по моделям
+### Gender of the characters
 
-### Translate LLM (Translation)
+The gender is not a field of the glossary line but a `<characters>` block in
+every stage (in JSON mode the `"characters"` key), one line per character
+written the way the target language shows it: `Алиса — она (сказала)`
+(`gender_check.characters_lines`). A small model copies the verb form it sees
+more reliably than it carries "she" from the end of a glossary line.
 
-| Модель | S_PROMT_TRANSLATE | Примечания |
-|--------|-------------------|------------|
-| Gemma 4 (`Gemma4-26B` в `env.sample`) | false | Рабочая связка из `env.sample` |
-| Qwen 3.6 (`Qwen36-35B`) | false | Поддерживает system |
-| `google/gemma-2-9b-it` | **true** | Gemma 2 не поддерживает system |
-| `google/gemma-2-27b-it` | **true** | Gemma 2 не поддерживает system |
-| `google/gemma-3-12b-it` | **true** | Gemma 3 не поддерживает system |
-| `mistralai/Mistral-7B` | false | Поддерживает system |
-| `mistralai/Mistral-Large` | false | Поддерживает system |
-| `meta-llama/Llama-3.2` | false | Поддерживает system |
-| `meta-llama/Llama-3.3` | false | Поддерживает system |
-| `tencent/Hunyuan` | false | Поддерживает system |
-| `Qwen/Qwen-2.5` | false | Поддерживает system |
+## JSON mode
 
-### Proofread LLM (Proofreading/Editing)
+On by default (`JSON_MODE=true`); `JSON_MODE=false` switches to the text
+prompts. Input objects, as the code builds them:
 
-| Модель | S_PROMT_PROOFREAD | Примечания |
-|--------|-------------------|------------|
-| Qwen 3.6 (`Qwen36-35B` в `env.sample`) | false | Рабочая связка из `env.sample` |
-| `google/gemma-2-9b-it` | **true** | Gemma 2 не поддерживает system |
-| `Mistral-7B-Instruct` | false | Поддерживает system |
-| `Ministral-8B` | false | Поддерживает system |
-| `Qwen-2.5-7B` | false | Поддерживает system |
-
----
-
-## 🎯 Структура prompts.json
-
-| Категория | Ключи | Кто вызывает |
+| Stage | Input keys | Output |
 |---|---|---|
-| `initial_translation` | `system`, `user_xml` (FB2), `user_text` (Markdown, Calibre), `user_hunyuan` (Hunyuan, не FB2) | `TranslationPipeline.initial_translation` |
-| `reflection`, `improve`, `editor` | `system`, `user_xml`, `user_text` (по `style` чанка) | стадии 2–4 |
-| `synopsis` | `system`, `user`, `dictionary_rules` (подставляется в конец `user`) | стадия 5 |
-| `gender_fix` | `system`, `user` | стадия GENDER: только предложения, где `gender_check` нашёл сказуемое другого рода (LLM — `GENDER_LLM`: по умолчанию proofread, при `FAST_TRANS`, если это другая модель на том же локальном сервере, — translate) |
-| `*_json` | `system`, `user_text` | те же стадии при `JSON_MODE` |
-| `vocabulary`, `metadata_translation` | `user` (системного сообщения нет: `get_completion` шлёт только `user`) | перевод словаря, метаданные |
-| `image_generation` | `generation`, `variation` | обложка |
+| INITIAL | `source`, `source_lang`, `target_lang`, `country`, `vocabulary`, `characters`, `synopsis` | `{"translation": "…"}` |
+| REFLECTION | `source`, `translation`, `source_lang`, `target_lang`, `country`, `vocabulary`, `characters` | `{"fixes": [{"find": "…", "replace": "…", "reason": "…"}]}` |
+| IMPROVE | `translation`, `fixes`, `characters` | `{"translation": "…"}` |
+| FINAL_EDIT | `translation`, `characters` | `{"translation": "…"}` |
 
-Правила, которые проверяет `tests/test_prompts.py`:
+In text mode REFLECTION writes one fix per line, `«wrong» → «right» — reason`,
+or exactly `NO CHANGES`.
 
-- в шаблоне только те плейсхолдеры, что передаёт вызывающий код, — иначе
-  `get_prompt` вернёт шаблон неподставленным (модель увидит `{target_lang}`
-  буквально) и напишет предупреждение в лог; литеральные фигурные скобки — `{{ }}`;
-- каждый ключ файла есть в списке вызовов теста — мёртвых ключей нет;
-- промпты перевода получают словарь чанка, а перевод/improve/editor требуют
-  сохранять теги, Markdown и плейсхолдеры (`![](sn-imgref-N)`, `[](sn-htmlref-N)`).
+An answer is parsed as JSON first; a JSON answer that never closes (the
+provider cut it off) fails the stage and the chunk is split, as for any
+truncated answer. A closed but invalid one is read by a fallback that decodes
+its escapes; plain text and `<ttext>` wrappers are accepted too.
 
-Пол персонажей: не поле строки `<vocabulary>`, а блок `<characters>` во всех
-стадиях (в JSON-режиме — ключ `"characters"`), строка на персонажа в форме
-языка перевода — `Вашти — она (сказала)` (`gender_check.characters_lines`).
-Слабая модель копирует увиденную форму глагола надёжнее, чем переводит «she»
-с конца строки глоссария. Промпты пишутся под модели до 20B: новое правило —
-вместо старого, а не в добавок; `app.py eval` проверяет правку на
-ваших моделях. `tests/test_prompts.py` следит, чтобы текстовый и JSON-вариант
-стадии несли одни правила (`SAME_RULES`) и чтобы промпт не выходил за свой
-бюджет длины (`BUDGET`).
+## System prompt merging (`S_PROMT_*`)
 
-Договорённости между стадиями: в исходник перед стадией 1 уже подставлены
-переводы терминов в начальной форме (промпт просит их склонять); рефлексия
-пишет правки «Replace «X» with «Y» — reason» на языке перевода (improve не
-видит исходник), а при отсутствии правок — ровно `NO CHANGES`; improve
-вызывается всегда и в этом случае возвращает перевод без изменений.
+`S_PROMT_TRANSLATE=true` / `S_PROMT_PROOFREAD=true` send the system prompt and
+the user prompt as one user message, for models whose chat template rejects a
+system role (Gemma 2 and 3). Gemma 4 and Qwen 3.6, the reference models,
+accept a system message: keep `false`.
 
----
+## Changing a prompt
 
-## 🔄 Workflow (5 этапов)
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ ЭТАП 1: INITIAL (Translate LLM)                                │
-│ Промпт: initial_translation (system + user_hunyuan/user_xml)    │
-└─────────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ ЭТАП 2: REFLECTION (Proofread LLM)                             │
-│ Промпт: reflection (system + user_xml/user_text)                │
-└─────────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ ЭТАП 3: IMPROVE (Proofread LLM)                                │
-│ Промпт: improve (system + user_xml/user_text)                   │
-└─────────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ ЭТАП 4: FINAL_EDIT (Proofread LLM) 🆕                           │
-│ Промпт: editor (system + user_xml/user_text)                    │
-└─────────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ ЭТАП 5: SYNOPSIS (Translate LLM) ← из финального перевода      │
-│ Промпт: synopsis (system + user)                                │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## ⚙️ Конфигурация
-
-### .env файл
+The prompts are written for small models (the reference ones are
+mixture-of-experts models of 26–35B parameters with 3–4B active): a new rule replaces an old one rather than being added on top, and a
+change is measured, not judged on one chunk. `app.py eval` translates the same
+passages of a book with your models and compares two runs:
 
 ```bash
-# Translate LLM — Gemma 4
-MODEL_TRANSLATE=Gemma4-26B
-API_BASE_TRANSLATE=http://localhost:11434/v1
-API_KEY_TRANSLATE=your-key
-S_PROMT_TRANSLATE=false         # ⚠️ true только для Gemma 2/3
-TEMP_TRANSLATE=0.01
-
-# Proofread LLM — Qwen 3.6
-MODEL_PROOFREAD=Qwen36-35B
-API_BASE_PROOFREAD=http://localhost:11434/v1
-API_KEY_PROOFREAD=your-key
-S_PROMT_PROOFREAD=false
-TEMP_PROOFREAD=0.3
-
-# Общие
-SOURCE_LANG=english
-TARGET_LANG=russian
-COUNTRY=Россия
+python app.py eval books/MyBook.epub --dic books/MyBook_ru.dic --count 8 --out logs/eval/before.json
+python app.py eval books/MyBook.epub --dic books/MyBook_ru.dic --count 8 \
+  --prompts my_prompts.json --out logs/eval/after.json --compare logs/eval/before.json
 ```
 
----
-
-## 🧪 Тестирование
-
-Проверка режима sys_not_promt:
-
-```python
-from src.config import Config
-from src.utils import llm_service, LLMRole
-
-config = Config()
-
-print(f"Translate sys_not_promt: {config.sys_not_promt_translate}")
-print(f"Proofread sys_not_promt: {config.sys_not_promt_proofread}")
-
-# Тестовый вызов
-result = llm_service.complete(
-    role=LLMRole.TRANSLATE,
-    system_prompt="You are a translator",
-    user_prompt="Translate: Hello",
-    max_tokens=100
-)
-```
-
----
-
-## 📝 Changelog
-
-- **2026-03-29**: Добавлен режим sys_not_promt для Gemma 2/3
-- **2026-03-29**: Разделение промптов на Translate/Proofread LLM
-- **2026-03-29**: Добавлен Stage 5 (FINAL_EDIT) с промптом editor
-
----
-
-## 📦 JSON Mode
-
-Set `JSON_MODE=true` in `.env` to use structured JSON for LLM input/output across all 4 translation stages.
-
-### Benefits
-- More reliable parsing (no XML tag conflicts)
-- Structured input with vocabulary, synopsis, context
-- Consistent output format across all stages
-- Better control over LLM response structure
-
-### Configuration
-```bash
-# .env
-JSON_MODE=true
-```
-
-### Prompt Categories
-JSON prompts use `*_json` suffix in `prompts.json`. The system looks up the category by stage:
-
-| Stage | JSON Prompt Category |
-|-------|---------------------|
-| **INITIAL** | `initial_translation_json` |
-| **REFLECTION** | `reflection_json` |
-| **IMPROVE** | `improve_json` |
-| **FINAL_EDIT** | `editor_json` |
-
-> ⚠️ **Important:** Use the `*_json` category (not `system_json`/`user_text_json` keys inside). The JSON prompt has its own system/user messages with escaped braces.
-
-### Escaped Curly Braces
-JSON prompts use double curly braces `{{ }}` to escape template variables. This prevents Python f-string interpolation of the JSON structure itself — only the `{variable}` placeholders are substituted.
-
-Example from `prompts.json`:
-```json
-{
-    "initial_translation_json": {
-        "system": "You are a professional literary translator...",
-        "user": "{{\"source\": \"{source_text}\", \"target_lang\": \"{target_lang}\"}}"
-    }
-}
-```
-
-The `{{` and `}}` become `{` and `}` in the actual prompt sent to the LLM.
-
-### Input Format (all stages)
-All JSON prompts receive a structured input object:
-
-```json
-{
-  "source": "текст для перевода",
-  "source_lang": "english",
-  "target_lang": "russian",
-  "country": "Russia",
-  "vocabulary": {"термин": "перевод"},
-  "synopsis": "краткое содержание"
-}
-```
-
-**Field descriptions:**
-- `source` — text to translate
-- `source_lang` / `target_lang` — language codes
-- `country` — localization country for regional variants
-- `vocabulary` — term dictionary (key = source term, value = target translation)
-- `synopsis` — context summary from previous chunk
-
-### Output Format (by stage)
-
-**INITIAL, IMPROVE, FINAL_EDIT:**
-```json
-{"translation": "переведенный текст"}
-```
-
-**REFLECTION:**
-```json
-{"suggestions": ["suggestion 1", "suggestion 2"]}
-```
-
-### Fallback
-If JSON parsing fails, the system falls back to XML tag extraction (`<ttext>...</ttext>`).
-
-### Related Documentation
-- [JSON_MODE_ANALYSIS.md](../JSON_MODE_ANALYSIS.md) — Detailed analysis of JSON mode implementation, input/output formats for all stages
-
----
-
-*Updated: 2026-04-28 — Expanded with escaped braces, prompt categories, and structured input details*
+`--prompts FILE` takes the prompts of that file over `src/prompts.json` for
+this run only; `--no-glossary` and `--no-substitution` switch the glossary off
+in the prompts or the substitution before INITIAL.

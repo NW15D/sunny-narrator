@@ -84,7 +84,7 @@ def _without_leading_articles(ent) -> str:
     .dic term must be the name, or "a Jain" lands next to "Jain" as a second
     entry. Articles per language: lexicon.is_article (the language of the
     doc, SOURCE_LANG as fallback). A capitalized article stays ("The
-    Warship", "El Greco" may be the name itself), the last token always does.
+    Times", "El Greco" may be the name itself), the last token always does.
     """
     text = ent.text.strip()
     if not hasattr(type(ent), '__iter__'):

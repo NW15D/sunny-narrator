@@ -1,385 +1,96 @@
-# Installation Guide — Sunny Narrator
+# Installation
 
-## 📋 System Requirements
+| Component | Requirement |
+|---|---|
+| Python | 3.11 or newer (wheels exist for 3.11–3.13) |
+| OS | Linux or macOS; Windows through WSL2 |
+| RAM | 4 GB is enough with cloud models; spaCy `*_lg` models take ~1 GB |
+| Disk | ~300 MB for the project, ~400 MB per `*_lg` spaCy model |
+| GPU | not needed: the models run in the cloud or on your LLM servers; an NVIDIA GPU only speeds up spaCy |
+| Calibre, pandoc | for EPUB, DOCX and PDF input (system packages) |
 
-| Component | Minimum | Recommended |
-|-----------|---------|-------------|
-| **OS** | Ubuntu 20.04 | Ubuntu 22.04 |
-| **Python** | 3.10 | 3.12 |
-| **RAM** | 8 GB | 16 GB |
-| **GPU** | Optional | NVIDIA with 8GB+ VRAM |
-| **Storage** | 10 GB | 50 GB SSD |
+Docker images: [DOCKER.md](DOCKER.md).
 
----
+## Install
 
-## 🚀 Quick Start (CPU - Stable)
+The dependencies come from `pyproject.toml` only (no `requirements.txt`).
 
 ```bash
-# Clone repository
-git clone https://github.com/NW15D/sunny-narrator.git
-cd sunny-narrator
-
-# Create virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Install dependencies (CPU version, uses pyproject.toml)
+git clone https://github.com/NW15D/sunny-narrator && cd sunny-narrator
+python3 -m venv .venv && source .venv/bin/activate     # Debian/Ubuntu: apt install python3-venv
 pip install -e .
-
-# Download spaCy model
-python -m spacy download en_core_web_lg
-
-# CJK sources: the model for SOURCE_LANG (picked and downloaded automatically
-# on first use, or by hand) and, for Japanese/Chinese, their tokenizers
-pip install -e ".[cjk]"        # sudachipy + sudachidict-core (ja), spacy-pkuseg (zh)
-python -m spacy download ko_core_news_lg   # Korean needs nothing extra
-python -m spacy download ja_core_news_lg
-python -m spacy download zh_core_web_lg
-
-# Configure
-cp .env.example .env
-# Edit .env with your settings
-
-# Run
-python app.py
+sudo apt install calibre pandoc                         # macOS: brew install --cask calibre && brew install pandoc
 ```
 
----
+`pip install -e .` also gives the `sunny-narrator` command (the same as
+`python app.py`).
 
-## 🎮 GPU Installation (Optional)
+Optional extras:
 
-### Prerequisites
+| Extra | Install | What for |
+|---|---|---|
+| `cjk` | `pip install -e ".[cjk]"` | Japanese and Chinese source books: the tokenizers of their spaCy models (sudachipy, sudachidict-core, spacy-pkuseg). Korean needs nothing |
+| `gpu` | `pip install -e ".[gpu]"` | CuPy for CUDA 12: spaCy runs NER and word vectors on an NVIDIA GPU |
+| `dev` | `pip install -e ".[dev]"` | pytest and ruff, for development ([CONTRIBUTING.md](../CONTRIBUTING.md)) |
 
-- NVIDIA GPU with 8GB+ VRAM
-- NVIDIA Driver 525.60+ (CUDA 12 compatible)
-- Ubuntu 20.04/22.04
+spaCy models are downloaded on first use: the model of the source language
+(`NERMODEL`, picked by `SOURCE_LANG`, e.g. `en_core_web_lg`) and the small
+model of the target language for the gender check (e.g. `ru_core_news_sm`).
+Offline, download them beforehand: `python -m spacy download en_core_web_lg`.
 
-### Step 1: Check NVIDIA Driver
+## Configure
 
 ```bash
-nvidia-smi
+cp env.cloud.sample .env    # cloud models: put your OpenRouter or ProxyAPI key in
+# or
+cp env.sample .env          # every option, set up for your own LLM servers
 ```
 
-Should show:
-- Driver Version: 525.60+ 
-- CUDA Version: 12.0+
+Then set `FILE`, `SOURCE_LANG` and `TARGET_LANG`. Every option:
+[CONFIGURATION.md](CONFIGURATION.md).
 
-### Step 2: Install the GPU extra
+## Check
 
 ```bash
-pip install -e ".[gpu]"     # cupy-cuda12x: spaCy runs NER and word vectors on the GPU
+sunny-narrator --help                       # the command and its options
+ebook-convert --version && pandoc --version # EPUB/DOCX/PDF input only
 ```
 
-No torch is needed: spaCy's `*_sm`/`*_lg` pipelines run on thinc, with NumPy
-on the CPU and CuPy on the GPU.
-
-### Step 3: Verify GPU
-
-```bash
-python3 -c "
-import spacy
-from src import ner
-print('CuPy sees a CUDA device:', ner.gpu_available())
-print('spaCy GPU:', spacy.prefer_gpu())
-"
-```
-
-Should output:
-```
-CuPy sees a CUDA device: True
-spaCy GPU: True
-```
-
----
-
-## ⚠️ Troubleshooting
-
-### Issue: NVRTC Error
-
-```
-Error loading spaCy model: nvrtc: error: invalid value for --gpu-architecture
-```
-
-**Solution 1: Use CPU for NER**
-
-spaCy uses the GPU whenever it sees one (`spacy.prefer_gpu()`). Hide the GPU
-from it for the run:
-```bash
-CUDA_VISIBLE_DEVICES= python3 app.py
-```
-
-**Solution 2: Reinstall CuPy with correct architecture**
-
-```bash
-# Get compute capability (e.g., 8.6 for RTX 3090)
-nvidia-smi --query-gpu=compute_cap --format=csv,noheader
-
-# Install with specific architecture
-CUDA_ARCH=86 pip install cupy-cuda12x
-```
-
-**Solution 3: Remove CuPy, use CPU**
-
-```bash
-pip uninstall cupy cupy-cuda12x -y
-```
-
-NER will work on CPU (slightly slower but stable).
-
-### Issue: CUDA Not Available
-
-With `DEBUG=1` the dictionary build prints `spaCy on the CPU`.
-
-**Check:**
-```bash
-nvidia-smi                                              # the driver sees the GPU
-python3 -c "import cupy; print(cupy.cuda.runtime.getDeviceCount())"   # CuPy sees it (1 or more)
-```
-
-**Fix:** install the GPU extra (`pip install -e ".[gpu]"`); `CUDA_VISIBLE_DEVICES`
-must not be empty. Without a GPU everything works on the CPU.
-
-### Issue: spaCy Model Not Found
-
-```
-OSError: [E050] Can't find model 'en_core_web_lg'
-```
-
-**Fix:**
-```bash
-python -m spacy download en_core_web_lg
-```
-
----
-
-## 📦 Requirements Breakdown
-
-### Core (Required)
-
-| Package | Purpose |
-|---------|---------|
-| `openai` | LLM API client |
-| `spacy` | NER (Named Entity Recognition), word vectors |
-| `beautifulsoup4` | XML/HTML parsing |
-| `pydantic` | Data validation |
-| `python-dotenv` | Environment config |
-
-### Optional (GPU Acceleration)
-
-| Package | Purpose | Notes |
-|---------|---------|-------|
-| `cupy-cuda12x` | GPU acceleration for NER | May cause NVRTC errors |
-| `spacy-curated-transformers`, `torch` | `*_trf` models | Not installed by the project, see [DICTIONARY_FORMAT.md](DICTIONARY_FORMAT.md#gpu-cuda-and-cpu-nuances-of-dictionary-work) |
-
-### CPU vs GPU Performance
-
-| Task | CPU | GPU | Speedup |
-|------|-----|-----|---------|
-| NER extraction | ~100ms/1k chars | ~50ms/1k chars | 2x |
-| Vocabulary matching | ~200ms/chunk | ~50ms/chunk | 4x |
-| Translation (LLM) | N/A | N/A | LLM runs on server |
-
-**Recommendation:** CPU is fine for most use cases. GPU only needed for large books (500k+ chars).
-
----
-
-## 🔄 Calibre Pipeline (Auto-detected)
-
-Sunny Narrator now supports an alternative pipeline that accepts **DOCX/EPUB/PDF** input directly, converts via Calibre to Markdown, translates, and outputs back to **DOCX/EPUB/PDF**.
-
-> The pipeline is selected automatically based on the input file extension:
-> `.docx`, `.epub`, `.pdf` → Calibre pipeline. `.fb2`, `.txt` → Classic pipeline.
-
-### Prerequisites
-
-| Dependency | Type | Installation |
-|------------|------|-------------|
-| `pypandoc` | Python package | `pip install pypandoc` |
-| `pandoc` | System package | `sudo apt install pandoc` |
-| `calibre` | System package | `sudo apt install calibre` |
-
-### Step 1: Install Python Dependencies
-
-```bash
-# Already included in pyproject.toml
-pip install -e .
-```
-
-### Step 2: Install System Dependencies
-
-```bash
-# Pandoc (document converter)
-sudo apt install pandoc
-
-# Calibre (ebook conversion)
-sudo apt install calibre
-```
-
-### Step 3: Verify Installation
-
-```bash
-# Check Calibre
-ebook-convert --version
-
-# Check Pandoc
-pandoc --version
-
-# Check pypandoc
-python3 -c "import pypandoc; print('pypandoc OK')"
-```
-
-### Usage
-
-```bash
-# Basic usage (auto-detected by file extension)
-python3 app.py
-
-# Specify output format: epub, docx or pdf for DOCX/EPUB/PDF input;
-# fb2 or epub for FB2/TXT input
-python3 app.py --output-format epub
-
-# Custom chunk size + fast mode
-python3 app.py --max-chunk-size 4000 --fast-mode
-```
-
-> ⚠️ **FB2 is NOT supported by the Calibre pipeline.** The Calibre pipeline
-> accepts DOCX/EPUB/PDF input and produces DOCX/EPUB/PDF output. For FB2 use
-> the **classic pipeline** (default for `.fb2` and `.txt` files), which preserves
-> poem/stanza/v structure via direct XML manipulation. Calibre's HTMLZ
-> intermediate flattens FB2 structure into plain paragraphs — irreversible
-> translation quality loss.
-
-### .env Configuration for Calibre Pipeline
-
-```bash
-# Input file (DOCX, EPUB or PDF)
-FILE=/path/to/book.epub
-
-# Translation settings
-SOURCE_LANG=en
-TARGET_LANG=ru
-COUNTRY=Россия
-
-# Output format (docx, epub, or pdf)
-OUTPUT_FORMAT=epub
-```
-
-### Pipeline Flow
-
-```
-Input (DOCX/EPUB/PDF)
-    ↓
-Calibre ebook-convert → HTMLZ
-    ↓
-Extract HTML + metadata from HTMLZ
-    ↓
-pypandoc: HTML → Markdown
-    ↓
-Translate Markdown chunks
-    ↓
-pypandoc: Markdown → HTML (with TOC)
-    ↓
-Calibre: HTML → Output (FB2/EPUB)
-    ↓
-Output file
-```
-
-### Troubleshooting
-
-**Error: `pypandoc is not installed`**
-```bash
-pip install pypandoc
-# Also need system pandoc:
-sudo apt install pandoc
-```
-
-**Error: `Calibre (ebook-convert) is not installed`**
-```bash
-sudo apt install calibre
-# Verify:
-ebook-convert --version
-```
-
-**Error: `Pandoc conversion failed`**
-```bash
-# Check pandoc is accessible
-which pandoc
-pandoc --version
-```
-
----
-
-## 🧪 Testing Installation
-
-### Test 1: Basic Import
-
-```bash
-python3 -c "import app; print('✓ OK')"
-```
-
-### Test 2: spaCy Model
-
-```bash
-python3 -c "import spacy; nlp = spacy.load('en_core_web_lg'); print('✓ OK')"
-```
-
-### Test 3: CUDA (if GPU installed)
-
-```bash
-python3 -c "import cupy; print('CUDA devices:', cupy.cuda.runtime.getDeviceCount())"
-```
-
-### Test 4: NER
-
-```bash
-python3 -c "
-from src import ner
-result = ner.make_vocab('Alice went to Wonderland')
-print('NER result:', result[:100] if result else 'No terms')
-"
-```
-
----
-
-## 📝 Environment Configuration
-
-### .env File
-
-```bash
-# Translate LLM
-MODEL_TRANSLATE=Hunyuan
-API_BASE_TRANSLATE=http://localhost:11434/v1
-API_KEY_TRANSLATE=your-key
-JSON_MODE=true    # 🚀 Recommended: structured JSON for all stages
-
-# NER Configuration
-NER=true
-NERMODEL=en_core_web_lg
-
-# Language
-SOURCE_LANG=english
-TARGET_LANG=russian
-COUNTRY=Россия
-
-# Processing
-MAX_LEN_CHUNK=8192
-LENGTH_CHECK_THRESHOLD=20
-FAST_TRANS=false
-DEBUG=off
-```
-
----
-
-## 📚 Additional Resources
-
-- [spaCy GPU Setup](https://spacy.io/usage#gpu)
-- [CuPy Installation](https://docs.cupy.dev/en/stable/install.html)
-- [NVIDIA CUDA Compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/)
-
----
-
-## Changelog
-
-- **2026-03-29:** Added GPU troubleshooting section
-- **2026-03-29:** Updated requirements.txt with comments
-- **Previous:** Initial installation guide
+## The two pipelines
+
+The pipeline follows the input format, there is no option to choose it:
+
+| Input | Pipeline | Output (`OUTPUT_FORMAT`, `--output-format`) |
+|---|---|---|
+| `.fb2`, `.txt` | classic: works on the FB2 structure directly (poems, stanzas, notes survive) | `fb2` (default) or `epub` |
+| `.epub`, `.docx`, `.pdf` | Calibre: `ebook-convert` → HTMLZ → Markdown (pandoc) → translation → HTML → `ebook-convert` | `epub` (default), `docx` or `pdf` |
+
+FB2 is never sent through Calibre: its HTMLZ conversion flattens poems and
+stanzas into plain paragraphs.
+
+## GPU (optional)
+
+1. An NVIDIA driver for CUDA 12 (`nvidia-smi` shows 525.60 or newer).
+2. `pip install -e ".[gpu]"`.
+3. Check:
+   ```bash
+   python3 -c "from src import ner; import spacy; print(ner.gpu_available(), spacy.prefer_gpu())"
+   ```
+   `True True` — spaCy runs on the GPU. No torch is needed.
+
+CUDA numbers the GPUs fastest first, so with several GPUs spaCy's device 0 is
+not necessarily `nvidia-smi`'s GPU 0; `CUDA_DEVICE_ORDER=PCI_BUS_ID` makes the
+numberings match, `CUDA_VISIBLE_DEVICES` picks the GPU, and an empty
+`CUDA_VISIBLE_DEVICES=` forces the CPU.
+
+## Troubleshooting
+
+| Error | Fix |
+|---|---|
+| `Calibre (ebook-convert) is not installed` | `sudo apt install calibre` (EPUB/DOCX/PDF only) |
+| `pypandoc` / `pandoc` errors | `sudo apt install pandoc`; check with `pandoc --version` |
+| `[E050] Can't find model '…'` | offline or `SPACY_AUTO_DOWNLOAD=false`: `python -m spacy download <model>` |
+| `nvrtc: error: invalid value for --gpu-architecture` | CuPy does not support this GPU: hide it (`CUDA_VISIBLE_DEVICES=`) or `pip uninstall cupy-cuda12x` — everything works on the CPU |
+| A Japanese or Chinese model fails to load | `pip install -e ".[cjk]"` |
+| `pip` builds a package from source and fails | use Python 3.11–3.13 |
+| Exit code 3, `the … LLM refused the request` | the key, the access or the model name: see the hint in the message |

@@ -1,20 +1,13 @@
-#### Context
-What is the purpose of this PR? Is it to
-- [ ] add a new feature
-- [ ] fix a bug
-- [ ] update tests and/or documentation
-- [ ] other (please add here)
+#### What and why
 
-Please link to any issues this PR addresses.
+What the change does, and the issue it addresses (if any).
 
-#### Changelog
-What are the changes made in this PR?
+#### Checks
 
-#### Test plan
-Please make sure to do each of the following if applicable to your PR. (If you're not sure about any one of these just ask and we will happily help.)
+- [ ] `API_KEY_TRANSLATE=test API_KEY_PROOFREAD=test API_KEY_IMAGES=test python -m pytest -q` passes
+- [ ] `ruff check src tests` passes
+- [ ] a test for the new behaviour or the fixed bug (`tests/test_<feature>.py`)
+- [ ] a prompt change: `app.py eval` before and after, the numbers below
+- [ ] documentation (`docs/`, README) and `CHANGELOG.md` updated if behaviour or options changed
 
-- [ ] run pre-commit hooks and linters (make sure you've first installed via `pre-commit install`)
-- [ ] add unit tests for any new functionality
-- [ ] update docstrings for any new or updated methods or classes
-- [ ] run unit tests via `pytest tests`
-- [ ] include relevant commands and any other artifacts in this summary (eval results, etc.)
+See [CONTRIBUTING.md](../CONTRIBUTING.md).

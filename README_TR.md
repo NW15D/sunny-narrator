@@ -74,9 +74,9 @@ docker run --rm --gpus all \
 # CPU imajı: --gpus all seçeneğini kaldırın ve ...sunny-narrator:main-cpu kullanın
 ```
 
-Compose ile alternatif (`.env` yapılandırması otomatik okunur): `docker-compose up -d` (GPU) veya `docker-compose -f docker-compose.cpu.yml up -d`.
+Compose ile alternatif (`.env` yapılandırması otomatik okunur): `docker compose run --rm sunny-narrator` (GPU) veya `docker compose -f docker-compose.cpu.yml run --rm sunny-narrator`.
 
-**Kılavuzlar:** [docs/DOCKER_CPU_GUIDE.md](docs/DOCKER_CPU_GUIDE.md), [docs/GPU_DOCKER.md](docs/GPU_DOCKER.md)
+**Kılavuzlar:** [docs/DOCKER.md](docs/DOCKER.md)
 
 ## 📋 Yapılandırma
 
@@ -142,14 +142,12 @@ Seri sözlüğünün adım adım hazırlanışı [docs/DICTIONARY_FORMAT.md](doc
 | **Çeviri aşamaları** (GENDER dahil) | [docs/TRANSLATION_STAGES.md](docs/TRANSLATION_STAGES.md) |
 | **İstem kılavuzu** | [docs/PROMPTS_GUIDE.md](docs/PROMPTS_GUIDE.md) |
 | **FAST_TRANS modu** | [docs/FAST_TRANS.md](docs/FAST_TRANS.md) |
-| **Sıcaklık stratejisi** | [docs/TEMPERATURE_STRATEGY.md](docs/TEMPERATURE_STRATEGY.md) |
+| **Örnekleme (sıcaklıklar, presence_penalty, akıl yürütme)** | [docs/TEMPERATURE_STRATEGY.md](docs/TEMPERATURE_STRATEGY.md) |
 | **Yeniden parçalama** | [docs/RECHUNKING_GUIDE.md](docs/RECHUNKING_GUIDE.md) |
 | **NER** | [docs/NER_GUIDE.md](docs/NER_GUIDE.md) |
 | **Çökmeden sonra devam** | [docs/RESUME.md](docs/RESUME.md) |
 | **Günlükler** | [docs/LOGGING.md](docs/LOGGING.md) |
-| **Docker (CPU)** | [docs/DOCKER_CPU_GUIDE.md](docs/DOCKER_CPU_GUIDE.md) |
-| **Docker (GPU)** | [docs/GPU_DOCKER.md](docs/GPU_DOCKER.md) |
-| **JSON modu** | [docs/JSON_MODE_ANALYSIS.md](docs/JSON_MODE_ANALYSIS.md) |
+| **Docker** | [docs/DOCKER.md](docs/DOCKER.md) |
 | **Test edilen diller** | [docs/LANGUAGES.md](docs/LANGUAGES.md) |
 | **Katkıda bulunmak** | [CONTRIBUTING.md](CONTRIBUTING.md#sunny-narratora-katkıda-bulunmak) |
 | **Yapay zekâ ajanları için** | [AGENTS.md](AGENTS.md) |

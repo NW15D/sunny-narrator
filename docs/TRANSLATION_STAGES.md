@@ -1,546 +1,102 @@
-# Translation Stages — Prompts and Outputs
-
-## 📋 5-Stage Pipeline Overview
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ Stage 1: INITIAL (Translate LLM)                               │
-│ Input: source_text, outline_text, vocab_dict                    │
-│ Output: initial_translation (draft)                             │
-└─────────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ Stage 2: REFLECTION (Proofread LLM)                            │
-│ Input: source_text, initial_translation                         │
-│ Output: suggestions (feedback list)                             │
-└─────────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ Stage 3: IMPROVE (Proofread LLM)                               │
-│ Input: initial_translation, suggestions, vocab_dict             │
-│ Output: improved_translation (corrected translation)            │
-└─────────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ Stage 4: FINAL_EDIT (Proofread LLM)                            │
-│ Input: improved_translation, source_text, vocab_dict            │
-│ Output: final_translation                                       │
-└─────────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ GENDER (code + one short LLM call when needed; FAST_TRANS too)  │
-│ Input: final_translation, characters with gender                │
-│ Output: final_translation with the gender errors fixed          │
-└─────────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ Stage 5: SYNOPSIS (Translate LLM)                                │
-│ Input: final_translation                                        │
-│ Output: synopsis (context for next chunk)                       │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### 🧩 JSON Mode Output Formats
-
-When `JSON_MODE=true` is set, all 4 translation stages use structured JSON output instead of XML tags.
-
-| Stage | JSON Output Format |
-|-------|-------------------|
-| **INITIAL** | `{"translation": "translated text with <p> tags..."}` |
-| **REFLECTION** | `{"suggestions": ["feedback 1", "feedback 2"]}` |
-| **IMPROVE** | `{"translation": "corrected translation"}` |
-| **FINAL_EDIT** | `{"translation": "final translation"}` |
-
-> ⚠️ Stage 5 (SYNOPSIS) always uses plain text — no JSON mode for synopsis.
-
-See [JSON Mode Analysis](../JSON_MODE_ANALYSIS.md) for complete input/output specifications.
-
----
-
-## 🎯 Stage 1: INITIAL (Initial Translation)
-
-**LLM:** Translate (Hunyuan/Gemma/etc.)  
-**Temperature:** 0.01 (consistency)  
-**Output:** Draft translation
-
-### Prompt (prompts.json: initial_translation)
-
-**System:**
-```
-You are a professional literary translator. Translate text accurately 
-while preserving all XML structure. Output ONLY the translated content 
-within <ttext>...</ttext> tags. DO NOT output any explanations, 
-questions, or meta-commentary. If the input is empty or unclear, 
-output <ttext></ttext>.
-```
-
-**User (xml):**
-```xml
-<context>
-<synopsis>{outline_text}</synopsis>
-<vocabulary>{vocab_dict}</vocabulary>
-</context>
-
-<source lang="{source_lang}">
-{source_text}
-</source>
-
-Translate the text inside <source> to {target_lang}.
-
-Requirements:
-1. Preserve all XML tags (<p>, <strong>, <em>, etc.) in their original positions
-2. Apply vocabulary terms where applicable
-3. Maintain the narrative style and tone
-4. Output ONLY the translated text wrapped in <ttext>...</ttext>
-```
-
-### Output
-```xml
-<ttext>
-<p>In the 14th District Court of Texas, Judge John C. Wright is presiding.</p>
-<p>ROLANDO ORTELLA, court clerk: Please state your name and occupation for the record.</p>
-</ttext>
-```
-
----
-
-## 🔍 Stage 2: REFLECTION (Quality Review)
-
-**LLM:** Proofread (Mistral/Qwen/etc.)  
-**Temperature:** 0.4 (creativity)  
-**Output:** Feedback ONLY (list)
-
-### Prompt (prompts.json: reflection)
-
-**System:**
-```
-You are a literary translation quality reviewer for {target_lang} ({country}).
-
-Your task is to review translations for readers in {country}, considering:
-- Regional language variations specific to {country}
-- Cultural context and local expressions used in {country}
-- Natural phrasing that sounds native to {target_lang} speakers in {country}
-
-Review the translation against the source and identify:
-1. Accuracy issues (meaning changes, omissions, additions)
-2. Terminology inconsistencies (vocabulary usage)
-3. Grammar and syntax errors
-4. Nuances and natural expression (literary quality)
-5. Style deviations from the original tone
-6. Cultural appropriateness for {country}
-
-Output ONLY a numbered list of specific improvements. 
-DO NOT output the translation itself.
-```
-
-**User (xml):**
-```xml
-<task>
-Target language: {target_lang}
-Target country: {country}
-Task: Review translation and provide improvement suggestions ONLY
-</task>
-
-<source lang="{source_lang}">
-{source_text}
-</source>
-
-<translation lang="{target_lang}">
-{translation}
-</translation>
-
-Review the translation for {target_lang} readers in {country}:
-1. ACCURACY: Meaning changes or omissions
-2. TERMINOLOGY: Check term consistency
-3. GRAMMAR: Syntax issues
-4. NUANCES: Literary quality improvements
-5. STYLE: Tone mismatches
-6. CULTURE: Appropriateness for {country}
-
-Output ONLY numbered suggestions. DO NOT output the translation. 
-Focus on natural {target_lang} expression appropriate for {country}.
-```
-
-### Output (FEEDBACK ONLY)
-```
-1. "State your name" translated as "Name yourself" — better to use "Please introduce yourself" for formal court context.
-2. "clerk of the court" — "court clerk" is not quite accurate, better: "court secretary".
-3. "presiding" was omitted in translation — add "is presiding" or "is conducting the hearing".
-4. Name "John C. Wright" should be consistent with dictionary: "John C. Wright".
-5. The polite tone of "please" is not conveyed well enough — add "please" at the end.
-```
-
-### ⚠️ Important!
-
-**REFLECTION must return FEEDBACK ONLY**, not:
-- ❌ Translation again
-- ❌ Process explanations
-- ❌ Meta-commentary
-
-If output is not a feedback list, check:
-1. Prompt explicitly says "Output ONLY numbered suggestions"
-2. max_tokens is sufficient (MAX_TOKENS_PER_CHUNK)
-3. LLM is not ignoring the instruction
-
----
-
-## ✏️ Stage 3: IMPROVE (Apply Feedback)
-
-**LLM:** Proofread (Mistral/Qwen/etc.)  
-**Temperature:** 0.4 (flexibility)  
-**Output:** Corrected translation
-
-### Prompt (prompts.json: improve)
-
-**System:**
-```
-You are a literary translation editor for {target_lang} ({country}).
-
-Your task is to apply reflection suggestions while preserving:
-- Original narrative voice and tone
-- Obscene/profane language (if present in source)
-- Character speech patterns
-- Cultural nuances appropriate for {country}
-- Regional expressions natural to {target_lang} speakers in {country}
-
-Output the improved translation ONLY.
-```
-
-**User (xml):**
-```xml
-<task>
-Target language: {target_lang}
-Target country: {country}
-Task: Apply suggestions to improve translation
-</task>
-
-<source lang="{source_lang}">
-{source_text}
-</source>
-
-<translation lang="{target_lang}">
-{translation}
-</translation>
-
-<suggestions>
-{reflection}
-</suggestions>
-
-<vocabulary>
-{vocab_dict}
-</vocabulary>
-
-Apply ALL numbered suggestions to improve the translation for {target_lang} readers in {country}:
-1. Fix accuracy issues
-2. Apply vocabulary terms correctly
-3. Fix grammar
-4. Improve literary nuances
-5. Maintain style and tone
-6. Preserve obscene/profane language if present in source
-7. Ensure cultural appropriateness for {country}
-8. Use regional expressions natural to {country}
-
-Output the final translation ONLY, wrapped in <ttext>...</ttext>.
-```
-
-### Output
-```xml
-<ttext>
-<p>In the 14th District Court of Texas, Judge John C. Wright is presiding.</p>
-<p>ROLANDO ORTELLA, court secretary: Please introduce yourself for the record.</p>
-</ttext>
-```
-
----
-
-## 📝 Stage 4: FINAL_EDIT (Final Proofreading)
-
-**LLM:** Proofread (Mistral/Qwen/etc.)  
-**Temperature:** 0.15 (precision)  
-**Output:** Final translation
-
-### Prompt (prompts.json: editor)
-
-**System:**
-```
-You are a professional translator-editor for {target_lang} ({country}). 
-Your task is to perform final proofreading of the translation.
-
-Output ONLY the corrected translation, without explanations.
-```
-
-**User (xml):**
-```xml
-<task>
-Target language: {target_lang}
-Target country: {country}
-Task: Final proofreading - output corrected translation ONLY
-</task>
-
-<original lang="{source_lang}">
-{source_text}
-</original>
-
-<translation lang="{target_lang}">
-{translation}
-</translation>
-
-<vocabulary>
-{vocab_dict}
-</vocabulary>
-
-TASK: Perform final editing of the translation for {target_lang} readers in {country}.
-
-1. Fix grammar and style of the translation
-2. Restore FB2 tags (<p>, <strong>, <em>, etc.) at the same positions as in the original
-3. Verify term consistency with dictionary (use vocabulary strictly)
-4. Ensure cultural appropriateness for {country}
-5. Maintain narrative tone and style of the original
-
-Important: Compare original and translation section by section, restoring lost tags.
-Return ONLY the corrected translation.
-```
-
-### Output
-```xml
-<ttext>
-<p>In the 14th District Court of Texas, Judge John C. Wright is presiding.</p>
-<p>ROLANDO ORTELLA, court secretary: Please introduce yourself for the record.</p>
-<p>HENRY SCAR: Scar, Hank... Henry. I'm a mechanic at Allied.</p>
-</ttext>
-```
-
----
-
-## 🔒 GENDER (runs after the last text stage — in FAST_TRANS too)
-
-The GENDER stage always runs before SYNOPSIS, **including FAST_TRANS mode**
-(fast = INITIAL + GENDER + SYNOPSIS). Without an LLM it finds sentences where
-a dictionary `PERSON` with gender `he`/`she` is the subject and the verb or
-adjective has the other gender ("Вашти сказал"); such sentences go to the LLM
-in one short call per chunk that fixes them.
-
-- Needs the spaCy model of the **target** language
-  (`python -m spacy download ru_core_news_sm`); without it the check is skipped.
+# Translation Stages — What Happens to a Chunk
+
+A book is cut into chunks of about `MAX_LEN_CHUNK` source characters
+([RECHUNKING_GUIDE.md](RECHUNKING_GUIDE.md)), and every chunk goes through the
+same stages in both pipelines (`translate_chunk` in `src/utils.py`). The
+prompts and the JSON each stage exchanges: [PROMPTS_GUIDE.md](PROMPTS_GUIDE.md).
+
+## The stages
+
+| # | Stage | LLM | Temperature | Input → output | `FAST_TRANS` |
+|---|---|---|---|---|---|
+| — | substitution | code | — | the dictionary translations of the chunk's terms put into the source (base form) | yes |
+| 1 | INITIAL | translate | `TEMP_INITIAL` | source + glossary + characters + synopsis → draft | yes |
+| 2 | REFLECTION | proofread | `TEMP_REFLECTION` | source + draft + glossary + characters → list of fixes | — |
+| 3 | IMPROVE | proofread | `TEMP_IMPROVE` | draft + fixes + characters → translation; skipped when no fix is left | — |
+| 4 | FINAL_EDIT | proofread | `TEMP_FINAL_EDIT` | translation + characters → final translation | — |
+| — | GENDER | code, then `GENDER_LLM` | `TEMP_GENDER` | only the sentences with a gender error → fixed sentences | yes |
+| 5 | SYNOPSIS | translate | `TEMP_SYNOPSIS` | source + translation + characters + glossary → context for the next chunk, dictionary candidates | yes |
+
+Then the code checks the length of the translation against the length this
+book's chunks usually have; a chunk far off is split in two and translated
+again ([RECHUNKING_GUIDE.md](RECHUNKING_GUIDE.md)).
+
+### INITIAL
+
+The only stage that writes the translation from the source. It sees the
+glossary lines of the chunk (`Alice = Алиса, PERSON`) and the `<characters>`
+block with the genders written the way the target language shows them
+(`Алиса — она (сказала)`). An answer in the source language is retried once
+with a stronger instruction; an empty one is retried once.
+
+### REFLECTION
+
+The proofread model lists only real errors as `find` / `replace` / `reason`
+(gender, lost or added meaning, an untranslated common word, grammar). It is
+told that the glossary is already checked: asked to check it, it listed every
+term as a fix that changes nothing until `max_tokens`. The code drops the fixes
+IMPROVE cannot or must not apply (`_keep_applicable_fixes`): `find` not in the
+translation or equal to `replace`, a `replace` with a word of the other
+alphabet, a fix that removes a dictionary translation (`_drops_term`).
+
+Its `max_tokens` follows the translation it reviews (a loop is cut sooner), and
+it keeps a `presence_penalty` of 1.5 (`PRESENCE_PENALTY_REFLECTION`): without it
+the list repeats itself.
+
+### IMPROVE
+
+Applies the fixes left, nothing else. With no fix left it is not called: it
+could only rewrite a translation nobody found wrong.
+
+### FINAL_EDIT
+
+Polishes the translation without the source: grammar, agreement, flow. Keeps
+names, acronyms, tags and Markdown; does not shorten or add.
+
+### GENDER
+
+Runs in both modes. Without an LLM, the spaCy model of the target language
+finds sentences where a dictionary character with gender `he`/`she` is the
+subject and the verb or adjective has the other gender ("Алиса сказал"); only
+those sentences go to the LLM, in one short call per chunk.
+
 - `GENDER_CHECK=fix` (default) | `warn` (log only) | `off`.
-- `GENDER_LLM=auto` (default; proofread LLM, with FAST_TRANS too unless it is
+- `GENDER_LLM=auto` (the proofread LLM; with `FAST_TRANS` too, unless it is
   another model on the same local server) | `translate` | `proofread`.
-- `TEMP_GENDER` — temperature of the fix call (default 0.05).
-- Languages with something to check: Slavic (verb gender),
-  French/Spanish/Portuguese/Italian/Catalan/Romanian/Greek (participles,
-  adjectives); the others have nothing to check.
-- Enforces the dictionary genders from the `<characters>` block of every
-  stage: a wrong gender in the `.dic` is enforced throughout the book —
-  this stage fixes sentences, not the dictionary.
+- Languages with something to check: Slavic (verb gender), French, Spanish,
+  Portuguese, Italian, Catalan, Romanian, Greek (participles, adjectives).
+- The stage enforces the dictionary: a wrong gender in the `.dic` is enforced
+  throughout the book. A failure of the stage keeps the translation as it is.
 
----
+### SYNOPSIS
 
-## 📖 Stage 5: SYNOPSIS (Synopsis)
+Writes the context the next chunk gets (empty at the start of every section)
+and two blocks of dictionary candidates: `<genders>` (a gender the source
+shows for a character without one in the dictionary — accepted when two chunks
+agree) and `<terms>` (coined words). They join the in-memory dictionary for the
+rest of the run, and the `.dic` file only with `DICT_AUTO_SAVE=true`
+([DICTIONARY_FORMAT.md](DICTIONARY_FORMAT.md)).
 
-**LLM:** Proofread (Mistral/Qwen/etc.)  
-**Temperature:** 0.15 (precision)  
-**Output:** Short synopsis (~80 words)
+## When something goes wrong
 
-### Prompt (prompts.json: synopsis)
+| What happens | What the code does |
+|---|---|
+| The translation is much longer or shorter than expected | the chunk is split in two and each half is translated again, up to 3 levels and 15 LLM calls per chunk |
+| An answer is cut off (`finish_reason='length'`, or a JSON answer that never closes) | the model usually looped on this input: the chunk is split, not retried as it is |
+| A stage fails (malformed answer, API error after its retries) | the chunk is split; a chunk that still fails is tried twice more, then counted as failed: EPUB/DOCX/PDF keep its source text, FB2/TXT get a `[TRANSLATION FAILED: chunk N]` paragraph |
+| A network or server error | each request is retried 3 times (2, 4 s) |
+| The API refuses the request (401, 403, 404) | the run stops at once with the variable to check (exit code 3): no chunk can succeed |
+| The GENDER stage fails | the translation is kept as it is |
 
-**System:**
-```
-You are an expert summarizer. Create concise, informative synopses for translation context.
-```
+## Two chunks at once
 
-**User:**
-```xml
-<text>
-{final_translation}
-</text>
+`PARALLEL_STAGES=2` starts the translation of the next chunk while the
+proofread LLM still works on this one (two LLMs on separate GPUs or servers, or
+a hosted API; about 1.4–1.5× faster). The next chunk then gets the synopsis
+and the new dictionary entries of this chunk's draft, not of its final text.
+No effect with `FAST_TRANS`.
 
-Create a synopsis in {target_lang} (max 80 words). Requirements:
-- Plain text only (no markdown, no bold/italics)
-- No header like 'Synopsis:' or 'Summary:'
-- Include character gender if naturally possible
-- Output only the synopsis content
-```
+## Fast mode
 
-### Output
-```
-Court hearing in Texas. Court secretary Rolando Ortellia questions witness Henry Scar, a mechanic at Allied Fruit Growers. Prosecutor Jane Berrendt and defense attorney Benjamin Babidge are present.
-```
-
----
-
-## 🐛 Troubleshooting
-
-### Problem: REFLECTION does not return feedback
-
-**Symptoms:**
-- Empty result
-- Returns translation instead of feedback
-- Returns meta-commentary
-
-**Solution:**
-1. Check prompt — must explicitly say "Output ONLY numbered suggestions"
-2. Check max_tokens — must be MAX_TOKENS_PER_CHUNK
-3. Check temperature — 0.4 for creativity
-
-### Problem: IMPROVE ignores feedback
-
-**Symptoms:**
-- Translation does not change after the stage
-- Feedback is not applied
-
-**Solution:**
-1. Check that {reflection} is passed into the prompt
-2. Check prompt — "Apply ALL numbered suggestions"
-3. Increase max_tokens if needed
-
-### Problem: FINAL_EDIT returns explanations
-
-**Symptoms:**
-- LLM adds comments like "I fixed..."
-- Output is not a clean translation
-
-**Solution:**
-1. Check system prompt — "Output ONLY the corrected translation"
-2. Check user prompt — "Return ONLY the corrected translation"
-3. Add filtering in remove_tags()
-
----
-
-## 📊 Summary Table
-
-| Stage | LLM | Temperature | Input | Output | Prompt |
-|-------|-----|-------------|-------|--------|--------|
-| **1. INITIAL** | Translate | 0.01 | source_text, vocab | initial_translation | initial_translation |
-| **2. REFLECTION** | Proofread | 0.4 | source, translation | suggestions (list) | reflection |
-| **3. IMPROVE** | Proofread | 0.4 | translation, suggestions | improved_translation | improve |
-| **4. FINAL_EDIT** | Proofread | 0.15 | improved_translation, source | final_translation | editor |
-| **GENDER** (both modes, FAST_TRANS too) | code + proofread LLM (or `GENDER_LLM`) | 0.05 | final_translation, dictionary characters | final_translation with gender errors fixed | — (short fix call) |
-| **5. SYNOPSIS** | **Translate** | 0.15 | final_translation | synopsis | synopsis |
-
----
-
-## Changelog
-
-- **2026-03-29:** Initial documentation of 5-stage pipeline
-- **2026-03-29:** Enhanced reflection prompts for suggestions-only output
-- **2026-03-29:** Added troubleshooting section
-- **2026-04-28:** Added JSON mode documentation
-
----
-
-## 🧩 JSON Mode
-
-When `JSON_MODE=true`, all stages use structured JSON input/output.
-
-### Activation
-
-```bash
-# .env
-JSON_MODE=true
-```
-
-### Stage 1: INITIAL (JSON Mode)
-
-**Prompt Category:** `initial_translation_json`
-
-**JSON Input:**
-```json
-{
-  "source": "text to translate",
-  "source_lang": "en",
-  "target_lang": "ru",
-  "country": "RU",
-  "vocabulary": {"term": "translation"},
-  "synopsis": "context from previous chunks"
-}
-```
-
-**JSON Output:**
-```json
-{"translation": "translated text"}
-```
-
----
-
-### Stage 2: REFLECTION (JSON Mode)
-
-**Prompt Category:** `reflection_json`
-
-**JSON Input:**
-```json
-{
-  "source": "original text",
-  "translation": "translation",
-  "source_lang": "en",
-  "target_lang": "ru",
-  "country": "RU",
-  "vocabulary": {"term": "translation"},
-  "characters": {"name": "gender"}
-}
-```
-
-**JSON Output:**
-```json
-{"fixes": [{"find": "fragment of the translation", "replace": "its fix", "reason": "a few words"}]}
-```
-
-The vocabulary is final and the reviewer is told not to check it: asked to
-check the terms, it listed each one as a fix that changes nothing, list after
-list, until `max_tokens` (all truncations of The Warship run). The code drops
-the fixes `improve` cannot or must not apply (`_keep_applicable_fixes`):
-`find` absent from the translation or equal to `replace`, `replace` not wholly
-in the target language (a word in two alphabets or of the other alphabet:
-IMPROVE given one fix with «black-ops» in it applied none of the chunk's
-fixes), or a fix that takes a dictionary translation out of the text
-(`_drops_term`: «Трик» -> «Трайк»; an inflected term stays). The stage keeps
-a presence penalty of its own (`PRESENCE_PENALTY_REFLECTION`, 1.5): without
-it the list of fixes repeats until `max_tokens`.
-
----
-
-### Stage 3: IMPROVE (JSON Mode)
-
-**Prompt Category:** `improve_json`
-
-**JSON Input:**
-```json
-{
-  "translation": "current translation",
-  "suggestions": ["suggestion 1", "suggestion 2"],
-  "target_lang": "ru",
-  "country": "RU",
-  "vocabulary": {}
-}
-```
-
-**JSON Output:**
-```json
-{"translation": "improved translation"}
-```
-
----
-
-### Stage 4: FINAL_EDIT (JSON Mode)
-
-**Prompt Category:** `editor_json`
-
-**JSON Input:**
-```json
-{
-  "translation": "translation after IMPROVE",
-  "target_lang": "ru",
-  "country": "RU"
-}
-```
-
-**JSON Output:**
-```json
-{"translation": "final translation"}
-```
-
----
-
-### References
-
-- [docs/JSON_MODE_ANALYSIS.md](../JSON_MODE_ANALYSIS.md) — full documentation
-- [docs/superpowers/specs/2026-04-28-json-llm-response-design.md](../superpowers/specs/2026-04-28-json-llm-response-design.md) — design specification
+`FAST_TRANS=true` (or `--fast-mode`): INITIAL, GENDER and SYNOPSIS only, about
+2.5× faster, a draft. Details: [FAST_TRANS.md](FAST_TRANS.md).

@@ -1,252 +1,64 @@
-# Temperature Strategy — Stage-Specific Control
+# Sampling — Temperatures, presence_penalty, Thinking
 
-## 📋 Overview
+Every request carries the temperature of its stage, a `presence_penalty`
+and the thinking switch. All three are sent explicitly, so the server's own
+defaults (a llama.cpp model preset, a hosted provider) never decide them.
 
-Sunny Narrator implements **stage-specific temperature control** for optimal translation quality across the 5-stage pipeline.
+## Temperature by stage
 
-> ⚠️ **Compatibility:** JSON mode (`JSON_MODE=true`) works with all temperature settings.
+| Stage | LLM | Variable | Default | Reference setup (`env.sample`) |
+|---|---|---|---|---|
+| INITIAL — translation | translate | `TEMP_INITIAL` | `TEMP_TRANSLATE` (0.01) | 0.05 |
+| REFLECTION — finding errors | proofread | `TEMP_REFLECTION` | 0.4 | 0.2 |
+| IMPROVE — applying the fixes | proofread | `TEMP_IMPROVE` | 0.4 | 0.2 |
+| FINAL_EDIT — editing | proofread | `TEMP_FINAL_EDIT` | 0.15 | 0.1 |
+| GENDER — fixing gender agreement | proofread (`GENDER_LLM`) | `TEMP_GENDER` | 0.05 | 0.05 |
+| SYNOPSIS — context for the next chunk | translate | `TEMP_SYNOPSIS` | 0.15 | 0.15 |
 
-## 🌡️ Temperature by Stage
+`TEMP_TRANSLATE` and `TEMP_PROOFREAD` (default 0.7) are fallbacks: every stage
+of the pipeline has its own variable, and only the requests outside the
+stages — the dictionary translation (`--build-dict`, `dict extend`) and the
+metadata — use the base temperature of their LLM.
 
-| Stage | LLM | Default Temp | Purpose |
-|-------|-----|--------------|---------|
-| **1. INITIAL** | Translate | 0.01 | Consistent translation |
-| **2. REFLECTION** | Proofread | 0.4 | Creative analysis |
-| **3. IMPROVE** | Proofread | 0.4 | Flexible editing |
-| **4. FINAL_EDIT** | Proofread | 0.15 | Precise proofreading |
-| **5. SYNOPSIS** | Translate | 0.15 | Accurate summary |
+The defaults are general-purpose; `env.sample` carries the lower values the
+reference setup (Gemma 4 translates, Qwen 3.6 proofreads) runs with. Measure a
+change with `app.py eval` (below) rather than by reading one chunk.
 
-## ⚙️ Configuration
+## presence_penalty
 
-### Environment Variables (.env)
+| Variable | Default | Stages |
+|---|---|---|
+| `PRESENCE_PENALTY_TRANSLATE` | 0 | INITIAL, SYNOPSIS |
+| `PRESENCE_PENALTY_PROOFREAD` | 0 | IMPROVE, FINAL_EDIT, GENDER |
+| `PRESENCE_PENALTY_REFLECTION` | 1.5 | REFLECTION |
 
-```bash
-# Base temperatures (fallback)
-TEMP_TRANSLATE=0.01      # Translate LLM default
-TEMP_PROOFREAD=0.7       # Proofread LLM default
+Why it is sent at all: llama.cpp serves the Qwen preset with
+`presence_penalty 1.5` unless a request says otherwise. A stage that writes the
+text again is then penalized for the tokens of a word it has just written, and
+writes the word with a Latin letter (`сприна` → `спринa`). REFLECTION is the
+opposite: it writes a list, and without the penalty the list repeats until
+`max_tokens` (2 truncations in 24 chunks at 0, none at 1.5).
 
-# Stage-specific temperatures (override base)
-TEMP_INITIAL=0.01        # Stage 1: Translation consistency
-TEMP_REFLECTION=0.4      # Stage 2: Analysis creativity
-TEMP_IMPROVE=0.4         # Stage 3: Editing flexibility
-TEMP_FINAL_EDIT=0.15     # Stage 4: Proofreading precision
-TEMP_SYNOPSIS=0.15       # Stage 5: Summary accuracy
-```
+## Thinking
 
-### Recommended Values by Model
+`NOTHINK_TRANSLATE` and `NOTHINK_PROOFREAD` (default `true`) turn the models'
+thinking off: every request carries `chat_template_kwargs.enable_thinking=false`
+(llama.cpp, Gemma 4, Qwen 3) and `reasoning.effort="none"` (OpenRouter,
+ProxyAPI — Qwen 3.6 thinks there unless told not to). Each server ignores the
+other's field. The stages expect the answer itself; thinking costs tokens and
+time, and REFLECTION's token budget assumes it is off.
 
-#### Translate LLM (Translation)
+## Seeing what is sent
 
-| Model | TEMP_INITIAL | TEMP_SYNOPSIS | Notes |
-|-------|--------------|---------------|-------|
-| Hunyuan | 0.01 | 0.15 | Very consistent |
-| Gemma-2 | 0.05 | 0.15 | Slightly higher for creativity |
-| Mistral | 0.01 | 0.15 | Very consistent |
-| Llama-3 | 0.01 | 0.15 | Very consistent |
-| Qwen | 0.01 | 0.15 | Very consistent |
+With `LLM_LOGGING=true` every call is logged with its stage, model,
+temperature, tokens and time (`logs/llm_calls_YYYY-MM-DD.log`, see
+[LOGGING.md](LOGGING.md)); with `DEBUG=1` the console shows
+`LLM Request [<role>]: <model>, <chars> chars, temp=…` for every request.
 
-#### Proofread LLM (Editing)
-
-| Model | TEMP_REFLECTION | TEMP_IMPROVE | TEMP_FINAL_EDIT | Notes |
-|-------|-----------------|--------------|-----------------|-------|
-| Mistral-7B | 0.4 | 0.4 | 0.15 | Balanced |
-| Ministral-8B | 0.4 | 0.4 | 0.15 | Balanced |
-| Qwen-2.5-7B | 0.5 | 0.5 | 0.2 | Slightly more creative |
-| Gemma-2-9B | 0.5 | 0.5 | 0.2 | More creative |
-
-## 🎯 Why Stage-Specific?
-
-### Problem with Single Temperature
-
-Using one temperature for all stages causes trade-offs:
-
-- **Low temp (0.01):** Good for translation, bad for analysis
-- **High temp (0.7):** Good for analysis, bad for translation
-
-### Solution: Stage-Specific
-
-Each stage has different requirements:
-
-| Stage | Requirement | Optimal Temp |
-|-------|-------------|--------------|
-| INITIAL | Consistency, accuracy | 0.01 (very low) |
-| REFLECTION | Creative analysis, nuance detection | 0.4 (medium) |
-| IMPROVE | Flexible application of suggestions | 0.4 (medium) |
-| FINAL_EDIT | Precision, tag restoration | 0.15 (low) |
-| SYNOPSIS | Accurate summarization | 0.15 (low) |
-
-## 📊 Temperature Effects
-
-### Low Temperature (0.01-0.15)
-
-**Pros:**
-- ✅ Consistent output
-- ✅ Accurate terminology
-- ✅ Predictable results
-- ✅ Good for technical content
-
-**Cons:**
-- ❌ Less creative
-- ❌ May miss nuances
-- ❌ Rigid phrasing
-
-**Best for:** INITIAL, FINAL_EDIT, SYNOPSIS
-
-### Medium Temperature (0.3-0.5)
-
-**Pros:**
-- ✅ Creative analysis
-- ✅ Nuance detection
-- ✅ Flexible editing
-- ✅ Better style suggestions
-
-**Cons:**
-- ❌ Less predictable
-- ❌ May introduce variations
-
-**Best for:** REFLECTION, IMPROVE
-
-### High Temperature (0.6-0.8)
-
-**Pros:**
-- ✅ Very creative
-- ✅ Diverse suggestions
-
-**Cons:**
-- ❌ Inconsistent
-- ❌ May hallucinate
-- ❌ Unreliable for translation
-
-**Not recommended** for any stage in translation pipeline.
-
-## 🔧 Implementation
-
-### Code Flow
-
-```python
-# LLMService.complete() receives stage parameter
-text = llm_service.complete(
-    role=LLMRole.PROOFREAD,
-    system_prompt=system_prompt,
-    user_prompt=user_prompt,
-    max_tokens=config.max_len_chunk,
-    stage=TranslationStage.REFLECTION  # ← Stage-specific temp
-)
-
-# get_temperature_for_stage() selects appropriate temp
-def get_temperature_for_stage(self, stage, role):
-    if stage == TranslationStage.REFLECTION:
-        return config.temp_reflection  # 0.4
-    elif stage == TranslationStage.IMPROVE:
-        return config.temp_improve  # 0.4
-    # ... etc
-```
-
-### Logging
-
-With `DEBUG=on`, you'll see temperature in logs:
-
-```
-DEBUG: LLM Request [secondary]: Ministral8b, 1234 chars, temp=0.40, sys_not_promt=False
-DEBUG: LLM Request [primary]: Hunyuan, 5678 chars, temp=0.01, sys_not_promt=False
-DEBUG: LLM Request [secondary]: Ministral8b, 2345 chars, temp=0.15, sys_not_promt=False
-```
-
-## 🧪 Tuning Guide
-
-### Signs Temperature is Too Low
-
-- Reflection suggestions are generic/repetitive
-- Improve stage doesn't apply suggestions creatively
-- Translation is accurate but stiff/unnatural
-
-**Fix:** Increase TEMP_REFLECTION and TEMP_IMPROVE by 0.1
-
-### Signs Temperature is Too High
-
-- Inconsistent terminology in INITIAL
-- Synopsis varies wildly between chunks
-- FINAL_EDIT introduces new errors
-
-**Fix:** Decrease TEMP_INITIAL and TEMP_SYNOPSIS by 0.05
-
-### Language-Specific Adjustments
-
-| Language Pair | Adjustment | Reason |
-|---------------|------------|--------|
-| EN→RU | Standard | Well-supported |
-| EN→ZH | +0.05 TEMP_INITIAL | Character selection needs flexibility |
-| EN→JA | +0.05 TEMP_INITIAL | Honorifics need flexibility |
-| EN→AR | +0.05 TEMP_FINAL_EDIT | Script variations |
-
-## 📈 Monitoring
-
-### Track Temperature Effectiveness
-
-```python
-# In your monitoring code
-temp_stats = {
-    'INITIAL': {'temp': 0.01, 'avg_length_diff': 15.2},
-    'REFLECTION': {'temp': 0.4, 'avg_suggestions': 4.5},
-    'IMPROVE': {'temp': 0.4, 'avg_improvement': 12.3},
-    'FINAL_EDIT': {'temp': 0.15, 'avg_length_diff': 5.1},
-    'SYNOPSIS': {'temp': 0.15, 'avg_quality': 0.92}
-}
-```
-
-### A/B Testing
-
-Test different temperatures on same text:
+To compare settings on the same passages of a book with your models:
 
 ```bash
-# Test A: Standard
-TEMP_REFLECTION=0.4
-TEMP_IMPROVE=0.4
-
-# Test B: More creative
-TEMP_REFLECTION=0.5
-TEMP_IMPROVE=0.5
-
-# Compare quality of suggestions and improvements
+python app.py eval books/MyBook.epub --dic books/MyBook_ru.dic --count 8 --out logs/eval/a.json
+TEMP_IMPROVE=0.4 python app.py eval books/MyBook.epub --dic books/MyBook_ru.dic --count 8 \
+  --out logs/eval/b.json --compare logs/eval/a.json
 ```
-
-## 🐛 Troubleshooting
-
-### Issue: Reflection Suggestions Too Generic
-
-**Symptoms:**
-- Same suggestions for every chunk
-- No specific terminology feedback
-
-**Solution:**
-```bash
-TEMP_REFLECTION=0.5  # Increase from 0.4
-```
-
-### Issue: Translation Inconsistent
-
-**Symptoms:**
-- Same term translated differently
-- Unstable output
-
-**Solution:**
-```bash
-TEMP_INITIAL=0.01  # Decrease to minimum
-```
-
-### Issue: Synopsis Inaccurate
-
-**Symptoms:**
-- Missing key plot points
-- Wrong character genders
-
-**Solution:**
-```bash
-TEMP_SYNOPSIS=0.1  # Decrease from 0.15
-```
-
-## 📝 Changelog
-
-- **2026-03-29:** Implemented stage-specific temperatures
-- **2026-03-29:** Added TEMP_INITIAL, TEMP_REFLECTION, TEMP_IMPROVE, TEMP_FINAL_EDIT, TEMP_SYNOPSIS
-- **Previous:** Single temperature (TEMP_TRANSLATE, TEMP_PROOFREAD)

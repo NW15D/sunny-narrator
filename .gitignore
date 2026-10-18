@@ -176,8 +176,11 @@ cython_debug/
 # Run logs, audits, prompt evaluations (app.py audit/eval, demo.sh): local data
 logs/
 
-# What a run leaves next to a book: the extracted images (rebuilt from the
-# book on every conversion), checkpoints and the dictionary check
-books/*_images/
-books/*.checkpoint.json
-books/*.dictcheck.*
+# books/: only the two demo books are in the repository. Everything else is
+# yours or a run's: your books and their translations, dictionaries,
+# checkpoints, the extracted images, the dictionary check reports.
+books/*
+!books/eternal-moment.pg.epub
+!books/forster-short-fiction.se.epub
+!books/eternal-moment.pg_*.dic
+!books/forster-short-fiction.se_*.dic

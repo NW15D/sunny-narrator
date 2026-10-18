@@ -421,7 +421,7 @@ def test_synopsis_gender_spellings_are_accepted():
     assert [(c['source'], c['gender']) for c in candidates] == [("Vashti", "she")]
 
 
-# --- false findings of a real run (The Warship, ru) ---------------------------
+# --- false findings of a real run (a novel, ru) ---------------------------
 
 @needs["ru"]
 @pytest.mark.parametrize("sentence, name, gender", [
@@ -466,7 +466,7 @@ def test_a_fix_may_only_change_endings_of_all_flagged_words():
     "### Диана\n\nКомлинк был открыт, и Хоуг передал файлы.",
 ])
 def test_a_heading_is_never_the_subject_of_the_next_paragraph(text):
-    """The Warship, ru: the chapter heading "Диана" read as the subject of
+    """A novel, ru: the chapter heading "Диана" read as the subject of
     "Кингхаммер пришел" (the sentence ran across the block)."""
     diana = VocabEntry(source="Diana", target="Диана", category="PERSON", gender="she")
     assert gc.find_gender_issues(text, [diana], "russian") == []

@@ -37,7 +37,7 @@ def test_json_fixes_without_find_do_not_crash():
     assert _keep_applicable_fixes('[{"find": "ждала", "replace": "ждала"}]', TR, "russian") == ""
 
 
-# --- the vocabulary is kept by the code (The Warship, 2026-10-17) -------------
+# --- the vocabulary is kept by the code (a novel, 2026-10-17) -------------
 # Asked to check the terms, the reviewer listed every one as a fix that
 # changes nothing, twice over, until max_tokens; it no longer checks them, so
 # a fix that takes a dictionary translation out of the text is dropped here.

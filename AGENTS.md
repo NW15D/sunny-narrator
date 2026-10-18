@@ -54,9 +54,10 @@ In `.env`:
 - ProxyAPI instead of OpenRouter: uncomment the `PROXYAPI` block at the end;
 - `FILE=books/<book>.epub`, `SOURCE_LANG`, `TARGET_LANG` (names or ISO codes:
   `en`, `ru`, `english`, …);
-- the demo: `FILE=books/eternal-moment.pg.epub`, `TARGET_LANG=ru` (its
-  dictionary `books/eternal-moment.pg_ru.dic` is ready: the first run
-  translates at once).
+- the demo books: `books/eternal-moment.pg.epub`,
+  `books/forster-short-fiction.se.epub` (English, public domain). When the
+  repository has their dictionary for the target language
+  (`books/eternal-moment.pg_ru.dic`), the first run translates at once.
 
 Every option is documented in `env.sample` and
 [docs/CONFIGURATION.md](docs/CONFIGURATION.md).

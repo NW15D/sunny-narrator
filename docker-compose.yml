@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   sunny-narrator:
     build:
@@ -19,7 +17,8 @@ services:
       - NER=true
     stdin_open: true
     tty: true
-    restart: unless-stopped
+    # a translation is a command, not a service: no restart when it is done
+    restart: "no"
     # NVIDIA GPU support
     deploy:
       resources:

@@ -1,185 +1,34 @@
-# FAST_TRANS Mode — Fast Translation
+# FAST_TRANS — Fast Translation
 
-**Version:** 2.9.4  
-**Date:** 2026-10-10
+`FAST_TRANS=true` (or `--fast-mode`) runs only INITIAL, GENDER and SYNOPSIS:
+REFLECTION, IMPROVE and FINAL_EDIT — the proofreading — are skipped. Both
+pipelines, JSON mode or not. Default: `false`.
 
----
+| | Standard | FAST_TRANS |
+|---|---|---|
+| Stages | INITIAL → REFLECTION → IMPROVE → FINAL_EDIT → GENDER → SYNOPSIS | INITIAL → GENDER → SYNOPSIS |
+| Proofread LLM | every chunk | only the GENDER fix, when a gender error is found |
+| Result | the translation | a draft: the dictionary and the genders are applied, nobody reviewed the text |
 
-> ⚠️ **Compatibility:** JSON mode (`JSON_MODE=true`) works with FAST_TRANS mode.
-
----
-
-## 📋 Overview
-
-`FAST_TRANS=true` (or `--fast-mode`) skips quality control stages to
-accelerate translation. Both pipelines: FB2/TXT and DOCX/EPUB/PDF.
-
-**Configuration:**
-```bash
-FAST_TRANS=true    # Fast mode (INITIAL, GENDER, SYNOPSIS)
-FAST_TRANS=false   # Standard mode, the default
-```
+What the skipped stages cost, from a cloud run of a 206k-character collection
+(ProxyAPI, Gemma 4 + Qwen 3.6): the stages FAST_TRANS keeps took about 30 % of
+the LLM time and about 20 % of the money; the proofreading took the rest.
 
 The GENDER stage runs in fast mode too: the code finds the sentences where a
 dictionary character's verb or adjective has the other gender and sends only
-them to the proofread LLM, unless it is another model on the same local
-server as the translate LLM (then to the translate LLM) (`GENDER_CHECK`, `GENDER_LLM`, see CONFIGURATION.md). With only
-the translate model loaded set `GENDER_LLM=translate`. Words in
-two alphabets (`dошло`) are logged in both modes.
+them to the proofread LLM — unless that is another model on the same local
+server as the translate LLM, then to the translate LLM (`GENDER_CHECK`,
+`GENDER_LLM`, see [CONFIGURATION.md](CONFIGURATION.md)). With only the
+translate model loaded set `GENDER_LLM=translate`. Words in two alphabets are
+logged in both modes.
 
----
+Use it for a draft, to judge a model or a language pair quickly, and — the
+main use — to grow the dictionary before the real translation (below).
 
-## ⚡ Mode Comparison
-
-### Standard (5 stages)
-
-```
-Stage 1: INITIAL (Translate LLM)    → Translation
-Stage 2: REFLECTION (Proofread LLM) → Quality review
-Stage 3: IMPROVE (Proofread LLM)    → Apply suggestions
-Stage 4: FINAL_EDIT (Proofread LLM) → Proofreading
-Stage 5: SYNOPSIS (Translate LLM)   → Summary
-```
-
-**Characteristics:**
-- **LLM calls:** 5 (2 Translate + 3 Proofread)
-- **Speed:** 1.0x (baseline)
-- **Quality:** High
-
----
-
-### FAST_TRANS (2 stages)
-
-```
-Stage 1: INITIAL (Translate LLM)    → Translation
-Stage 5: SYNOPSIS (Translate LLM)   → Summary
-(Stages 2-4 skipped)
-```
-
-**Characteristics:**
-- **LLM calls:** 2 (2 Translate + 0 Proofread)
-- **Speed:** ~2.5x faster
-- **Quality:** Medium
-
----
-
-## 📊 Use Cases
-
-### ✅ USE FAST_TRANS=true
-
-| Scenario | Reason |
-|----------|---------|
-| **Draft translation** | Sufficient for review |
-| **Technical documents** | Fewer stylistic requirements |
-| **Internal materials** | Not for publication |
-| **Quick check** | To assess translation quality |
-| **Large volumes** | When speed is more important than quality |
-
-### ❌ DO NOT USE FAST_TRANS=true
-
-| Scenario | Reason |
-|----------|---------|
-| **Final publication** | Requires high quality |
-| **Literary works** | Nuances of style are important |
-| **Children's books** | Precision is required |
-| **Poetry** | Rhythm and rhyme are critical |
-| **Legal documents** | Accuracy of phrasing is essential |
-
----
-
-## 📈 Performance
-
-### Translation time (1000 chunks):
-
-| Mode | Time | LLM calls |
-|-------|-------|-------------|
-| **Standard** | ~100 min | 5000 |
-| **FAST_TRANS** | ~40 min | 2000 |
-
-**Savings:** ~60% time
-
----
-
-### Translation Quality:
-
-| Metric | Standard | FAST_TRANS |
-|---------|----------|------------|
-| **Grammar** | ✅ Excellent | ✅ Good |
-| **Style** | ✅ Excellent | ⚠️ Medium |
-| **Terminology** | ✅ Consistent | ⚠️ Variations possible |
-| **Nuances** | ✅ Preserved | ⚠️ Partially |
-
----
-
-## 🔧 Configuration
-
-### Basic setting
-
-```bash
-FAST_TRANS=true
-```
-
-### Combining with other parameters
-
-```bash
-# Fast translation + CPU (hide the GPU from spaCy)
-FAST_TRANS=true
-CUDA_VISIBLE_DEVICES=
-
-# Fast translation + debug
-FAST_TRANS=true
-DEBUG=on
-```
-
----
-
-## 📝 Examples
-
-### Example 1: Book draft
-
-```bash
-# .env for draft translation
-FAST_TRANS=true
-DEBUG=off
-
-python app.py
-# ~40 min instead of ~100 min
-```
-
-### Example 2: Final version
-
-```bash
-# .env for final version
-FAST_TRANS=false
-DEBUG=off
-
-python app.py
-# ~100 min, high quality
-```
-
----
-
-## ⚠️ Limitations
-
-### What is lost in FAST_TRANS mode:
-
-1. **REFLECTION (Stage 2)** — No quality analysis
-2. **IMPROVE (Stage 3)** — No application of suggestions
-3. **FINAL_EDIT (Stage 4)** — No final proofreading
-
-### What is preserved:
-
-1. **INITIAL (Stage 1)** — Base translation
-2. **SYNOPSIS (Stage 5)** — Context for subsequent chunks
-3. **Vocabulary** — Terminology dictionary, including its growth while translating (see below)
-4. **XML structure** — Preservation of tags
-
----
-
-## 📖 Dictionary in FAST_TRANS mode
+## Dictionary in fast mode
 
 The dictionary grows by the same rules as in the standard mode: the synopsis
-stage (stage 5) is kept, and it is the one that reports new names
+stage is kept, and it is the one that reports new names
 (`<genders>`) and coined terms (`<terms>`). Both pipelines (FB2/TXT and
 DOCX/EPUB/PDF) use the same `record_dictionary_candidates`.
 
@@ -199,7 +48,7 @@ DOCX/EPUB/PDF) use the same `record_dictionary_candidates`.
 - A translation shorter than 200 characters gets no synopsis, so no
   candidates.
 
-### 💡 Two passes: a fast draft for the dictionary, then the quality translation
+### Two passes: a fast draft for the dictionary, then the translation
 
 ```bash
 # 1. Fast pass: collect names and terms into the .dic
@@ -220,13 +69,7 @@ to both pipelines.
 
 ---
 
-## 📚 Related documentation
+## Related documentation
 
-- [TRANSLATION_STAGES.md](TRANSLATION_STAGES.md) — 5-stage pipeline
-- [TEMPERATURE_STRATEGY.md](TEMPERATURE_STRATEGY.md) — Temperatures
-- [CONFIGURATION.md](CONFIGURATION.md) — All parameters
-
----
-
-**Version:** 2.9.4  
-**Updated:** 2026-10-10
+- [TRANSLATION_STAGES.md](TRANSLATION_STAGES.md) — the stages of a chunk
+- [CONFIGURATION.md](CONFIGURATION.md) — all options

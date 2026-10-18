@@ -74,9 +74,9 @@ docker run --rm --gpus all \
 # CPU image: drop --gpus all and use ...sunny-narrator:main-cpu
 ```
 
-Alternative with compose (config `.env` is read automatically): `docker-compose up -d` (GPU) or `docker-compose -f docker-compose.cpu.yml up -d`.
+Alternative with compose (config `.env` is read automatically): `docker compose run --rm sunny-narrator` (GPU) or `docker compose -f docker-compose.cpu.yml run --rm sunny-narrator`.
 
-**Guides:** [docs/DOCKER_CPU_GUIDE.md](docs/DOCKER_CPU_GUIDE.md), [docs/GPU_DOCKER.md](docs/GPU_DOCKER.md)
+**Guides:** [docs/DOCKER.md](docs/DOCKER.md)
 
 ## 📋 Configuration
 
@@ -142,14 +142,12 @@ Step-by-step preparation of a series dictionary lives in [docs/DICTIONARY_FORMAT
 | **Translation Stages** (incl. GENDER) | [docs/TRANSLATION_STAGES.md](docs/TRANSLATION_STAGES.md) |
 | **Prompts Guide** | [docs/PROMPTS_GUIDE.md](docs/PROMPTS_GUIDE.md) |
 | **FAST_TRANS Mode** | [docs/FAST_TRANS.md](docs/FAST_TRANS.md) |
-| **Temperature Strategy** | [docs/TEMPERATURE_STRATEGY.md](docs/TEMPERATURE_STRATEGY.md) |
+| **Sampling (temperatures, presence_penalty, thinking)** | [docs/TEMPERATURE_STRATEGY.md](docs/TEMPERATURE_STRATEGY.md) |
 | **Rechunking** | [docs/RECHUNKING_GUIDE.md](docs/RECHUNKING_GUIDE.md) |
 | **NER** | [docs/NER_GUIDE.md](docs/NER_GUIDE.md) |
 | **Resume after Crash** | [docs/RESUME.md](docs/RESUME.md) |
 | **Logging** | [docs/LOGGING.md](docs/LOGGING.md) |
-| **Docker (CPU)** | [docs/DOCKER_CPU_GUIDE.md](docs/DOCKER_CPU_GUIDE.md) |
-| **Docker (GPU)** | [docs/GPU_DOCKER.md](docs/GPU_DOCKER.md) |
-| **JSON Mode** | [docs/JSON_MODE_ANALYSIS.md](docs/JSON_MODE_ANALYSIS.md) |
+| **Docker** | [docs/DOCKER.md](docs/DOCKER.md) |
 | **Tested Languages** | [docs/LANGUAGES.md](docs/LANGUAGES.md) |
 | **Contributing** | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | **For AI agents** | [AGENTS.md](AGENTS.md) |

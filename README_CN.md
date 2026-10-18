@@ -74,9 +74,9 @@ docker run --rm --gpus all \
 # CPU 镜像：去掉 --gpus all，并使用 ...sunny-narrator:main-cpu
 ```
 
-使用 compose 的方式（自动读取 `.env` 配置）：`docker-compose up -d`（GPU）或 `docker-compose -f docker-compose.cpu.yml up -d`。
+使用 compose 的方式（自动读取 `.env` 配置）：`docker compose run --rm sunny-narrator`（GPU）或 `docker compose -f docker-compose.cpu.yml run --rm sunny-narrator`。
 
-**指南：** [docs/DOCKER_CPU_GUIDE.md](docs/DOCKER_CPU_GUIDE.md)、[docs/GPU_DOCKER.md](docs/GPU_DOCKER.md)
+**指南：** [docs/DOCKER.md](docs/DOCKER.md)
 
 ## 📋 配置
 
@@ -142,14 +142,12 @@ python app.py --dictionary series.dic   # 逐本翻译；运行绝不会修改 s
 | **翻译阶段**（含 GENDER） | [docs/TRANSLATION_STAGES.md](docs/TRANSLATION_STAGES.md) |
 | **提示词指南** | [docs/PROMPTS_GUIDE.md](docs/PROMPTS_GUIDE.md) |
 | **FAST_TRANS 模式** | [docs/FAST_TRANS.md](docs/FAST_TRANS.md) |
-| **温度策略** | [docs/TEMPERATURE_STRATEGY.md](docs/TEMPERATURE_STRATEGY.md) |
+| **采样（温度、presence_penalty、思考模式）** | [docs/TEMPERATURE_STRATEGY.md](docs/TEMPERATURE_STRATEGY.md) |
 | **重新分块** | [docs/RECHUNKING_GUIDE.md](docs/RECHUNKING_GUIDE.md) |
 | **NER** | [docs/NER_GUIDE.md](docs/NER_GUIDE.md) |
 | **崩溃后恢复** | [docs/RESUME.md](docs/RESUME.md) |
 | **日志** | [docs/LOGGING.md](docs/LOGGING.md) |
-| **Docker（CPU）** | [docs/DOCKER_CPU_GUIDE.md](docs/DOCKER_CPU_GUIDE.md) |
-| **Docker（GPU）** | [docs/GPU_DOCKER.md](docs/GPU_DOCKER.md) |
-| **JSON 模式** | [docs/JSON_MODE_ANALYSIS.md](docs/JSON_MODE_ANALYSIS.md) |
+| **Docker** | [docs/DOCKER.md](docs/DOCKER.md) |
 | **已测试语言** | [docs/LANGUAGES.md](docs/LANGUAGES.md) |
 | **参与贡献** | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | **AI 代理说明** | [AGENTS.md](AGENTS.md) |

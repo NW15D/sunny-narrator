@@ -1,10 +1,5 @@
 # Resume after a Crash — Checkpoints
 
-**Version:** 2.9.4  
-**Updated:** 2026-10-10
-
----
-
 ## 📋 Overview
 
 Progress is saved after every translated chunk. After a crash, `Ctrl+C`,
@@ -65,7 +60,7 @@ timestamp in its name (`Book_ru_1530-2909.fb2` / `.epub`).
 starts over (`…_tmp.fb2` is rewritten). Neither the chunks nor the dictionary
 entries found by the old run come back — e.g. after a fast draft pass, before
 the quality pass with the reviewed dictionary
-([FAST_TRANS.md](FAST_TRANS.md#-two-passes-a-fast-draft-for-the-dictionary-then-the-quality-translation)).
+([FAST_TRANS.md](FAST_TRANS.md#two-passes-a-fast-draft-for-the-dictionary-then-the-translation)).
 
 ---
 

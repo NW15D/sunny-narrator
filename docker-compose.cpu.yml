@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   sunny-narrator:
     build:
@@ -13,6 +11,7 @@ services:
       # read-write: the translation and its checkpoint are written next to the book
       - ./books:/app/books
       - ./output:/app/output
+      - ./logs:/app/logs
       # Optional: mount .env for runtime changes
       # - ./.env:/app/.env:ro
     environment:
@@ -27,7 +26,8 @@ services:
     #           capabilities: [gpu]
     stdin_open: true
     tty: true
-    restart: unless-stopped
+    # a translation is a command, not a service: no restart when it is done
+    restart: "no"
     # Uncomment for debugging
     # command: ["bash"]
 
@@ -36,7 +36,5 @@ services:
 # - NER will run on CPU (slower but works everywhere)
 # - For GPU support, use docker-compose.yml instead
 #
-# Usage:
-#   docker-compose -f docker-compose.cpu.yml up -d
-#   docker-compose -f docker-compose.cpu.yml logs -f
-#   docker-compose -f docker-compose.cpu.yml down
+# Usage (docs/DOCKER.md):
+#   docker compose -f docker-compose.cpu.yml run --rm sunny-narrator

@@ -80,7 +80,7 @@ def test_leading_lowercase_article_is_stripped():
     assert ner.entity_text(Span("en", "a", "Jain")) == "Jain"
     assert ner.entity_text(Span("en", "the", "platform", "AI")) == "platform AI"
     # capitalized: may be the name itself; inner and last words always stay
-    assert ner.entity_text(Span("en", "The", "Warship")) == "The Warship"
+    assert ner.entity_text(Span("en", "The", "Times")) == "The Times"
     assert ner.entity_text(Span("en", "king", "of", "the", "prador")) == "king of the prador"
     assert ner.entity_text(Span("en", "the")) == "the"
 
