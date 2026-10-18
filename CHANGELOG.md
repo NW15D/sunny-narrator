@@ -2,7 +2,7 @@
 
 All notable changes to Sunny Narrator.
 
-## Unreleased
+## v2.9.4
 
 ### `app.py dict extend`: a dictionary carried over to new books
 - `dict extend DIC --book B [--books-dir D] [--merge OTHER.dic] [-o DIR]` (`src/dict_extend.py`): the series dictionary gets what the new books (NER + proofread LLM) and other dictionaries add; a candidate the dictionary already has or covers (one `CandidateMatcher`, as for the synopsis candidates), an ordinary word never becomes an entry, whatever the order of the lines (the shorter term first). NER reads the plain paragraphs of the books, so markup (`href="https://…`, `I</subtitle`) cannot become a name.

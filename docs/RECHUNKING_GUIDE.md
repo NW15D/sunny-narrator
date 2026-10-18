@@ -1,6 +1,6 @@
 # Rechunking Guide — Chunking and Length Validation
 
-**Version:** 2.9.3  
+**Version:** 2.9.4  
 **Updated:** 2026-10-10
 
 ## 📋 Overview
