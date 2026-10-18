@@ -93,7 +93,7 @@ OUTPUT_FORMAT=fb2                       # FB2/TXT 用 fb2|epub；EPUB/DOCX/PDF �
 - 每次翻译前都会**对照书籍检查**词典（不使用 LLM）：可靠的发现会在本次运行中修正类别/性别；`.dic` 本身绝不会被悄悄修改 —— 这些发现写入 `<dic>.reviewed.dic`。
 - `PERSON` 条目会把性别带入每个阶段的提示词，并由 GENDER 阶段保证执行；种族、物种和自造词请标为 `TERM`。
 - 整个系列共用词典：`--build-series-dict`，之后所有卷共用一个 `series.dic`（`DICTIONARY=series.dic`）。
-- 独立工具：`dict clean`、`dict review`、`dict convert`、`audit`。
+- 独立工具：`dict clean`、`dict review`、`dict extend`、`dict convert`、`audit`。
 
 **命令、规则、系列工作流、spaCy/CUDA/CJK 细节：** [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md)
 

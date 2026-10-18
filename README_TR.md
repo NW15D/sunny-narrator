@@ -93,7 +93,7 @@ OUTPUT_FORMAT=fb2                       # FB2/TXT için fb2|epub; EPUB/DOCX/PDF 
 - Her çeviriden önce sözlük **kitaba göre denetlenir** (LLM olmadan): kesin bulgular o çalıştırma için kategori/cinsiyeti düzeltir; `.dic` dosyası asla sessizce değiştirilmez — bulgular `<dic>.reviewed.dic` dosyasına yazılır.
 - `PERSON` kayıtları cinsiyeti her aşamanın istemine taşır ve GENDER aşaması buna uyulmasını sağlar; ırkları, türleri ve uydurma sözcükleri `TERM` olarak yazın.
 - Bütün seri için sözlük: `--build-series-dict`, ardından tüm ciltler için tek bir `series.dic` (`DICTIONARY=series.dic`).
-- Bağımsız araçlar: `dict clean`, `dict review`, `dict convert`, `audit`.
+- Bağımsız araçlar: `dict clean`, `dict review`, `dict extend`, `dict convert`, `audit`.
 
 **Komutlar, kurallar, seri iş akışı, spaCy/CUDA/CJK ayrıntıları:** [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md)
 

@@ -93,7 +93,7 @@ OUTPUT_FORMAT=fb2                       # fb2|epub para FB2/TXT; epub|docx|pdf p
 - Antes de cada tradução o dicionário é **verificado contra o livro** (sem LLM): achados seguros corrigem categoria/gênero naquela execução; o `.dic` nunca é alterado silenciosamente — eles vão para `<dic>.reviewed.dic`.
 - Entradas `PERSON` levam o gênero ao prompt de cada estágio, e o estágio GENDER o faz cumprir; registre raças, espécies e palavras inventadas como `TERM`.
 - Dicionário para a série inteira: `--build-series-dict`, depois um único `series.dic` para todos os volumes (`DICTIONARY=series.dic`).
-- Ferramentas independentes: `dict clean`, `dict review`, `dict convert`, `audit`.
+- Ferramentas independentes: `dict clean`, `dict review`, `dict extend`, `dict convert`, `audit`.
 
 **Comandos, regras, fluxo de séries, nuances de spaCy/CUDA/CJK:** [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md)
 

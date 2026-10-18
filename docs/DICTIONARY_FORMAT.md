@@ -1,8 +1,8 @@
 # Working with Dictionaries (.dic files)
 
-**Version:** 1.1 (CSV with commas)  
-**Last Updated:** 2026-10-16  
-**Issue:** Format mismatch fixed (was incorrectly documented as JSON). Moved here from the README: all dictionary commands and rules, the series workflow, and the spaCy / CUDA / CJK nuances of dictionary work.
+**Version:** 1.2 (CSV with commas)  
+**Last Updated:** 2026-10-18  
+**Issue:** Format mismatch fixed (was incorrectly documented as JSON). Moved here from the README: all dictionary commands and rules, the series workflow, and the spaCy / CUDA / CJK nuances of dictionary work. v2.9.4: extending a dictionary with new books (`dict extend`).
 
 ---
 
@@ -23,7 +23,7 @@ The dictionary file (`*.dic`) ensures terminology consistency throughout transla
 | Strict mode | `python app.py --no-autofix` — by the `.dic` as it is; `DICT_FORCE=false` — stops on a contradiction (exit code 2) |
 | Series of books | `python app.py --build-series-dict books/series/ --series-dict-output series.dic`, then each book with `--dictionary series.dic`; a run never changes `series.dic`, each book gets `series.<book>.reviewed.dic` |
 | Clean a dictionary | `python app.py dict clean books/MyBook.dic` → `MyBook.clean.dic` + report (duplicates, gender spellings, ordinary words) |
-| Carry a dictionary over to a new volume / book of the universe | `python app.py dict extend series.dic --book vol3.epub [--merge other.dic]` → `series.extended/series.dic` + `series.extend.report.txt` (see *Extending a dictionary*) |
+| Next volume of a series / new books of the same universe | `python app.py dict extend series.dic --book vol3.epub` → `series.extended/series.dic` + `series.extend.report.txt`; the existing entries stay, the new ones follow under `# new words <date>` (see *Method 4*) |
 | Check against the book without translating | `python app.py dict review books/MyBook.epub --dic books/MyBook.dic` → `MyBook.reviewed.dic` + report |
 | Another target language | `python app.py dict convert books/MyBook.dic fr es zh` |
 | Check a finished translation | `python app.py audit books/MyBook_ru.epub --dic books/MyBook_ru.dic --lang russian` |
@@ -244,6 +244,97 @@ book's translation) → save the unified `.dic` file. Proper names keep their
 capitalization and all their words (`John Smith`). The result is a regular
 `.dic` file (`source = target, category, gender, notes`).
 
+### Method 4: Extending an existing dictionary (`dict extend`)
+
+A good series dictionary is not rebuilt for the next volume, or for a new
+group of books of the same author's universe: `dict extend` keeps every entry
+it has and adds only what the new books (or other dictionaries) bring, so the
+whole series keeps one terminology.
+
+```bash
+# the next volume(s)
+python app.py dict extend series.dic --book vol3.epub --book vol4.epub
+# a folder of new books
+python app.py dict extend series.dic --books-dir books/new/
+# the entries another dictionary of the same universe has and this one lacks
+python app.py dict extend series.dic --merge other-series.dic
+# all together, the result into a chosen folder
+python app.py dict extend series.dic --books-dir books/new/ --merge other-series.dic -o books/series-v2/
+```
+
+**Parameters:**
+- `--book` — a new book (FB2/EPUB/TXT); repeatable
+- `--books-dir` — a folder of new books (the reports the tools leave there are not taken for books)
+- `--merge` — another `.dic` whose missing entries are added; repeatable
+- `-o`, `--output-dir` — folder of the result (default: `<name>.extended/` next to the dictionary); it must not hold an input file
+- `--min-count-ner` — mentions in all the new books together for an entity to be added (default: 3)
+- `--frequent-words`, `--min-count-word` — also add frequent ordinary words (default: off; 5 mentions)
+- `--keep` — comma-separated words not to skip as ordinary
+- `--model` — spaCy model of the source language (default: `NERMODEL`)
+- `--min-votes`, `--ratio` — evidence needed for a gender or a category, as in `dict review` (default: 4 and 0.85)
+
+The languages and the proofread LLM come from `.env` (`SOURCE_LANG`,
+`TARGET_LANG`, `COUNTRY`, `API_BASE_PROOFREAD`, …).
+
+**The result** is a folder with two files:
+
+- `series.dic` — the base file line by line as it was (comments included),
+  then the new entries under one dated comment, by category:
+
+  ```
+  Vashti = Вашти, PERSON, she,
+  ...
+  # new words 2026-10-18 (vol3.epub)
+  Bob = Боб,PERSON,he,
+  Zork = Зорк,LOC,,
+  ```
+
+  Every extension leaves its own dated block at the end of the file, so the
+  lines it added are easy to find (and to remove). Nothing to add — no block.
+- `series.extend.report.txt` — the log: what needs a decision first, then what
+  was done (see below).
+
+The source `.dic` is never changed; both files are written only after every
+step succeeded (an LLM error leaves no result).
+
+**What becomes a new entry:**
+1. NER over the plain text of all the new books together (no markup: a link or
+   a tag is never taken for a name), the counts summed over the books.
+2. Dropped, with the reason in the log: an entry the dictionary already has
+   (another case or form: `vashti`, `Jains`; a character with the same translated
+   name), a phrase containing a known term (`Jain node` when `Jain` is known —
+   a separate entry would only shadow `Jain` with another translation), an
+   ordinary word of the language. The same rules as for the candidates of the
+   synopsis stage (`CandidateMatcher`), the shorter term first, so the order of
+   the lines does not matter. A hyphen, a space or no separator make different
+   entries (`Jain-tech` is not `Jain tech`).
+3. The rest is translated by the proofread LLM; the LLM only translates.
+4. The category and the gender come from the new books, as in `dict review`
+   (pronouns, forms of address like `Miss`/`Mr`, NER labels); an unsure gender
+   stays empty and goes to the log.
+
+From `--merge`: an entry the base lacks is added with its category, gender
+and notes; one the base has with **another** translation is a conflict — the
+base keeps its own translation, both go to the log.
+
+**What happens to the base entries:** they are not rewritten. Only what
+`dict review` would change against the new books: an **empty** gender the books
+show clearly is set (a category too, when the review is sure). A gender the
+books contradict is not changed — it is a conflict in the log. Duplicates,
+ordinary words and cut variants in the base are reported, not removed (that is
+`dict clean`'s job).
+
+**The log** (`<name>.extend.report.txt`), in this order:
+- to decide: `merge: conflict`, `… gender conflict`, `… category: not sure`,
+  `… gender not sure`, `check: translation in two alphabets`, `check: one translation
+  for several entries`, `check: translation equals the source`, `check: person without
+  a gender`, suspicious lines of the base, terms the LLM did not translate;
+- done: `… gender set`, `… category changed`, `added from books`, `added from dictionaries`;
+- skipped: `already in the dictionary`, `covered by existing terms`, `ordinary word`,
+  `same by the translated name`; then the characters without a gender the new books never mention.
+
+`base:` / `merged:` / `new:` before a section tell whose lines it lists.
+
 ---
 
 ## Using Dictionary
@@ -385,37 +476,6 @@ no gender feature and are read by their form (他/她, 彼/彼女, 그/그녀). 
 without a parser (`xx_ent_wiki_sm`) gets a sentencizer; without a model the
 check is skipped with a warning.
 
-### Extending a dictionary with new books
-
-A good series dictionary is not rebuilt for the next volume or for a new group
-of books of the same universe: `dict extend` adds what it lacks and keeps the rest.
-
-```bash
-python app.py dict extend series.dic --book vol3.epub --book vol4.epub   # or --books-dir books/new/
-python app.py dict extend series.dic --merge other-series.dic            # entries of another dictionary
-```
-
-- the result is a folder (`-o`, default `series.extended/`) with `series.dic` and
-  `series.extend.report.txt`; the source `.dic` is not changed and its lines are
-  copied as they are; the new entries follow under one dated comment
-  `# new words 2026-10-18 (vol3.epub)`, by category - every extension leaves its own
-  block at the end of the file, so the lines it added are easy to find;
-- new entries: NER over the plain text of all the new books together (no markup) (`--min-count-ner`, default 3),
-  translated by the proofread LLM; the category and the gender come from the
-  books (as in `dict review`), not from the LLM;
-- never an entry: one the dictionary already has (another case or form, or the
-  same translated name of a character), a phrase containing a known term, an
-  ordinary word, whatever the order of the lines (the shorter term first); a merged entry with another translation than the
-  dictionary's is a conflict - the dictionary's translation stays;
-- base lines change only as `dict review` would change them: an empty gender the
-  books show clearly is set (a category too, when review is sure). A gender the books
-  contradict, an unsure gender, duplicates, ordinary words and cut variants
-  of the base are only reported;
-- the log lists what needs a decision first (conflicts, unsure genders and categories,
-  words in two alphabets, one translation for several entries, characters left without a
-  gender), then what was added, changed and skipped and why. The files are written
-  only after every step succeeded.
-
 ### A dictionary shared by a series
 
 One `series.dic` for all books of a series (`DICTIONARY=series.dic` or
@@ -436,6 +496,7 @@ you agree with) into `series.dic`.
 
 Step by step before translating or retranslating a series:
 
+0. A new volume, or new books of the same universe: `python app.py dict extend series.dic --book vol3.epub` — read `series.extended/series.extend.report.txt` (the sections to decide come first), fix what you disagree with in `series.extended/series.dic` and take it over as `series.dic` (*Method 4*).
 1. Back up the dictionary: `cp series.dic series.dic.bak`.
 2. Clean it: `python app.py dict clean series.dic` — read the report, take over what you agree with.
 3. Check it against every book, each into its own file: `python app.py dict review book1.epub --dic series.dic -o series.book1.reviewed.dic` (the same for book2, …). Take over what the books agree on; decide the rest by hand — the `gender conflict` and `gender not sure` sections first.
@@ -445,13 +506,15 @@ Step by step before translating or retranslating a series:
 
 ## Dictionary commands
 
-All of them write next to their input and never change the input itself:
+All of them write next to their input (`dict extend` — into a folder next to it) and never change the input itself:
 
 ```bash
 # duplicates (by lexicon.word_key), gender spellings, ordinary words, cut variants
 python app.py dict clean books/MyBook.dic            # -> MyBook.clean.dic + report
 # categories and genders against the book (what the check before a translation does)
 python app.py dict review books/MyBook.epub --dic books/MyBook.dic   # -> MyBook.reviewed.dic + report
+# the dictionary carried over to new books / dictionaries (into a folder, see Method 4)
+python app.py dict extend series.dic --book vol3.epub [--merge other.dic]   # -> series.extended/
 # the dictionary into other target languages (proofread LLM from .env)
 python app.py dict convert books/MyBook.dic fr es zh # -> MyBook_fr.dic, ...
 # a finished translation: words in two alphabets, gender errors, characters without gender
@@ -534,7 +597,23 @@ so the GPU/CPU choice is theirs, not the LLM's:
   cached in `<book>.dictcheck.json`, so a resumed run does not reparse).
 - **GPU (CUDA 12.x):** add the cupy extra — `pip install -e ".[gpu]"`
   (`cupy-cuda12x==14.1.1`). spaCy picks up whichever cupy is importable and
-  runs NER on the GPU. The GPU Docker image (`Dockerfile`,
+  runs NER on the GPU. What runs there: NER and word vectors of `--build-dict`,
+  `--build-series-dict`, `dict clean`, `dict extend` (its NER) and the
+  per-chunk term lookup. The check before a translation, `dict review` and the
+  gender check of a translation load their model on the CPU. Even on the GPU an
+  `*_sm`/`*_lg` model keeps the GPU almost idle: tokenizing, the lemmatizer and
+  the rules run on the CPU, only the small networks run on the GPU (a 150k-char
+  book with `en_core_web_lg`: 4.9 s on CPU, 4.2 s on GPU). spaCy takes **GPU 0**:
+  on a host with several GPUs watch that one (`nvidia-smi -i 0`).
+- **Transformer models (`*_trf`):** `en_core_web_trf` 3.8 needs
+  `spacy-curated-transformers>=0.2.2,<0.3` with `curated-transformers<0.2`
+  (not `spacy-transformers`, and not the 2.x releases: they fail with `E002
+  curated_transformer` or `load_state_dict: Missing key(s)`), plus
+  `transformers` and `spacy-alignments`. It does use the GPU (2x faster than on
+  the CPU, about 550 MB) but has **no word vectors**: the cosine stage of the
+  term lookup finds nothing and `dict clean` / `dict extend` do not drop
+  ordinary words. Russian has no `*_trf` model at all. The project does not
+  install these packages. The GPU Docker image (`Dockerfile`,
   `nvidia/cuda`-based) ships it already; `Dockerfile.cpu` deliberately does
   not install cupy. `spacy[cuda12x]` is not used: its `cupy<13` pin conflicts
   with the pinned cupy 14 (see the comments in `pyproject.toml`).

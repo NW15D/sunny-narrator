@@ -93,7 +93,7 @@ OUTPUT_FORMAT=fb2                       # fb2|epub for FB2/TXT; epub|docx|pdf fo
 - Before every translation the dictionary is **checked against the book** (no LLM): sure findings fix the category/gender for that run; the `.dic` itself is never silently changed — `<dic>.reviewed.dic` gets them.
 - `PERSON` entries carry a gender into every stage prompt and are enforced by the GENDER stage; put races/species/coined words as `TERM`.
 - Series-wide dictionary: `--build-series-dict`, then one `series.dic` for all volumes (`DICTIONARY=series.dic`).
-- Standalone tools: `dict clean`, `dict review`, `dict convert`, `audit`.
+- Standalone tools: `dict clean`, `dict review`, `dict extend`, `dict convert`, `audit`.
 
 **Commands, rules, series workflow, spaCy/CUDA/CJK nuances:** [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md)
 

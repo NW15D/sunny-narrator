@@ -93,7 +93,7 @@ OUTPUT_FORMAT=fb2                       # fb2|epub для FB2/TXT; epub|docx|pdf
 - Перед каждым переводом словарь **проверяется по книге** (без LLM): уверенные находки исправляют категорию и пол на этот прогон; сам `.dic` молча не меняется — они попадают в `<dic>.reviewed.dic`.
 - Записи `PERSON` передают пол в промпт каждой стадии, его соблюдение проверяет стадия GENDER; расы, виды и придуманные слова записывайте как `TERM`.
 - Словарь на всю серию: `--build-series-dict`, затем один `series.dic` для всех томов (`DICTIONARY=series.dic`).
-- Отдельные инструменты: `dict clean`, `dict review`, `dict convert`, `audit`.
+- Отдельные инструменты: `dict clean`, `dict review`, `dict extend`, `dict convert`, `audit`.
 
 **Команды, правила, работа с серией, нюансы spaCy/CUDA/CJK:** [docs/DICTIONARY_FORMAT.md](docs/DICTIONARY_FORMAT.md)
 
