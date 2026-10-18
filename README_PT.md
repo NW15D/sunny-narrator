@@ -152,6 +152,7 @@ A preparação passo a passo de um dicionário de série está em [docs/DICTIONA
 | **Modo JSON** | [docs/JSON_MODE_ANALYSIS.md](docs/JSON_MODE_ANALYSIS.md) |
 | **Idiomas testados** | [docs/LANGUAGES.md](docs/LANGUAGES.md) |
 | **Contribuir** | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| **Para agentes de IA** | [AGENTS.md](AGENTS.md) |
 
 ## 🈶 Origens em CJK (coreano, japonês, chinês)
 

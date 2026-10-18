@@ -152,6 +152,7 @@ Step-by-step preparation of a series dictionary lives in [docs/DICTIONARY_FORMAT
 | **JSON Mode** | [docs/JSON_MODE_ANALYSIS.md](docs/JSON_MODE_ANALYSIS.md) |
 | **Tested Languages** | [docs/LANGUAGES.md](docs/LANGUAGES.md) |
 | **Contributing** | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| **For AI agents** | [AGENTS.md](AGENTS.md) |
 
 ## 🈶 CJK sources (Korean, Japanese, Chinese)
 

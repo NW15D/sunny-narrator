@@ -152,6 +152,7 @@ Seri sözlüğünün adım adım hazırlanışı [docs/DICTIONARY_FORMAT.md](doc
 | **JSON modu** | [docs/JSON_MODE_ANALYSIS.md](docs/JSON_MODE_ANALYSIS.md) |
 | **Test edilen diller** | [docs/LANGUAGES.md](docs/LANGUAGES.md) |
 | **Katkıda bulunmak** | [CONTRIBUTING.md](CONTRIBUTING.md#sunny-narratora-katkıda-bulunmak) |
+| **Yapay zekâ ajanları için** | [AGENTS.md](AGENTS.md) |
 
 ## 🈶 CJK kaynaklar (Korece, Japonca, Çince)
 

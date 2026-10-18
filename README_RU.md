@@ -152,6 +152,7 @@ python app.py --dictionary series.dic   # для каждой книги; зап
 | **JSON-режим** | [docs/JSON_MODE_ANALYSIS.md](docs/JSON_MODE_ANALYSIS.md) |
 | **Проверенные языки** | [docs/LANGUAGES.md](docs/LANGUAGES.md) |
 | **Участие в проекте** | [CONTRIBUTING.md](CONTRIBUTING.md#участие-в-sunny-narrator) |
+| **Для ИИ-агентов** | [AGENTS.md](AGENTS.md) |
 
 ## 🈶 Исходники на CJK (корейский, японский, китайский)
 

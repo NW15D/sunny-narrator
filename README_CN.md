@@ -152,6 +152,7 @@ python app.py --dictionary series.dic   # 逐本翻译；运行绝不会修改 s
 | **JSON 模式** | [docs/JSON_MODE_ANALYSIS.md](docs/JSON_MODE_ANALYSIS.md) |
 | **已测试语言** | [docs/LANGUAGES.md](docs/LANGUAGES.md) |
 | **参与贡献** | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| **AI 代理说明** | [AGENTS.md](AGENTS.md) |
 
 ## 🈶 CJK 源文本（韩语、日语、中文）
 
