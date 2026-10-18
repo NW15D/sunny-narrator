@@ -46,7 +46,7 @@ except ImportError:
 # Import existing utilities
 from src.utils import (config, validate_translation_length, translate_chunk, translate_metadata,
                        length_calibration, token_calibration, LLMAccessError)
-from src.utils import CREDIT_LINE, GITHUB_URL, credit_comment
+from src.utils import CREDIT_LINE, credit_comment, without_credit
 from src.utils import _pipeline  # noqa: F401  (tests monkeypatch cp._pipeline.execute)
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
@@ -143,10 +143,8 @@ _PANDOC_MD_FORMAT = (
     '-fenced_divs-bracketed_spans-link_attributes-header_attributes'
 )
 
-# Credit the AI translator. Single source of truth is src.utils (issue #65);
-# this alias is kept because call sites and tests import _TRANSLATOR_CREDIT
-# from this module. The credit reaches the output via --book-producer and
-# --comments (see build_output and src.utils.credit_comment).
+# The credit of the AI translator (src.utils, issue #65): --book-producer,
+# --comments (credit_comment) and the title page.
 _TRANSLATOR_CREDIT = CREDIT_LINE
 
 @dataclass
@@ -1521,11 +1519,10 @@ def build_output(
                 cmd += ["--cover", cover_tmp_path]
             # Credit the AI translator (single source: src.utils).
             cmd += ["--book-producer", _TRANSLATOR_CREDIT]
-            # Issue #65: the credit must also land in the output's annotation
-            # slot. ebook-convert has no --contributor; --comments feeds the
-            # EPUB/DOCX description. credit_comment() appends the credit
-            # exactly once — descriptions that already carry the link pass
-            # through unchanged (idempotent across re-runs).
+            # Issue #65: the credit is also the last paragraph of the
+            # description (ebook-convert has no --contributor; --comments feeds
+            # the EPUB/DOCX description); the credit of an earlier run is
+            # replaced, not repeated.
             cmd += ["--comments", credit_comment(metadata.get('description', ''))]
 
             # B4: Calibre builds no table of contents unless asked to. Its
@@ -1607,7 +1604,7 @@ def _generate_title_page(metadata: dict) -> str:
     author = _e(metadata.get('author', ''))
     publisher = _e(metadata.get('publisher', ''))
     language = _e(metadata.get('language', ''))
-    description = _e(metadata.get('description', ''))
+    description = _e(without_credit(metadata.get('description', '')))
     
     # C9 fix: title page must be an HTML fragment, not a full document
     html = f"""<div class="titlepage">
@@ -1628,12 +1625,9 @@ def _generate_title_page(metadata: dict) -> str:
     if description:
         html += f"<p>{description}</p>\n"
 
-    # Same credit the classic FB2 pipeline adds via
-    # fb2_handler.add_translator_info() — single source: src.utils.
-    # Skipped when the description already carries the link (FB2 annotations
-    # include it) so the title page shows the credit exactly once.
-    if GITHUB_URL not in description:
-        html += f"<p><em>{_e(_TRANSLATOR_CREDIT)}</em></p>\n"
+    # The credit (src.utils), once: the description is shown without the
+    # credit lines of an earlier run
+    html += f"<p><em>{_e(_TRANSLATOR_CREDIT)}</em></p>\n"
 
     html += "</div>"
     

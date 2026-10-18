@@ -126,8 +126,8 @@ def test_metadata_cover_and_series(rich_epub):
     assert md.find(f'{DC}identifier').text.startswith('urn:uuid:')
     assert md.find(f'{DC}language').text == 'en'
     assert md.find(f'{DC}title').text == 'The Rich Book & Its Parts'
-    # description keeps the book text; the always-on credit is appended once
-    assert md.find(f'{DC}description').text == f'A test book. Second line. {CREDIT_LINE}'
+    # description keeps the book text; the always-on credit is its last paragraph
+    assert md.find(f'{DC}description').text == f'A test book. Second line.\n\n{CREDIT_LINE}'
     metas = {m.get('name'): m.get('content') for m in md.findall(f'{OPF_NS}meta') if m.get('name')}
     assert metas['calibre:series'] == 'Test Series' and metas['calibre:series_index'] == '2'
     cover = next(i for i in opf.iterfind(f'.//{OPF_NS}item') if i.get('properties') == 'cover-image')

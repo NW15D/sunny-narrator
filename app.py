@@ -950,6 +950,9 @@ def main(fresh: bool = False):
                 # The LLM translates values; the language code is not one of them.
                 translated_meta['lang'] = target_code
                 header = fb2.update_header_with_metadata(header, translated_meta)
+        # The credit (FB2 and TXT alike), after the metadata translation: the
+        # LLM never sees it, so it is never translated or dropped (issue #65)
+        header = fb2.add_credit(header)
 
     if config.api_key_images:
         print("Processing cover...")

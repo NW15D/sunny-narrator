@@ -32,7 +32,8 @@ __all__ = [
     'replace_cover_image',
     'prepare_body_structure',
     'add_translator_info',
-    'add_annotation_credit'
+    'add_annotation_credit',
+    'add_credit'
 ]
 
 
@@ -59,8 +60,9 @@ def _read_file_with_encoding_fallback(file_path):
 def parse_xml(file_path: str) -> tuple:
     """
     Parses an FB2 XML file and separates the header, body, and footer.
-    Also handles cleanup and injection of the translator credit
-    (the <translator> block and the one-line annotation credit).
+    Also handles cleanup. The translator credit is added when the translated
+    book is written (add_credit), not here: the header goes to the metadata
+    translation first.
     
     Args:
         file_path: Path to FB2 file
@@ -91,11 +93,6 @@ def parse_xml(file_path: str) -> tuple:
     # Output is always written as UTF-8, whatever the source file used
     header = re.sub(r'(<\?xml[^>]*?encoding\s*=\s*)(["\'])[^"\']*\2', r'\1"UTF-8"', header, count=1)
 
-    # Add translator info
-    header = add_translator_info(header)
-    # Credit line as the last annotation paragraph (always on, issue #65)
-    header = add_annotation_credit(header)
-
     # Remove <myheader> and <myfooter> from header and footer
     header = re.sub(r'<myheader>.*?</myheader>', '', header, flags=re.DOTALL)
     footer = re.sub(r'<myfooter>.*?</myfooter>', '', footer, flags=re.DOTALL)
@@ -106,20 +103,28 @@ def parse_xml(file_path: str) -> tuple:
     return body, header, footer
 
 
-_TRANSLATOR_NICK = 'Sunny narrator opensource AI translator'
+# The nickname of the <translator> block before the credit became one text
+_LEGACY_NICK = 'Sunny narrator opensource AI translator'
+
+
+def add_credit(header: str) -> str:
+    """The credit of a translated book (src.utils, issue #65): the
+    <translator> block and the last annotation paragraph. Called when the
+    book is written, after the metadata translation - the LLM never sees it.
+    Idempotent: a book translated before keeps one credit, in its current
+    wording."""
+    return add_annotation_credit(add_translator_info(header))
 
 
 def add_translator_info(header: str) -> str:
     """
-    Add (or upgrade) translator info in the FB2 header.
+    Add (or update) our <translator> block in the FB2 header: the nickname
+    and the repository as <home-page>.
 
     <translator> has to precede <sequence> inside <title-info> (schema order),
     so it is inserted there rather than blindly before </title-info>.
-
-    Idempotent: re-runs never duplicate the block or its <home-page>. Blocks
-    written by earlier versions (nickname + <email>n@uwns.org</email>, no
-    <home-page>) are upgraded in place so re-converting an old book picks up
-    the current credit.
+    Idempotent: a block of an earlier version (the old nickname, an <email>,
+    no <home-page>) is rewritten in place; another translator's is left alone.
 
     Args:
         header: FB2 header string
@@ -127,66 +132,56 @@ def add_translator_info(header: str) -> str:
     Returns:
         Updated header with translator info
     """
-    from src.utils import GITHUB_URL
+    from src.utils import CREDIT_NAME, GITHUB_URL
 
     m = re.search(r'<title-info\b.*?</title-info>', header, flags=re.DOTALL)
     if not m:
         return header
     section = m.group(0)
-
-    block_m = next((c for c in re.finditer(r'<translator\b.*?</translator>', section,
-                                          flags=re.DOTALL)
-                    if _TRANSLATOR_NICK in c.group(0)), None)
-    if block_m:
-        # Our block exists; normalize it (drop legacy email, single home-page).
-        block = block_m.group(0)
-        new_block = re.sub(r'<email\b[^>]*>[^<]*</email>', '', block)
-        new_block = re.sub(r'<home-page\b[^>]*>[^<]*</home-page>', '', new_block)
-        nick = re.search(r'</nickname\s*>|<nickname\s*/>', new_block)
-        pos = nick.end() if nick else new_block.index('>') + 1
-        new_block = (new_block[:pos]
-                     + f'<home-page>{GITHUB_URL}</home-page>'
-                     + new_block[pos:])
-        if new_block == block:
+    block = (f'<translator><nickname>{CREDIT_NAME}</nickname>'
+             f'<home-page>{GITHUB_URL}</home-page></translator>')
+    ours = next((c for c in re.finditer(r'<translator\b.*?</translator>', section, flags=re.DOTALL)
+                 if _LEGACY_NICK in c.group(0) or GITHUB_URL in c.group(0)), None)
+    if ours:
+        if ours.group(0) == block:
             return header  # already up to date
-        return (header[:m.start()] + section[:block_m.start()] + new_block
-                + section[block_m.end():] + header[m.end():])
-
+        return (header[:m.start()] + section[:ours.start()] + block
+                + section[ours.end():] + header[m.end():])
     seq = re.search(r'<sequence\b', section)
     pos = seq.start() if seq else section.rindex('</title-info>')
-    block = (f'<translator><nickname>{_TRANSLATOR_NICK}</nickname>'
-             f'<home-page>{GITHUB_URL}</home-page></translator>')
     return header[:m.start()] + section[:pos] + block + section[pos:] + header[m.end():]
 
 
 def add_annotation_credit(header: str) -> str:
     """
-    Add the always-on credit line as the last <p> inside <annotation>.
-
-    Only <annotation> in <title-info> is touched. A book without an
-    annotation gets no credit line (no annotation is forced in); a book that
-    already carries the credit keeps exactly one copy, so re-parsing the same
-    file is idempotent.
+    The credit as the last <p> of the <annotation> in <title-info>, exactly
+    once: a credit paragraph of an earlier run (in any wording - it may have
+    been translated) is replaced. A book without an annotation gets one,
+    right after <book-title> (schema order), holding the credit alone.
 
     Args:
         header: FB2 header string
 
     Returns:
-        Updated header with the credit line (or the header unchanged)
+        Updated header with the credit line
     """
-    from src.utils import CREDIT_LINE, GITHUB_URL
+    from src.utils import CREDIT_LINE, is_credit_line
 
     m = re.search(r'<title-info\b.*?</title-info>', header, flags=re.DOTALL)
     if not m:
         return header
     section = m.group(0)
+    credit = f'<p>{CREDIT_LINE}</p>'
     am = re.search(r'<annotation\b.*?</annotation>', section, flags=re.DOTALL)
-    if not am:
-        return header  # no annotation - do not force one in
-    annotation = am.group(0)
-    if GITHUB_URL in annotation:
-        return header  # credit already present - keep it single
-    end = annotation.rindex('</annotation>')
-    new_annotation = annotation[:end] + f'<p>{CREDIT_LINE}</p>' + annotation[end:]
-    return (header[:m.start()] + section[:am.start()] + new_annotation
-            + section[am.end():] + header[m.end():])
+    if am:
+        annotation = re.sub(r'\s*<p\b[^>]*>(.*?)</p>',
+                            lambda p: '' if is_credit_line(re.sub(r'<[^>]+>', '', p.group(1))) else p.group(0),
+                            am.group(0), flags=re.DOTALL)
+        end = annotation.rindex('</annotation>')
+        new_section = section[:am.start()] + annotation[:end] + credit + annotation[end:] + section[am.end():]
+    else:
+        title = re.search(r'</book-title\s*>', section)
+        if not title:
+            return header
+        new_section = section[:title.end()] + f'<annotation>{credit}</annotation>' + section[title.end():]
+    return header[:m.start()] + new_section + header[m.end():]

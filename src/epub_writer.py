@@ -22,7 +22,7 @@ from ebooklib import epub
 
 from src import lexicon
 from src.config import Config
-from src.utils import CREDIT_LINE, GITHUB_URL, epub_contributor
+from src.utils import credit_comment, epub_contributor, is_credit_line, without_credit
 from src.xml_utils import IMAGE_EXTENSIONS, sniff_image_type
 
 config = Config()
@@ -188,8 +188,10 @@ def _parse_metadata(header: str) -> dict:
 
     annotation = info.find('annotation')
     if annotation is not None:
-        paragraphs = [_text(p) for p in annotation.find_all('p')]
-        meta['description'] = ' '.join(p for p in paragraphs if p) or _text(annotation)
+        # the credit paragraph is not the book's text: credit_comment adds it
+        # back as the description's own last paragraph
+        paragraphs = [_text(p) for p in annotation.find_all('p') if not is_credit_line(_text(p))]
+        meta['description'] = ' '.join(p for p in paragraphs if p) or without_credit(_text(annotation))
 
     meta['genres'] = [_text(g) for g in info.find_all('genre') if _text(g)]
 
@@ -528,16 +530,11 @@ def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) 
     book.set_language(meta['lang'])
     for i, author in enumerate(meta['authors'], 1):
         book.add_author(author, uid=f'creator{i}')
-    # Open-source credit (always on, issue #65): the metadata contributor,
-    # plus one credit line at the end of the description. The FB2 annotation
-    # carries the same line since dc-004, so only append when the URL is not
-    # already in the description - re-runs stay free of duplicates.
+    # Open-source credit (always on, issue #65): the metadata contributor and
+    # the last paragraph of the description - a book without one gets the
+    # credit alone, as in the Calibre pipeline (credit_comment)
     book.add_metadata('DC', 'contributor', epub_contributor())
-    if meta['description']:
-        description = meta['description']
-        if GITHUB_URL not in description:
-            description = f'{description} {CREDIT_LINE}'
-        book.add_metadata('DC', 'description', description)
+    book.add_metadata('DC', 'description', credit_comment(meta['description']))
     for genre in meta['genres']:
         book.add_metadata('DC', 'subject', genre)
     if meta['publisher']:

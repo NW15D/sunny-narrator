@@ -47,45 +47,43 @@ from src.fb2_structure import join_paragraph_halves, split_in_two, split_paragra
 # =============================================================================
 # Open-source credit (always on)
 # =============================================================================
-# Single source of truth for the credit every converted book carries:
-# the FB2 <home-page> link and the one-line annotation credit. The credit
-# is always on - there is no env/CLI flag to disable it (issue #65).
+# One source for the credit every translated book carries: the FB2
+# <translator> block and annotation, the EPUB contributor and description,
+# the Calibre --book-producer, --comments and title page. Always on - no
+# env/CLI flag disables it (issue #65). It is added when the book is written,
+# after the metadata translation, so the LLM never sees (or translates) it.
 
 GITHUB_URL = 'https://github.com/NW15D/sunny-narrator'
-CREDIT_LINE = f'Sunny Narrator: {GITHUB_URL}'
+CREDIT_NAME = 'Sunny Narrator'
+CREDIT_LINE = f'{CREDIT_NAME}: {GITHUB_URL}'
 
 
-def fb2_home_page() -> str:
-    """<home-page> value for the FB2 <translator> credit block."""
-    return GITHUB_URL
-
-
-def annotation_credit_text() -> str:
-    """One-line credit added as the last <p> of the FB2 <annotation>."""
-    return CREDIT_LINE
+def is_credit_line(text: str) -> bool:
+    """A line or paragraph that is our credit - in any wording, since a book
+    translated before may carry it translated ("Солнечный рассказчик: <url>"):
+    a short text that ends with the repository link."""
+    text = str(text or '').strip()
+    return text.endswith(GITHUB_URL) and len(text) <= len(CREDIT_LINE) + 60
 
 
 def epub_contributor() -> str:
     """dc:contributor value for the EPUB metadata watermark (name + link)."""
-    return f'Sunny Narrator ({GITHUB_URL})'
+    return f'{CREDIT_NAME} ({GITHUB_URL})'
+
+
+def without_credit(description: str) -> str:
+    """The description without its credit lines (of an earlier run)."""
+    lines = [line for line in str(description or '').splitlines() if not is_credit_line(line)]
+    return '\n'.join(lines).strip()
 
 
 def credit_comment(description: str) -> str:
-    """`--comments` value for the Calibre pipeline: the description with the
-    credit appended exactly once.
-
-    ebook-convert has no `--contributor`; `--comments` is what reaches the
-    output's annotation slot (EPUB/DOCX). Descriptions that already carry the
-    GitHub link (FB2 annotations include the credit line; re-runs over our own
-    output) are returned unchanged so the credit never duplicates; a missing
-    description yields the credit alone (issue #65: always on).
-    """
-    text = str(description or '').strip()
-    if not text:
-        return CREDIT_LINE
-    if GITHUB_URL in text:
-        return text
-    return f'{text} {CREDIT_LINE}'
+    """The description of a translated book with the credit as its last
+    paragraph, exactly once: credit lines of an earlier run (in any wording)
+    are replaced; no description gives the credit alone. The EPUB
+    description of both pipelines (Calibre's --comments, epub_writer)."""
+    text = without_credit(description)
+    return f'{text}\n\n{CREDIT_LINE}' if text else CREDIT_LINE
 
 
 # =============================================================================

@@ -12,6 +12,7 @@ RICH = os.path.join(os.path.dirname(__file__), 'data', 'rich_book.fb2')
 
 def _translated_book():
     body, header, footer = fb2.parse_xml(RICH)
+    header = fb2.add_credit(header)  # as app.main does when it writes the book
     meta = fb2.extract_metadata(header)
     meta['lang'] = 'ru'
     meta['book-title'] = 'Богатая книга'
@@ -27,6 +28,7 @@ def test_encoding_declaration_is_utf8_for_a_cp1251_source():
 
 def test_translator_goes_before_sequence():
     _body, header, _footer = fb2.parse_xml(RICH)
+    header = fb2.add_credit(header)
     assert header.index('<translator>') < header.index('<sequence')
     assert fb2.add_translator_info(header) == header      # idempotent
 

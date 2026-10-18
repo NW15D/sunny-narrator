@@ -473,3 +473,32 @@ def test_first_run_creates_the_dictionary_and_stops(book, run_main, monkeypatch)
     assert exc.value.code == 0
     assert (book.parent / 'book_ru.dic').exists()
     assert not _outputs(book.parent, 'fb2') and not _outputs(book.parent, 'epub')
+
+
+def test_the_credit_is_written_and_never_sent_to_the_llm(book, run_main):
+    """Issue #65: the credit is added after the metadata translation - the
+    LLM never sees it - and the written book carries it once."""
+    from src.utils import CREDIT_LINE, GITHUB_URL
+    sent = []
+
+    def metadata(meta, *args, **kwargs):
+        sent.append(repr(meta))
+        return _fake_metadata(meta)
+
+    run_main(book, metadata=metadata)
+    [out] = _outputs(book.parent, 'fb2')
+    xml = _read(out)
+    assert sent and GITHUB_URL not in sent[0]
+    assert f'<home-page>{GITHUB_URL}</home-page>' in xml and xml.count(f'<p>{CREDIT_LINE}</p>') == 1
+    assert xc.validate_fb2(xml) == []
+
+
+def test_a_txt_book_is_credited(tmp_path, run_main):
+    from src.utils import CREDIT_LINE, GITHUB_URL
+    path = tmp_path / 'book.txt'
+    path.write_text('Title\n\nFirst paragraph.\n\nSecond paragraph.\n', encoding='utf-8')
+    (tmp_path / 'book_ru.dic').write_text('# reviewed, no terms\n', encoding='utf-8')
+    run_main(path)
+    [out] = _outputs(tmp_path, 'fb2')
+    xml = _read(out)
+    assert f'<home-page>{GITHUB_URL}</home-page>' in xml and f'<p>{CREDIT_LINE}</p>' in xml
