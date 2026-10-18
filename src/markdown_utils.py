@@ -161,6 +161,42 @@ def merge_blocks_to_chunks(blocks: List[tuple], target_size: int = 6000) -> List
     return chunks
 
 
+# The prefix of a quote line ("> > ") or of a list item ("- ", "12. ")
+_BLOCK_PREFIX = re.compile(r'^((?:>[ \t]?)+)|^[ \t]*(?:[-*+]|\d+[.)])[ \t]+')
+# A sentence end with its closing quotes or brackets, then the space after it
+_SENTENCE_END = re.compile(r'[.!?\u2026][\u00bb\u201d\u2019"\')\]]*(?=\s)|[\u3002\uff01\uff1f][\u300d\u300f\u201d\uff09]*')
+
+
+def _split_long_line(line: str, target_size: int) -> List[str]:
+    """A line longer than target_size as pieces of at most about target_size,
+    cut after sentence ends (a sentence longer than that stays whole); only
+    the spaces at a cut are dropped."""
+    if len(line) <= target_size:
+        return [line]
+    # the sentences with the spaces before them, so a piece keeps the text as is
+    sentences, start = [], 0
+    for m in _SENTENCE_END.finditer(line):
+        sentences.append(line[start:m.end()])
+        start = m.end()
+    sentences.append(line[start:])
+    pieces, current = [], ''
+    for sentence in sentences:
+        if current.strip() and len(current) + len(sentence) > target_size:
+            pieces.append(current.strip())
+            current = sentence
+        else:
+            current += sentence
+    if current.strip():
+        pieces.append(current.strip())
+    # the next pieces of a quote stay in the quote, of a list item in the item
+    # (pandoc wrote the "> " on every wrapped line before --wrap=none)
+    m = _BLOCK_PREFIX.match(line)
+    if m and len(pieces) > 1:
+        cont = m.group(1) if m.group(1) else ' ' * len(m.group(0))
+        pieces = [pieces[0]] + [cont + piece for piece in pieces[1:]]
+    return pieces
+
+
 def _force_split_block(text: str, target_size: int) -> List[str]:
     """
     Force-split an oversized block by paragraph (empty lines), then by lines.
@@ -208,6 +244,11 @@ def _force_split_block(text: str, target_size: int) -> List[str]:
         if content_lines and content_lines[-1].strip().startswith('```'):
             content_lines = content_lines[:-1]
         lines = content_lines
+
+    if not is_fenced_code:
+        # a paragraph is one line (pandoc --wrap=none): one longer than a
+        # chunk is cut at sentence ends, its pieces joined back with a space
+        lines = [piece for line in lines for piece in _split_long_line(line, target_size)]
 
     chunks = []
     current = []

@@ -537,11 +537,16 @@ def convert_to_markdown(input_path: str) -> tuple[str, dict]:
                 f.write(html_content)
             markdown_output_path = os.path.join(temp_dir, "output.md")
             pandoc_timeout = int(getattr(config, 'pandoc_timeout', 900))
-            # Use --wrap=auto to prevent extremely long lines
-            # This ensures better chunking behavior later
+            # --wrap=none: a paragraph is one line. Soft wraps (every ~72
+            # characters with --wrap=auto) became "\n" escapes inside the JSON
+            # the stages exchange, and right after one Qwen wrote the next
+            # word's first letter in Latin ("\nd" + "верей" -> "dверей": "nd",
+            # "nt", "nc" are tokens): every word in two alphabets of a cloud
+            # run stood right after such a wrap. A paragraph longer than a
+            # chunk is cut at sentence ends (markdown_utils._force_split_block).
             def _pandoc_md_cmd(md_format: str) -> list:
                 return [pandoc_exe, html_input_path, '-f', 'html', '-t', md_format,
-                        '--wrap=auto', '-o', markdown_output_path]
+                        '--wrap=none', '-o', markdown_output_path]
 
             try:
                 _run_command(_pandoc_md_cmd(_PANDOC_MD_FORMAT), timeout=pandoc_timeout)

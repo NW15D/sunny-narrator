@@ -1728,12 +1728,22 @@ def validate_translation_length(source_text: str, translated_text: str,
     return not should_split, percent_diff, should_split
 
 
+def _join_text_halves(part1: str):
+    """How the translations of split_text_smartly's halves go back together:
+    after a paragraph break as two paragraphs, a cut inside a paragraph (a
+    sentence end - a paragraph is one line since pandoc --wrap=none) with a
+    space, so the paragraph stays one."""
+    if re.search(r'\n[ \t]*\n\s*$', part1) or not part1.strip():
+        return None
+    return lambda first, second: first.rstrip() + ' ' + second.lstrip()
+
+
 def _split_failed_chunk(source_text: str, style: str):
     """Halves for a failed chunk as ((part1, part2), rejoin), or None if it cannot be split."""
     part1, part2 = (split_in_two(source_text) if style == 'xml'
                     else split_text_smartly(source_text))
     if part1.strip() and part2.strip():
-        return (part1, part2), None
+        return (part1, part2), (None if style == 'xml' else _join_text_halves(part1))
     halves = split_paragraph_in_two(source_text)
     return (halves, join_paragraph_halves) if halves else None
 
@@ -1858,6 +1868,8 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
     if do_split:
         part1, part2 = (split_in_two(source_text) if style == 'xml'
                         else split_text_smartly(source_text))
+        if style != 'xml' and part2.strip():
+            rejoin = _join_text_halves(part1)
         if not part2.strip():
             # A single block: split a huge paragraph at a sentence end and
             # glue the two translations back into one paragraph.
@@ -2308,7 +2320,7 @@ def remove_tags(text: str) -> str:
     json_match = _JSON_TRANSLATION_RE.search(text)
     if json_match:
         logger.debug("Extracted translation from JSON format (regex fallback)")
-        return json_match.group(1).strip()
+        return _json_unescape(json_match.group(1)).strip()
     
     # STEP 2: Try wrapper tags in priority order (precompiled patterns)
     for tag, tag_re in _WRAPPER_TAG_RES:
@@ -2321,6 +2333,25 @@ def remove_tags(text: str) -> str:
     # This prevents losing valid translation when LLM doesn't use wrapper tags
     logger.debug("No wrapper tags found, returning full text")
     return text.strip()
+
+
+_JSON_ANSWER_START = re.compile(r'\{\s*"(?:translation|fixes|suggestions)"\s*:')
+
+
+def _unclosed_json_answer(text: str) -> bool:
+    """A stage's JSON answer ({"translation": ...) whose object never closes."""
+    # an answer cut off inside a ```json fence has no closing fence to strip
+    cleaned = re.sub(r'^\s*```(?:json)?\s*', '', _strip_markdown_fences(text or ''))
+    return bool(_JSON_ANSWER_START.match(cleaned)) and not _extract_json_brace(cleaned)
+
+
+def _json_unescape(value: str) -> str:
+    """The text of a JSON string taken by the regex fallback: its escapes
+    (\\n, \\", \\uXXXX) decoded, so a newline is not left as the letter n."""
+    try:
+        return json.loads(f'"{value}"')
+    except ValueError:
+        return re.sub(r'\\(["\\/nt])', lambda m: {'n': '\n', 't': '\t'}.get(m.group(1), m.group(1)), value)
 
 
 def remove_tags_with_check(text: str, stage_name: str = "", role: LLMRole = None) -> str:
@@ -2359,6 +2390,14 @@ def remove_tags_with_check(text: str, stage_name: str = "", role: LLMRole = None
             logger.debug(f"Extracted translation from JSON [{stage_name}]")
             return parsed
     
+    # A JSON answer of a stage that never closes was cut off (the provider
+    # did not always say finish_reason='length'): its text, with the
+    # '{"translation": "' and the \\n escapes, must not reach the next stage
+    if _unclosed_json_answer(text):
+        raise TruncatedResponseError(
+            f"[{stage_name}] the JSON answer stops before its end ({original_len} chars); "
+            "the chunk will be split")
+
     # PRIORITY 2: Fall back to XML tag extraction
     cleaned = remove_tags(text)
     cleaned_len = len(cleaned)
