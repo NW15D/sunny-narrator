@@ -4,6 +4,13 @@ All notable changes to Sunny Narrator.
 
 ## Unreleased
 
+### `app.py dict extend`: a dictionary carried over to new books
+- `dict extend DIC --book B [--books-dir D] [--merge OTHER.dic] [-o DIR]` (`src/dict_extend.py`): the series dictionary gets what the new books (NER + proofread LLM) and other dictionaries add; a candidate the dictionary already has or covers (one `CandidateMatcher`, as for the synopsis candidates), an ordinary word never becomes an entry, whatever the order of the lines (the shorter term first). NER reads the plain paragraphs of the books, so markup (`href="https://…`, `I</subtitle`) cannot become a name.
+- Genders and categories of new entries come from the books (`dict_review`); base lines change only as `dict review` would (a sure gender of an empty one), conflicts and unsure cases go to the log. The source `.dic` is not changed.
+- The new entries follow the copied base lines under `# new words YYYY-MM-DD (sources)`, one dated block per extension.
+- `vocabulary_manager.term_chunks`: the one cutting of glossary lines into LLM requests (`MAX_LEN_CHUNK`) for `build_dictionary` and `dict extend`.
+- Result: a folder with the `.dic` and `<name>.extend.report.txt` (conflicts, unsure genders, words in two alphabets, one translation for several entries, what was added and skipped). Tests: `tests/test_dict_extend.py`.
+
 ### Reflection: no more loops (The Warship, en->ru)
 All 32 rechunk events of the last The Warship run were REFLECTION answers cut at `max_tokens`, not length checks. The model looped in two ways, both from the vocabulary check the prompt asked for: it listed every vocabulary term as a fix that changes nothing ("здесь всё верно"), then listed them again; or it deliberated inside `reason` (15 841 characters on whether «Трик» should be «Трайк»). Measured on 24 chunks of the book (stage-1 drafts cached, Qwen3.6-35B, same drafts for every variant):
 

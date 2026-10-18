@@ -355,10 +355,10 @@ def _mixed_translations(rows: list, target_lang: str, report: dict):
             report['translation in two alphabets'].append(f"{row['source']} = {row['target']}")
 
 
-def _write_report(path: Path, report: dict, title: str = ''):
+def _write_report(path: Path, report: dict, title: str = '', order=REPORT_ORDER):
     text = (title + '\n\n' if title else '') + ''.join(
         f"## {k} ({len(report[k])})\n" + '\n'.join(report[k]) + '\n\n'
-        for k in REPORT_ORDER if report.get(k))
+        for k in order if report.get(k))
     write_atomic(path, text)
 
 

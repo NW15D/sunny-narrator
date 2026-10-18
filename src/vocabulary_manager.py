@@ -47,6 +47,22 @@ def min_word_length_for(source_lang: str) -> int:
     return 2 if lexicon.lang_code(source_lang) in _CJK_LANGUAGES else 5
 
 
+def term_chunks(lines: List[str]) -> List[str]:
+    """Glossary lines in portions of MAX_LEN_CHUNK characters for the LLM
+    (build_dictionary, dict_extend)."""
+    size = int(getattr(config, 'max_len_chunk', 16384))
+    chunks, current, length = [], [], 0
+    for line in lines:
+        current.append(line)
+        length += len(line) + 1
+        if length >= size:
+            chunks.append('\n'.join(current))
+            current, length = [], 0
+    if current:
+        chunks.append('\n'.join(current))
+    return chunks
+
+
 def _dic_field(value: str) -> str:
     # Only the first field after "=" can be CSV-quoted: later fields follow
     # ", " and csv.reader (no skipinitialspace) would keep the quotes literally.
@@ -466,23 +482,7 @@ class VocabularyManager:
                 terms_text = '\n'.join(f"{term} [{cat}]" if cat else term
                                         for term, cat, notes in extracted_terms)
                 
-                # Split into chunks based on MAX_LEN_CHUNK configuration
-                CHUNK_SIZE = int(config.max_len_chunk) if hasattr(config, 'max_len_chunk') else 16384
-                logger.info(f"Using chunk size: {CHUNK_SIZE} characters (from MAX_LEN_CHUNK)")
-                
-                lines = terms_text.split('\n')
-                chunks = []
-                current = []
-                current_len = 0
-                for line in lines:
-                    current.append(line)
-                    current_len += len(line) + 1
-                    if current_len >= CHUNK_SIZE:
-                        chunks.append('\n'.join(current))
-                        current = []
-                        current_len = 0
-                if current:
-                    chunks.append('\n'.join(current))
+                chunks = term_chunks(terms_text.split('\n'))
                 
                 logger.info(f"Split {len(terms_text)} chars into {len(chunks)} chunk(s) for translation")
                 

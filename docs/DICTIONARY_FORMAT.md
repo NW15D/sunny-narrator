@@ -23,6 +23,7 @@ The dictionary file (`*.dic`) ensures terminology consistency throughout transla
 | Strict mode | `python app.py --no-autofix` — by the `.dic` as it is; `DICT_FORCE=false` — stops on a contradiction (exit code 2) |
 | Series of books | `python app.py --build-series-dict books/series/ --series-dict-output series.dic`, then each book with `--dictionary series.dic`; a run never changes `series.dic`, each book gets `series.<book>.reviewed.dic` |
 | Clean a dictionary | `python app.py dict clean books/MyBook.dic` → `MyBook.clean.dic` + report (duplicates, gender spellings, ordinary words) |
+| Carry a dictionary over to a new volume / book of the universe | `python app.py dict extend series.dic --book vol3.epub [--merge other.dic]` → `series.extended/series.dic` + `series.extend.report.txt` (see *Extending a dictionary*) |
 | Check against the book without translating | `python app.py dict review books/MyBook.epub --dic books/MyBook.dic` → `MyBook.reviewed.dic` + report |
 | Another target language | `python app.py dict convert books/MyBook.dic fr es zh` |
 | Check a finished translation | `python app.py audit books/MyBook_ru.epub --dic books/MyBook_ru.dic --lang russian` |
@@ -383,6 +384,37 @@ WikiNER `PER/LOC/ORG`, Polish `persName/placeName/orgName`, Korean
 no gender feature and are read by their form (他/她, 彼/彼女, 그/그녀). A model
 without a parser (`xx_ent_wiki_sm`) gets a sentencizer; without a model the
 check is skipped with a warning.
+
+### Extending a dictionary with new books
+
+A good series dictionary is not rebuilt for the next volume or for a new group
+of books of the same universe: `dict extend` adds what it lacks and keeps the rest.
+
+```bash
+python app.py dict extend series.dic --book vol3.epub --book vol4.epub   # or --books-dir books/new/
+python app.py dict extend series.dic --merge other-series.dic            # entries of another dictionary
+```
+
+- the result is a folder (`-o`, default `series.extended/`) with `series.dic` and
+  `series.extend.report.txt`; the source `.dic` is not changed and its lines are
+  copied as they are; the new entries follow under one dated comment
+  `# new words 2026-10-18 (vol3.epub)`, by category - every extension leaves its own
+  block at the end of the file, so the lines it added are easy to find;
+- new entries: NER over the plain text of all the new books together (no markup) (`--min-count-ner`, default 3),
+  translated by the proofread LLM; the category and the gender come from the
+  books (as in `dict review`), not from the LLM;
+- never an entry: one the dictionary already has (another case or form, or the
+  same translated name of a character), a phrase containing a known term, an
+  ordinary word, whatever the order of the lines (the shorter term first); a merged entry with another translation than the
+  dictionary's is a conflict - the dictionary's translation stays;
+- base lines change only as `dict review` would change them: an empty gender the
+  books show clearly is set (a category too, when review is sure). A gender the books
+  contradict, an unsure gender, duplicates, ordinary words and cut variants
+  of the base are only reported;
+- the log lists what needs a decision first (conflicts, unsure genders and categories,
+  words in two alphabets, one translation for several entries, characters left without a
+  gender), then what was added, changed and skipped and why. The files are written
+  only after every step succeeded.
 
 ### A dictionary shared by a series
 

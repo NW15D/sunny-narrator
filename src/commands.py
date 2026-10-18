@@ -3,6 +3,7 @@ The commands of `app.py` / `sunny-narrator` besides a translation:
 
     app.py dict clean DIC                    duplicates, gender spellings, ordinary words
     app.py dict review BOOK --dic DIC        categories and genders against the book
+    app.py dict extend DIC --book BOOK ...   a series dictionary carried over to new books / dictionaries
     app.py dict convert DIC fr es ...        the .dic into other target languages (LLM)
     app.py audit TRANSLATION --dic DIC --lang russian
                                              words in two alphabets, gender errors
@@ -73,13 +74,54 @@ def _dict_review(argv):
     return 0
 
 
+def _dict_extend(argv):
+    from src import dict_extend, dict_review, ner
+    ap = argparse.ArgumentParser(prog='app.py dict extend', description=dict_extend.__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('dic', type=Path, help='the dictionary to extend')
+    ap.add_argument('--book', type=Path, action='append', default=[],
+                    help='a new book (.fb2, .epub, .txt); repeatable')
+    ap.add_argument('--books-dir', type=Path, help='a folder of new books')
+    ap.add_argument('--merge', type=Path, action='append', default=[],
+                    help='another .dic whose missing entries are added; repeatable')
+    ap.add_argument('-o', '--output-dir', type=Path,
+                    help='folder of the result (default <name>.extended/ next to the dictionary)')
+    ap.add_argument('--model', help='spaCy model of the source language (default NERMODEL)')
+    ap.add_argument('--min-count-ner', type=int, default=3,
+                    help='mentions in all the new books for an entity to be added (default 3)')
+    ap.add_argument('--min-count-word', type=int, default=5,
+                    help='mentions for an ordinary word (only with --frequent-words)')
+    ap.add_argument('--frequent-words', action='store_true', help='also add frequent ordinary words')
+    ap.add_argument('--keep', default='', help='comma-separated words not to skip as ordinary')
+    ap.add_argument('--min-votes', type=int, default=dict_review.MIN_VOTES)
+    ap.add_argument('--ratio', type=float, default=dict_review.RATIO)
+    args = ap.parse_args(argv)
+    import openai
+    try:
+        books = list(args.book)
+        if args.books_dir:
+            books += [Path(p) for p in ner.series_book_files(str(args.books_dir))]
+        result = dict_extend.extend_file(
+            args.dic, books, args.merge, args.output_dir, args.model, args.min_count_ner,
+            args.min_count_word, args.frequent_words or None, args.keep, args.min_votes, args.ratio)
+    except (ValueError, RuntimeError, OSError, openai.OpenAIError) as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    print(f"{result['base']} entries + {result['added']} added, "
+          f"{result['changed']} changed in the base: {result['output']}")
+    for name, n in result['counts'].items():
+        print(f"  {name}: {n}")
+    print(f"report: {result['report']}")
+    return 0
+
+
 def _dict(argv):
-    actions = {'clean': _dict_clean, 'review': _dict_review}
+    actions = {'clean': _dict_clean, 'review': _dict_review, 'extend': _dict_extend}
     if argv and argv[0] == 'convert':
         from src import dict_convert
         return dict_convert.main(argv[1:])
     if not argv or argv[0] not in actions:
-        print("usage: app.py dict {clean,review,convert} ...  (app.py dict <action> -h)", file=sys.stderr)
+        print("usage: app.py dict {clean,review,extend,convert} ...  (app.py dict <action> -h)", file=sys.stderr)
         return 2
     return actions[argv[0]](argv[1:])
 
