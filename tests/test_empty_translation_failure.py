@@ -1,6 +1,8 @@
 """A6: empty translation result must count as failure, not success."""
 import os
 import sys
+
+import pytest
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -21,7 +23,7 @@ def test_empty_translation_counts_as_failure():
     eng._post_process_xml = MagicMock(return_value="   ")
     with patch.object(app_module, 'ta') as mock_ta:
         mock_ta.num_tokens_in_string.return_value = 1
-        result, _synopsis = eng.process_chunk_recursive("<p>Hello</p>", 0, 0, 1, "")
+        with pytest.raises(app_module.ChunkTranslationError):
+            eng.process_chunk_recursive("<p>Hello</p>", 0, 0, 1, "")
     assert eng.stats['successful'] == 0
     assert eng.stats['failed'] == 1
-    assert "FAILED" in result

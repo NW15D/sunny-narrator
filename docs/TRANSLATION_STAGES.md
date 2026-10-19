@@ -87,7 +87,7 @@ rest of the run, and the `.dic` file only with `DICT_AUTO_SAVE=true`
 |---|---|
 | The translation is much longer or shorter than expected | the chunk is split in two and each half is translated again, up to 3 levels and 15 LLM calls per chunk |
 | An answer is cut off (`finish_reason='length'`, or a JSON answer that never closes) | the model usually looped on this input: the chunk is split, not retried as it is |
-| A stage fails (malformed answer, API error after its retries) | the chunk is split; a chunk that still fails is tried twice more, then counted as failed: EPUB/DOCX/PDF keep its source text, FB2/TXT get a `[TRANSLATION FAILED: chunk N]` paragraph |
+| A stage fails (malformed answer, API error after its retries) | the chunk is split; a chunk that still fails is tried twice more, then the run stops with an error naming the chunk (exit code 1); the chunks before it are saved and a new run resumes from it |
 | A network or server error | each request is retried 3 times (2, 4 s) |
 | The API refuses the request (401, 403, 404) | the run stops at once with the variable to check (exit code 3): no chunk can succeed |
 | The GENDER stage fails | the translation is kept as it is |

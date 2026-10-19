@@ -155,15 +155,15 @@ def test_llm_damage_is_repaired_inside_the_chunk():
     assert eng._post_process_xml('src', '<p>a</p></section><section><p>b</p>') == '<p>a</p><p>b</p>'
 
 
-def test_failed_chunk_placeholder_is_a_valid_paragraph(monkeypatch):
+def test_a_chunk_that_cannot_be_translated_stops_the_run(monkeypatch):
     eng = TranslationEngine.__new__(TranslationEngine)
     eng.stats = {'successful': 0, 'failed': 0, 'retry_tokens': 0, 'total_tokens': 0}
     eng.translate_chunk = MagicMock(side_effect=RuntimeError('boom'))
     monkeypatch.setattr(app_module.time, 'sleep', lambda s: None)
     with patch.object(app_module, 'ta') as mock_ta:
         mock_ta.num_tokens_in_string.return_value = 1
-        result, _syn = _REAL_PROCESS_CHUNK_RECURSIVE(eng, '<p>x</p>', 0, 0, 7, '')
-    assert result == '<p>[TRANSLATION FAILED: chunk 7]</p>'
+        with pytest.raises(app_module.ChunkTranslationError, match='chunk 7'):
+            _REAL_PROCESS_CHUNK_RECURSIVE(eng, '<p>x</p>', 0, 0, 7, '')
     assert eng.stats['failed'] == 1
 
 

@@ -46,7 +46,7 @@ except ImportError:
 
 # Import existing utilities
 from src.utils import (config, validate_translation_length, translate_chunk, translate_metadata,
-                       length_calibration, token_calibration, LLMAccessError)
+                       length_calibration, token_calibration, LLMAccessError, ChunkTranslationError)
 from src.utils import CREDIT_LINE, credit_comment, without_credit
 from src.utils import _pipeline  # noqa: F401  (tests monkeypatch cp._pipeline.execute)
 from concurrent.futures import ThreadPoolExecutor
@@ -147,11 +147,6 @@ _PANDOC_MD_FORMAT = (
 # The credit of the AI translator (src.utils, issue #65): --book-producer,
 # --comments (credit_comment) and the title page.
 _TRANSLATOR_CREDIT = CREDIT_LINE
-
-class ChunkTranslationError(RuntimeError):
-    """A chunk could not be translated, also after splitting it into smaller
-    parts: the run stops (app.py exit code 1, no traceback)."""
-
 
 @dataclass
 class TranslationStats:

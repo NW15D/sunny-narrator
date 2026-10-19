@@ -99,6 +99,12 @@ class TruncatedResponseError(ValueError):
     """
 
 
+class ChunkTranslationError(RuntimeError):
+    """A chunk could not be translated, also after splitting it into smaller
+    parts (translate_chunk) and retrying it: the run of either pipeline stops
+    (app.py exit code 1, no traceback), the chunks before it stay saved."""
+
+
 class LLMAccessError(PipelineAborted):
     """The API refused the request itself - the key (401), the access (403) or
     the model (404). No retry, split or other chunk can succeed, so the run

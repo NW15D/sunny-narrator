@@ -25,7 +25,7 @@ from typing import Dict, List
 
 # Import local modules
 import src.utils as ta
-from src.utils import LLMAccessError
+from src.utils import LLMAccessError, ChunkTranslationError
 import src.xmlcheck as xc
 import src.fb2_handler as fb2
 import src.epub_handler as epub
@@ -278,6 +278,15 @@ class TranslationEngine:
             logger.error(f"Translation error: {e}")
             raise
 
+    def _chunk_failed(self, g_id, source_len: int, reason: str):
+        self.stats['failed'] += 1
+        logger.error(f"Chunk {g_id} ({source_len:,} chars) failed even after splitting it in two: {reason}")
+        raise ChunkTranslationError(
+            f"chunk {g_id} ({source_len:,} chars) could not be translated, also after splitting it "
+            f"into smaller parts ({reason}). The translation is stopped; the chunks before it are "
+            f"saved, a new run resumes from this one. See the log for the cause of the failure "
+            f"(the LLM answer, the model, MAX_LEN_CHUNK).")
+
     def process_chunk_recursive(self, chunk: str, s_idx: int, c_idx: int,
                                  g_id: int, context: str, depth: int = 0) -> tuple:
         """
@@ -330,17 +339,14 @@ class TranslationEngine:
                     time.sleep(backoff)
 
         else:
-            # All retries failed — return visible placeholder instead of silent empty string
-            logger.warning(f"All validation attempts failed for chunk {g_id}")
-            final_content = f"<p>[TRANSLATION FAILED: chunk {g_id}]</p>"
-            self.stats['failed'] += 1
-            return final_content, synopsis
+            # translate_chunk has already split the chunk in two (down to
+            # MAX_DEPTH) and it was retried: stop, the chunks before it stay
+            # saved in the checkpoint and the next run resumes from this one.
+            self._chunk_failed(g_id, source_len, "all attempts failed")
 
         # Empty result is a failure, not a success
         if not final_content or not final_content.strip():
-            logger.warning(f"Empty translation result for chunk {g_id}")
-            self.stats['failed'] += 1
-            return f"<p>[TRANSLATION FAILED: chunk {g_id}]</p>", synopsis
+            self._chunk_failed(g_id, source_len, "empty translation")
 
         # Count successful translation
         self.stats['successful'] += 1
@@ -500,9 +506,13 @@ class TranslationEngine:
                 sequencer.wait(COMMITTED, k - 1)
             try:
                 commit_item(item, final_content, synopsis, drafted)
-            finally:
+            except BaseException:
+                # The next chunk must not commit (and checkpoint) past this one
                 if parallel:
-                    sequencer.mark(COMMITTED, k)
+                    sequencer.abort()
+                raise
+            if parallel:
+                sequencer.mark(COMMITTED, k)
 
         def commit_item(item: dict, final_content: str, synopsis: str, drafted: bool):
             nonlocal tail_written
@@ -573,12 +583,6 @@ class TranslationEngine:
             # No chunk counts (flat sections) or a book without any text
             emit_tail()
             self._tfile_committed = self._tfile_size
-
-        # Warn if too many chunks failed
-        total_processed = self.stats['successful'] + self.stats['failed']
-        if total_processed > 0 and self.stats['failed'] / total_processed > 0.1:
-            print(f"\n⚠️ WARNING: {self.stats['failed']}/{total_processed} chunks failed to translate!")
-            logger.warning(f"High failure rate: {self.stats['failed']}/{total_processed} chunks failed")
 
         with open(output_tfile, encoding='utf-8') as f:
             return f.read()
@@ -930,6 +934,9 @@ def main(fresh: bool = False):
         try:
             content = engine.process_all_chunks(chunks, vocab, output_tfile, checkpoint_file,
                                                 section_meta=section_meta)
+        except ChunkTranslationError as e:
+            print(f"\n✗ Stopped: {e}")
+            sys.exit(1)
         finally:
             # Ensure checkpoint is saved on unexpected exit (signal handler triggers SystemExit)
             if checkpoint_file:
@@ -1250,7 +1257,7 @@ def cli():
         except LLMAccessError as e:
             print(f"\n✗ Stopped: {e}")
             sys.exit(3)
-        except cp.ChunkTranslationError as e:
+        except ChunkTranslationError as e:
             print(f"\n✗ Stopped: {e}")
             sys.exit(1)
         except Exception as e:
