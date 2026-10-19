@@ -130,7 +130,7 @@ def _read_with_fallback(file_path):
     return raw.decode('latin-1', errors='replace')
 
 
-def parse_txt(file_path):
+def parse_txt(file_path, lang: str = 'en'):
     """
     Parses a TXT file and converts it into an FB2-like XML structure.
     Returns body, header, footer.
@@ -153,7 +153,7 @@ def parse_txt(file_path):
         <author><first-name></first-name><last-name>Unknown</last-name></author>
         <book-title>{xml_escape(title)}</book-title>
         <date>{date_str}</date>
-        <lang>en</lang>
+        <lang>{xml_escape(lang or 'en')}</lang>
     </title-info>
 </description>
 """

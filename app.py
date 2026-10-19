@@ -808,7 +808,7 @@ def main(fresh: bool = False):
     if file_ext.lower() == '.fb2':
         body, header, footer = fb2.parse_xml(myfile)
     else:
-        body, header, footer = txt.parse_txt(myfile)
+        body, header, footer = txt.parse_txt(myfile, config.lang_marker(config.source_lang))
 
     # 2. Vocabulary: created/loaded below by engine.vocab_manager.initialize()
     # (VocabularyManager — the same code path as the Calibre pipeline).
@@ -1158,7 +1158,7 @@ def cli():
         elif file_ext == '.epub':
             body, _, _ = epub.parse_epub(book_path)
         elif file_ext == '.txt':
-            body, _, _ = txt.parse_txt(book_path)
+            body, _, _ = txt.parse_txt(book_path, config.lang_marker(config.source_lang))
         else:
             # DOCX/PDF are Calibre-pipeline formats with no body parser here
             print(f"Error: --build-dict does not support {file_ext}. Use FB2, EPUB or TXT.")

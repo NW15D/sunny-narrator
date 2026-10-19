@@ -52,3 +52,15 @@ def test_title_escaped(tmp_dir):
     # The raw '&' must not appear unescaped in the title
     assert "&amp;" in header
     assert "<book-title>Tom &amp; Jerry</book-title>" in header
+
+
+def test_the_header_carries_the_source_language(tmp_path):
+    """A Korean TXT is not an English book: <lang> is the source language, so the
+    translated header keeps it as <src-lang>."""
+    import src.txt_handler as txt
+    path = tmp_path / "ko.txt"
+    path.write_text("제1장\n\n안녕하세요.\n", encoding="utf-8")
+    _body, header, _footer = txt.parse_txt(str(path), 'ko')
+    assert '<lang>ko</lang>' in header
+    _body, header, _footer = txt.parse_txt(str(path))
+    assert '<lang>en</lang>' in header
