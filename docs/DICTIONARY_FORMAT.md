@@ -350,7 +350,7 @@ Wonderland = Страна Чудес, LOC,
 
 **Multi-word terms and substitution:**
 - A term of more words wins over the shorter ones it contains: with `Hatter = Шляпник` and `Mad Hatter = Безумный Шляпник`, the text "Mad Hatter" is translated by the second entry, and `Hatter` is not put into the prompt for a chunk where it occurs only inside it. Then the longer term wins.
-- Before the first stage the translations of the terms found in the chunk are substituted into the source text (the later stages see the original). Tags, links and URLs are never changed.
+- Before the first stage the translations of the names (`PERSON`, `LOC`, `ORG`) and of the multi-word terms found in the chunk are substituted into the source text (the later stages see the original). A one-word `TERM` (`Variedad`, `Seguro`) is not: its base form inside a sentence of the source language breaks the grammar (`La вариант`), so the model gets it from the glossary of the prompt and inflects it itself. Tags, links and URLs are never changed.
 - Case: a lowercase source (`spidergun`) matches in any case; a source with capitals (`Will`) matches as written or in ALL CAPS, so it does not replace "will".
 - For Korean, write names without the particle (`철수`, not `철수는`): the term is searched as a substring and matches every form.
 

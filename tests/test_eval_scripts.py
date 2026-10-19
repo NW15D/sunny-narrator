@@ -104,11 +104,12 @@ def test_prompt_eval_variants_change_only_this_run(tmp_path, monkeypatch):
             out.read_text(encoding="utf-8"))["summary"]
 
     prompt, summary = run()
-    assert "Machine = Машина" in prompt and "Машина" in prompt.split("<source")[1]
+    # names are put into the source, an ordinary word ("Machine") stays for the glossary
+    assert "Machine = Машина" in prompt and "Вашти met Куно in the Machine" in prompt.split("<source")[1]
     assert summary["variant"] == {'prompts': None, 'prompts_skipped': [], 'no_glossary': False,
                                   'no_substitution': False}
     prompt, summary = run("--no-glossary", "--no-substitution")
-    assert "Machine = Машина" not in prompt and "the Machine" in prompt
+    assert "Machine = Машина" not in prompt and "Vashti met Kuno in the Machine" in prompt
     assert summary["variant"]["no_glossary"] and summary["variant"]["no_substitution"]
     prompt, summary = run("--prompts", str(old_prompts))
     assert prompt.startswith("OLD ")

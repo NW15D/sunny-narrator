@@ -16,6 +16,11 @@ Rules, in line with lexicon.resolve_terms:
   target takes over the capital ("Spidergun" -> "Паукопушка"). A term with
   capitals (a proper name) matches as written or in ALL CAPS, so "Will" is
   not replaced in "will".
+- Only names (PERSON, LOC, ORG) and multi-word terms are put in
+  (substitution_terms): the translation of an ordinary word ("Variedad" ->
+  "вариант", "Seguro" -> "безопасный") inside a sentence of the source
+  language breaks its grammar ("La вариант"), and the model gets such
+  words from the glossary of the prompt and inflects them itself.
 - Inflected forms ("Hatters") are not replaced: the model gets them through
   the glossary lines of the prompt. A single-word term in the possessive
   ("Arcadia's Moon") is left to the model as well; to substitute the whole
@@ -92,6 +97,21 @@ def _adapt(source: str, found: str, target: str, target_lang: str = "") -> Optio
     if all_caps:
         return lexicon.upper(target, target_lang)
     return lexicon.upper(target[:1], target_lang) + target[1:] if found[:1].isupper() else target
+
+
+NAME_CATEGORIES = ('PERSON', 'LOC', 'ORG')
+
+
+def substitution_terms(vocab_dict: Dict[str, str], entries=None) -> Dict[str, str]:
+    """The glossary terms worth putting into the source text: names and
+    phrases of several words. A one-word TERM stays in the prompt glossary
+    only. Without `entries` (no categories known) the glossary is returned
+    as it is."""
+    if not entries:
+        return vocab_dict
+    category = {e.source: (e.category or '').upper() for e in entries}
+    return {source: target for source, target in vocab_dict.items()
+            if category.get(source) in NAME_CATEGORIES or len((source or '').split()) > 1}
 
 
 def replace_vocab_in_text(source_text: str, vocab_dict: Dict[str, str], xml: bool = False,

@@ -37,7 +37,7 @@ from src.config import Config
 from src.llm_logger import log_llm_call
 from src.p_tags_processor import post_process_p_tags
 from src import gender_check, lexicon, script_guard
-from src.term_substitution import replace_vocab_in_text
+from src.term_substitution import replace_vocab_in_text, substitution_terms
 from src.stage_pipeline import PipelineAborted, current_slot
 from src.fb2_structure import join_paragraph_halves, split_in_two, split_paragraph_in_two
 
@@ -1177,7 +1177,7 @@ class TranslationPipeline:
                 context,
                 source_text=replace_vocab_in_text(
                     context.source_text,
-                    context.vocab_dict,
+                    substitution_terms(context.vocab_dict, context.vocab_entries),
                     xml=context.style == 'xml',
                     target_lang=context.target_lang
                 )

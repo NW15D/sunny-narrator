@@ -124,6 +124,9 @@ own lemma (else the most frequent one) with its original capitalization:
 
 `src/term_substitution.py` (`replace_vocab_in_text`) replaces the terms of
 the chunk in the source text before Stage 1, so the model cannot skip them.
+Only names (`PERSON`, `LOC`, `ORG`) and multi-word terms are put in
+(`substitution_terms`); an ordinary one-word `TERM` stays in the glossary of
+the prompt.
 It follows the matching rules above: the same priority, the same notion of
 markup (tags, link targets, URLs and attribute blocks are never touched, no
 term across them); occurrences never overlap. Words may be separated by any

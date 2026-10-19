@@ -5,6 +5,9 @@ All notable changes to Sunny Narrator.
 ## Unreleased
 
 ### Fixed
+- The dictionary of a book in Spanish, French, Portuguese and the like was full of ordinary words: the dialogue dash written by pandoc as `---` glued to a word (`---contestó`, `Valeris---`), a verb or adverb at the start of a line (`Recordó`, `Jamás`), a question (`¿Por qué?`), a lowercase word (`sofá`). The entity search now cleans the Markdown (`ner.clean_for_ner`) and skips an entity that is a verb, adverb, pronoun, adjective or number, has `¿¡?!`, is a lone lowercase word, or is a word the book also writes in lowercase three times or more (`ner.is_common_word_entity`, by the part of speech of the model, no list per language; scripts without case are left alone). A 700 000-character Spanish book: 115 candidates became 69 with the small model.
+- The pandoc writer of the Calibre pipeline gets `-smart`: `—` and `…` stay as written instead of `---` and `\...` (`### 2\... Jan`).
+- The translations of ordinary one-word `TERM` entries are no longer substituted into the source before Stage 1 (`La Variedad` became `La вариант`); names and multi-word terms are (`term_substitution.substitution_terms`).
 - INITIAL lost the whole chunk when Gemma ended a real answer with the output template of the prompt, `"translation": "..."`: `json.loads` keeps the last of two equal keys, so the translation became `...` (11 of 704 INITIAL answers of four books; REFLECTION and FINAL then worked on `...` and the chunk was split). A repeated `translation` now keeps its last value that is not a placeholder (`utils._merge_duplicate_keys`).
 - A call cut off by `max_tokens` is written to `llm_calls_*.log` (stage `<stage>:length`) before the chunk is split, and its tokens count as retry tokens; before, it was neither logged nor counted.
 
