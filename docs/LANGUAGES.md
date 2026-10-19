@@ -21,15 +21,14 @@ and the target-specific checks. This page lists what has been verified and how.
 |---|---|
 | English → Russian | Real translations (book series with a series dictionary) |
 | Korean → Russian | Real translations |
-| English → French, Spanish, Polish, Portuguese, Russian, Turkish | Real translations: one book, six targets, metrics [below](#real-translations-english--six-languages) |
-| English → Chinese | Real translation, in progress |
+| English → French, Spanish, Polish, Portuguese, Russian, Turkish, Chinese | Real translations: one book, seven targets, metrics [below](#real-translations-english--seven-languages) |
 | English → Turkish | Real translation (above); also automated: all five stages of a chunk with a faked LLM (`tests/test_target_turkish.py`) |
 
-## Real translations: English → six languages
+## Real translations: English → seven languages
 
 One book, `books/eternal-moment.pg.epub` (E. M. Forster, *The Eternal Moment and
 Other Stories*, 230,923 source characters, 27 chunks of at most
-`MAX_LEN_CHUNK=10000`), translated through the Calibre pipeline into six
+`MAX_LEN_CHUNK=10000`), translated through the Calibre pipeline into seven
 languages with the same dictionary of 38 terms (24 PERSON, 6 ORG, 5 TERM,
 3 LOC; one `<book>_<lang>.dic` per language, the genders of 14-15 characters
 are filled in from the synopsis). All five stages, JSON mode, local llama.cpp
@@ -45,7 +44,7 @@ language, one after another, on one machine.
 | Portuguese | 30 | 3 | 676,648 | 46,137 (6.4%) | 50.6 min | 242,573 | +5.0% | 0 / 0 | 0 |
 | Russian | 32 | 5 | 720,163 | 17,632 (2.4%) | 52.9 min | 231,173 | +0.1% | 0 / 0 | 0² |
 | Turkish | 31 | 4 | 771,882 | 12,015 (1.5%) | 63.7 min | 228,267 | −1.2% | 0 / 0 | 0 |
-| Chinese | in progress (15 of 27 chunks at the last log line) | | | | | | | | |
+| Chinese | 27 | 0 | 565,314 | 0 (0.0%) | 33.3 min | 82,185 | −64.4% | 0 / 0 | 0 |
 
 ¹ The 27 chunks plus the halves of the chunks that were split and translated
 again. No chunk failed in any run (`Failed translations: 0`), so none stayed
@@ -68,7 +67,7 @@ translated again; 15 events in all, none left a hole):
 
 **How the length ratio differs by language** (target characters / source
 characters over the book): French 1.14, Spanish 1.07, Portuguese 1.05, Polish
-1.01, Russian 1.00, Turkish 0.99 — the ratio is learned per book, so the same
+1.01, Russian 1.00, Turkish 0.99, Chinese 0.36 — the ratio is learned per book, so the same
 `LENGTH_CHECK_THRESHOLD` fits all of them.
 
 **Dictionary:** every run logs the terms matched in each chunk
@@ -76,6 +75,14 @@ characters over the book): French 1.14, Spanish 1.07, Portuguese 1.05, Polish
 start; the dictionary check warns that 11 characters have no gender in the
 `.dic`, 14-15 of them are then filled in from the synopsis by two agreeing
 chunks.
+
+**The files of these runs** are in the repository: the source book
+`books/eternal-moment.pg.epub`, the seven dictionaries
+`books/eternal-moment.pg_<lang>.dic` (so the first run of the demo book
+translates at once), and in `books/samples/eternal-moment.pg/` the seven
+translated EPUBs `The_eternal_moment__and_other_stories_<lang>.epub`, the
+full log of every run `eternal-moment.pg_<lang>.log` (the source of the numbers
+above) and the dictionary check `eternal-moment.pg.dictcheck.*`.
 
 More directions (Spanish → English, Spanish → Russian) will be added here.
 
@@ -111,7 +118,7 @@ by hand and add the inflected forms you need.
 | French, Spanish, Polish, Portuguese | the whole Calibre pipeline on a real book; the gender check of the target (fr, es, pl, pt) | Real translations |
 | Turkish | a real book through the whole pipeline; five stages with a faked LLM; capitals `iksir` → `İksir` in substitution; country `Türkiye` by default; untranslated-chunk detection for a Latin-script target; prompts | Real translations, automated |
 | German | language marker in output file and cover names; country `Deutschland` by default | Automated |
-| Chinese | the EPUB "translation may have failed" check does not fire on translated Chinese text | Automated |
+| Chinese | a real book through the whole pipeline (output 0.36 of the source length); the EPUB "translation may have failed" check does not fire on translated Chinese text | Real translations, automated |
 
 **Gender of the characters** (`src/gender_check.py`, `tests/test_gender_check.py`):
 the GENDER stage checks the predicate of a dictionary character by the spaCy
