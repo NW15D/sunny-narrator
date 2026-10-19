@@ -47,7 +47,7 @@ except ImportError:
 # Import existing utilities
 from src.utils import (config, validate_translation_length, translate_chunk, translate_metadata,
                        length_calibration, token_calibration, LLMAccessError, ChunkTranslationError)
-from src.utils import CREDIT_LINE, credit_comment, without_credit
+from src.utils import CREDIT_LINE, credit_comment, is_credit_line, without_credit
 from src.utils import _pipeline  # noqa: F401  (tests monkeypatch cp._pipeline.execute)
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
@@ -342,10 +342,13 @@ def extract_metadata_from_opf(opf_content: str) -> dict:
     # Extract description
     desc_match = re.search(r'<dc:description[^>]*>(.*?)</dc:description>', opf_content, re.IGNORECASE | re.DOTALL)
     if desc_match:
-        from src.html_text import html_to_text
+        from src.html_text import html_to_paragraphs
         # Описание бывает экранированным HTML (<div><p><strong>): в титульный
-        # лист и метаданные оно должно попасть обычным текстом.
-        metadata["description"] = html_to_text(desc_match.group(1))
+        # лист и метаданные оно должно попасть обычным текстом. Подпись прошлого
+        # прогона (книга уже переведена нами) снимается до склейки абзацев: потом
+        # она не отдельная строка, и credit_comment её не заменит, а продублирует.
+        metadata["description"] = ' '.join(
+            p for p in html_to_paragraphs(desc_match.group(1)) if not is_credit_line(p))
     
     return metadata
 

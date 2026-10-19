@@ -2347,9 +2347,21 @@ def _extract_json_brace(text: str) -> str:
 def _clean_fixes(fixes: list) -> list:
     """The usable {find, replace, reason} pairs of a reflection answer: find
     non-empty and different from replace (a pair that changes nothing is
-    noise); an empty replace is a legitimate deletion fix."""
+    noise); an empty replace is a legitimate deletion fix. A fix written as a
+    line, "«X» → «Y» — reason" (what a small model answers instead of an
+    object), is parsed into a pair too; a line of another shape stays a
+    string, as the strings of "suggestions" do."""
     pairs = []
     for fix in fixes:
+        if isinstance(fix, str):
+            line = _FIX_MARKUP.sub('', fix).replace('**', '').strip()
+            match = _FIX_LINE.match(line)
+            if not match:
+                if line and line.upper() != 'NO CHANGES':
+                    pairs.append(line)
+                continue
+            fix = {'find': match.group('find'), 'replace': match.group('replace'),
+                   'reason': match.group('reason')}
         if not isinstance(fix, dict):
             continue
         find, replace = str(fix.get('find') or '').strip(), str(fix.get('replace') or '').strip()
@@ -2394,17 +2406,18 @@ def _keep_applicable_fixes(reflection: str, translation: str, target_lang: str =
         return reflection
     if isinstance(data, dict):
         data = data.get('fixes', data)
-    if not (isinstance(data, list) and all(isinstance(f, dict) for f in data)):
+    if not (isinstance(data, list) and all(isinstance(f, (dict, str)) for f in data)):
         return reflection
-    kept = [f for f in _clean_fixes(data) if f['find'] in translation
-            and not _bad_replace(f['replace'], target_lang, terms)
-            and not _drops_term(f['find'], f['replace'], terms, target_lang)]
+    kept = [f for f in _clean_fixes(data)
+            if isinstance(f, str) or (f['find'] in translation
+                                      and not _bad_replace(f['replace'], target_lang, terms)
+                                      and not _drops_term(f['find'], f['replace'], terms, target_lang))]
     return json.dumps(kept, ensure_ascii=False) if kept else ""
 
 
 # A list marker or bold a model puts around a fix line: "- «X» → «Y»", "**«X»** → …"
 _FIX_MARKUP = re.compile(r'^\s*(?:\d+[.)]|[-*•–])\s+')
-_FIX_LINE = re.compile(r'^\s*(?:\d+[.)]\s+)?[«"“]?(?P<find>.+?)[»"”]?\s*(?:→|->)\s*[«"“]?(?P<replace>.*?)[»"”]?\s+[—–-]+\s+\S', re.S)
+_FIX_LINE = re.compile(r'^\s*(?:\d+[.)]\s+)?[«"“]?(?P<find>.+?)[»"”]?\s*(?:→|->)\s*[«"“]?(?P<replace>.*?)[»"”]?\s+[—–-]+\s+(?P<reason>\S.*)', re.S)
 
 
 def _keep_applicable_lines(reflection: str, translation: str, target_lang: str = "",
@@ -2496,7 +2509,11 @@ def parse_json_response(text: str) -> tuple:
         
         # Check for fixes (REFLECTION stage): {find, replace, reason} pairs
         if isinstance(data.get('fixes'), list):
-            return _clean_fixes(data['fixes']), True
+            fixes = _clean_fixes(data['fixes'])
+            if data['fixes'] and not fixes:
+                logger.warning(f"reflection: {len(data['fixes'])} fix(es) in the answer, none usable "
+                               f"(not {{find, replace}} objects or \"X → Y — reason\" lines): {data['fixes'][:2]}")
+            return fixes, True
 
         # Check for suggestions (REFLECTION stage)
         if 'suggestions' in data:

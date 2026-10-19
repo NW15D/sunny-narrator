@@ -110,3 +110,42 @@ def test_dict_convert_never_writes_over_its_source(tmp_path):
     assert dict_convert.convert(src, "ru", 40, True, client, "english", "russian") is True
     client.chat.completions.create.assert_not_called()
     assert src.read_text(encoding="utf-8") == "a = b,PERSON,,\n"
+
+
+# --- fixes as lines ----------------------------------------------------------
+
+def test_fixes_written_as_lines_become_pairs_and_are_filtered_as_usual():
+    text = ('{"fixes": ["«сказал» → «сказала» — род", "- «стол» -> «стул» — слово", '
+            '"Проверьте запятые в конце", {"find": "дом", "replace": "дом", "reason": "x"}]}')
+    fixes, parsed = utils.parse_json_response(text)
+    assert parsed
+    assert fixes[0] == {"find": "сказал", "replace": "сказала", "reason": "род"}
+    assert fixes[1] == {"find": "стол", "replace": "стул", "reason": "слово"}
+    assert fixes[2] == "Проверьте запятые в конце"  # another shape stays a line
+    assert len(fixes) == 3  # the pair that changes nothing is gone
+    import json
+    kept = json.loads(utils._keep_applicable_fixes(json.dumps(fixes, ensure_ascii=False), "Он сказал и ушёл."))
+    assert [f["find"] if isinstance(f, dict) else f for f in kept] == ["сказал", "Проверьте запятые в конце"]
+
+
+def test_a_list_of_unusable_fixes_is_warned_about(caplog):
+    fixes, parsed = utils.parse_json_response('{"fixes": [{"find": "", "replace": "x"}, 5]}')
+    assert fixes == [] and parsed
+    assert "none usable" in caplog.text
+
+
+# --- the description of our own translation ----------------------------------
+
+def test_the_credit_of_an_earlier_run_is_not_in_the_description_read_from_opf():
+    from src.calibre_pipeline import extract_metadata_from_opf
+    from src.utils import CREDIT_LINE, credit_comment
+    opf = ('<package xmlns:dc="http://purl.org/dc/elements/1.1/"><metadata>'
+           '<dc:title>T</dc:title><dc:description>&lt;p&gt;' + 'Long real annotation of the book. ' * 5 +
+           '&lt;/p&gt;&lt;p&gt;Sunny Narrator: https://github.com/NW15D/sunny-narrator&lt;/p&gt;'
+           '</dc:description></metadata></package>')
+    description = extract_metadata_from_opf(opf)["description"]
+    assert "Sunny Narrator" not in description and "annotation" in description
+    assert credit_comment(description).count("github.com/NW15D/sunny-narrator") == 1
+    assert credit_comment(description).endswith(CREDIT_LINE)
+    short = opf.replace("Long real annotation of the book. " * 5, "A short one.")
+    assert extract_metadata_from_opf(short)["description"] == "A short one."

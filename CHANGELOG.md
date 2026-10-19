@@ -5,6 +5,8 @@ All notable changes to Sunny Narrator.
 ## v2.11.0
 
 ### Fixed
+- REFLECTION answered with `{"fixes": ["«X» → «Y» — reason"]}` (strings instead of objects) lost every fix and skipped IMPROVE silently. A line of that shape is now parsed into a `{find, replace, reason}` pair and filtered as any fix; a line of another shape stays a line (as the strings of `suggestions` do); a `fixes` list with nothing usable logs a WARNING.
+- The description read from the OPF of a book this tool had translated before kept its credit inside the flattened line, so the credit was written twice (or a short real description was dropped with it). The credit paragraphs are taken out before the paragraphs are joined.
 - Documented: a reasoning proofread model (DeepSeek-R1, QwQ, gpt-oss) needs `NOTHINK_PROOFREAD=false`, or the REFLECTION cap of a "thinking off" run (1-3 thousand tokens) cuts it off chunk after chunk (`env.sample`, `env.cloud.sample`, `docs/CONFIGURATION.md`, `docs/TRANSLATION_STAGES.md`).
 - A strict OpenAI-compatible server (`api.openai.com`, the Gemini and Groq compatibility endpoints) answers 400 to `chat_template_kwargs`, `reasoning` and `presence_penalty`, which every request carries since `NOTHINK_*` is on by default: every chunk was retried, split and lost. A 400 that names one of them now repeats the request without all three, and the role sends none of them afterwards (a WARNING says so; `app.py dict convert` does the same).
 - A 403 with "moderation" or "flagged" (OpenRouter, a moderated model refusing one chunk) no longer stops the run as a refused key; the chunk goes through the retry and split, and the run stops on it with its number. Any other 403 stops the run as before.
