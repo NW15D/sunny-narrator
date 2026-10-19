@@ -78,6 +78,63 @@ def _ner_disabled_pipes(lang=None):
     return ["parser", "attribute_ruler"] + ([] if keep_lemmatizer else ["lemmatizer"])
 
 
+# Markdown of the converted book is not part of a name: pandoc writes the
+# dialogue dash as "---" ("---Jan, vamos ---dijo"), which glued to the name
+# ("Valeris---", "---¿Cómo") and the emphasis marks of "La *Eurídice*".
+_DIALOGUE_DASH_RE = re.compile(r'(?<!-)-{2,3}(?!-)')
+# Parts of speech of a word that is never a name: a sentence-initial verb or
+# adverb ("Recordó", "Necesito", "Jamás") is capitalized only by its position.
+# Marks that only a sentence has: an entity with one is a cut-out of a sentence.
+_SENTENCE_MARKS = '¿¡?!'
+_CLAUSE_POS = {'VERB', 'AUX', 'ADV', 'PRON', 'INTJ', 'CCONJ', 'SCONJ'}
+_COMMON_WORD_POS = {'VERB', 'AUX', 'ADV', 'DET', 'PRON', 'ADP', 'CCONJ', 'SCONJ', 'INTJ', 'NUM', 'ADJ'}
+# A capitalized single word that the book also writes in lowercase this often
+# is an ordinary word at a sentence start ("Cubo", "Asunto", "El sol").
+_LOWERCASE_MENTIONS = 3
+
+
+def clean_for_ner(text):
+    """Text for the entity search without Markdown noise: the dialogue dash
+    "---" becomes a spaced "—", emphasis asterisks and code ticks go."""
+    return _DIALOGUE_DASH_RE.sub(' — ', text).replace('*', '').replace('`', '')
+
+
+def lowercase_counts(doc):
+    """{word: number of its all-lowercase mentions} of a spaCy doc."""
+    if not hasattr(type(doc), '__iter__'):
+        return Counter()
+    return Counter(token.text for token in doc if token.is_lower)
+
+
+def is_common_word_entity(ent, lower_counts):
+    """Whether a one-word entity is an ordinary word, not a name: its part of
+    speech is a verb, adverb, adjective, determiner... (languages whose model
+    has no tagger give an empty pos_ and keep the entity), or the book writes
+    the same word in lowercase _LOWERCASE_MENTIONS times or more. The
+    capitalization alone decides nothing in Spanish, French or Portuguese
+    dialogue, where every line begins after a dash. A many-word entity goes
+    when it starts or ends with a verb, adverb or pronoun (_CLAUSE_POS)."""
+    if not hasattr(type(ent), '__iter__'):
+        return False
+    if any(c in ent.text for c in _SENTENCE_MARKS):
+        return True  # "¿Por qué?", "¿Qué": a question, not a name
+    tokens = list(ent)
+    if len(tokens) > 1:
+        # "Recordó el Cubo": the model takes the verb at the start into the span
+        edge = {getattr(tokens[0], 'pos_', ''), getattr(tokens[-1], 'pos_', '')}
+        return bool(edge & _CLAUSE_POS)
+    if len(tokens) != 1:
+        return False
+    token = tokens[0]
+    if token.text.islower():
+        return True  # a name of a language with case starts with a capital ("jamás", "sofá", "html")
+    if not token.text.istitle() and not token.text.isupper():
+        return False  # no case (zh, ja, ko, th) or a mixed-case name (iPhone): the rules below need capitals
+    if getattr(token, 'pos_', '') in _COMMON_WORD_POS:
+        return True
+    return lower_counts.get(token.text.lower(), 0) >= _LOWERCASE_MENTIONS
+
+
 def _without_leading_articles(ent) -> str:
     """ent.text without the articles spaCy sometimes takes into the span
     ("a Jain", "the platform AI", "l'Empire", "der Kaiser", 一个吉恩人): the
@@ -264,14 +321,16 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
         for i, chunk in enumerate(text_chunks):
             try:
                 # We only need NER here, so we can disable parser and lemmatizer to save time and avoid warnings
-                doc = nlp(chunk, disable=_ner_disabled_pipes(lang))
+                doc = nlp(clean_for_ner(chunk), disable=_ner_disabled_pipes(lang))
+                lower_counts = lowercase_counts(doc)
                 # No vector_norm filter here: languages with sparse word-vector
                 # coverage (e.g. Korean, where particles attach to the entity
                 # surface form) would have every entity's vector_norm come out
                 # at 0, silently dropping the entire NER result.
                 ents.extend([
                     (entity_text(ent), _normalize_label(ent.label_))
-                    for ent in doc.ents if ent.label_ in NER_CATEGORIES
+                    for ent in doc.ents
+                    if ent.label_ in NER_CATEGORIES and not is_common_word_entity(ent, lower_counts)
                 ])
 
                 if config.debug:

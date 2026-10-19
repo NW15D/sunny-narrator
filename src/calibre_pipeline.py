@@ -142,6 +142,10 @@ _HTML_UNWRAP_TAGS = ('span', 'div', 'font', 'section', 'article', 'header', 'foo
 _PANDOC_MD_FORMAT = (
     'markdown-raw_html-native_divs-native_spans'
     '-fenced_divs-bracketed_spans-link_attributes-header_attributes'
+    # -smart: the writer keeps "—" and "…" as written instead of "---" and
+    # "\...". Spanish, French and Portuguese dialogue opens with the dash, and
+    # "---Jan," glued a name to it in the dictionary and in the prompts.
+    '-smart'
 )
 
 # The credit of the AI translator (src.utils, issue #65): --book-producer,
