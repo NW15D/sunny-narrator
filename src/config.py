@@ -300,11 +300,6 @@ class Config:
         # subprocess is killed instead of hanging forever.
         self.pandoc_timeout = _parse_numeric_env('PANDOC_TIMEOUT', 900, cast=int)
         self.calibre_timeout = _parse_numeric_env('CALIBRE_TIMEOUT', 1800, cast=int)
-        # MAX_FAILED_CHUNK_RATIO: fraction of failed translation chunks above
-        # which translate_chunks logs an ERROR (Calibre pipeline). Reporting is
-        # non-blocking: the book is still assembled with the original text in
-        # the failed places; any failure always produces at least a warning.
-        self.max_failed_chunk_ratio = _parse_numeric_env('MAX_FAILED_CHUNK_RATIO', 0.0, cast=float)
         # DEBUG_HTTP: when off (default), suppresses noisy DEBUG logging from
         # pypandoc/httpx/httpcore/openai even when DEBUG=on, and stops pypandoc
         # from double-logging (it attaches its own handler and propagates).

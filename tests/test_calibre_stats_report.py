@@ -29,7 +29,6 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import src.utils as ut
-import src.calibre_pipeline as cp
 from src.utils import TranslationMetrics, print_translation_report
 
 
@@ -65,22 +64,14 @@ def test_translate_chunks_fills_stats_out():
     assert stats.total_target_len == len("перевод раз")
 
 
-def test_translate_chunks_stats_out_counts_failures(monkeypatch):
-    from src.calibre_pipeline import translate_chunks, TranslationStats
-
-    # Allow the run to finish despite a 100% failure rate, so we can inspect
-    # stats_out afterwards (translate_chunks otherwise raises before filling
-    # it — see the threshold check right above where stats_out gets set).
-    monkeypatch.setattr(cp.config, 'max_failed_chunk_ratio', 1.0)
+def test_translate_chunks_stops_on_a_chunk_that_cannot_be_translated():
+    from src.calibre_pipeline import translate_chunks, TranslationStats, ChunkTranslationError
 
     stats = TranslationStats()
     with patch('src.utils._pipeline.execute', side_effect=RuntimeError("LLM down")), \
          patch('time.sleep'):  # skip the real retry backoff delays
-        result = translate_chunks("Hello world", max_chunk_size=1000, stats_out=stats)
-
-    assert stats.failed_chunks == 1
-    assert stats.total_chunks == 1
-    assert result == "Hello world"  # kept as original text on failure
+        with pytest.raises(ChunkTranslationError, match="chunk 1 of 1"):
+            translate_chunks("Hello world", max_chunk_size=1000, stats_out=stats)
 
 
 # ---------------------------------------------------------------------------

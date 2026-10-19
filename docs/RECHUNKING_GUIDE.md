@@ -28,6 +28,15 @@ writes every paragraph as one line (`--wrap=none`), so a paragraph longer than
 a chunk is cut at sentence ends; the next piece of a quote or a list item
 keeps its `> ` or indent.
 
+## 🛑 A chunk that cannot be translated
+
+A chunk that fails (a truncated or malformed answer, an empty result) is split
+in two and each half is translated again, down to 3 levels. If it still fails
+(Calibre pipeline), the run stops with an error (`ChunkTranslationError`, exit
+code 1) naming the chunk; the book is not built with a hole of untranslated
+text. The chunks before it are saved in the checkpoint, so the next run
+resumes from the failed one. `MAX_FAILED_CHUNK_RATIO` no longer exists.
+
 ## 🎯 Length check
 
 ```

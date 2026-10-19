@@ -149,7 +149,6 @@ name — the ISO code of `TARGET_LANG` (`russian` and `ru` both give `ru`), e.g.
 | `PANDOC_BATCH_CHARS` | `200000` | Markdown → HTML conversion batch size |
 | `PANDOC_TIMEOUT` | `900` | Seconds before a pandoc batch is killed |
 | `CALIBRE_TIMEOUT` | `1800` | Seconds before `ebook-convert` is killed |
-| `MAX_FAILED_CHUNK_RATIO` | `0.0` | Share of failed chunks allowed before the pipeline aborts |
 
 ---
 

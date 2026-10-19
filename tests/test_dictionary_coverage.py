@@ -207,14 +207,10 @@ def test_calibre_resume_keeps_terms_found_before_the_crash(tmp_path, monkeypatch
         kw['candidate_sink'].append(_term("spidergun", "паукопушка"))
         return "перевод", "synopsis"
 
-    # tc-014: a failed chunk is non-blocking now — the run assembles the book
-    # (original text kept for chunk 2) instead of raising, and the failed chunk
-    # is still not persisted to the checkpoint.
-    with patch.object(cp, 'translate_chunk', side_effect=crash_on_chunk_2):
-        result = cp.translate_chunks("ignored", book_path=str(book),
-                                     checkpoint_file=checkpoint,
-                                     remove_on_success=False)
-    assert chunks[1] in result
+    with patch.object(cp, 'translate_chunk', side_effect=crash_on_chunk_2), \
+            pytest.raises(RuntimeError, match="could not be translated"):
+        cp.translate_chunks("ignored", book_path=str(book), checkpoint_file=checkpoint,
+                            remove_on_success=False)
     saved = json.load(open(checkpoint, encoding="utf-8"))
     assert [c['source'] for c in saved['extra']['session_terms']] == ["spidergun"]
 

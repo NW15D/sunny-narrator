@@ -148,13 +148,10 @@ _PANDOC_MD_FORMAT = (
 # --comments (credit_comment) and the title page.
 _TRANSLATOR_CREDIT = CREDIT_LINE
 
-# tc-011 (decision e): default share of failed translation chunks above which
-# translate_chunks() logs an error and records the breach in the run stats —
-# never blocking, the book is still assembled with the original text in the
-# failed places. MAX_FAILED_CHUNK_RATIO still configures this; a missing or
-# zero config value falls back to this default (the old C11 behavior treated
-# 0.0 as "abort on any failure"; superseded by the tc-011 decision).
-_DEFAULT_MAX_FAILED_CHUNK_RATIO = 0.1
+class ChunkTranslationError(RuntimeError):
+    """A chunk could not be translated, also after splitting it into smaller
+    parts: the run stops (app.py exit code 1, no traceback)."""
+
 
 @dataclass
 class TranslationStats:
@@ -171,14 +168,6 @@ class TranslationStats:
     total_target_len: int = 0
     total_chunks: int = 0
     failed_chunks: int = 0
-    # tc-011: which chunks failed (1-based numbers), their original sizes in
-    # chars, and the threshold status — so callers/reports can act on the
-    # failures without re-parsing logs.
-    failed_chunk_ids: List[int] = field(default_factory=list)
-    failed_chunk_sizes: List[int] = field(default_factory=list)
-    failed_ratio: float = 0.0
-    max_failed_ratio: float = 0.0
-    threshold_exceeded: bool = False
 
 
 @dataclass
@@ -1021,7 +1010,6 @@ def translate_chunks(
     translated_parts = []
     outline_text = ""  # Context for next chunk
     failed_chunks = 0  # Track chunks that failed translation
-    failed_chunks_info: list = []  # tc-011: (1-based chunk number, original chars)
 
     # D5: checkpoint/resume support (per-chunk persistence)
     checkpoint_mgr = CheckpointManager(checkpoint_file) if checkpoint_file else None
@@ -1167,40 +1155,36 @@ def translate_chunks(
                 sequencer.mark(COMMITTED, i)
 
     def commit_chunk(i, chunk, translation, candidates, drafted):
-        nonlocal failed_chunks, failed_chunks_info, total_source_len, total_target_len
-        chunk_failed = False  # H3: failed chunks must not advance the checkpoint
-        if translation is not None:
-            # Validate translation length
-            is_valid, percent_diff, should_split = validate_translation_length(
-                chunk, translation, f"chunk_{i+1}"
-            )
-            
-            if not is_valid:
-                logger.warning(f"Chunk {i+1} length validation failed ({percent_diff:.1f}% diff)")
-            
-            # M7: warn when translation is abnormally large and should be rechunked
-            if should_split:
-                logger.warning(
-                    f"Chunk {i+1} translation is {percent_diff:.1f}% larger than source "
-                    f"— consider reducing --max-chunk-size for better quality"
-                )
-            
-            # Fallback: if translation is empty, keep original
-            if not translation or not translation.strip():
-                print(f"Empty translation for chunk {i + 1}, keeping original")
-                translation = chunk
-                failed_chunks += 1
-                failed_chunks_info.append((i + 1, len(chunk)))
-                chunk_failed = True
-        else:
-            # All retries exhausted
-            logger.error(f"All retries exhausted for chunk {i + 1}, keeping original")
-            translation = chunk
-            failed_chunks += 1
-            failed_chunks_info.append((i + 1, len(chunk)))
-            chunk_failed = True
+        nonlocal total_source_len, total_target_len
+        # translate_chunk has already split a failing chunk in two (down to
+        # MAX_DEPTH) and process_chunk retried it: what is left cannot be
+        # translated. The run stops, the book is not built with a hole of
+        # untranslated text; the checkpoint holds the chunks before it, so
+        # the next run resumes here.
+        if translation is None or not translation.strip():
+            logger.error(f"Chunk {i + 1}/{total_chunks} ({len(chunk):,} chars) failed even after "
+                         f"splitting it in two")
+            raise ChunkTranslationError(
+                f"chunk {i + 1} of {total_chunks} ({len(chunk):,} chars) could not be translated, "
+                f"also after splitting it into smaller parts. The translation is stopped; the "
+                f"chunks before it are saved, a new run resumes from this one. See the log for "
+                f"the cause of the failure (the LLM answer, the model, MAX_LEN_CHUNK).")
 
-        if candidates and not chunk_failed and not drafted and vocab_manager is not None:
+        # Validate translation length
+        is_valid, percent_diff, should_split = validate_translation_length(
+            chunk, translation, f"chunk_{i+1}"
+        )
+        if not is_valid:
+            logger.warning(f"Chunk {i+1} length validation failed ({percent_diff:.1f}% diff)")
+
+        # M7: warn when translation is abnormally large and should be rechunked
+        if should_split:
+            logger.warning(
+                f"Chunk {i+1} translation is {percent_diff:.1f}% larger than source "
+                f"— consider reducing --max-chunk-size for better quality"
+            )
+
+        if candidates and not drafted and vocab_manager is not None:
             try:
                 vocab_manager.record_dictionary_candidates(candidates)
             except OSError as e:
@@ -1223,7 +1207,7 @@ def translate_chunks(
         # last_chunk at the last successfully translated chunk, so a resumed run
         # starts at the failed chunk and retries it through the real LLM pipeline
         # instead of silently shipping the untranslated original text.
-        if checkpoint_mgr is not None and not chunk_failed:
+        if checkpoint_mgr is not None:
             saved_outline, saved_terms = draft_state.pop(i, (
                 outline_text, vocab_manager.session_candidates if vocab_manager is not None else []))
             checkpoint_mgr.save(
@@ -1268,32 +1252,6 @@ def translate_chunks(
 
     print()  # New line after progress
     
-    # Report failures (tc-011, decision e): never silent, never blocking.
-    fail_ratio = (failed_chunks / total_chunks) if total_chunks else 0.0
-    max_failed_ratio = getattr(config, 'max_failed_chunk_ratio', None)
-    if max_failed_ratio is None or float(max_failed_ratio) <= 0:
-        max_failed_ratio = _DEFAULT_MAX_FAILED_CHUNK_RATIO
-    max_failed_ratio = float(max_failed_ratio)
-    threshold_exceeded = failed_chunks > 0 and fail_ratio > max_failed_ratio
-    if failed_chunks > 0:
-        fail_pct = fail_ratio * 100
-        # Name number + original size of every failed chunk: those fragments
-        # ship as the untranslated original, so they must be locatable.
-        details = ', '.join(f"chunk {num} ({size:,} chars)"
-                            for num, size in failed_chunks_info)
-        logger.warning(
-            f"⚠️ {failed_chunks}/{total_chunks} chunks failed to translate "
-            f"({fail_pct:.1f}%) — original kept for: {details}"
-        )
-        if threshold_exceeded:
-            # Recorded in the run report, but NON-blocking: the book is still
-            # assembled with the original text in the failed places.
-            logger.error(
-                f"⚠️ {failed_chunks}/{total_chunks} chunks ({fail_pct:.1f}%) untranslated "
-                f"exceeds threshold {max_failed_ratio:.0%}; assembling the book with "
-                f"the original text in those places."
-            )
-    
     # All chunks done: drop the checkpoint so the next run starts fresh,
     # unless the caller wants to keep it around until some later step (e.g.
     # run_pipeline keeps it until build_output/validate_output succeed, so a
@@ -1306,11 +1264,6 @@ def translate_chunks(
         stats_out.total_target_len = total_target_len
         stats_out.total_chunks = total_chunks
         stats_out.failed_chunks = failed_chunks
-        stats_out.failed_chunk_ids = [num for num, _ in failed_chunks_info]
-        stats_out.failed_chunk_sizes = [size for _, size in failed_chunks_info]
-        stats_out.failed_ratio = fail_ratio
-        stats_out.max_failed_ratio = max_failed_ratio
-        stats_out.threshold_exceeded = threshold_exceeded
 
     # Reassemble translated text
     translated_text = '\n\n'.join(translated_parts)
@@ -2163,11 +2116,6 @@ def _dump_translation(
             'total_target_len': stats.total_target_len,
             'total_chunks': stats.total_chunks,
             'failed_chunks': stats.failed_chunks,
-            # tc-011: persisted so a resumed build run reports the same failures
-            'failed_chunk_ids': list(stats.failed_chunk_ids),
-            'failed_ratio': stats.failed_ratio,
-            'max_failed_ratio': stats.max_failed_ratio,
-            'threshold_exceeded': stats.threshold_exceeded,
         },
     }
     _atomic_write_text(meta_dump_path, json.dumps(payload, ensure_ascii=False, indent=2))
@@ -2329,10 +2277,6 @@ def run_pipeline(
                     stats_out.total_target_len = dumped_stats.get('total_target_len', 0)
                     stats_out.total_chunks = dumped_stats.get('total_chunks', 0)
                     stats_out.failed_chunks = dumped_stats.get('failed_chunks', 0)
-                    stats_out.failed_chunk_ids = list(dumped_stats.get('failed_chunk_ids', []))
-                    stats_out.failed_ratio = dumped_stats.get('failed_ratio', 0.0)
-                    stats_out.max_failed_ratio = dumped_stats.get('max_failed_ratio', 0.0)
-                    stats_out.threshold_exceeded = bool(dumped_stats.get('threshold_exceeded', False))
                 logger.info(
                     f"Steps 1-3 skipped: reusing translated Markdown from "
                     f"{translated_dump_path} (newer than {input_path}). "
@@ -2430,11 +2374,6 @@ def run_pipeline(
             stats_out.total_target_len = translate_stats.total_target_len
             stats_out.total_chunks = translate_stats.total_chunks
             stats_out.failed_chunks = translate_stats.failed_chunks
-            stats_out.failed_chunk_ids = list(translate_stats.failed_chunk_ids)
-            stats_out.failed_chunk_sizes = list(translate_stats.failed_chunk_sizes)
-            stats_out.failed_ratio = translate_stats.failed_ratio
-            stats_out.max_failed_ratio = translate_stats.max_failed_ratio
-            stats_out.threshold_exceeded = translate_stats.threshold_exceeded
 
         # Persist the finished translation before attempting to build the
         # output file — see _dump_translation's docstring.

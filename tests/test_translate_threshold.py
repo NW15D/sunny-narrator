@@ -1,4 +1,4 @@
-"""B7/C11: any untranslated chunk must fail the translation by default."""
+"""A chunk that cannot be translated, also after splitting it, stops the run."""
 import os
 import sys
 
@@ -19,7 +19,7 @@ TRANSLATIONS = {
 }
 
 
-def test_single_failed_chunk_does_not_abort(monkeypatch, caplog):
+def test_single_failed_chunk_aborts(monkeypatch):
     import src.calibre_pipeline as cp
 
     monkeypatch.setattr(cp, '_split_into_chunks_md', lambda *a, **kw: CHUNKS)
@@ -46,15 +46,5 @@ def test_single_failed_chunk_does_not_abort(monkeypatch, caplog):
     monkeypatch.setattr('src.utils.time.sleep', lambda s: None)
     monkeypatch.setattr(cp.time, 'sleep', lambda s: None)
 
-    # tc-014: a failed chunk no longer aborts the run. The book is still
-    # assembled — the failed place keeps the original text — and the failure
-    # is reported through logging (warning always, error above the ratio).
-    import logging
-    with caplog.at_level(logging.WARNING, logger='src.calibre_pipeline'):
-        result = cp.translate_chunks('some text to translate')
-
-    assert CHUNKS[0] in result                      # failed chunk: original kept
-    for translated in TRANSLATIONS.values():         # everything else translated
-        assert translated in result
-    messages = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
-    assert any('chunks failed to translate' in m for m in messages)
+    with pytest.raises(cp.ChunkTranslationError, match='could not be translated'):
+        cp.translate_chunks('some text to translate')
