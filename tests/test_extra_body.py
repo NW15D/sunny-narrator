@@ -17,7 +17,7 @@ from src.utils import LLMRole
 
 
 def test_thinking_is_off_by_default(monkeypatch):
-    for name in ('NOTHINK_TRANSLATE', 'NOTHINK_PROOFREAD', 'NOTHINK', 'NOTHINK2'):
+    for name in ('NOTHINK_TRANSLATE', 'NOTHINK_PROOFREAD', 'NOTHINK'):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(config_module, 'load_dotenv', lambda *a, **kw: None)
     cfg = config_module.Config()

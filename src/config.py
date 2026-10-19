@@ -163,7 +163,7 @@ class Config:
         self.timeout_translate = _parse_numeric_env('TIMEOUT_TRANSLATE', os.getenv('TIMEOUT', 6000), cast=int)
         # Thinking is off unless asked for: the stages expect the answer
         # itself, and a hosted Qwen 3.6 thinks by default (paid tokens)
-        self.nothink_translate = _parse_bool_env('NOTHINK_TRANSLATE', os.getenv('NOTHINK2', 'true'))
+        self.nothink_translate = _parse_bool_env('NOTHINK_TRANSLATE', 'true')
         # EXTRA_BODY_*: a JSON object added to every request body, e.g. the
         # OpenRouter provider choice {"provider": {"require_parameters": true}}
         self.extra_body_translate = _parse_json_env('EXTRA_BODY_TRANSLATE')
