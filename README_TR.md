@@ -36,14 +36,14 @@ Modeller varsayılan olarak bulutta çalışır — GPU ve yerel LLM sunucusu ge
    sudo apt install calibre pandoc     # EPUB/DOCX/PDF; macOS: brew install --cask calibre && brew install pandoc
    ```
 2. **Anahtar ve kitap** — [openrouter.ai/keys](https://openrouter.ai/keys) adresinden bir anahtar oluşturun ve birkaç dolar yükleyin. `cp env.cloud.sample .env` yapın, anahtarı `API_KEY_TRANSLATE` ve `API_KEY_PROOFREAD` alanlarına, kitabı `FILE=books/mybook.epub` satırına, dilleri `SOURCE_LANG` / `TARGET_LANG` alanlarına, okurların ülkesini `COUNTRY` alanına yazın (`México` veya `España`, `Brasil` veya `Portugal`: çeviri ülkenin sözcük dağarcığını ve hitap biçimlerini izler — İspanyolca, Portekizce, Çince ve birçok ülkede konuşulan diğer diller için zorunludur).
-3. **Birinci çalıştırma — sözlük.** `python app.py` kitaptaki isimleri ve terimleri bulur (kaynak dilin spaCy modeli ilk kullanımda indirilir), bunları çevirir, `books/mybook_en.dic` dosyasını yazar (`en` — `TARGET_LANG` kodu: her hedef dilin kendi sözlüğü vardır) ve durur. Sözlüğü gözden geçirin: çeviriler, kategoriler, karakterlerin cinsiyeti — `books/mybook_en.dictcheck.txt` kitabın netleştirmediği noktaları listeler.
-4. **İkinci çalıştırma — kitap.** `python app.py` `books/mybook_en.dic` sözlüğünü kendisi bulur ve kitabın tamamını çevirir; sonuç kaynağın yanında, `books/<başlık>_<dil>.epub`. Keyifli okumalar.
+3. **Birinci çalıştırma — sözlük.** `python app.py` kitaptaki isimleri ve terimleri bulur (kaynak dilin spaCy modeli ilk kullanımda indirilir), bunları çevirir, `books/mybook_fr.dic` dosyasını yazar (`fr` — `TARGET_LANG` kodu: her hedef dilin kendi sözlüğü vardır) ve durur. Sözlüğü gözden geçirin: çeviriler, kategoriler, karakterlerin cinsiyeti — `books/mybook_fr.dictcheck.txt` kitabın netleştirmediği noktaları listeler.
+4. **İkinci çalıştırma — kitap.** `python app.py` `books/mybook_fr.dic` sözlüğünü kendisi bulur ve kitabın tamamını çevirir; sonuç kaynağın yanında, `books/<başlık>_<dil>.epub`. Keyifli okumalar.
 
 450 sayfalık bir roman yaklaşık 1 $ tutar (gerçek bir çalıştırmanın token sayısından tahmin; kesin tutar OpenRouter etkinlik sayfasındadır). `env.cloud.sample` modellerin akıl yürütmesini kapatır ve yalnızca isteğin tüm parametrelerini (JSON modu) destekleyen sağlayıcıları kullanır.
 
 **Kusursuz bir kitabın yolu — önce sözlük.** Çevirinin kalitesini en çok sözlük belirler: her parça isimleri, terimleri ve karakterlerin cinsiyetini ondan alır, bu yüzden sözlükteki her düzeltme her sayfada görünür. En iyi sonuç için uzun yolu izleyin:
 1. Birinci çalıştırmadan sonra sözlüğü büyüten hızlı bir taslak: `FAST_TRANS=true DICT_AUTO_SAVE=true python app.py` — özet aşaması tüm kitabın isimlerini ve uydurma terimlerini ekler, boş cinsiyetleri doldurur (mevcut satırlar asla yeniden yazılmaz); tam çeviriden yaklaşık 2,5 kat daha hızlıdır.
-2. Sözlüğü kontrol edin: `python app.py dict clean books/mybook_en.dic` ve `python app.py dict review books/mybook.epub --dic books/mybook_en.dic` (yanına temizlenmiş / gözden geçirilmiş bir kopya ve bir rapor yazılır), ardından kalanları elle düzeltin — önce cinsiyetleri.
+2. Sözlüğü kontrol edin: `python app.py dict clean books/mybook_fr.dic` ve `python app.py dict review books/mybook.epub --dic books/mybook_fr.dic` (yanına temizlenmiş / gözden geçirilmiş bir kopya ve bir rapor yazılır), ardından kalanları elle düzeltin — önce cinsiyetleri.
 3. Hazır sözlükle baştan çevirin: `python app.py --fresh`.
 
 **Bulut yerine yerel modeller:** `env.sample` (llama.cpp, Ollama, LM Studio; 16–24 GB VRAM); Docker imajları — sonraki bölüm. **Yalnızca taslak mı?** `FAST_TRANS=true`.
@@ -63,7 +63,7 @@ cp env.sample .env
 # .env dosyasını düzenleyin: API anahtarları, MODEL_*, SOURCE_LANG/TARGET_LANG, FILE=books/mybook.fb2
 cp mybook.fb2 books/
 
-# 3. Çalıştırın — ilk geçiş books/mybook_en.dic oluşturur; inceleyin ve çeviri için tekrar çalıştırın
+# 3. Çalıştırın — ilk geçiş books/mybook_fr.dic oluşturur; inceleyin ve çeviri için tekrar çalıştırın
 docker run --rm --gpus all \
   --env-file .env \
   -v "$PWD/books:/app/books" \
@@ -89,9 +89,9 @@ MODEL_TRANSLATE=Gemma4-26B              # çeviri LLM'i (Gemma 4)
 API_BASE_PROOFREAD=http://localhost:11434/v1
 MODEL_PROOFREAD=Qwen36-35B              # düzelti LLM'i (Qwen 3.6)
 FILE=books/mybook.fb2
-SOURCE_LANG=fr
-TARGET_LANG=en
-COUNTRY=United States
+SOURCE_LANG=en
+TARGET_LANG=fr
+COUNTRY=France
 OUTPUT_FORMAT=fb2                       # FB2/TXT için fb2|epub; EPUB/DOCX/PDF için epub|docx|pdf
 ```
 

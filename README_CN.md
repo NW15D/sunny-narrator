@@ -36,14 +36,14 @@
    sudo apt install calibre pandoc     # EPUB/DOCX/PDF；macOS: brew install --cask calibre && brew install pandoc
    ```
 2. **密钥和书** —— 在 [openrouter.ai/keys](https://openrouter.ai/keys) 创建密钥并充值几美元。`cp env.cloud.sample .env`，把密钥填入 `API_KEY_TRANSLATE` 和 `API_KEY_PROOFREAD`，书填入 `FILE=books/mybook.epub`，语言填入 `SOURCE_LANG` / `TARGET_LANG`，读者所在国家填入 `COUNTRY`（`México` 或 `España`、`Brasil` 或 `Portugal`、`中国` 或 `台灣`：译文遵循该国的词汇和称谓习惯 —— 西班牙语、葡萄牙语、中文等多国通用的语言必须填写）。
-3. **第一次运行 —— 词典。** `python app.py` 找出书中的人名和术语（源语言的 spaCy 模型在首次使用时自动下载），翻译它们，写入 `books/mybook_en.dic`（`en` 是 `TARGET_LANG` 的代码：每种目标语言各有自己的词典）后停止。请检查词典：译名、类别、人物性别 —— `books/mybook_en.dictcheck.txt` 列出了书中无法确定的内容。
-4. **第二次运行 —— 整本书。** `python app.py` 自动使用 `books/mybook_en.dic` 翻译整本书；结果保存在原文件旁边，`books/<书名>_<语言>.epub`。尽情阅读吧。
+3. **第一次运行 —— 词典。** `python app.py` 找出书中的人名和术语（源语言的 spaCy 模型在首次使用时自动下载），翻译它们，写入 `books/mybook_fr.dic`（`fr` 是 `TARGET_LANG` 的代码：每种目标语言各有自己的词典）后停止。请检查词典：译名、类别、人物性别 —— `books/mybook_fr.dictcheck.txt` 列出了书中无法确定的内容。
+4. **第二次运行 —— 整本书。** `python app.py` 自动使用 `books/mybook_fr.dic` 翻译整本书；结果保存在原文件旁边，`books/<书名>_<语言>.epub`。尽情阅读吧。
 
 一部 450 页的小说约 1 美元（根据一次真实运行的 token 数估算；准确费用见 OpenRouter 的 Activity 页面）。`env.cloud.sample` 关闭了模型的思考模式，并只使用支持请求全部参数（JSON 模式）的服务商。
 
 **通往完美译本的路 —— 先做词典。** 词典对翻译质量的影响最大：每个片段都从中获取人名、术语和人物性别，所以词典里的每处修改都会体现在每一页上。想要最好的结果，请走更长的路：
 1. 第一次运行后，用快速草稿扩充词典：`FAST_TRANS=true DICT_AUTO_SAVE=true python app.py` —— 概要阶段会加入整本书的人名和自创术语，并补全空缺的性别（已有条目不会被改写）；比完整翻译快约 2.5 倍。
-2. 检查词典：`python app.py dict clean books/mybook_en.dic` 和 `python app.py dict review books/mybook.epub --dic books/mybook_en.dic`（旁边会生成清理 / 审查后的副本和报告），再手动修正剩下的问题 —— 先看性别。
+2. 检查词典：`python app.py dict clean books/mybook_fr.dic` 和 `python app.py dict review books/mybook.epub --dic books/mybook_fr.dic`（旁边会生成清理 / 审查后的副本和报告），再手动修正剩下的问题 —— 先看性别。
 3. 用完善的词典从头翻译：`python app.py --fresh`。
 
 **用本地模型代替云端：** `env.sample`（llama.cpp、Ollama、LM Studio；16–24 GB 显存）；Docker 镜像见下一节。**只要草稿？** `FAST_TRANS=true`。
@@ -63,7 +63,7 @@ cp env.sample .env
 # 编辑 .env：API 密钥、MODEL_*、SOURCE_LANG/TARGET_LANG、FILE=books/mybook.fb2
 cp mybook.fb2 books/
 
-# 3. 运行 —— 第一遍生成 books/mybook_en.dic，检查后再次运行即可翻译
+# 3. 运行 —— 第一遍生成 books/mybook_fr.dic，检查后再次运行即可翻译
 docker run --rm --gpus all \
   --env-file .env \
   -v "$PWD/books:/app/books" \
@@ -89,9 +89,9 @@ MODEL_TRANSLATE=Gemma4-26B              # 翻译 LLM（Gemma 4）
 API_BASE_PROOFREAD=http://localhost:11434/v1
 MODEL_PROOFREAD=Qwen36-35B              # 审校 LLM（Qwen 3.6）
 FILE=books/mybook.fb2
-SOURCE_LANG=fr
-TARGET_LANG=en
-COUNTRY=United States
+SOURCE_LANG=en
+TARGET_LANG=fr
+COUNTRY=France
 OUTPUT_FORMAT=fb2                       # FB2/TXT 用 fb2|epub；EPUB/DOCX/PDF 用 epub|docx|pdf
 ```
 

@@ -198,7 +198,7 @@ class Config:
         # via --dictionary (see app.py argparse block).
         self.dictionary = os.getenv('DICTIONARY', '') or None
         self.source_lang = os.getenv('SOURCE_LANG', 'english')
-        self.target_lang = os.getenv('TARGET_LANG', 'russian')
+        self.target_lang = os.getenv('TARGET_LANG', 'french')
         
         # Mapping for default nermodel based on source_lang (largest non-transformer models) for dictionary
         self.lang_model_map = {

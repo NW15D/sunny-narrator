@@ -1,3 +1,11 @@
+import os
+
+# The tests were written for English -> Russian; the code defaults are
+# English -> French. Pin the pair before src.config is first imported
+# (tests/test_defaults.py checks the real defaults on a fresh Config).
+os.environ.setdefault('SOURCE_LANG', 'english')
+os.environ.setdefault('TARGET_LANG', 'russian')
+
 import pytest
 
 

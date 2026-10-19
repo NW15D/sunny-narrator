@@ -9,6 +9,7 @@ All notable changes to Sunny Narrator.
 - A call cut off by `max_tokens` is written to `llm_calls_*.log` (stage `<stage>:length`) before the chunk is split, and its tokens count as retry tokens; before, it was neither logged nor counted.
 
 ### Changed
+- Defaults: `SOURCE_LANG=english`, `TARGET_LANG=french`, `COUNTRY` by the language (`France`); the samples and the READMEs use English → French, `books/mybook_fr.dic`. Before, the target defaulted to Russian.
 - `COUNTRY` (the country of the readers) is set in `env.sample` and `env.cloud.sample`, asked for in every README, `AGENTS.md` and the installation guide; a run for Spanish, Portuguese, English, French, German, Chinese or Arabic without it logs a warning (España/México, Portugal/Brasil, 中国/台灣 differ).
 - `MIXED_WORDS_WARN` (default 10) sets the WARNING level of words in two alphabets after final_edit; a lone Latin `a`/`A` in a Cyrillic text is reported as a foreign word (was whitelisted), `normalize_markdown_headings` leaves fenced code, `#1` and `#!` alone, and a lone `#` line is not counted as a heading.
 - Calibre pipeline: a chunk that fails even after splitting it in two stops the run with an error (exit code 1) and the number of the chunk; before, the book was built with the original text in its place and the run failed only at the end. The setting `MAX_FAILED_CHUNK_RATIO` is removed.
