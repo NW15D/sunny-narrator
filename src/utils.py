@@ -114,6 +114,46 @@ class LLMAccessError(PipelineAborted):
 
 # The API errors no retry can fix
 _FATAL_API_ERRORS = (openai.AuthenticationError, openai.PermissionDeniedError, openai.NotFoundError)
+# A 403 that is the answer to one chunk, not to the key: OpenRouter's "Your chosen
+# model requires moderation and your input was flagged". Such a chunk goes through
+# the ordinary retry and split, and the run stops on it with its number.
+_MODERATION_403 = re.compile(r'moderation|flagged', re.IGNORECASE)
+
+
+def _is_fatal_api_error(error: Exception) -> bool:
+    if not isinstance(error, _FATAL_API_ERRORS):
+        return False
+    return not (isinstance(error, openai.PermissionDeniedError) and _MODERATION_403.search(str(error)))
+
+
+# The request fields beyond the OpenAI API: a strict server answers 400 naming one
+# ("Unrecognized request argument supplied: chat_template_kwargs"). The request is
+# repeated without them, and the role does not send them any more.
+_OPTIONAL_FIELDS = ('chat_template_kwargs', 'reasoning', 'presence_penalty')
+_rejected_fields = {}
+
+
+def _drop_rejected_fields(comp_kwargs: dict, role: 'LLMRole') -> dict:
+    """comp_kwargs without the optional fields this role's server has rejected."""
+    rejected = _rejected_fields.get(role.value, ())
+    if not rejected:
+        return comp_kwargs
+    comp_kwargs = dict(comp_kwargs)
+    if 'presence_penalty' in rejected:
+        comp_kwargs.pop('presence_penalty', None)
+    body = {k: v for k, v in (comp_kwargs.get('extra_body') or {}).items() if k not in rejected}
+    comp_kwargs.pop('extra_body', None)
+    if body:
+        comp_kwargs['extra_body'] = body
+    return comp_kwargs
+
+
+def _rejected_optional_fields(error: Exception) -> set:
+    """All the optional request fields when a 400 answer names one of them (a server
+    that rejects one takes none of them), empty for any other error."""
+    if not isinstance(error, openai.BadRequestError):
+        return set()
+    return set(_OPTIONAL_FIELDS) if any(field in str(error) for field in _OPTIONAL_FIELDS) else set()
 
 
 def _access_error(error: Exception, role: 'LLMRole', model: str, base_url) -> LLMAccessError:
@@ -862,6 +902,7 @@ class LLMService:
         extra_body = _extra_body(role, chat_template_kwargs)
         if extra_body:
             comp_kwargs["extra_body"] = extra_body
+        comp_kwargs = _drop_rejected_fields(comp_kwargs, role)
         
         if config.debug:
             logger.debug(f"LLM Request [{role.value}]: {model}, {len(user_prompt)} chars, temp={temp:.2f}, sys_not_promt={use_sys_not_promt}, json_mode={json_mode}")
@@ -876,9 +917,16 @@ class LLMService:
             try:
                 response = client.chat.completions.create(**comp_kwargs)
                 break
-            except _FATAL_API_ERRORS as e:
-                raise _access_error(e, role, model, getattr(client, 'base_url', '')) from e
             except Exception as e:
+                if _is_fatal_api_error(e):
+                    raise _access_error(e, role, model, getattr(client, 'base_url', '')) from e
+                rejected = _rejected_optional_fields(e)
+                if rejected - _rejected_fields.get(role.value, set()):
+                    _rejected_fields.setdefault(role.value, set()).update(rejected)
+                    logger.warning(f"The {role.value} server does not take {', '.join(sorted(rejected))}: "
+                                   f"sent without them from now on ({e})")
+                    comp_kwargs = _drop_rejected_fields(comp_kwargs, role)
+                    continue
                 if attempt == max_retries - 1:
                     raise
                 wait = min(2 ** attempt * 2, 30)
@@ -1919,11 +1967,14 @@ def validate_translation_length(source_text: str, translated_text: str,
 
 def _join_text_halves(part1: str):
     """How the translations of split_text_smartly's halves go back together:
-    after a paragraph break as two paragraphs, a cut inside a paragraph (a
-    sentence end - a paragraph is one line since pandoc --wrap=none) with a
-    space, so the paragraph stays one."""
+    after a paragraph break as two paragraphs, after a single line break (a
+    list item, a table row, a line of verse) as two lines, a cut inside a
+    paragraph (a sentence end - a paragraph is one line since pandoc
+    --wrap=none) with a space, so the paragraph stays one."""
     if re.search(r'\n[ \t]*\n\s*$', part1) or not part1.strip():
         return None
+    if re.search(r'\n\s*$', part1):
+        return lambda first, second: first.rstrip() + '\n' + second.lstrip()
     return lambda first, second: first.rstrip() + ' ' + second.lstrip()
 
 
@@ -2549,10 +2600,14 @@ _JSON_ANSWER_START = re.compile(r'\{\s*"(?:translation|fixes|suggestions)"\s*:')
 
 
 def _unclosed_json_answer(text: str) -> bool:
-    """A stage's JSON answer ({"translation": ...) whose object never closes."""
+    """A stage's JSON answer ({"translation": ...) whose object never closes.
+    An answer that ends with its closing quote and brace is closed, though
+    an unescaped quote inside the text may keep _extract_json_brace from
+    finding the object: the regex fallback recovers its text."""
     # an answer cut off inside a ```json fence has no closing fence to strip
     cleaned = re.sub(r'^\s*```(?:json)?\s*', '', _strip_markdown_fences(text or ''))
-    return bool(_JSON_ANSWER_START.match(cleaned)) and not _extract_json_brace(cleaned)
+    return (bool(_JSON_ANSWER_START.match(cleaned)) and not _extract_json_brace(cleaned)
+            and not re.search(r'"\s*\}\s*$', cleaned))
 
 
 def _json_unescape(value: str) -> str:

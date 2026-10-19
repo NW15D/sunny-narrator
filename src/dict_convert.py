@@ -27,7 +27,7 @@ from pathlib import Path
 
 import openai
 
-from src import dict_clean, lexicon
+from src import dict_clean, lexicon, utils
 from src.config import Config
 
 config = Config()
@@ -93,7 +93,16 @@ def translate_batch(client, target_name, batch, source_name, hint_name):
     )
     if config.nothink_proofread:
         kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
-    text = client.chat.completions.create(**kwargs).choices[0].message.content or ""
+    try:
+        response = client.chat.completions.create(**kwargs)
+    except Exception as e:
+        # a strict server rejects a field beyond the OpenAI API: once without it
+        if not utils._rejected_optional_fields(e):
+            raise
+        kwargs.pop("presence_penalty", None)
+        kwargs.pop("extra_body", None)
+        response = client.chat.completions.create(**kwargs)
+    text = response.choices[0].message.content or ""
     m = re.search(r'\{.*\}', text, re.DOTALL)
     data = json.loads(m.group(0)) if m else {}
     result = {}
@@ -129,6 +138,9 @@ def convert(src_path: Path, code: str, batch_size: int, force: bool, client,
     target_name, source_name, hint_name = lang_name(code), lang_name(source_lang), lang_name(hint_lang)
     source_code = lexicon.lang_code(source_lang)
     out_path = converted_path(src_path, code, hint_lang)
+    if out_path.resolve() == src_path.resolve():
+        print(f"[{code}] пропуск: {src_path} уже словарь на этот язык, результат затёр бы исходник")
+        return True
     entries = parse_dic(src_path)
 
     done = {}
