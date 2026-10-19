@@ -314,26 +314,36 @@ class TranslationMetrics:
         
     def get_report(self) -> dict:
         """Generate metrics report."""
-        total = max(1, self.total_tokens + self.retry_tokens)
-        return {
-            "successful_translations": self.successful_translations,
-            "failed_translations": self.failed_translations,
-            "total_tokens": self.total_tokens,
-            "retry_tokens": self.retry_tokens,
-            "retry_percentage": (self.retry_tokens / total) * 100,
-            "rechunk_count": self.rechunk_count,
-            "language_mismatch_retries": self.language_mismatch_retries,
-            "mixed_words": self.mixed_words,
-            "mixed_words_final": self.mixed_words_final,
-            "foreign_words": self.foreign_words,
-            "gender_issues": self.gender_issues,
-            "gender_fixed": self.gender_fixed,
-            "gender_suspects": {name: gender for name, gender, *_ in self.gender_suspects()},
-        }
+        # The whole snapshot is taken under the lock: parallel workers update
+        # the counters while the report is built (DEF-N5). _suspects() (no
+        # lock of its own) is used because threading.Lock is not reentrant.
+        with self._lock:
+            total = max(1, self.total_tokens + self.retry_tokens)
+            return {
+                "successful_translations": self.successful_translations,
+                "failed_translations": self.failed_translations,
+                "total_tokens": self.total_tokens,
+                "retry_tokens": self.retry_tokens,
+                "retry_percentage": (self.retry_tokens / total) * 100,
+                "rechunk_count": self.rechunk_count,
+                "language_mismatch_retries": self.language_mismatch_retries,
+                "mixed_words": self.mixed_words,
+                "mixed_words_final": self.mixed_words_final,
+                "foreign_words": self.foreign_words,
+                "gender_issues": self.gender_issues,
+                "gender_fixed": self.gender_fixed,
+                "gender_suspects": {name: gender for name, gender, *_ in self._suspects()},
+            }
         
     def print_report(self):
         """Print formatted metrics report."""
         report = self.get_report()
+        # Iterating the Counters as they are updated can raise "dictionary
+        # changed size during iteration" or skip an entry: snapshot them
+        # under the lock once (DEF-N5)
+        with self._lock:
+            gender_by_name = self.gender_by_name.most_common(15)
+            synopsis_genders = list(self.synopsis_genders)
         
         logger.info("=" * 60)
         logger.info("TRANSLATION METRICS REPORT")
@@ -348,9 +358,9 @@ class TranslationMetrics:
         logger.info(f"Most words in two alphabets in one chunk after final_edit: {report['mixed_words_final']}")
         logger.info(f"Foreign words (other alphabet): {report['foreign_words']}")
         logger.info(f"Gender errors: {report['gender_issues']} found, {report['gender_fixed']} fixed")
-        if self.gender_by_name:
+        if gender_by_name:
             logger.info("The translation disagrees with the dictionary (check these genders in the .dic):")
-            for (name, gender), n in self.gender_by_name.most_common(15):
+            for (name, gender), n in gender_by_name:
                 logger.info(f"  {name}: the .dic says {gender}, {n} sentence(s) of the translation do not")
         suspects = self.gender_suspects()
         if suspects:
@@ -359,9 +369,9 @@ class TranslationMetrics:
             for name, gender, n, total in suspects:
                 logger.warning(f"  {name}: the .dic says {gender}; the other gender in {n} of "
                                f"{total} sentence(s)")
-        if self.synopsis_genders:
-            logger.info(f"Genders filled in from the synopsis ({len(self.synopsis_genders)}): "
-                        + ", ".join(f"{s} = {g}" for s, g in self.synopsis_genders))
+        if synopsis_genders:
+            logger.info(f"Genders filled in from the synopsis ({len(synopsis_genders)}): "
+                        + ", ".join(f"{s} = {g}" for s, g in synopsis_genders))
         logger.info("=" * 60)
 
 
@@ -482,6 +492,12 @@ def extract_dictionary_candidates(text: str, source_text: str,
         for line in (block or "").splitlines():
             parts = [p.strip().strip('"\'*-').strip() for p in line.split('|')]
             if len(parts) != (3 if category == 'PERSON' else 2):
+                # a malformed line used to vanish without a trace: the
+                # synopsis LLM wrote it, the dictionary never hears of it
+                # (DEF-N2)
+                expected = 3 if category == 'PERSON' else 2
+                logger.warning(f"Synopsis {category} candidate line dropped "
+                               f"(expected {expected} '|' fields): {line.strip()!r}")
                 continue
             source, target = parts[0], parts[1]
             gender = gender_check.normalize_gender(parts[2]) if category == 'PERSON' else ''
@@ -937,6 +953,12 @@ class LLMService:
                 wait = min(2 ** attempt * 2, 30)
                 logger.warning(f"API error (attempt {attempt+1}/{max_retries}): {e}. Retrying in {wait}s")
                 time.sleep(wait)
+        
+        # A fire-and-forget proxy can return a response with no choices: fail
+        # as a normal error the callers already handle (chunk retry), instead
+        # of a raw IndexError far from any retry path (DEF-N6)
+        if not getattr(response, 'choices', None):
+            raise ValueError("the LLM response carries no choices (empty or malformed answer)")
         
         # Debug: log full response structure
         if config.debug:
@@ -3049,11 +3071,17 @@ def _get_tiktoken_encoding(encoding_name: str = "cl100k_base"):
         return encoding
 
 def num_tokens_in_string(input_str: str, encoding_name: str = "cl100k_base") -> int:
-    """Calculate number of tokens in string."""
+    """Calculate number of tokens in string.
+
+    An unknown encoding name falls back to cl100k_base; the fallback goes
+    through the same cache, so a failed load is reported (and repeated)
+    once instead of on every call (DEF-N1)."""
     try:
         encoding = _get_tiktoken_encoding(encoding_name)
-    except Exception:
-        encoding = tiktoken.get_encoding("cl100k_base")
+    except Exception as e:
+        logger.warning(f"tiktoken encoding {encoding_name!r} is not available ({e}); "
+                       f"falling back to cl100k_base")
+        encoding = _get_tiktoken_encoding("cl100k_base")
     return len(encoding.encode(input_str))
 
 

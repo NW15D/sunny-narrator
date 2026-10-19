@@ -1,10 +1,13 @@
 """
-Calibre Pipeline - Convert EPUB/FB2 to Markdown and translate using Calibre.
+Calibre Pipeline - Convert DOCX/EPUB/PDF to Markdown and translate using Calibre.
+
+FB2 stays with the classic pipeline (the Calibre HTMLZ intermediate loses
+FB2 structure); this module raises ValueError for FB2 input (DEF-N11).
 
 This module provides functions to:
-1. Convert EPUB/FB2 to Markdown using Calibre (ebook-convert)
+1. Convert DOCX/EPUB/PDF to Markdown using Calibre (ebook-convert)
 2. Translate Markdown in chunks using existing translate_chunk
-3. Build output FB2/EPUB from translated Markdown
+3. Build output DOCX/EPUB/PDF from translated Markdown
 """
 
 __all__ = [
@@ -327,13 +330,19 @@ def extract_metadata_from_opf(opf_content: str) -> dict:
         metadata["publisher"] = pub_match.group(1).strip()
     
     # Extract ISBN (M10: validate format — only accept ISBN-10 or ISBN-13 patterns)
-    isbn_match = re.search(r'<dc:identifier[^>]*>([^<]+)</dc:identifier>', opf_content, re.IGNORECASE)
-    if isbn_match:
-        raw_isbn = isbn_match.group(1).strip()
-        # Strip common prefixes and hyphens
-        isbn_clean = re.sub(r'^urn:isbn:', '', raw_isbn, flags=re.IGNORECASE).replace('-', '').strip()
+    # N12 (owner-confirmed): the first dc:identifier is often a UUID, so scan
+    # all of them — a tagged urn:isbn wins; otherwise the first valid ISBN
+    # found anywhere in the identifier list is taken.
+    raw_isbn = None
+    for cand in re.findall(r'<dc:identifier[^>]*>([^<]+)</dc:identifier>', opf_content, re.IGNORECASE):
+        cand = cand.strip()
+        isbn_clean = re.sub(r'^urn:isbn:', '', cand, flags=re.IGNORECASE).replace('-', '').strip()
         if re.match(r'^(?:\d{9}[\dXx]|\d{13})$', isbn_clean):
-            metadata["isbn"] = raw_isbn
+            raw_isbn = cand
+            if cand.lower().startswith('urn:isbn:'):
+                break  # a tagged ISBN is unambiguous: take the first one
+    if raw_isbn:
+        metadata["isbn"] = raw_isbn
     
     # M11: decode HTML entities in all metadata fields
     import html as _html_dec
@@ -1124,6 +1133,13 @@ def translate_chunks(
                     vocab_manager.record_dictionary_candidates(draft_candidates)
                 except OSError as e:
                     logger.warning(f"Could not update dictionary with synopsis candidates: {e}")
+                except Exception as e:
+                    # The dictionary write must never blur a chunk's own
+                    # error path: anything but OSError used to escape and
+                    # surface as "chunk failed" after retries, smearing the
+                    # diagnosis (DEF-N9)
+                    logger.warning(f"Dictionary update failed with synopsis candidates "
+                                   f"({type(e).__name__}: {e}); the run continues")
             draft_state[i] = (outline_text,
                               list(vocab_manager.session_candidates) if vocab_manager is not None else [])
 
@@ -1217,6 +1233,12 @@ def translate_chunks(
             except OSError as e:
                 logger.warning(f"Could not update dictionary with synopsis candidates: {e}")
 
+        # DEF-N8: the terms a checkpoint records for this chunk are a snapshot
+        # taken here, never the live session_candidates read later: in
+        # parallel mode the next chunk's draft may already have added its own
+        # candidates to the live list by the time the checkpoint is written.
+        chunk_session_terms = list(vocab_manager.session_candidates) if vocab_manager is not None else []
+
         # Sanitize surrogates before storing
         translation = sanitize_surrogates(translation)
         translated_parts.append(translation)
@@ -1228,15 +1250,16 @@ def translate_chunks(
         # M9/TODO: checkpoint saves the full translated_parts list each time,
         # leading to O(n²) I/O. For long books, consider append-only incremental
         # writes (e.g. one file per chunk + manifest) instead of full rewrite.
-        # H3: failed chunks (empty translation or all retries exhausted) are written
-        # to translated_parts as the original text so the current run can finish,
-        # but they are NOT persisted to the checkpoint. Skipping the save keeps
-        # last_chunk at the last successfully translated chunk, so a resumed run
-        # starts at the failed chunk and retries it through the real LLM pipeline
-        # instead of silently shipping the untranslated original text.
+        # A chunk that fails to translate stops the run here (commit_chunk
+        # raises): the checkpoint holds the chunks before it, so a resumed run
+        # starts at the failed chunk. (The earlier H3 note described behavior
+        # that no longer exists: failed chunks are not written to
+        # translated_parts; the run stops instead. — DEF-N7)
         if checkpoint_mgr is not None:
-            saved_outline, saved_terms = draft_state.pop(i, (
-                outline_text, vocab_manager.session_candidates if vocab_manager is not None else []))
+            # The fallback is the snapshot taken in commit_chunk; reading the
+            # LIVE session_candidates here could pick up candidates the next
+            # chunk's draft has already reported. — DEF-N8
+            saved_outline, saved_terms = draft_state.pop(i, (outline_text, chunk_session_terms))
             saved_ok = checkpoint_mgr.save(
                 chunk_id=i,
                 section_idx=0,
@@ -1438,7 +1461,7 @@ def build_output(
     target_lang: Optional[str] = None
 ) -> str:
     """
-    Build final output (FB2/EPUB) from translated Markdown.
+    Build final output (DOCX/EPUB/PDF) from translated Markdown.
 
     This function:
     1. Converts Markdown to HTML (with TOC) using pandoc

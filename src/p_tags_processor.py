@@ -8,27 +8,33 @@ import re
 from typing import Tuple
 
 
+# Opening <p> as a tag: "<p>", "<p class=...>", "<P>", but not "<pre>" or
+# "</p>". A trailing </p> is counted separately by _P_CLOSE_RE.
+_P_OPEN_RE = re.compile(r'<p(?=[\s>/])', re.IGNORECASE)
+_P_CLOSE_RE = re.compile(r'</p>', re.IGNORECASE)
+
+
 def _has_p_tags(text: str) -> Tuple[bool, bool]:
     """
-    Check for presence of <p> and </p> tags.
+    Check for presence of <p> and </p> tags (attributes and case included).
     
     Returns:
         Tuple of (has_open_tag, has_close_tag)
     """
-    has_open = '<p>' in text
-    has_close = '</p>' in text
+    has_open = _P_OPEN_RE.search(text) is not None
+    has_close = _P_CLOSE_RE.search(text) is not None
     return has_open, has_close
 
 
 def _count_p_tags(text: str) -> Tuple[int, int]:
     """
-    Count <p> and </p> tags in text.
+    Count <p> and </p> tags in text (attributes and case included).
     
     Returns:
         Tuple of (open_count, close_count)
     """
-    open_count = text.count('<p>')
-    close_count = text.count('</p>')
+    open_count = len(_P_OPEN_RE.findall(text))
+    close_count = len(_P_CLOSE_RE.findall(text))
     return open_count, close_count
 
 

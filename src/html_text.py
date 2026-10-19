@@ -18,11 +18,12 @@ def html_to_paragraphs(value: str) -> list[str]:
     """
     if not value:
         return []
-    text = value
-    for _ in range(2):  # &lt;p&gt; → <p>; двойное экранирование встречается
-        if '<' in text and '>' in text:
-            break
-        text = _html.unescape(text)
+    # Unescape unconditionally, twice: &lt;p&gt; → <p>, and a doubly escaped
+    # description needs another round. The old "stop as soon as a < and a >
+    # are present" heuristic left mixed escaped+literal descriptions
+    # half-decoded, and &lt;p&gt; fragments reached the title page as text
+    # after tag removal (DEF-N4)
+    text = _html.unescape(_html.unescape(value))
     text = _BLOCK_END.sub('\n', text)
     text = _TAG.sub('', text)
     text = _html.unescape(text)
