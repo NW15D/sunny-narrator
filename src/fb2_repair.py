@@ -22,10 +22,13 @@ from typing import List, Tuple
 
 from lxml import etree
 
-from src.fb2_structure import repair_fragment, visible_text
+from src.fb2_structure import mask_comments, repair_fragment, visible_text
 
 logger = logging.getLogger(__name__)
 
+# The body search runs on a copy with comments blanked out: '<!-- <body> -->'
+# must not be taken for a real element (the comment itself stays in the text
+# and is restored by construction — only match positions come from the copy).
 _BODY_RE = re.compile(r'(<body\b[^>]*>)(.*?)(?:</body>|(?=<body\b|</FictionBook>)|\Z)', re.DOTALL)
 
 
@@ -107,18 +110,26 @@ def _ensure_complete_root(xml_string: str) -> Tuple[str, str]:
 
 
 def _repair_bodies(xml_string: str) -> Tuple[str, str]:
-    """Rebalance the content of every <body> and make sure each one is closed."""
+    """Rebalance the content of every <body> and make sure each one is closed.
+    Body boundaries are found on a comment-masked copy: a comment containing
+    '<body>' is not an element, and the comment itself stays verbatim."""
+    masked = mask_comments(xml_string)
+    pieces: List[str] = []
     fixed = 0
-
-    def fix(m: 're.Match') -> str:
-        nonlocal fixed
-        open_tag, inner = m.group(1), m.group(2)
-        repaired = repair_fragment(inner, keep_sections=True, strip_unknown=False)
-        if repaired != inner or not m.group(0).endswith('</body>'):
+    pos = 0
+    for m in _BODY_RE.finditer(masked):
+        src_inner = xml_string[m.start(2):m.end(2)]
+        repaired = repair_fragment(src_inner, keep_sections=True, strip_unknown=False)
+        if repaired != src_inner or not xml_string[m.start():m.end()].endswith('</body>'):
             fixed += 1
-        return f'{open_tag}{repaired}</body>'
-
-    result = _BODY_RE.sub(fix, xml_string)
+        pieces.append(xml_string[pos:m.start(2)])
+        pieces.append(repaired)
+        pieces.append('</body>')
+        pos = m.end()
+    if not pieces:
+        return xml_string, ""
+    pieces.append(xml_string[pos:])
+    result = ''.join(pieces)
     if fixed:
         return result, f"Rebalanced tags in {fixed} <body> element(s)"
     return xml_string, ""

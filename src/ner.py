@@ -3,6 +3,7 @@ import logging
 import os
 from pathlib import Path
 import re
+import threading
 from typing import Optional
 import spacy
 import spacy.cli
@@ -36,6 +37,11 @@ def gpu_available() -> bool:
 
 # Module-level cache for spaCy models (Problem 3 fix)
 _nlp_cache = {}
+
+# RLock guarding the module-level caches and the one shared spaCy object:
+# parallel chunks (PARALLEL_STAGES) call into this module from several
+# threads (precedent for a single spaCy object: gender_check._NLP_LOCK).
+_NLP_LOCK = threading.RLock()
 
 # NER entity categories we care about for a glossary (people, places,
 # organizations). Different spaCy pipelines use different label schemes for
@@ -236,15 +242,18 @@ def entity_text(ent):
 
 
 def _get_nlp(model_name, max_length=200000):
-    """Get or create a cached spaCy model instance."""
-    if model_name not in _nlp_cache:
-        _nlp_cache[model_name] = load_spacy_model(model_name)
-        _nlp_cache[model_name].max_length = max_length
-    else:
-        # Ensure max_length is at least what's requested
-        if _nlp_cache[model_name].max_length < max_length:
-            _nlp_cache[model_name].max_length = max_length
-    return _nlp_cache[model_name]
+    """Get or create a cached spaCy model instance (thread-safe: one loader
+    at a time, so a missing model is not loaded twice by parallel chunks)."""
+    with _NLP_LOCK:
+        model = _nlp_cache.get(model_name)
+        if model is None:
+            model = load_spacy_model(model_name)
+            model.max_length = max_length
+            _nlp_cache[model_name] = model
+        elif model.max_length < max_length:
+            # Ensure max_length is at least what's requested
+            model.max_length = max_length
+        return model
 
 def _model_chain(name: str) -> list:
     from src.config import model_size_chain
@@ -377,6 +386,7 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
         ents = []
         mentions = {}              # one-word entity -> [all mentions, in the middle of a sentence]
         lower_counts = Counter()   # the lowercase words of the whole book
+        failed_chunks = 0          # chunks NER could not process (reported below)
 
         for i, chunk in enumerate(text_chunks):
             try:
@@ -404,9 +414,15 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
                 gc.collect()
 
             except Exception as e:
+                failed_chunks += 1
                 if config.debug:
                     print(f"Error processing chunk {i+1}: {e}")
                 continue
+
+        if failed_chunks:
+            # Not a debug-only matter: the dictionary is silently incomplete.
+            logger.warning(f"NER failed for {failed_chunks} of {len(text_chunks)} chunks; "
+                           f"entities from them are missing from the dictionary")
 
         # Ordinary words that only open sentences (and, with a model that has word
         # vectors, are in its vocabulary): "Capítulo", "Informe", "Seguro"
@@ -446,10 +462,9 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
         unique_ents.sort(key=lambda x: len(x[0]), reverse=True)
         final_merged_ents = []
         for ent in unique_ents:
-            ent_lower = ent[0].lower()
             is_sub = False
             for existing in final_merged_ents:
-                if ent_lower in existing[0].lower():
+                if _covered_by(ent[0], existing[0]):
                     is_sub = True
                     break
             if not is_sub:
@@ -601,18 +616,21 @@ def _to_numpy(vector):
 
 
 def _get_phrase_vector(phrase, nlp):
-    """Mean vector of the phrase words (cached).
+    """Mean vector of the phrase words, cached per (model, phrase) pair:
+    word vectors of different models are not interchangeable.
 
     Returns None (and caches it) when no word of the phrase has a vector.
     """
-    if phrase in _PHRASE_VECTOR_CACHE:
-        return _PHRASE_VECTOR_CACHE[phrase]
-    sub_words = phrase.split()
-    sub_docs = list(nlp.pipe(sub_words, disable=["ner", "parser", "tagger", "lemmatizer", "attribute_ruler"]))
-    sub_vecs = [_to_numpy(d.vector) for d in sub_docs if d.vector_norm != 0]
-    vec = np.mean(np.vstack(sub_vecs), axis=0) if sub_vecs else None
-    _PHRASE_VECTOR_CACHE[phrase] = vec
-    return vec
+    key = (config.nermodel, phrase)
+    with _NLP_LOCK:
+        if key in _PHRASE_VECTOR_CACHE:
+            return _PHRASE_VECTOR_CACHE[key]
+        sub_words = phrase.split()
+        sub_docs = list(nlp.pipe(sub_words, disable=["ner", "parser", "tagger", "lemmatizer", "attribute_ruler"]))
+        sub_vecs = [_to_numpy(d.vector) for d in sub_docs if d.vector_norm != 0]
+        vec = np.mean(np.vstack(sub_vecs), axis=0) if sub_vecs else None
+        _PHRASE_VECTOR_CACHE[key] = vec
+        return vec
 
 
 def _lemma_map(doc):
@@ -655,19 +673,22 @@ def _match_vocab_terms(text, vocab, lng, threshold, batch_size, xp):
     terms = [entry[lng] for entry in vocab.values() if entry.get(lng)]
 
     # SystemExit: spacy.cli.download exits the interpreter when it fails.
-    if config.nermodel in _UNUSABLE_MATCH_MODELS:
-        return lexicon.find_terms(text, terms, lng)
-    try:
-        if xp is not np:
-            spacy.prefer_gpu()
-        nlp = _get_nlp(config.nermodel, max_length=200000)
-        doc = nlp(text, disable=["ner", "parser"])
-    except (Exception, SystemExit) as e:
-        # Reported once; later chunks go straight to the lexical result
-        _UNUSABLE_MATCH_MODELS.add(config.nermodel)
-        logger.warning(f"spaCy model {config.nermodel} unavailable, dictionary matching "
-                       f"continues without lemmas/word vectors: {e}")
-        return lexicon.find_terms(text, terms, lng)
+    # The lock serialises parallel chunks: they share one cached spaCy object
+    # and the caches below (gender_check holds its single model the same way).
+    with _NLP_LOCK:
+        if config.nermodel in _UNUSABLE_MATCH_MODELS:
+            return lexicon.find_terms(text, terms, lng)
+        try:
+            if xp is not np:
+                spacy.prefer_gpu()
+            nlp = _get_nlp(config.nermodel, max_length=200000)
+            doc = nlp(text, disable=["ner", "parser"])
+        except (Exception, SystemExit) as e:
+            # Reported once; later chunks go straight to the lexical result
+            _UNUSABLE_MATCH_MODELS.add(config.nermodel)
+            logger.warning(f"spaCy model {config.nermodel} unavailable, dictionary matching "
+                           f"continues without lemmas/word vectors: {e}")
+            return lexicon.find_terms(text, terms, lng)
 
     found, shadowed = lexicon.resolve_terms(text, terms, lng, _lemma_map(doc))
     matched, shadowed = set(found), set(shadowed)
@@ -712,15 +733,16 @@ def known_words(words):
     so this filters dictionary candidates. Empty when the model has no
     vectors (*_sm) or cannot be loaded: nothing is filtered then.
     """
-    if config.nermodel in _UNUSABLE_MATCH_MODELS:
-        return set()
-    try:
-        vocab = _get_nlp(config.nermodel, max_length=200000).vocab
-    except (Exception, SystemExit) as e:
-        _UNUSABLE_MATCH_MODELS.add(config.nermodel)
-        logger.warning(f"spaCy model {config.nermodel} unavailable, dictionary terms are not "
-                       f"checked against its vocabulary: {e}")
-        return set()
+    with _NLP_LOCK:
+        if config.nermodel in _UNUSABLE_MATCH_MODELS:
+            return set()
+        try:
+            vocab = _get_nlp(config.nermodel, max_length=200000).vocab
+        except (Exception, SystemExit) as e:
+            _UNUSABLE_MATCH_MODELS.add(config.nermodel)
+            logger.warning(f"spaCy model {config.nermodel} unavailable, dictionary terms are not "
+                           f"checked against its vocabulary: {e}")
+            return set()
     if not len(vocab.vectors):
         return set()
     return {w for w in words
@@ -778,6 +800,17 @@ def extract_text_from_book(book_path: str) -> str:
         raise ValueError(f"Unsupported file format: {ext}")
 
 
+def _covered_by(term: str, existing: str) -> bool:
+    """True when `term` occurs inside `existing` as a whole word (or an
+    inflected form of one): "Тим" is not covered by "Тимоти", "Centurion"
+    is by "Centurions", "John" is by "John Smith". CJK terms (scripts
+    written without spaces) match as substrings, as everywhere else.
+    """
+    if term.casefold() == existing.casefold():
+        return True
+    return bool(lexicon.covering_terms(existing, [term], config.source_lang, exact=True))
+
+
 def _merge_overlapping_entities(entities):
     """
     Merge overlapping entities - keep only highest count form.
@@ -813,13 +846,11 @@ def _merge_overlapping_entities(entities):
 
     merged = []
     for term, cat, count in sorted_by_length:
-        term_lower = term.lower()
-        # Check if this term is substring of any already-kept LONGER term
+        # Check if this term is a whole word inside any already-kept LONGER term
         is_substring = False
         for kept_term, _, _ in merged:
-            kept_lower = kept_term.lower()
-            # Skip if this term is substring of kept (and not equal)
-            if term_lower != kept_lower and term_lower in kept_lower:
+            # Skip if this term is inside kept as a word (and not equal)
+            if term.lower() != kept_term.lower() and _covered_by(term, kept_term):
                 is_substring = True
                 break
 
@@ -1031,6 +1062,9 @@ def create_series_vocab(
     # Load spaCy model once for all books
     nlp = _get_nlp(config.nermodel, max_length=200000)
 
+    failed_chunks = 0  # chunks NER could not process across all books
+    failed_books = 0
+
     for book_path in book_files:
         book_name = Path(book_path).stem
         book_names[book_path] = book_name
@@ -1041,6 +1075,7 @@ def create_series_vocab(
         try:
             text = extract_text_from_book(book_path)
         except Exception as e:
+            failed_books += 1
             print(f"  Error reading {book_name}: {e}")
             continue
 
@@ -1082,6 +1117,7 @@ def create_series_vocab(
 
                 del doc
             except Exception as e:
+                failed_chunks += 1
                 print(f"  Error processing chunk {chunk_idx}: {e}")
                 continue
 
@@ -1089,6 +1125,12 @@ def create_series_vocab(
         gc.collect()
 
         print(f"  Raw entities collected: {len(all_raw_entities)} (cumulative)")
+
+    if failed_chunks or failed_books:
+        # The series dictionary is incomplete; say so instead of silently
+        # shipping it.
+        print(f"\nWARNING: {failed_chunks} chunks failed across the series"
+              + (f", {failed_books} books unreadable" if failed_books else ""))
 
     print(f"\nTotal raw entities: {len(all_raw_entities)}")
     print(f"Total unique words: {len(all_words)}")

@@ -17,6 +17,12 @@ def _fresh_import_ner(monkeypatch):
     for mod in list(sys.modules):
         if mod == "src.ner" or mod.endswith(".ner"):
             monkeypatch.delitem(sys.modules, mod, raising=False)
+    # Register the `src` package attribute for restore too: `import src.ner`
+    # below rebinds src.ner to the fresh module, and monkeypatch only undoes
+    # sys.modules - without this, later tests see a mixed old/new module state
+    # (order-dependent failures, e.g. test_review_dic).
+    import src as _src_pkg
+    monkeypatch.setattr(_src_pkg, "ner", getattr(_src_pkg, "ner", None), raising=False)
     import src.ner as ner
     importlib.reload(ner)
     return ner

@@ -24,6 +24,15 @@ _TAG_RE = re.compile(r'<(/?)([A-Za-z][\w:.-]*)((?:[^>"\']|"[^"]*"|\'[^\']*\')*?)
 # "a<b and c>d" in translated prose is text, not a <b> element.
 _ATTRS_RE = re.compile(r'(?:\s+[A-Za-z_:][\w:.-]*\s*=\s*(?:"[^"]*"|\'[^\']*\'))*\s*')
 
+_COMMENT_RE = re.compile(r'<!--.*?-->', re.DOTALL)
+
+
+def mask_comments(text: str) -> str:
+    """A copy of `text` with the inside of <!-- comments --> replaced by
+    spaces (length preserved): a tag search on the copy cannot land inside a
+    comment. The text itself is never changed."""
+    return _COMMENT_RE.sub(lambda m: ' ' * len(m.group(0)), text)
+
 
 def markup_tags(text: str) -> Iterator["re.Match[str]"]:
     """The tags of `text` that are markup, not text (see _ATTRS_RE)."""
@@ -374,6 +383,22 @@ def strip_code_fences(text: str) -> str:
 _BREAK_MARK = '\x00br\x00'
 
 
+def _repair_tokens(text: str):
+    """The repair loop's tokens: markup tags and comments in document order.
+    A comment is an opaque atom: a tag inside it is part of the comment,
+    not markup."""
+    comments = [(m.start(), m.end(), m) for m in _COMMENT_RE.finditer(text)]
+
+    def inside_comment(pos: int) -> bool:
+        return any(s <= pos < e for s, e, _ in comments)
+
+    items = [(m.start(), 0, m) for m in markup_tags(text) if not inside_comment(m.start())]
+    items += [(s, 1, m) for s, e, m in comments]
+    items.sort(key=lambda t: (t[0], t[1]))
+    for _, kind, m in items:
+        yield m, kind
+
+
 def repair_fragment(text: str, *, keep_sections: bool = False,
                     strip_unknown: bool = True, wrap_text: bool = True) -> str:
     """Rebalance a fragment locally, without ever dropping text.
@@ -479,9 +504,13 @@ def repair_fragment(text: str, *, keep_sections: bool = False,
 
     pos = 0
     # a tag that is not markup stays part of the next text run and gets escaped
-    for m in markup_tags(text):
+    for m, kind in _repair_tokens(text):
         emit_text(text[pos:m.start()])
         pos = m.end()
+        if kind:
+            # a comment is neither text nor markup: it stays byte-identical
+            out.append(m.group(0))
+            continue
         closing, raw_name, attrs, selfclose = m.groups()
         name = raw_name.lower()
         if name == 'br':

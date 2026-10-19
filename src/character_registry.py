@@ -10,14 +10,35 @@ Purpose:
 """
 
 import logging
+import re
+from functools import lru_cache
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from collections import defaultdict
 
 from src.config import Config
+from src import lexicon
 
 config = Config()
 logger = logging.getLogger(__name__)
+
+
+@lru_cache(maxsize=8192)
+def _mention_pattern(form: str):
+    """A form must match as a whole word: 'Ana' is not a mention in
+    'banana', 'Tim' not in 'estimate'. A hyphen counts as a word character
+    ('Ana' is not 'Ana-maria')."""
+    return re.compile(rf'(?<![\w-]){re.escape(form)}(?![\w-])')
+
+
+def _form_mentioned(form: str, text_lower: str) -> bool:
+    """Whether `form` occurs in `text_lower` (both casefolded). CJK and
+    other scripts written without spaces are matched as substrings: they
+    have no word boundaries to respect."""
+    form_lower = form.lower()
+    if lexicon.is_unspaced(form_lower):
+        return form_lower in text_lower
+    return _mention_pattern(form_lower).search(text_lower) is not None
 
 
 @dataclass
@@ -157,7 +178,7 @@ class CharacterRegistry:
         for char in self.characters.values():
             # Check if any form of character name appears in text
             for form in char.get_all_forms():
-                if form.lower() in text_lower:
+                if _form_mentioned(form, text_lower):
                     char.add_mention(section_idx, chunk_idx)
                     mentioned.append(char)
                     break  # Only count once per character

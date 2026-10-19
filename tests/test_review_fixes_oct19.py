@@ -58,13 +58,16 @@ def test_a_strict_server_gets_the_request_without_the_extra_fields(monkeypatch):
     assert "extra_body" not in client.chat.completions.create.call_args_list[-1].kwargs
 
 
-def test_an_ordinary_400_is_still_retried_as_before():
+def test_a_400_that_blames_nothing_of_ours_fails_fast():
+    """Q30 (review): a BadRequest the server did not blame on our optional
+    fields cannot be fixed by retrying — one attempt, the error goes up."""
     client = MagicMock()
     client.base_url = "https://api.example.com/v1"
-    client.chat.completions.create.side_effect = [
-        _error(openai.BadRequestError, 400, "context length exceeded"), _ok()]
-    _complete(client)
-    assert client.chat.completions.create.call_count == 2
+    client.chat.completions.create.side_effect = _error(
+        openai.BadRequestError, 400, "context length exceeded")
+    with pytest.raises(openai.BadRequestError):
+        _complete(client)
+    assert client.chat.completions.create.call_count == 1
     assert not utils._rejected_fields
 
 

@@ -24,6 +24,7 @@ import collections
 import csv
 import io
 import os
+import tempfile
 from pathlib import Path
 
 from src import lexicon
@@ -133,9 +134,22 @@ def format_line(row):
 
 
 def write_atomic(path: Path, text: str):
-    tmp = path.with_suffix(path.suffix + '.building')
-    tmp.write_text(text, encoding='utf-8')
-    os.replace(tmp, path)
+    """Write text to path atomically, via a unique temp file next to it.
+
+    The temp name used to be the fixed `<name>.building`: two processes
+    writing the same output shared it and one os.replace wiped the other's
+    file; the temp file also stayed behind when the write failed."""
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + '.', suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            f.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def render(rows, src_name: str) -> str:

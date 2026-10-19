@@ -503,39 +503,46 @@ class VocabularyManager:
                 
                 from src import utils as ta
                 
-                building_path = f"{self.dict_file}.building"
-                with open(building_path, 'w', encoding='utf-8') as f:
-                    f.write(
-                        f"# Vocabulary for {self.book_name}\n"
-                        f"# Format: source = target, category, gender, notes\n"
-                        f"# Generated automatically by NER\n"
-                        f"# Categories and genders come from the book (NER labels, pronouns); an empty\n"
-                        f"# gender: the book does not show it clearly - set it or let the synopsis\n"
-                        f"# fill it in. The translation follows the gender here (the GENDER stage).\n\n"
-                    )
-
-                self.vocab.clear()
-                total_parsed = 0
+                building_fd, building_path = tempfile.mkstemp(
+                    dir=os.path.dirname(self.dict_file) or '.',
+                    prefix=os.path.basename(self.dict_file) + '.', suffix='.building')
                 try:
-                    for idx, chunk in enumerate(chunks):
-                        logger.info(f"Translating chunk {idx + 1}/{len(chunks)} ({len(chunk)} chars)...")
-                        vocab_translated = ta.vocabulary(
-                            self.source_lang,
-                            self.target_lang,
-                            chunk,
-                            self.country,
-                            "proofread"
+                    with os.fdopen(building_fd, 'w', encoding='utf-8') as f:
+                        f.write(
+                            f"# Vocabulary for {self.book_name}\n"
+                            f"# Format: source = target, category, gender, notes\n"
+                            f"# Generated automatically by NER\n"
+                            f"# Categories and genders come from the book (NER labels, pronouns); an empty\n"
+                            f"# gender: the book does not show it clearly - set it or let the synopsis\n"
+                            f"# fill it in. The translation follows the gender here (the GENDER stage).\n\n"
                         )
-                        parsed = self._parse_and_append_chunk(vocab_translated, idx + 1, len(chunks),
-                                                              out_path=building_path, categories=categories)
-                        total_parsed += parsed
-                        logger.info(f"Chunk {idx + 1}: wrote {parsed} entries")
-                    os.replace(building_path, self.dict_file)
-                except BaseException:
+
                     self.vocab.clear()
+                    total_parsed = 0
+                    try:
+                        for idx, chunk in enumerate(chunks):
+                            logger.info(f"Translating chunk {idx + 1}/{len(chunks)} ({len(chunk)} chars)...")
+                            vocab_translated = ta.vocabulary(
+                                self.source_lang,
+                                self.target_lang,
+                                chunk,
+                                self.country,
+                                "proofread"
+                            )
+                            parsed = self._parse_and_append_chunk(vocab_translated, idx + 1, len(chunks),
+                                                                  out_path=building_path, categories=categories)
+                            total_parsed += parsed
+                            logger.info(f"Chunk {idx + 1}: wrote {parsed} entries")
+                        os.replace(building_path, self.dict_file)
+                    except BaseException:
+                        self.vocab.clear()
+                        raise
+                finally:
+                    # a unique temp name (a fixed `.building` was shared by two
+                    # processes: one rename wiped the other's file) and no
+                    # leftovers after a failure
                     if os.path.exists(building_path):
                         os.unlink(building_path)
-                    raise
 
                 logger.info(f"Dictionary saved: {self.dict_file} ({total_parsed} total entries)")
                 # Categories and genders from the book: the NER majority, the
@@ -752,6 +759,7 @@ class VocabularyManager:
         
         vocab = {}
         seen_words: Dict[str, str] = {}
+        skipped = 0
 
         with open(self.dict_file, 'r', encoding='utf-8-sig') as f:
             # Skip comment lines at the beginning
@@ -769,6 +777,7 @@ class VocabularyManager:
                 try:
                     # Parse: source = target, category, gender, notes
                     if '=' not in line:
+                        skipped += 1
                         logger.warning(f"Line {line_num}: Missing '=' separator, skipping")
                         continue
                     
@@ -777,6 +786,7 @@ class VocabularyManager:
                     rest = parts[1].strip()
                     
                     if not source or not rest:
+                        skipped += 1
                         logger.warning(f"Line {line_num}: Empty source or rest, skipping")
                         continue
                     
@@ -785,11 +795,13 @@ class VocabularyManager:
                     try:
                         row = next(csv_reader)
                     except StopIteration:
+                        skipped += 1
                         logger.warning(f"Line {line_num}: Empty fields after '=', skipping")
                         continue
                     
                     # Ensure we have at least source and target
                     if len(row) < 1:
+                        skipped += 1
                         logger.warning(f"Line {line_num}: Insufficient fields (need at least target)")
                         continue
                     
@@ -799,6 +811,7 @@ class VocabularyManager:
                     notes = row[3].strip() if len(row) > 3 else ""
                     
                     if not source or not target:
+                        skipped += 1
                         logger.warning(f"Line {line_num}: Empty source or target")
                         continue
                     
@@ -833,8 +846,11 @@ class VocabularyManager:
                 except Exception as e:
                     # Note: 'row' may be unbound if the error happened before
                     # csv parsing, so log the raw line instead.
+                    skipped += 1
                     logger.warning(f"Error parsing line {line_num}: {line[:80]} - {e}")
         
+        if skipped:
+            logger.warning(f"{self.dict_file}: skipped {skipped} line(s) that produced no entry")
         logger.info(f"Loaded {len(vocab)} entries from CSV format")
         return vocab
     

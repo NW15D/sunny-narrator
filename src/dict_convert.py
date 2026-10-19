@@ -20,7 +20,7 @@ LLM не перевела, в файл не попадают и переводя
 import argparse
 import collections
 import json
-import re
+import logging
 import sys
 import time
 from pathlib import Path
@@ -29,6 +29,8 @@ import openai
 
 from src import dict_clean, lexicon, utils
 from src.config import Config
+
+logger = logging.getLogger(__name__)
 
 config = Config()
 
@@ -78,6 +80,31 @@ def make_client():
     )
 
 
+def _parse_json_payload(text: str) -> dict:
+    """The JSON object of the model's answer, {} when there is none.
+
+    json.loads on the whole answer first; the slice from the first '{' to
+    the last '}' is only a fallback for prose around the JSON. The greedy
+    regex this replaces matched a comment or a brace in prose, and the
+    JSONDecodeError of the garbage match was raised into the retry loop as
+    if it were a network failure (DEF-M10).
+    """
+    try:
+        data = json.loads(text)
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, ValueError):
+        pass
+    start, end = text.find('{'), text.rfind('}')
+    if start != -1 and end > start:
+        try:
+            data = json.loads(text[start:end + 1])
+            return data if isinstance(data, dict) else {}
+        except (json.JSONDecodeError, ValueError):
+            pass
+    logger.warning("No parseable JSON in the term translation answer: %.200r", text)
+    return {}
+
+
 def translate_batch(client, target_name, batch, source_name, hint_name):
     items = "\n".join(
         json.dumps({"id": i, "source": e[0], "hint": e[1] or None, "category": e[2]}, ensure_ascii=False)
@@ -103,8 +130,7 @@ def translate_batch(client, target_name, batch, source_name, hint_name):
         kwargs.pop("extra_body", None)
         response = client.chat.completions.create(**kwargs)
     text = response.choices[0].message.content or ""
-    m = re.search(r'\{.*\}', text, re.DOTALL)
-    data = json.loads(m.group(0)) if m else {}
+    data = _parse_json_payload(text)
     result = {}
     for t in data.get('terms', []):
         target = str(t.get('target', '')).strip()

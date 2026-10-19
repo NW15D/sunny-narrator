@@ -149,12 +149,19 @@ def parse_txt(file_path, lang: str = 'en'):
 <FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink">
 <description>
     <title-info>
-        <genre>unknown</genre>
+        <genre>unrecognised</genre>
         <author><first-name></first-name><last-name>Unknown</last-name></author>
         <book-title>{xml_escape(title)}</book-title>
         <date>{date_str}</date>
         <lang>{xml_escape(lang or 'en')}</lang>
     </title-info>
+    <document-info>
+        <author><first-name></first-name><last-name>Unknown</last-name></author>
+        <program-used>sunny-narrator TXT converter</program-used>
+        <date>{date_str}</date>
+        <id>txt-conversion</id>
+        <version>1.0</version>
+    </document-info>
 </description>
 """
 

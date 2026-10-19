@@ -19,7 +19,7 @@ from src.xml_utils import (
     get_cover_image,
     replace_cover_image,
 )
-from src.fb2_structure import prepare_body_structure
+from src.fb2_structure import mask_comments, prepare_body_structure
 
 config = Config()
 
@@ -52,9 +52,15 @@ def _read_file_with_encoding_fallback(file_path):
     logger.info(f"Detected encoding '{encoding}' for {file_path}")
 
     try:
-        return raw.decode(encoding)
+        content = raw.decode(encoding)
     except (UnicodeDecodeError, LookupError):
-        return raw.decode('windows-1251', errors='replace')
+        content = raw.decode('windows-1251', errors='replace')
+
+    replacement_count = content.count('\ufffd')
+    if replacement_count:
+        logger.warning(f"File {file_path}: {replacement_count} character(s) could not be decoded "
+                       f"as '{encoding}' and were replaced with U+FFFD; the book text may be damaged")
+    return content
 
 
 def parse_xml(file_path: str) -> tuple:
@@ -71,11 +77,19 @@ def parse_xml(file_path: str) -> tuple:
         Tuple of (body, header, footer)
     """
     content = _read_file_with_encoding_fallback(file_path)
-    start_body = content.find('<body')
-    end_body_tag = content.find('</body>')
+    # The tag search runs on a copy with comment bodies blanked out
+    # (same length): a '<!-- <body> -->' trap must not cut the book apart.
+    masked = mask_comments(content)
+    start_body = masked.find('<body')
+    end_body_tag = masked.find('</body>')
 
     if start_body == -1 or end_body_tag == -1:
         raise ValueError("Body tag not found in the XML file")
+
+    body_count = len(re.findall(r'<body\b', masked))
+    if body_count > 1:
+        logger.warning(f"File {file_path} has {body_count} <body> elements; only the first is "
+                       f"translated, the rest (e.g. a notes body) go to the footer as is")
 
     # Find the end of the opening <body> tag
     end_start_body = content.find('>', start_body) + 1

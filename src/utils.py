@@ -927,6 +927,11 @@ class LLMService:
                                    f"sent without them from now on ({e})")
                     comp_kwargs = _drop_rejected_fields(comp_kwargs, role)
                     continue
+                if isinstance(e, openai.BadRequestError):
+                    # a 400 that blames nothing of ours (context length, a bad
+                    # value): every repeat answers the same, so no retries
+                    # (review 2026-10-19, Q30)
+                    raise
                 if attempt == max_retries - 1:
                     raise
                 wait = min(2 ** attempt * 2, 30)
@@ -3027,14 +3032,21 @@ def process_image_request(image_data: str, source_lang: str, target_lang: str,
 # Utility Functions
 # =============================================================================
 
-_tiktoken_encoding = None
+_tiktoken_encodings: Dict[str, Any] = {}
+_tiktoken_encodings_lock = threading.Lock()
 
 def _get_tiktoken_encoding(encoding_name: str = "cl100k_base"):
-    """Get cached tiktoken encoding (avoids reloading on every call)."""
-    global _tiktoken_encoding
-    if _tiktoken_encoding is None or _tiktoken_encoding.name != encoding_name:
-        _tiktoken_encoding = tiktoken.get_encoding(encoding_name)
-    return _tiktoken_encoding
+    """The tiktoken encoding of this name, loaded once per name.
+
+    A dict plus a lock: parallel workers ask for encodings of different
+    models at once — one shared cell used to be swapped right between
+    another worker's calls (wrong token counts) and reloaded on misses."""
+    with _tiktoken_encodings_lock:
+        encoding = _tiktoken_encodings.get(encoding_name)
+        if encoding is None:
+            encoding = tiktoken.get_encoding(encoding_name)
+            _tiktoken_encodings[encoding_name] = encoding
+        return encoding
 
 def num_tokens_in_string(input_str: str, encoding_name: str = "cl100k_base") -> int:
     """Calculate number of tokens in string."""

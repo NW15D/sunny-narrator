@@ -20,6 +20,7 @@ Each log entry contains:
 
 import json
 import logging
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -85,6 +86,10 @@ class LLMLogger:
         
         return self._current_file
     
+    # The whole app shares one lock: two parallel workers writing their
+    # lines (rollover included) must not interleave inside a line (DEF-M5).
+    _write_lock = threading.Lock()
+
     def log_call(
         self,
         stage: str,
@@ -133,12 +138,15 @@ class LLMLogger:
             response=response or ""
         )
         
-        log_file = self._get_log_file()
-        
         try:
-            with open(log_file, "a", encoding="utf-8") as f:
-                json.dump(log_entry.to_dict(), f, ensure_ascii=False)
-                f.write("\n")
+            # one json.dumps for the whole line, one locked write: json.dump
+            # wrote piece by piece into a shared file and parallel workers
+            # interleaved their pieces into broken JSONL (DEF-M5)
+            line = json.dumps(log_entry.to_dict(), ensure_ascii=False) + "\n"
+            with self._write_lock:
+                log_file = self._get_log_file()
+                with open(log_file, "a", encoding="utf-8") as f:
+                    f.write(line)
         except Exception as e:
             # Don't let logging errors break the application
             logging.getLogger(__name__).error(f"Failed to write LLM log: {e}")
