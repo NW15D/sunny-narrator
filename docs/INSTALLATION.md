@@ -46,7 +46,7 @@ cp env.cloud.sample .env    # cloud models: put your OpenRouter or ProxyAPI key 
 cp env.sample .env          # every option, set up for your own LLM servers
 ```
 
-Then set `FILE`, `SOURCE_LANG` and `TARGET_LANG`. Every option:
+Then set `FILE`, `SOURCE_LANG`, `TARGET_LANG` and `COUNTRY` (the country of the readers: Spanish for `México` differs from Spanish for `España`). Every option:
 [CONFIGURATION.md](CONFIGURATION.md).
 
 ## Check

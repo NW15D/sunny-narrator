@@ -92,7 +92,7 @@ authentication any non-empty API key will do.
 | `FILE` | `books/ExampleBook.fb2` (not in the repository: set it) | The book. `.fb2`/`.txt` → classic pipeline, `.epub`/`.docx`/`.pdf` → Calibre pipeline. The demo books: `books/eternal-moment.pg.epub`, `books/forster-short-fiction.se.epub` |
 | `SOURCE_LANG` | `english` | Full name or ISO code (`korean`/`ko`, `english`/`en`, ...). Also selects the spaCy model and the CJK adaptations. Verified languages: [LANGUAGES.md](LANGUAGES.md) |
 | `TARGET_LANG` | `russian` | Full name or ISO code. Verified languages: [LANGUAGES.md](LANGUAGES.md) |
-| `COUNTRY` | by `TARGET_LANG` | Country for localization context in prompts; empty = derived from the target language (`ru` → Россия, `tr` → Türkiye, `de` → Deutschland, …; a language without one country → `<Language>-speaking countries`) |
+| `COUNTRY` | by `TARGET_LANG` | **Set it together with `TARGET_LANG`.** The country of the readers, in its own language (`United States`, `México`, `Brasil`, `France`): the prompts say "for readers in …", and the translation follows its vocabulary, forms of address and spelling. It matters most for languages used in many countries: Spanish (`España` / `México` / `Argentina`), Portuguese (`Portugal` / `Brasil`), Chinese (`中国` / `台灣`), English (`United States` / `United Kingdom`), French, German, Arabic. Empty = a guess by the language (`en` → United States, `es` → España, `pt` → Portugal, `ru` → Россия, …; a language without one country → `<Language>-speaking countries`), and a run for es, pt, en, fr, de, zh or ar logs a warning |
 
 ---
 

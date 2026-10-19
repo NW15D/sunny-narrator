@@ -35,15 +35,15 @@
    pip install -e .
    sudo apt install calibre pandoc     # EPUB/DOCX/PDF; macOS: brew install --cask calibre && brew install pandoc
    ```
-2. **Ключ и книга** — получите ключ в [личном кабинете ProxyAPI](https://proxyapi.ru) и пополните баланс на пару сотен рублей. `cp env.cloud.sample .env`, впишите ключ в `API_KEY_TRANSLATE` и `API_KEY_PROOFREAD`, раскомментируйте блок ProxyAPI в конце файла, книгу — в `FILE=books/mybook.epub`, языки — в `SOURCE_LANG` / `TARGET_LANG`.
-3. **Первый запуск — словарь.** `python app.py` находит имена и термины книги (spaCy-модель исходного языка скачивается при первом запуске), переводит их, записывает `books/mybook_ru.dic` (`ru` — код `TARGET_LANG`: у каждого языка перевода свой словарь) и останавливается. Просмотрите его: переводы, категории, пол персонажей — в `books/mybook_ru.dictcheck.txt` перечислено то, что книга не решает однозначно.
-4. **Второй запуск — книга.** `python app.py` сам подхватывает `books/mybook_ru.dic` и переводит всю книгу; результат появится рядом с исходником, `books/<название>_<язык>.epub`. Наслаждайтесь чтением.
+2. **Ключ и книга** — получите ключ в [личном кабинете ProxyAPI](https://proxyapi.ru) и пополните баланс на пару сотен рублей. `cp env.cloud.sample .env`, впишите ключ в `API_KEY_TRANSLATE` и `API_KEY_PROOFREAD`, раскомментируйте блок ProxyAPI в конце файла, книгу — в `FILE=books/mybook.epub`, языки — в `SOURCE_LANG` / `TARGET_LANG`, страну читателей — в `COUNTRY` (`México` или `España`, `Brasil` или `Portugal`: перевод следует её лексике и формам обращения — обязательно для испанского, португальского, китайского и других языков, на которых говорят в нескольких странах).
+3. **Первый запуск — словарь.** `python app.py` находит имена и термины книги (spaCy-модель исходного языка скачивается при первом запуске), переводит их, записывает `books/mybook_en.dic` (`en` — код `TARGET_LANG`: у каждого языка перевода свой словарь) и останавливается. Просмотрите его: переводы, категории, пол персонажей — в `books/mybook_en.dictcheck.txt` перечислено то, что книга не решает однозначно.
+4. **Второй запуск — книга.** `python app.py` сам подхватывает `books/mybook_en.dic` и переводит всю книгу; результат появится рядом с исходником, `books/<название>_<язык>.epub`. Наслаждайтесь чтением.
 
 Роман на 450 страниц обойдётся примерно в 135 ₽ (оценка по токенам реального прогона; точный расход — в личном кабинете). В образце рассуждения моделей выключены. Не из России — `env.cloud.sample` как есть работает с [OpenRouter](https://openrouter.ai) (около $1 за такой роман); там он ещё и выбирает только провайдеров, поддерживающих все параметры запроса (JSON-режим).
 
 **Путь к идеальной книге — сначала словарь.** Качество перевода больше всего зависит от словаря: каждый чанк берёт из него имена, термины и пол персонажей, поэтому каждая правка в нём видна на каждой странице. Для лучшего результата идите длинным путём:
 1. После первого запуска — быстрый черновик, который наращивает словарь: `FAST_TRANS=true DICT_AUTO_SAVE=true python app.py` — стадия синопсиса добавит имена и придуманные термины всей книги и заполнит пустой пол (существующие строки не переписываются); примерно в 2,5 раза быстрее полного перевода.
-2. Выверьте словарь: `python app.py dict clean books/mybook_ru.dic` и `python app.py dict review books/mybook.epub --dic books/mybook_ru.dic` (рядом появятся очищенная / проверенная копия и отчёт), затем поправьте руками то, что осталось, — в первую очередь пол.
+2. Выверьте словарь: `python app.py dict clean books/mybook_en.dic` и `python app.py dict review books/mybook.epub --dic books/mybook_en.dic` (рядом появятся очищенная / проверенная копия и отчёт), затем поправьте руками то, что осталось, — в первую очередь пол.
 3. Переведите заново с готовым словарём: `python app.py --fresh`.
 
 **Локальные модели вместо облака:** `env.sample` (llama.cpp, Ollama, LM Studio; 16–24 ГБ видеопамяти); Docker-образы — в следующем разделе. **Нужен только черновик?** `FAST_TRANS=true`.
@@ -63,7 +63,7 @@ cp env.sample .env
 # в .env: ключи API, MODEL_*, SOURCE_LANG/TARGET_LANG, FILE=books/mybook.fb2
 cp mybook.fb2 books/
 
-# 3. Запуск — первый проход строит books/mybook_ru.dic, проверьте его и запустите снова для перевода
+# 3. Запуск — первый проход строит books/mybook_en.dic, проверьте его и запустите снова для перевода
 docker run --rm --gpus all \
   --env-file .env \
   -v "$PWD/books:/app/books" \
@@ -89,8 +89,9 @@ MODEL_TRANSLATE=Gemma4-26B              # LLM перевода (Gemma 4)
 API_BASE_PROOFREAD=http://localhost:11434/v1
 MODEL_PROOFREAD=Qwen36-35B              # LLM вычитки (Qwen 3.6)
 FILE=books/mybook.fb2
-SOURCE_LANG=ko
-TARGET_LANG=ru
+SOURCE_LANG=fr
+TARGET_LANG=en
+COUNTRY=United States
 OUTPUT_FORMAT=fb2                       # fb2|epub для FB2/TXT; epub|docx|pdf для EPUB/DOCX/PDF
 ```
 

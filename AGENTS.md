@@ -53,7 +53,10 @@ In `.env`:
 - `API_KEY_TRANSLATE`, `API_KEY_PROOFREAD` — the user's key (the same key twice);
 - ProxyAPI instead of OpenRouter: uncomment the `PROXYAPI` block at the end;
 - `FILE=books/<book>.epub`, `SOURCE_LANG`, `TARGET_LANG` (names or ISO codes:
-  `en`, `ru`, `english`, …);
+  `en`, `ru`, `english`, …) and `COUNTRY` — ask the user for the country of
+  their readers (`México` or `España`, `Brasil` or `Portugal`, `中国` or `台灣`):
+  the translation follows it, and for Spanish, Portuguese, Chinese, English,
+  French, German and Arabic the default is a guess;
 - the demo books: `books/eternal-moment.pg.epub`,
   `books/forster-short-fiction.se.epub` (English, public domain). When the
   repository has their dictionary for the target language

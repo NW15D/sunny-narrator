@@ -29,7 +29,7 @@ TURKISH = ("<p>Ares iksiri içti ve örümcek tabancasını kaldırdı.</p>"
 def test_country_follows_the_target_language(monkeypatch):
     assert default_country("turkish") == "Türkiye"
     assert default_country("tr") == "Türkiye"
-    assert default_country("english") == "English-speaking countries"
+    assert default_country("english") == "United States"
     monkeypatch.setenv("TARGET_LANG", "turkish")
     monkeypatch.delenv("COUNTRY", raising=False)
     assert Config().country == "Türkiye"

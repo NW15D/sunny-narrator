@@ -80,7 +80,7 @@ LANG_CODE_MAP = {
 # translation "for readers in Russia". Languages spoken in many countries
 # get a neutral "<Language>-speaking countries" (default_country).
 _DEFAULT_COUNTRY = {
-    'ru': 'Россия', 'tr': 'Türkiye', 'de': 'Deutschland', 'fr': 'France', 'es': 'España',
+    'en': 'United States', 'ru': 'Россия', 'tr': 'Türkiye', 'de': 'Deutschland', 'fr': 'France', 'es': 'España',
     'it': 'Italia', 'pt': 'Portugal', 'pl': 'Polska', 'uk': 'Україна', 'nl': 'Nederland',
     'ja': '日本', 'ko': '대한민국', 'zh': '中国', 'cs': 'Česko', 'hu': 'Magyarország',
     'ro': 'România', 'el': 'Ελλάδα', 'fi': 'Suomi', 'sv': 'Sverige', 'da': 'Danmark',
@@ -93,6 +93,18 @@ def default_country(target_lang: str) -> str:
     lang = (target_lang or '').strip().lower()
     code = LANG_CODE_MAP.get(lang, lang)
     return _DEFAULT_COUNTRY.get(code) or f"{lang.capitalize()}-speaking countries"
+
+
+# Languages whose usage differs by country (vocabulary, forms of address,
+# spelling): the default of _DEFAULT_COUNTRY is a guess for them, so a run
+# without COUNTRY says so in the log. Spanish: España or México, Argentina,
+# Colombia; Portuguese: Portugal or Brasil; Chinese: 中国 or 台灣.
+COUNTRY_MATTERS = frozenset({'es', 'pt', 'en', 'fr', 'de', 'zh', 'ar'})
+
+
+def country_matters(target_lang: str) -> bool:
+    lang = (target_lang or '').strip().lower()
+    return LANG_CODE_MAP.get(lang, lang).split('-')[0] in COUNTRY_MATTERS
 
 
 class Config:
@@ -241,6 +253,11 @@ class Config:
         self.dict_autofix = _parse_bool_env('DICT_AUTOFIX', 'true')
         self.dict_force = _parse_bool_env('DICT_FORCE', 'true')  # --force
         self.country = os.getenv('COUNTRY') or default_country(self.target_lang)
+        if not os.getenv('COUNTRY') and country_matters(self.target_lang):
+            logger.warning(
+                f"COUNTRY is not set: translating {self.target_lang} for readers in "
+                f"{self.country}. The usage of {self.target_lang} differs by country - "
+                f"set COUNTRY in .env (for example COUNTRY=México).")
         
         # Determine default model from mapping if not specified in ENV
         # A language without its own spaCy pipeline (Turkish, Hungarian,
@@ -254,6 +271,9 @@ class Config:
         # only logged; "off".
         gender_check = os.getenv('GENDER_CHECK', 'fix').strip().lower()
         self.gender_check = gender_check if gender_check in ('fix', 'warn', 'off') else 'fix'
+        # MIXED_WORDS_WARN: a final_edit output with more words in two alphabets
+        # than this is logged as a WARNING (script_guard); 0 = every one.
+        self.mixed_words_warn = _parse_numeric_env('MIXED_WORDS_WARN', 10, cast=int)
         # GENDER_LLM: which LLM gets the GENDER call. "auto": the proofread
         # LLM, with FAST_TRANS too when API_BASE_PROOFREAD is set; "translate"
         # or "proofread" always that one (FAST_TRANS with only the translate
@@ -271,9 +291,6 @@ class Config:
         self.myfile = os.getenv('FILE', 'books/ExampleBook.fb2')
         if not os.path.isabs(self.myfile):
              self.myfile = str(Path(os.getcwd()) / self.myfile)
-        # MIXED_WORDS_WARN: a final_edit output with more words in two alphabets
-        # than this is logged as a WARNING (script_guard); 0 = every one.
-        self.mixed_words_warn = _parse_numeric_env('MIXED_WORDS_WARN', 10, cast=int)
              
         # DEBUG defaulted to off
         self.debug = os.getenv('DEBUG', 'off').lower() in ['true', '1', 't', 'on']
