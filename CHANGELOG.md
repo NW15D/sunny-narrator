@@ -2,7 +2,7 @@
 
 All notable changes to Sunny Narrator.
 
-## Unreleased
+## v2.11.0
 
 ### Fixed
 - The dictionary of a book in Spanish, French, Portuguese and the like was full of ordinary words: the dialogue dash written by pandoc as `---` glued to a word (`---contestó`, `Valeris---`), a verb or adverb at the start of a line (`Recordó`, `Jamás`), a question (`¿Por qué?`), a lowercase word (`sofá`). The entity search now cleans the Markdown (`ner.clean_for_ner`) and skips an entity that is a verb, adverb, pronoun, adjective or number, has `¿¡?!`, is a lone lowercase word, or is a word the book also writes in lowercase three times or more (`ner.is_common_word_entity`, by the part of speech of the model, no list per language; scripts without case are left alone). A 700 000-character Spanish book: 115 candidates became 69 with the small model.
