@@ -48,6 +48,27 @@
 
 **用本地模型代替云端：** `env.sample`（llama.cpp、Ollama、LM Studio；16–24 GB 显存）；Docker 镜像见下一节。**只要草稿？** `FAST_TRANS=true`。
 
+## 🪟 Windows（通过 WSL2）
+
+本项目运行在 Linux 上，因此在 Windows 10（2004 或更高版本）和 Windows 11 上通过 WSL2 运行 —— 即 Windows 内部的 Linux。云端模型不需要 GPU，所以下面就是全部设置，使用快速开始中的 [OpenRouter](https://openrouter.ai) 配置。
+
+1. **安装带 Ubuntu 的 WSL2** —— 以管理员身份打开 PowerShell：`wsl --install -d Ubuntu-24.04`，按提示重启，从开始菜单打开 *Ubuntu 24.04*，设置 Linux 用户名和密码。（Ubuntu 24.04 自带 Python 3.12；Ubuntu 22.04 只有 Python 3.10，版本过旧。）
+2. **工具** —— 在 Ubuntu 窗口中：
+   ```bash
+   sudo apt update && sudo apt install -y git python3-venv python3-pip calibre pandoc
+   ```
+3. **项目** —— 放在 Linux 主目录中，不要放在 `/mnt/c` 下（WSL2 中访问 Windows 磁盘上的文件很慢）：
+   ```bash
+   cd ~ && git clone https://github.com/NW15D/sunny-narrator && cd sunny-narrator
+   python3 -m venv .venv && source .venv/bin/activate
+   pip install -e .
+   ```
+4. **OpenRouter 密钥和配置** —— 在 [openrouter.ai/keys](https://openrouter.ai/keys) 创建密钥并充值几美元。`cp env.cloud.sample .env && nano .env`：把密钥填入 `API_KEY_TRANSLATE` 和 `API_KEY_PROOFREAD`，书填入 `FILE=books/mybook.epub`，语言填入 `SOURCE_LANG` / `TARGET_LANG`，读者所在国家填入 `COUNTRY`。按 Ctrl+O、Enter、Ctrl+X 保存。OpenRouter 的几行就是 `env.cloud.sample` 的默认值，无需再改其他内容。
+5. **书** —— 复制到 WSL：`cp /mnt/c/Users/<你的 Windows 用户名>/Downloads/mybook.epub books/`，或者在资源管理器中打开 `\\wsl$\Ubuntu-24.04\home\<linux 用户名>\sunny-narrator\books`，把文件拖进去。
+6. **运行两次** —— `python app.py` 生成词典后停止；检查词典；再次 `python app.py` 翻译整本书（快速开始的第 3–4 步）。结果保存在原文件旁边的同一个 `books` 文件夹中，在资源管理器里通过同一个 `\\wsl$` 路径即可看到。
+
+下次使用：打开 *Ubuntu 24.04*，`cd ~/sunny-narrator && source .venv/bin/activate`，`python app.py`。长时间运行需要保持窗口打开且电脑不休眠；被中断的运行会从检查点继续。
+
 ## 🐳 Docker
 
 预构建镜像（均包含 Calibre 和 pandoc；由 `Dockerfile` / `Dockerfile.cpu` 构建，每次推送到 `main` 都会测试）：

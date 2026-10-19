@@ -48,6 +48,27 @@ Modeller varsayılan olarak bulutta çalışır — GPU ve yerel LLM sunucusu ge
 
 **Bulut yerine yerel modeller:** `env.sample` (llama.cpp, Ollama, LM Studio; 16–24 GB VRAM); Docker imajları — sonraki bölüm. **Yalnızca taslak mı?** `FAST_TRANS=true`.
 
+## 🪟 Windows (WSL2 ile)
+
+Proje Linux üzerinde çalışır; bu yüzden Windows 10'da (sürüm 2004 veya daha yeni) ve Windows 11'de WSL2 içinde, yani Windows'un içindeki bir Linux'ta çalışır. Bulut modelleri GPU gerektirmez, dolayısıyla kurulumun tamamı budur; Hızlı Başlangıç'taki [OpenRouter](https://openrouter.ai) yapılandırması kullanılır.
+
+1. **Ubuntu'lu WSL2** — yönetici olarak PowerShell'de: `wsl --install -d Ubuntu-24.04`, istendiğinde yeniden başlatın, Başlat menüsünden *Ubuntu 24.04*'ü açın ve bir Linux kullanıcı adı ile parola belirleyin. (Ubuntu 24.04 Python 3.12 ile gelir; Ubuntu 22.04'te Python 3.10 vardır, bu çok eskidir.)
+2. **Araçlar** — Ubuntu penceresinde:
+   ```bash
+   sudo apt update && sudo apt install -y git python3-venv python3-pip calibre pandoc
+   ```
+3. **Proje** — Linux ana klasöründe, `/mnt/c` altında değil (Windows diskindeki dosyalar WSL2'de yavaştır):
+   ```bash
+   cd ~ && git clone https://github.com/NW15D/sunny-narrator && cd sunny-narrator
+   python3 -m venv .venv && source .venv/bin/activate
+   pip install -e .
+   ```
+4. **OpenRouter anahtarı ve yapılandırma** — [openrouter.ai/keys](https://openrouter.ai/keys) adresinde bir anahtar oluşturun ve birkaç dolar yükleyin. `cp env.cloud.sample .env && nano .env`: anahtarı `API_KEY_TRANSLATE` ve `API_KEY_PROOFREAD` alanlarına, kitabı `FILE=books/mybook.epub` satırına, dilleri `SOURCE_LANG` / `TARGET_LANG` alanlarına, okurların ülkesini `COUNTRY` alanına yazın. Ctrl+O, Enter, Ctrl+X ile kaydedin. OpenRouter satırları `env.cloud.sample` dosyasının varsayılanıdır, başka bir şeyi değiştirmeniz gerekmez.
+5. **Kitap** — WSL'e kopyalayın: `cp /mnt/c/Users/<Windows adınız>/Downloads/mybook.epub books/` ya da Dosya Gezgini'nde `\\wsl$\Ubuntu-24.04\home\<linux kullanıcısı>\sunny-narrator\books` klasörünü açıp dosyayı oraya sürükleyin.
+6. **İki çalıştırma** — `python app.py` sözlüğü oluşturur ve durur; sözlüğü gözden geçirin; `python app.py` kitabı çevirir (Hızlı Başlangıç'ın 3–4. adımları). Sonuç, kaynağın yanında aynı `books` klasöründedir; Dosya Gezgini'nde aynı `\\wsl$` yolundan görünür.
+
+Sonraki seferde: *Ubuntu 24.04*'ü açın, `cd ~/sunny-narrator && source .venv/bin/activate`, `python app.py`. Uzun bir çalıştırma için pencere açık kalmalı ve bilgisayar uyumamalıdır; yarıda kalan çalıştırma kontrol noktasından devam eder.
+
 ## 🐳 Docker
 
 Hazır imajlar (ikisinde de Calibre ve pandoc var; `Dockerfile` / `Dockerfile.cpu` dosyalarından derlenir, `main` dalına her gönderimde test edilir):

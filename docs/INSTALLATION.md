@@ -3,7 +3,7 @@
 | Component | Requirement |
 |---|---|
 | Python | 3.11 or newer (wheels exist for 3.11–3.13) |
-| OS | Linux or macOS; Windows through WSL2 |
+| OS | Linux or macOS; Windows 10 (2004+) and 11 through WSL2 ([steps](../README.md#-windows-via-wsl2)) |
 | RAM | 4 GB is enough with cloud models; spaCy `*_lg` models take ~1 GB |
 | Disk | ~300 MB for the project, ~400 MB per `*_lg` spaCy model |
 | GPU | not needed: the models run in the cloud or on your LLM servers; an NVIDIA GPU only speeds up spaCy |

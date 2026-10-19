@@ -48,6 +48,34 @@
 
 **Локальные модели вместо облака:** `env.sample` (llama.cpp, Ollama, LM Studio; 16–24 ГБ видеопамяти); Docker-образы — в следующем разделе. **Нужен только черновик?** `FAST_TRANS=true`.
 
+## 🪟 Windows (через WSL2)
+
+Проект работает на Linux, поэтому в Windows 10 (версия 2004 и новее) и Windows 11 он запускается в WSL2 — Linux внутри Windows. Облачным моделям видеокарта не нужна, так что это вся настройка, с конфигурацией [ProxyAPI](https://proxyapi.ru) из быстрого старта (оплата в рублях).
+
+1. **WSL2 с Ubuntu** — в PowerShell от имени администратора: `wsl --install -d Ubuntu-24.04`, перезагрузите компьютер, когда попросит, откройте *Ubuntu 24.04* из меню «Пуск» и задайте имя пользователя и пароль Linux. (В Ubuntu 24.04 Python 3.12; в Ubuntu 22.04 — Python 3.10, он слишком старый.)
+2. **Инструменты** — в окне Ubuntu:
+   ```bash
+   sudo apt update && sudo apt install -y git python3-venv python3-pip calibre pandoc
+   ```
+3. **Проект** — в домашней папке Linux, не в `/mnt/c` (файлы на диске Windows в WSL2 работают медленно):
+   ```bash
+   cd ~ && git clone https://github.com/NW15D/sunny-narrator && cd sunny-narrator
+   python3 -m venv .venv && source .venv/bin/activate
+   pip install -e .
+   ```
+4. **Ключ ProxyAPI и конфиг** — получите ключ в [личном кабинете ProxyAPI](https://proxyapi.ru) и пополните баланс на пару сотен рублей. `cp env.cloud.sample .env && nano .env`: впишите ключ в `API_KEY_TRANSLATE` и `API_KEY_PROOFREAD`, книгу — в `FILE=books/mybook.epub`, языки — в `SOURCE_LANG` / `TARGET_LANG`, страну читателей — в `COUNTRY`. В конце файла раскомментируйте блок ProxyAPI (уберите `# ` в начале четырёх строк):
+   ```bash
+   API_BASE_TRANSLATE=https://api.proxyapi.ru/v1
+   API_BASE_PROOFREAD=https://api.proxyapi.ru/v1
+   EXTRA_BODY_TRANSLATE=
+   EXTRA_BODY_PROOFREAD=
+   ```
+   Сохраните: Ctrl+O, Enter, Ctrl+X.
+5. **Книга** — скопируйте её в WSL: `cp /mnt/c/Users/<имя в Windows>/Downloads/mybook.epub books/`, либо откройте в Проводнике `\\wsl$\Ubuntu-24.04\home\<пользователь linux>\sunny-narrator\books` и перетащите файл туда.
+6. **Два запуска** — `python app.py` строит словарь и останавливается; просмотрите его; `python app.py` переводит книгу (шаги 3–4 быстрого старта). Результат появится рядом с исходником в той же папке `books`, в Проводнике — по тому же пути `\\wsl$`.
+
+В следующий раз: откройте *Ubuntu 24.04*, `cd ~/sunny-narrator && source .venv/bin/activate`, `python app.py`. Для долгого прогона окно должно быть открыто, а компьютер не должен засыпать; прерванный прогон продолжится с чекпоинта.
+
 ## 🐳 Docker
 
 Готовые образы (в обоих есть Calibre и pandoc; собираются из `Dockerfile` / `Dockerfile.cpu`, проверяются при каждом пуше в `main`):

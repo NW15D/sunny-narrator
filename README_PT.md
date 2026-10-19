@@ -48,6 +48,27 @@ Um romance de 450 páginas custa cerca de US$ 1 (estimativa a partir dos tokens 
 
 **Modelos locais em vez da nuvem:** `env.sample` (llama.cpp, Ollama, LM Studio; 16–24 GB de VRAM); imagens Docker — próxima seção. **Só um rascunho?** `FAST_TRANS=true`.
 
+## 🪟 Windows (via WSL2)
+
+O projeto roda em Linux, então no Windows 10 (versão 2004 ou mais recente) e no Windows 11 ele roda no WSL2 — um Linux dentro do Windows. Os modelos na nuvem não precisam de GPU, então esta é toda a configuração, com a configuração do [OpenRouter](https://openrouter.ai) do Início rápido.
+
+1. **WSL2 com Ubuntu** — no PowerShell como administrador: `wsl --install -d Ubuntu-24.04`, reinicie quando pedido, abra o *Ubuntu 24.04* no menu Iniciar e crie um usuário e uma senha do Linux. (O Ubuntu 24.04 traz o Python 3.12; o Ubuntu 22.04 tem o Python 3.10, antigo demais.)
+2. **Ferramentas** — na janela do Ubuntu:
+   ```bash
+   sudo apt update && sudo apt install -y git python3-venv python3-pip calibre pandoc
+   ```
+3. **O projeto** — na pasta pessoal do Linux, não em `/mnt/c` (arquivos do disco do Windows são lentos no WSL2):
+   ```bash
+   cd ~ && git clone https://github.com/NW15D/sunny-narrator && cd sunny-narrator
+   python3 -m venv .venv && source .venv/bin/activate
+   pip install -e .
+   ```
+4. **Chave do OpenRouter e configuração** — crie uma chave em [openrouter.ai/keys](https://openrouter.ai/keys) e adicione alguns dólares. `cp env.cloud.sample .env && nano .env`: coloque a chave em `API_KEY_TRANSLATE` e `API_KEY_PROOFREAD`, o livro em `FILE=books/mybook.epub`, os idiomas em `SOURCE_LANG` / `TARGET_LANG` e o país dos leitores em `COUNTRY`. Salve com Ctrl+O, Enter, Ctrl+X. As linhas do OpenRouter já são o padrão do `env.cloud.sample`, não é preciso mudar mais nada.
+5. **O livro** — copie-o para o WSL: `cp /mnt/c/Users/<seu nome no Windows>/Downloads/mybook.epub books/`, ou abra `\\wsl$\Ubuntu-24.04\home\<usuário linux>\sunny-narrator\books` no Explorador de Arquivos e arraste o arquivo para lá.
+6. **Duas execuções** — `python app.py` cria o dicionário e para; revise-o; `python app.py` traduz o livro (passos 3–4 do Início rápido). O resultado fica ao lado do original, na mesma pasta `books`, visível no Explorador pelo mesmo caminho `\\wsl$`.
+
+Da próxima vez: abra o *Ubuntu 24.04*, `cd ~/sunny-narrator && source .venv/bin/activate`, `python app.py`. Uma execução longa precisa da janela aberta e do computador ligado; uma execução interrompida continua do checkpoint.
+
 ## 🐳 Docker
 
 Imagens prontas (ambas incluem Calibre e pandoc; construídas a partir de `Dockerfile` / `Dockerfile.cpu`, testadas a cada push em `main`):

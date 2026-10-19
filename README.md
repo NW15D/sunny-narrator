@@ -48,6 +48,27 @@ A 450-page novel costs about $1 (an estimate from the tokens of a real run; the 
 
 **Local models instead of the cloud:** `env.sample` (llama.cpp, Ollama, LM Studio; 16–24 GB VRAM); Docker images — next section. **A draft only?** `FAST_TRANS=true`.
 
+## 🪟 Windows (via WSL2)
+
+The project runs on Linux, so on Windows 10 (version 2004 or newer) and Windows 11 it runs in WSL2 — a Linux inside Windows. The cloud models need no GPU, so this is the whole setup, with the [OpenRouter](https://openrouter.ai) configuration of the Quick Start.
+
+1. **WSL2 with Ubuntu** — in PowerShell as administrator: `wsl --install -d Ubuntu-24.04`, restart when asked, open *Ubuntu 24.04* from the Start menu and create a Linux user name and password. (Ubuntu 24.04 ships Python 3.12; Ubuntu 22.04 has Python 3.10, too old.)
+2. **Tools** — in the Ubuntu window:
+   ```bash
+   sudo apt update && sudo apt install -y git python3-venv python3-pip calibre pandoc
+   ```
+3. **The project** — in the Linux home folder, not under `/mnt/c` (files on the Windows disk are slow in WSL2):
+   ```bash
+   cd ~ && git clone https://github.com/NW15D/sunny-narrator && cd sunny-narrator
+   python3 -m venv .venv && source .venv/bin/activate
+   pip install -e .
+   ```
+4. **OpenRouter key and config** — create a key at [openrouter.ai/keys](https://openrouter.ai/keys) and top up a few dollars. `cp env.cloud.sample .env && nano .env`: put the key into `API_KEY_TRANSLATE` and `API_KEY_PROOFREAD`, the book into `FILE=books/mybook.epub`, the languages into `SOURCE_LANG` / `TARGET_LANG` and the country of your readers into `COUNTRY`. Save with Ctrl+O, Enter, Ctrl+X. The OpenRouter lines are the defaults of `env.cloud.sample`, nothing else to change.
+5. **The book** — copy it into WSL: `cp /mnt/c/Users/<your Windows name>/Downloads/mybook.epub books/`, or open `\\wsl$\Ubuntu-24.04\home\<linux user>\sunny-narrator\books` in Explorer and drag the file there.
+6. **Two runs** — `python app.py` builds the dictionary and stops; review it; `python app.py` translates the book (steps 3–4 of the Quick Start). The result is next to the source in the same `books` folder, visible in Explorer at the same `\\wsl$` path.
+
+Next time: open *Ubuntu 24.04*, `cd ~/sunny-narrator && source .venv/bin/activate`, `python app.py`. A long run needs the window open and the computer awake; an interrupted run continues from its checkpoint.
+
 ## 🐳 Docker
 
 Pre-built images (both include Calibre and pandoc; built from `Dockerfile` / `Dockerfile.cpu`, tested on every push to `main`):
