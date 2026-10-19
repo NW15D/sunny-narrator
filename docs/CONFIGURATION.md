@@ -45,7 +45,7 @@ authentication any non-empty API key will do.
 | `MODEL_PROOFREAD` | `tencent/Hunyuan-MT-7B` | Model name as the server reports it; reference: Qwen 3.6 (`qwen/qwen3.6-35b-a3b` in the cloud) |
 | `TEMP_PROOFREAD` | `0.7` | Base temperature |
 | `TIMEOUT_PROOFREAD` | `6000` | Request timeout, seconds |
-| `NOTHINK_PROOFREAD` | `true` | Same as `NOTHINK_TRANSLATE` |
+| `NOTHINK_PROOFREAD` | `true` | Same as `NOTHINK_TRANSLATE`. **Reasoning proofread model** (DeepSeek-R1, QwQ, gpt-oss): set `false`. Such a model thinks whatever it is told, and its thinking uses the same `max_tokens`; with `true` the REFLECTION call gets only about 1-3 thousand tokens and is cut off by it, chunk after chunk; with `false` that cap is off (`MAX_TOKENS_PER_CHUNK`) |
 | `EXTRA_BODY_PROOFREAD` | — | Same as `EXTRA_BODY_TRANSLATE` |
 | `S_PROMT_PROOFREAD` | `false` | Same as `S_PROMT_TRANSLATE` |
 

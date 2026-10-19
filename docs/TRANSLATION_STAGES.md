@@ -39,7 +39,8 @@ IMPROVE cannot or must not apply (`_keep_applicable_fixes`): `find` not in the
 translation or equal to `replace`, a `replace` with a word of the other
 alphabet, a fix that removes a dictionary translation (`_drops_term`).
 
-Its `max_tokens` follows the translation it reviews (a loop is cut sooner), and
+Its `max_tokens` follows the translation it reviews (a loop is cut sooner; with
+`NOTHINK_PROOFREAD=false`, for a reasoning model, it does not: `MAX_TOKENS_PER_CHUNK`), and
 it keeps a `presence_penalty` of 1.5 (`PRESENCE_PENALTY_REFLECTION`): without it
 the list repeats itself.
 
