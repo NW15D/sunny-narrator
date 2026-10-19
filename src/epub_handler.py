@@ -7,13 +7,16 @@ Uses fb2_handler for common XML operations.
 
 from xml.sax.saxutils import escape as _xml_escape, quoteattr as _xml_quoteattr
 from datetime import datetime
-from bs4 import BeautifulSoup
+import logging
+
+from bs4 import BeautifulSoup, Comment, NavigableString
 import ebooklib
 from ebooklib import epub
 
 from src.config import Config
 
 config = Config()
+logger = logging.getLogger(__name__)
 
 __all__ = [
     'parse_epub',
@@ -227,32 +230,84 @@ def extract_epub_body(book) -> str:
     return body
 
 
+# DEF-M19 (F3b stage 1). Block containers we walk into (their children are
+# converted, stray text between them becomes a paragraph). Everything else
+# that is not p/h1-h6/ul/ol/blockquote/hr is counted per tag and reported
+# once per document: nothing is lost silently any more. Tables are dropped
+# WITH a warning on this stage - their text is NOT carried over; full
+# support is stage 2.
+_WALK_INTO_TAGS = frozenset({'html', 'body', 'div', 'article', 'section',
+                             'main', 'aside', 'header', 'footer', 'form',
+                             'center'})
+_HEADING_TAGS = frozenset({'h1', 'h2', 'h3', 'h4', 'h5', 'h6'})
+
+
 def convert_html_to_fb2_section(soup) -> str:
     """
     Convert HTML content to FB2 section.
-    
+
+    Handles (stage 1 of DEF-M19): p (inline formatting preserved), h1-h6
+    (<subtitle>), ul/ol (<p> with a bullet/number prefix - this project's
+    FictionBook.xsd does not allow <list> in a section), blockquote
+    (<cite>), hr (<empty-line/>), and bare text inside containers such as
+    div. Lists nested deeper than one level flatten into the parent item.
+
     Args:
         soup: BeautifulSoup object with HTML content
-        
+
     Returns:
         FB2 section string
     """
-    section_parts = ['<section>']
-    
-    # Process paragraphs
-    for element in soup.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']):
-        tag_name = element.name
+    parts = ['<section>']
+    dropped = {}
 
-        if tag_name.startswith('h'):
-            # Convert heading to subtitle
-            section_parts.append(f"<subtitle>{_xml_escape(element.get_text())}</subtitle>")
-        elif tag_name == 'p':
-            # Convert paragraph, preserving inline formatting
-            para_content = convert_inline_html(element)
-            section_parts.append(f"<p>{para_content}</p>")
-    
-    section_parts.append('</section>')
-    return "\n".join(section_parts)
+    def emit_blocks(node, out):
+        for child in node.children:
+            if isinstance(child, Comment):
+                continue
+            if isinstance(child, NavigableString):
+                text = str(child).strip()
+                if text:
+                    out.append(f"<p>{_xml_escape(text)}</p>")
+                continue
+            emit_one(child, out)
+
+    def emit_one(el, out):
+        name = el.name or 'unknown'
+        if name in _HEADING_TAGS:
+            out.append(f"<subtitle>{_xml_escape(el.get_text())}</subtitle>")
+        elif name == 'p':
+            out.append(f"<p>{convert_inline_html(el)}</p>")
+        elif name in ('ul', 'ol'):
+            for i, li in enumerate(el.find_all('li', recursive=False), 1):
+                prefix = f"{i}. " if name == 'ol' else '\u2022 '
+                text = convert_inline_html(li).strip()
+                if text:
+                    out.append(f"<p>{prefix}{text}</p>")
+        elif name == 'blockquote':
+            inner = []
+            emit_blocks(el, inner)
+            if inner:
+                out.append('<cite>' + ''.join(inner) + '</cite>')
+        elif name == 'hr':
+            out.append('<empty-line/>')
+        elif name in _WALK_INTO_TAGS:
+            emit_blocks(el, out)
+        else:
+            dropped[name] = dropped.get(name, 0) + 1
+
+    emit_blocks(soup, parts)
+
+    if dropped:
+        total = sum(dropped.values())
+        detail = ', '.join(f'<{t}> x{c}' for t, c in sorted(dropped.items()))
+        logger.warning(
+            f"Dropped {total} unsupported block(s) converting HTML to FB2: "
+            f"{detail}; their text content is lost (stage-1 conversion, "
+            f"tables included)")
+
+    parts.append('</section>')
+    return "\n".join(parts)
 
 
 def convert_inline_html(element) -> str:

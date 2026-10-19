@@ -1,4 +1,4 @@
-"""Tests for src/epub_repair.py: EPUB validation and auto-repair logic."""
+"""Tests for src/epub_repair.py: EPUB structure/content validation."""
 import os
 import sys
 import zipfile
@@ -9,7 +9,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from src.epub_repair import (
-    validate_epub,
+    validate_epub_structure,
     _find_opf_path,
     _validate_xml,
 )
@@ -95,16 +95,16 @@ def broken_epub(make_epub):
 
 
 # ---------------------------------------------------------------------------
-# validate_epub
+# validate_epub_structure
 # ---------------------------------------------------------------------------
 
 def test_validate_valid_epub_no_errors(valid_epub):
-    assert validate_epub(valid_epub) == []
+    assert validate_epub_structure(valid_epub) == []
 
 
 def test_validate_valid_epub_no_recover_bug_errors(valid_epub):
     """A valid EPUB produces no errors at all (recover-attribute bug fixed)."""
-    errors = validate_epub(valid_epub)
+    errors = validate_epub_structure(valid_epub)
     assert errors == []
     assert not any(RECOVER_BUG_MARKER in e for e in errors)
 
@@ -123,7 +123,7 @@ def test_validate_xml_reports_real_syntax_errors():
 
 
 def test_validate_missing_file(tmp_path):
-    errors = validate_epub(str(tmp_path / 'nonexistent.epub'))
+    errors = validate_epub_structure(str(tmp_path / 'nonexistent.epub'))
     assert len(errors) == 1
     assert 'File not found' in errors[0]
 
@@ -131,7 +131,7 @@ def test_validate_missing_file(tmp_path):
 def test_validate_not_a_zip(tmp_path):
     bad = tmp_path / 'bad.epub'
     bad.write_bytes(b'this is not a zip file at all')
-    errors = validate_epub(str(bad))
+    errors = validate_epub_structure(str(bad))
     assert any('Invalid ZIP' in e for e in errors)
 
 
@@ -139,7 +139,7 @@ def test_validate_empty_zip(tmp_path):
     path = tmp_path / 'empty.epub'
     with zipfile.ZipFile(path, 'w'):
         pass
-    errors = validate_epub(str(path))
+    errors = validate_epub_structure(str(path))
     assert any('mimetype' in e for e in errors)
     assert any('container.xml' in e for e in errors)
     assert any('OPF' in e for e in errors)
@@ -152,7 +152,7 @@ def test_validate_compressed_mimetype(make_epub):
         'OEBPS/content.opf': OPF,
         'OEBPS/chapter1.xhtml': XHTML,
     }, store_mimetype=False)
-    errors = validate_epub(epub)
+    errors = validate_epub_structure(epub)
     assert any('uncompressed' in e for e in errors)
 
 
@@ -162,7 +162,7 @@ def test_validate_missing_container_xml(make_epub):
         'OEBPS/content.opf': OPF,
         'OEBPS/chapter1.xhtml': XHTML,
     })
-    errors = validate_epub(epub)
+    errors = validate_epub_structure(epub)
     assert any('META-INF/container.xml' in e for e in errors)
 
 
@@ -173,7 +173,7 @@ def test_validate_broken_opf_xml(make_epub):
         'OEBPS/content.opf': '<package><unclosed>',
         'OEBPS/chapter1.xhtml': XHTML,
     })
-    errors = validate_epub(epub)
+    errors = validate_epub_structure(epub)
     assert any('OPF' in e for e in errors)
 
 
@@ -188,7 +188,7 @@ def test_validate_broken_xhtml_detected(make_epub):
         'OEBPS/content.opf': OPF,
         'OEBPS/chapter1.xhtml': bad_xhtml,
     })
-    errors = validate_epub(epub)
+    errors = validate_epub_structure(epub)
     assert any('XHTML' in e for e in errors)
 
 
@@ -202,17 +202,7 @@ def test_validate_missing_xhtml_file_not_an_error(make_epub):
     })
     # Missing XHTML files are skipped silently by the validator;
     # only the known recover-bug errors (from OPF parsing) may remain.
-    assert _structural_errors(validate_epub(epub)) == []
-
-
-# ---------------------------------------------------------------------------
-# repair_epub
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# _repair_xhtml internals
-# ---------------------------------------------------------------------------
+    assert _structural_errors(validate_epub_structure(epub)) == []
 
 
 # ---------------------------------------------------------------------------
@@ -242,10 +232,5 @@ def test_find_opf_none_when_absent(make_epub):
     epub = make_epub({'mimetype': 'application/epub+zip'})
     with zipfile.ZipFile(epub) as zf:
         assert _find_opf_path(zf) is None
-
-
-# ---------------------------------------------------------------------------
-# validate_and_repair_epub
-# ---------------------------------------------------------------------------
 
 

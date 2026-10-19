@@ -53,7 +53,10 @@ def get_safe_xml_parser():
         resolve_entities=False,
         no_network=True,
         dtd_validation=False,
-        huge_tree=False,
+        # huge_tree=True: same hardening as xmlcheck.py (commit 909d4f3 /
+        # DEF-C6) - libxml2's default lookup limits false-positive on very
+        # large inline content (multi-MB base64 images, <binary>).
+        huge_tree=True,
         recover=True,
     )
 

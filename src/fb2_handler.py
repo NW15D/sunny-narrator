@@ -100,7 +100,9 @@ def parse_xml(file_path: str) -> tuple:
     footer = content[end_body_tag + len('</body>'):]
 
     # Remove namespaces
-    body = re.sub(r'\sxmlns="[^"]+"', '', body, count=1)
+    # DEF-N36: strip every xmlns in the body fragment (nested elements can
+    # carry their own); count=1 left a later one -> namespace mismatch.
+    body = re.sub(r'\sxmlns="[^"]+"', '', body)
     body = re.sub(r'<myheader>.*?</myheader>', '', body, flags=re.DOTALL)
     body = re.sub(r'<myfooter>.*?</myfooter>', '', body, flags=re.DOTALL)
 
@@ -188,9 +190,16 @@ def add_annotation_credit(header: str) -> str:
     credit = f'<p>{CREDIT_LINE}</p>'
     am = re.search(r'<annotation\b.*?</annotation>', section, flags=re.DOTALL)
     if am:
-        annotation = re.sub(r'\s*<p\b[^>]*>(.*?)</p>',
-                            lambda p: '' if is_credit_line(re.sub(r'<[^>]+>', '', p.group(1))) else p.group(0),
-                            am.group(0), flags=re.DOTALL)
+        # DEF-N41: an earlier run's credit can only be the trailing
+        # paragraph (we always append it last). Drop just that one; a
+        # mid-annotation paragraph whose text happens to equal the
+        # credit line stays untouched.
+        annotation = am.group(0)
+        paras = list(re.finditer(r'\s*<p\b[^>]*>(.*?)</p>', annotation, flags=re.DOTALL))
+        if paras:
+            last = paras[-1]
+            if is_credit_line(re.sub(r'<[^>]+>', '', last.group(1))):
+                annotation = annotation[:last.start()] + annotation[last.end():]
         end = annotation.rindex('</annotation>')
         new_section = section[:am.start()] + annotation[:end] + credit + annotation[end:] + section[am.end():]
     else:

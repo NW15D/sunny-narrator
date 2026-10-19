@@ -590,8 +590,8 @@ def create_epub_from_fb2(header: str, body: str, footer: str, output_path: str) 
         print(f"  Images: {len(images)}")
 
     try:
-        from .epub_repair import validate_epub
-        errors = validate_epub(epub_path)
+        from .epub_repair import validate_epub_structure
+        errors = validate_epub_structure(epub_path)
         if errors:
             logger.warning(f"EPUB validation warnings: {len(errors)}")
             for error in errors[:3]:

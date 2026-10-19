@@ -1,11 +1,9 @@
 """
-EPUB Validation and Auto-Repair Module.
+EPUB Validation Module.
 
-Validates and repairs EPUB files:
-- ZIP structure integrity
-- Required files presence (mimetype, META-INF/container.xml)
-- XHTML content validity
-- OPF manifest consistency
+Validates EPUB files (the auto-repair helpers were removed in 6a0ea91 —
+DEF-N35): ZIP structure, required files (mimetype, META-INF/container.xml),
+OPF/XHTML content, manifest consistency.
 """
 
 import logging
@@ -19,9 +17,12 @@ from src.xml_utils import get_safe_xml_parser
 logger = logging.getLogger(__name__)
 
 
-def validate_epub(epub_path: str) -> List[str]:
+def validate_epub_structure(epub_path: str) -> List[str]:
     """
     Validate EPUB file structure and content.
+
+    DEF-N34: renamed from validate_epub - calibre_pipeline keeps a distinct
+    validate_epub() returning a ValidationReport; this one returns List[str].
     
     Args:
         epub_path: Path to EPUB file
@@ -132,7 +133,7 @@ def _validate_xml(content: bytes, context: str) -> List[str]:
             resolve_entities=False,
             no_network=True,
             dtd_validation=False,
-            huge_tree=False,
+            huge_tree=True,  # DEF-C6 follow-up: large inline content is legal
             recover=False,  # strict mode for validation
         )
         etree.fromstring(content, parser)

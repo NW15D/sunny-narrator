@@ -4,8 +4,11 @@ XML validation utilities.
 Provides FB2 XML validation using XSD schema and tag cleaning.
 """
 
+import logging
 import os
 from lxml import etree
+
+logger = logging.getLogger(__name__)
 
 
 # F2: XSD schema cache - FictionBook.xsd is static; parsing it on
@@ -61,6 +64,9 @@ def validate_fb2(xml_string: str) -> list:
             errors.append(f"Line {error.line}, Column {error.column}: {error.message}")
             
     except Exception as e:
-        errors.append(f"General Validation Error: {str(e)}")
+        # DEF-N38: bare str(e) hid the failure class (opaque "General
+        # Validation Error"); name the type and log the traceback.
+        logger.exception("FB2 validation crashed")
+        errors.append(f"General Validation Error: {type(e).__name__}: {e}")
         
     return errors

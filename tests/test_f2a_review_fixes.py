@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from src import dict_clean, dict_convert, utils
 from src import vocabulary_manager as vm
-from src.epub_repair import _get_xhtml_files_from_opf, validate_epub
+from src.epub_repair import _get_xhtml_files_from_opf, validate_epub_structure
 from src.llm_logger import LLMLogger
 
 
@@ -360,6 +360,6 @@ def test_a_valid_empty_manifest_is_still_an_empty_list(tmp_path):
 
 def test_validate_epub_reports_an_unreadable_manifest(tmp_path):
     epub = _make_epub(tmp_path, _CORRUPT_OPF)
-    errors = validate_epub(epub)
+    errors = validate_epub_structure(epub)
     assert any('Cannot parse OPF manifest' in e for e in errors), \
         f"a corrupt manifest must be a visible error, got: {errors}"

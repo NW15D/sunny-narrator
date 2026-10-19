@@ -20,32 +20,48 @@ logger = logging.getLogger(__name__)
 # Turkish also writes the number first: "20. Bölüm".
 _CHAPTER_WORDS = (r'chapter|episode|глава|розділ|b[öo]l[üu]m|kapitel|chapitre|cap[ií]tulo'
                   r'|capitolo|rozdzia[łl]|hoofdstuk|kapitola|fejezet|luku')
+# A line made up only of repeated separator characters (====, ----, ****, ####).
+_SEPARATOR_LINE_RE = re.compile(r'^\s*([=\-*_#~])\1{2,}\s*$')
+
+# DEF-N42 (heading-heuristic tightening). CJK/Korean chapter markers must be
+# followed by end of line or a heading separator, not by running script:
+# '第3章の話に出てくる…' is prose that merely starts with '第3章', while
+# '第3章 冒険' is a heading. Wordy headings are short standalone lines; long
+# paragraphs are not.
+_MARKER_TAIL = r'(?=$|[:：、.。\-—\s])'
+_HEADING_MAX_LEN = 120
+_SEPARATOR_HEADING_MAX_LEN = 80
+_SENTENCE_END_RE = re.compile(r'[.!?。！？…]$')
 _CHAPTER_MARKER_RE = re.compile(
     r'^\s*('
-    r'제\s*\d+\s*화'
-    r'|\d+\s*화'
-    r'|第\s*[\d一二三四五六七八九十百千]+\s*[章話话回]'
-    rf'|(?:{_CHAPTER_WORDS})\s+\d+'
+    r'제\s*\d+\s*화' + _MARKER_TAIL
+    + r'|\d+\s*화' + _MARKER_TAIL
+    + r'|第\s*[\d一二三四五六七八九十百千]+\s*[章話话回]' + _MARKER_TAIL
+    + rf'|(?:{_CHAPTER_WORDS})\s+\d+'
     rf'|\d+\.?\s*(?:{_CHAPTER_WORDS})\b'
     r')',
     re.IGNORECASE,
 )
-
-# A line made up only of repeated separator characters (====, ----, ****, ####).
-_SEPARATOR_LINE_RE = re.compile(r'^\s*([=\-*_#~])\1{2,}\s*$')
 
 
 def _is_chapter_heading(line, next_line):
     """A line is a chapter heading if it matches a known marker, or if the
     line right after it is a "====" / "----" style separator — a common
     convention in scraped web-novel TXT dumps.
+
+    DEF-N42 tightenings: a marker is only a heading when the line is short
+    (not a wrapped prose paragraph), CJK/Korean markers must end at a
+    boundary, and separator-promotion needs a short line that is not a
+    finished sentence.
     """
     stripped = line.strip()
-    if not stripped:
+    if not stripped or len(stripped) > _HEADING_MAX_LEN:
         return False
     if _CHAPTER_MARKER_RE.match(stripped):
         return True
-    if next_line is not None and _SEPARATOR_LINE_RE.match(next_line):
+    if (next_line is not None and _SEPARATOR_LINE_RE.match(next_line)
+            and len(stripped) <= _SEPARATOR_HEADING_MAX_LEN
+            and not _SENTENCE_END_RE.search(stripped)):
         return True
     return False
 
