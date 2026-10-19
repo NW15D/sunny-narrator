@@ -1,0 +1,47 @@
+# Vocabulary for eternal-moment.pg
+# Format: source = target, category, gender, notes
+# Generated automatically by NER
+# Categories and genders come from the book (NER labels, pronouns); an empty
+# gender: the book does not show it clearly - set it or let the synopsis
+# fill it in. The translation follows the gender here (the GENDER stage).
+
+
+# --- Translated Terms (Format: source = target, category, gender, notes) ---
+Project Gutenberg Literary Archive Foundation = Fundação do Arquivo Literário do Projecto Gutenberg,ORG,,
+Committee of the Mending Apparatus = Comissão do Aparelho de Remendo,ORG,,
+Dolores and Violet = Dolores e Violet,TERM,,
+French Revolution = Revolução Francesa,TERM,,
+United States = Estados Unidos,LOC,,
+Signora Cantù = Signora Cantù,PERSON,she,
+Miss Haddon = Senhorita Haddon,PERSON,she,
+*Biscione* = *Biscione*,ORG,,
+Catherine = Catarina,PERSON,,
+Beethoven = Beethoven,PERSON,he,
+Elizabeth = Isabel,PERSON,,
+Miss Raby = Senhorita Raby,PERSON,she,
+Napoleon = Napoleão,PERSON,he,
+Giuseppe = Giuseppe,PERSON,,
+Machine = Máquina,ORG,,
+Michael = Miguel,PERSON,he,
+Andrews = Andrews,PERSON,he,
+Mildred = Mildred,PERSON,,
+English = Inglês,TERM,,
+Leyland = Leyland,PERSON,,
+Vashti = Vashti,PERSON,she,
+Wessex = Wessex,LOC,,
+Harold = Haroldo,PERSON,he,
+eBook = eBook,TERM,,
+Micky = Micky,PERSON,he,
+Janet = Janet,PERSON,,
+Henry = Henrique,PERSON,he,
+Ellen = Elena,PERSON,,
+Siren = Sereia,PERSON,,
+Vorta = Vorta,ORG,,
+Kuno = Kuno,PERSON,,
+dell = dell,TERM,,
+Adam = Adão,PERSON,he,
+Turk = Turco,PERSON,he,
+Rose = Rosa,PERSON,,
+Enid = Enid,ORG,,
+U.S. = E.U.A.,LOC,,
+Feo = Feo,PERSON,,

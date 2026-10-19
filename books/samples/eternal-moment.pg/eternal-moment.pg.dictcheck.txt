@@ -1,0 +1,15 @@
+Dictionary /ai/sunny-narrator/books/eternal-moment.pg_zh.dic against /ai/sunny-narrator/books/eternal-moment.pg.epub
+
+## gender not sure (not set) (11)
+Catherine = 凯瑟琳: she ×8, he ×3
+Elizabeth = 伊丽莎白: she ×6, he ×2
+Giuseppe = 朱塞佩: he ×9, she ×2
+Mildred = 米尔德丽德: no pronouns
+Leyland = 利兰: she ×28, he ×24
+Janet = 珍妮特: he ×18, she ×6
+Ellen = 艾伦: no pronouns
+Siren = 塞壬: she ×3, he ×1
+Kuno = 库诺: he ×12, she ×10
+Rose = 罗斯: no pronouns
+Feo = 费奥: he ×17, she ×9
+

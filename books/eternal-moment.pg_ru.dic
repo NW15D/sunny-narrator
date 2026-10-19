@@ -1,0 +1,47 @@
+# Vocabulary for eternal-moment.pg
+# Format: source = target, category, gender, notes
+# Generated automatically by NER
+# Categories and genders come from the book (NER labels, pronouns); an empty
+# gender: the book does not show it clearly - set it or let the synopsis
+# fill it in. The translation follows the gender here (the GENDER stage).
+
+
+# --- Translated Terms (Format: source = target, category, gender, notes) ---
+Project Gutenberg Literary Archive Foundation = Фонд литературного архива проекта «Гутенберг»,ORG,,
+Committee of the Mending Apparatus = Комитет аппарата починки,ORG,,
+Dolores and Violet = Долорес и Вайолет,TERM,,
+French Revolution = Великая французская революция,TERM,,
+United States = Соединенные Штаты,LOC,,
+Signora Cantù = Синьора Канту,PERSON,she,
+Miss Haddon = Мисс Хэддон,PERSON,she,
+*Biscione* = Бичоне,ORG,,
+Catherine = Кэтрин,PERSON,,
+Beethoven = Бетховен,PERSON,he,
+Elizabeth = Элизабет,PERSON,,
+Miss Raby = Мисс Рэби,PERSON,she,
+Napoleon = Наполеон,PERSON,he,
+Giuseppe = Джузеппе,PERSON,,
+Machine = Машина,ORG,,
+Michael = Майкл,PERSON,he,
+Andrews = Андерс,PERSON,he,
+Mildred = Милдред,PERSON,,
+English = английский,TERM,,
+Leyland = Лейланд,PERSON,,
+Vashti = Вашти,PERSON,she,
+Wessex = Вессекс,LOC,,
+Harold = Гарольд,PERSON,he,
+eBook = электронная книга,TERM,,
+Micky = Мики,PERSON,he,
+Janet = Джанет,PERSON,,
+Henry = Генри,PERSON,he,
+Ellen = Эллен,PERSON,,
+Siren = Сирена,PERSON,,
+Vorta = Ворта,ORG,,
+Kuno = Куно,PERSON,,
+dell = делл,TERM,,
+Adam = Адам,PERSON,he,
+Turk = турок,PERSON,he,
+Rose = Роуз,PERSON,,
+Enid = Энид,ORG,,
+U.S. = США,LOC,,
+Feo = Фео,PERSON,,

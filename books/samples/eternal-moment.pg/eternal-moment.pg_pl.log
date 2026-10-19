@@ -1,0 +1,1355 @@
+2026-10-19 09:56:39,503 - INFO - Step 1/5: Converting /ai/sunny-narrator/books/eternal-moment.pg.epub to Markdown...
+2026-10-19 09:56:39,641 - INFO - Converting /ai/sunny-narrator/books/eternal-moment.pg.epub to HTMLZ...
+2026-10-19 09:56:39,641 - INFO - Running: ebook-convert /ai/sunny-narrator/books/eternal-moment.pg.epub /tmp/calibre_conv_nil5qhhw/output.htmlz
+2026-10-19 09:56:41,062 - INFO - Extracting HTML from HTMLZ...
+2026-10-19 09:56:41,068 - INFO - Cleaning Calibre markers from HTML...
+2026-10-19 09:56:41,198 - INFO - Sanitized source HTML: dropped 0 empty anchor(s), unwrapped 87 presentational container(s)
+2026-10-19 09:56:41,224 - INFO - Converting HTML to Markdown...
+2026-10-19 09:56:41,244 - INFO - Running: pandoc /tmp/calibre_conv_nil5qhhw/input.html -f html -t markdown-raw_html-native_divs-native_spans-fenced_divs-bracketed_spans-link_attributes-header_attributes --wrap=none -o /tmp/calibre_conv_nil5qhhw/output.md
+2026-10-19 09:56:42,284 - INFO - Conversion complete: 230949 chars, title='The eternal moment, and other stories'
+2026-10-19 09:56:42,284 - INFO - Step 2/5: Dictionary...
+2026-10-19 09:56:42,284 - INFO - Loading vocabulary from /ai/sunny-narrator/books/eternal-moment.pg_pl.dic
+2026-10-19 09:56:42,285 - INFO - Loaded 38 entries from CSV format
+2026-10-19 09:56:42,285 - DEBUG - [VocabularyManager] Extracted 24 characters, synced with registry
+2026-10-19 09:56:42,285 - WARNING - Dictionary /ai/sunny-narrator/books/eternal-moment.pg_pl.dic: 11 character(s) without gender (he/she/it/they in the third field), the model guesses it: Catherine, Elizabeth, Ellen, Feo, Giuseppe, Janet, Kuno, Leyland, Mildred, Rose, Siren
+2026-10-19 09:56:42,287 - INFO - Dictionary check: the evidence of this book is cached (eternal-moment.pg.dictcheck.json)
+2026-10-19 09:56:42,289 - INFO - Dictionary check: gender not sure (not set): 11
+2026-10-19 09:56:42,289 - DEBUG - → translate_metadata
+2026-10-19 09:56:42,289 - DEBUG - LLM Request [proofread]: Qwen36-35B, 377 chars, temp=0.30, sys_not_promt=False, json_mode=True
+2026-10-19 09:56:43,988 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 09:56:43,988 - DEBUG -   message.content: type=str, len=119, is_none=False
+2026-10-19 09:56:43,988 - DEBUG - LLM Response [proofread]: 119 chars
+2026-10-19 09:56:43,989 - INFO - Metadata translated: title 'The eternal moment, and other stories' -> 'Wieczna chwila i inne opowiadania'
+2026-10-19 09:56:43,989 - INFO - Step 3/5: Translating...
+2026-10-19 09:56:43,994 - INFO - Using MAX_LEN_CHUNK from config: 10000
+2026-10-19 09:56:44,003 - INFO - Text length: 230,949 chars, max_chunk_size: 10000
+2026-10-19 09:56:44,003 - INFO - Generated 27 chunks
+2026-10-19 09:56:44,003 - INFO - First chunk sizes: [3095, 10065, 10023, 9839, 9445, 8362, 8531]
+2026-10-19 09:56:44,003 - INFO - Translating 27 chunks (max_chunk_size=10000)...
+Pipeline: Calibre-based (auto-detected)
+Input: /ai/sunny-narrator/books/eternal-moment.pg.epub
+Output format: epub
+Chunk size: default
+Progress: 1/27 (3.7%)Progress: 2/27 (7.4%)2026-10-19 09:56:52,692 - DEBUG - Chunk 0-0 (GPU): 7/38 vocab terms matched
+2026-10-19 09:56:52,692 - DEBUG - translate_chunk: vocab_dict=7 terms, vocab_entries=7, outline_len=0
+2026-10-19 09:56:52,692 - DEBUG - → initial_translation
+2026-10-19 09:56:52,791 - DEBUG - LLM Request [translate]: Gemma4-26B, 3658 chars, temp=0.05, sys_not_promt=False, json_mode=True
+2026-10-19 09:57:14,777 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 09:57:14,777 - DEBUG -   message.content: type=str, len=3305, is_none=False
+2026-10-19 09:57:14,778 - DEBUG - LLM Response [translate]: 3305 chars, 2206 tokens
+2026-10-19 09:57:14,778 - DEBUG - Extracted translation from JSON [initial_translation]
+2026-10-19 09:57:14,786 - DEBUG - → generate_synopsis
+2026-10-19 09:57:14,786 - DEBUG - LLM Request [translate]: Gemma4-26B, 8219 chars, temp=0.15, sys_not_promt=False, json_mode=False
+2026-10-19 09:57:20,517 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 09:57:20,517 - DEBUG -   message.content: type=str, len=501, is_none=False
+2026-10-19 09:57:20,517 - DEBUG - LLM Response [translate]: 501 chars, 2405 tokens
+2026-10-19 09:57:20,517 - INFO - [synopsis] Dictionary candidates reported: 1
+2026-10-19 09:57:20,518 - DEBUG - → remove_tags
+2026-10-19 09:57:20,518 - DEBUG - No wrapper tags found, returning full text
+2026-10-19 09:57:20,520 - INFO - Dictionary: added E. M. Forster = E. M. Forster, PERSON
+2026-10-19 09:57:20,520 - DEBUG - [VocabularyManager] Extracted 25 characters, synced with registry
+2026-10-19 09:57:20,520 - DEBUG - → reflection
+2026-10-19 09:57:20,520 - DEBUG - LLM Request [proofread]: Qwen36-35B, 6794 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 09:57:21,974 - DEBUG - Chunk 0-1 (GPU): 4/39 vocab terms matched
+2026-10-19 09:57:21,974 - DEBUG - translate_chunk: vocab_dict=4 terms, vocab_entries=4, outline_len=426
+2026-10-19 09:57:21,974 - DEBUG - → initial_translation
+2026-10-19 09:57:22,017 - DEBUG - LLM Request [translate]: Gemma4-26B, 11116 chars, temp=0.05, sys_not_promt=False, json_mode=True
+2026-10-19 09:57:38,870 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 09:57:38,870 - DEBUG -   message.content: type=str, len=2334, is_none=False
+2026-10-19 09:57:38,870 - DEBUG - LLM Response [proofread]: 2334 chars, 2865 tokens
+2026-10-19 09:57:38,871 - DEBUG - Extracted 7 suggestions from JSON [reflection]
+2026-10-19 09:57:38,879 - DEBUG - → improve_translation
+2026-10-19 09:57:38,880 - DEBUG - LLM Request [proofread]: Qwen36-35B, 4849 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 09:57:51,631 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 09:57:51,632 - DEBUG -   message.content: type=str, len=3285, is_none=False
+2026-10-19 09:57:51,632 - DEBUG - LLM Response [proofread]: 3285 chars, 2573 tokens
+2026-10-19 09:57:51,632 - DEBUG - Extracted translation from JSON [improve_translation]
+2026-10-19 09:57:51,634 - DEBUG - → final_edit
+2026-10-19 09:57:51,634 - DEBUG - LLM Request [proofread]: Qwen36-35B, 3329 chars, temp=0.10, sys_not_promt=False, json_mode=True
+2026-10-19 09:58:03,997 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 09:58:03,997 - DEBUG -   message.content: type=str, len=3278, is_none=False
+2026-10-19 09:58:03,998 - DEBUG - LLM Response [proofread]: 3278 chars, 2080 tokens
+2026-10-19 09:58:03,998 - DEBUG - Extracted translation from JSON [final_edit]
+2026-10-19 09:58:04,000 - DEBUG - → gender_fix
+2026-10-19 09:58:04,003 - INFO - spaCy model pl_core_news_sm is not installed: downloading it (first use)
+2026-10-19 09:58:04,006 - DEBUG - Starting new HTTPS connection (1): raw.githubusercontent.com:443
+2026-10-19 09:58:04,305 - DEBUG - https://raw.githubusercontent.com:443 "GET /explosion/spacy-models/master/compatibility.json HTTP/1.1" 200 4359
+Collecting pl-core-news-sm==3.8.0
+  Downloading pl_core_news_sm-3.8.0-py3-none-any.whl (20.2 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 20.2/20.2 MB 3.5 MB/s  0:00:05
+Installing collected packages: pl-core-news-sm
+Successfully installed pl-core-news-sm-3.8.0
+2026-10-19 09:58:13,141 - DEBUG - [FINAL] 3095 → 3315 chars (×1.07, calibrating) ✓ OK
+2026-10-19 09:58:13,141 - INFO - Translation successful (tokens: 12,129, total: 12,129)
+2026-10-19 09:58:13,144 - DEBUG - [chunk_1] 3095 → 3315 chars (×1.07, calibrating) ✓ OK
+2026-10-19 09:58:13,144 - DEBUG - Checkpoint saved: /ai/sunny-narrator/books/eternal-moment.pg_pl.checkpoint.json
+Loading spaCy model: en_core_web_lg
+  Lexical matches: ['Andrews', 'English', 'Machine', 'Siren', 'U.S.', 'United States', 'eBook']
+Found matching words: {'English', 'Andrews', 'eBook', 'United States', 'U.S.', 'Machine', 'Siren'}
+  Lexical matches: ['Kuno', 'Machine', 'Rose', 'Vashti']
+Found matching words: {'Machine', 'Vashti', 'Kuno', 'Rose'}
+[38;5;2m✔ Download and installation successful[0m
+You can now load the package via spacy.load('pl_core_news_sm')
+Progress: 3/27 (11.1%)2026-10-19 09:58:43,974 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 09:58:43,978 - DEBUG -   message.content: type=str, len=10141, is_none=False
+2026-10-19 09:58:43,979 - DEBUG - LLM Response [translate]: 10141 chars, 6360 tokens
+2026-10-19 09:58:43,983 - DEBUG - Extracted translation from JSON [initial_translation]
+2026-10-19 09:58:44,022 - DEBUG - → generate_synopsis
+2026-10-19 09:58:44,025 - DEBUG - LLM Request [translate]: Gemma4-26B, 21871 chars, temp=0.15, sys_not_promt=False, json_mode=False
+2026-10-19 09:58:55,902 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 09:58:55,903 - DEBUG -   message.content: type=str, len=618, is_none=False
+2026-10-19 09:58:55,903 - DEBUG - LLM Response [translate]: 618 chars, 6252 tokens
+2026-10-19 09:58:55,973 - INFO - [synopsis] Dictionary candidates reported: 5
+2026-10-19 09:58:55,973 - DEBUG - → remove_tags
+2026-10-19 09:58:55,974 - DEBUG - No wrapper tags found, returning full text
+2026-10-19 09:58:55,975 - DEBUG - [gender] synopsis gender of 'Vashti' ignored: the dictionary has she
+2026-10-19 09:58:55,979 - INFO - Dictionary: added pneumatic post = poczta pneumatyczna, TERM
+2026-10-19 09:58:55,981 - INFO - Dictionary: added Central Committee = Centralny Komitet, TERM
+2026-10-19 09:58:55,983 - INFO - Dictionary: 'Book of the Machine' not added, already covered by ['Machine']
+2026-10-19 09:58:55,984 - DEBUG - [VocabularyManager] Extracted 25 characters, synced with registry
+2026-10-19 09:58:55,984 - DEBUG - → reflection
+2026-10-19 09:58:55,985 - DEBUG - LLM Request [proofread]: Qwen36-35B, 20770 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 09:58:57,262 - DEBUG - Chunk 0-2 (GPU): 5/41 vocab terms matched
+2026-10-19 09:58:57,262 - DEBUG - translate_chunk: vocab_dict=5 terms, vocab_entries=5, outline_len=427
+2026-10-19 09:58:57,262 - DEBUG - → initial_translation
+2026-10-19 09:58:57,280 - DEBUG - LLM Request [translate]: Gemma4-26B, 10913 chars, temp=0.05, sys_not_promt=False, json_mode=True
+2026-10-19 09:59:11,766 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 09:59:11,766 - DEBUG -   message.content: type=str, len=1336, is_none=False
+2026-10-19 09:59:11,766 - DEBUG - LLM Response [proofread]: 1336 chars, 6685 tokens
+2026-10-19 09:59:11,767 - DEBUG - Extracted 9 suggestions from JSON [reflection]
+2026-10-19 09:59:11,769 - DEBUG - → improve_translation
+2026-10-19 09:59:11,769 - DEBUG - LLM Request [proofread]: Qwen36-35B, 11261 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 09:59:53,872 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 09:59:53,882 - DEBUG -   message.content: type=str, len=10134, is_none=False
+2026-10-19 09:59:53,885 - DEBUG - LLM Response [proofread]: 10134 chars, 7189 tokens
+2026-10-19 09:59:53,890 - DEBUG - Extracted translation from JSON [improve_translation]
+2026-10-19 09:59:53,901 - DEBUG - → final_edit
+2026-10-19 09:59:53,905 - DEBUG - LLM Request [proofread]: Qwen36-35B, 10179 chars, temp=0.10, sys_not_promt=False, json_mode=True
+2026-10-19 10:00:17,235 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:00:17,235 - DEBUG -   message.content: type=str, len=9849, is_none=False
+2026-10-19 10:00:17,236 - DEBUG - LLM Response [translate]: 9849 chars, 5849 tokens
+2026-10-19 10:00:17,237 - DEBUG - Extracted translation from JSON [initial_translation]
+2026-10-19 10:00:17,267 - DEBUG - → generate_synopsis
+2026-10-19 10:00:17,267 - DEBUG - LLM Request [translate]: Gemma4-26B, 21618 chars, temp=0.15, sys_not_promt=False, json_mode=False
+2026-10-19 10:00:28,629 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:00:28,629 - DEBUG -   message.content: type=str, len=564, is_none=False
+2026-10-19 10:00:28,629 - DEBUG - LLM Response [translate]: 564 chars, 5966 tokens
+2026-10-19 10:00:28,651 - INFO - [synopsis] Dictionary candidates reported: 3
+2026-10-19 10:00:28,651 - DEBUG - → remove_tags
+2026-10-19 10:00:28,652 - DEBUG - No wrapper tags found, returning full text
+2026-10-19 10:00:28,652 - DEBUG - [gender] synopsis gender of 'Vashti' ignored: the dictionary has she
+2026-10-19 10:00:28,652 - INFO - [gender] Kuno = he: from the synopsis (2 chunks agree)
+2026-10-19 10:00:28,654 - INFO - Dictionary: added cinematophote = kinematofot, TERM
+2026-10-19 10:00:28,654 - DEBUG - [VocabularyManager] Extracted 25 characters, synced with registry
+2026-10-19 10:00:37,208 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:00:37,209 - DEBUG -   message.content: type=str, len=10183, is_none=False
+2026-10-19 10:00:37,209 - DEBUG - LLM Response [proofread]: 10183 chars, 6816 tokens
+2026-10-19 10:00:37,210 - DEBUG - Extracted translation from JSON [final_edit]
+2026-10-19 10:00:37,216 - DEBUG - → gender_fix
+2026-10-19 10:00:37,498 - DEBUG - [FINAL] 10065 → 10320 chars (×1.03, calibrating) ✓ OK
+2026-10-19 10:00:37,498 - INFO - Translation successful (tokens: 33,302, total: 45,431)
+2026-10-19 10:00:37,498 - DEBUG - [chunk_2] 10065 → 10320 chars (×1.03, calibrating) ✓ OK
+2026-10-19 10:00:37,498 - DEBUG - → reflection
+2026-10-19 10:00:37,499 - DEBUG - LLM Request [proofread]: Qwen36-35B, 20304 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:00:37,502 - DEBUG - Checkpoint saved: /ai/sunny-narrator/books/eternal-moment.pg_pl.checkpoint.json
+  Lexical matches: ['Kuno', 'Machine', 'Rose', 'Vashti']
+Found matching words: {'Vashti', 'Kuno', 'Rose', 'Central Committee', 'Machine'}
+Progress: 4/27 (14.8%)2026-10-19 10:00:38,615 - DEBUG - Chunk 0-3 (GPU): 5/42 vocab terms matched
+2026-10-19 10:00:38,615 - DEBUG - translate_chunk: vocab_dict=5 terms, vocab_entries=5, outline_len=457
+2026-10-19 10:00:38,616 - DEBUG - → initial_translation
+2026-10-19 10:00:38,619 - DEBUG - LLM Request [translate]: Gemma4-26B, 10941 chars, temp=0.05, sys_not_promt=False, json_mode=True
+2026-10-19 10:01:09,829 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:01:09,829 - DEBUG -   message.content: type=str, len=4124, is_none=False
+2026-10-19 10:01:09,830 - DEBUG - LLM Response [proofread]: 4124 chars, 7240 tokens
+2026-10-19 10:01:09,830 - DEBUG - Extracted 20 suggestions from JSON [reflection]
+2026-10-19 10:01:09,836 - DEBUG - → improve_translation
+2026-10-19 10:01:09,836 - DEBUG - LLM Request [proofread]: Qwen36-35B, 12132 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:01:49,632 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:01:49,632 - DEBUG -   message.content: type=str, len=9832, is_none=False
+2026-10-19 10:01:49,632 - DEBUG - LLM Response [proofread]: 9832 chars, 7183 tokens
+2026-10-19 10:01:49,633 - DEBUG - Extracted translation from JSON [improve_translation]
+2026-10-19 10:01:49,638 - DEBUG - → final_edit
+2026-10-19 10:01:49,639 - DEBUG - LLM Request [proofread]: Qwen36-35B, 9904 chars, temp=0.10, sys_not_promt=False, json_mode=True
+2026-10-19 10:02:00,850 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:02:00,850 - DEBUG -   message.content: type=str, len=9943, is_none=False
+2026-10-19 10:02:00,850 - DEBUG - LLM Response [translate]: 9943 chars, 6114 tokens
+2026-10-19 10:02:00,851 - DEBUG - Extracted translation from JSON [initial_translation]
+2026-10-19 10:02:00,878 - DEBUG - → generate_synopsis
+2026-10-19 10:02:00,878 - DEBUG - LLM Request [translate]: Gemma4-26B, 21354 chars, temp=0.15, sys_not_promt=False, json_mode=False
+2026-10-19 10:02:12,578 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:02:12,578 - DEBUG -   message.content: type=str, len=536, is_none=False
+2026-10-19 10:02:12,578 - DEBUG - LLM Response [translate]: 536 chars, 5985 tokens
+2026-10-19 10:02:12,600 - INFO - [synopsis] Dictionary candidates reported: 3
+2026-10-19 10:02:12,600 - DEBUG - → remove_tags
+2026-10-19 10:02:12,600 - DEBUG - No wrapper tags found, returning full text
+2026-10-19 10:02:12,601 - DEBUG - [gender] synopsis gender of 'Vashti' ignored: the dictionary has she
+2026-10-19 10:02:12,601 - DEBUG - [gender] synopsis gender of 'Kuno' ignored: the dictionary has he
+2026-10-19 10:02:12,603 - INFO - Dictionary: added vomitories = wymiatające, TERM
+2026-10-19 10:02:12,603 - DEBUG - [VocabularyManager] Extracted 25 characters, synced with registry
+2026-10-19 10:02:28,653 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:02:28,653 - DEBUG -   message.content: type=str, len=9832, is_none=False
+2026-10-19 10:02:28,654 - DEBUG - LLM Response [proofread]: 9832 chars, 6374 tokens
+2026-10-19 10:02:28,655 - DEBUG - Extracted translation from JSON [final_edit]
+2026-10-19 10:02:28,660 - DEBUG - → gender_fix
+2026-10-19 10:02:28,855 - DEBUG - [FINAL] 10023 → 9858 chars (×0.98, calibrating) ✓ OK
+2026-10-19 10:02:28,855 - INFO - Translation successful (tokens: 32,612, total: 78,043)
+2026-10-19 10:02:28,855 - DEBUG - [chunk_3] 10023 → 9858 chars (×0.98, expected ×1.03) ✓ OK
+2026-10-19 10:02:28,856 - DEBUG - → reflection
+2026-10-19 10:02:28,857 - DEBUG - LLM Request [proofread]: Qwen36-35B, 20369 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:02:28,860 - DEBUG - Checkpoint saved: /ai/sunny-narrator/books/eternal-moment.pg_pl.checkpoint.json
+  Lexical matches: ['Kuno', 'Machine', 'Rose', 'Vashti']
+Found matching words: {'Vashti', 'Kuno', 'Rose', 'Central Committee', 'Machine'}
+Progress: 5/27 (18.5%)2026-10-19 10:02:30,073 - DEBUG - Chunk 0-4 (GPU): 5/43 vocab terms matched
+2026-10-19 10:02:30,073 - DEBUG - translate_chunk: vocab_dict=5 terms, vocab_entries=5, outline_len=432
+2026-10-19 10:02:30,073 - DEBUG - → initial_translation
+2026-10-19 10:02:30,104 - DEBUG - LLM Request [translate]: Gemma4-26B, 10293 chars, temp=0.05, sys_not_promt=False, json_mode=True
+2026-10-19 10:03:49,444 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:03:49,444 - DEBUG -   message.content: type=str, len=9573, is_none=False
+2026-10-19 10:03:49,444 - DEBUG - LLM Response [translate]: 9573 chars, 5677 tokens
+2026-10-19 10:03:49,445 - DEBUG - Extracted translation from JSON [initial_translation]
+2026-10-19 10:03:49,472 - DEBUG - → generate_synopsis
+2026-10-19 10:03:49,472 - DEBUG - LLM Request [translate]: Gemma4-26B, 20817 chars, temp=0.15, sys_not_promt=False, json_mode=False
+2026-10-19 10:03:57,153 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:03:57,153 - DEBUG -   message.content: type=str, len=15111, is_none=False
+2026-10-19 10:03:57,153 - DEBUG - LLM Response [proofread]: 15111 chars, 10635 tokens
+2026-10-19 10:03:57,155 - DEBUG - Extracted 1 suggestions from JSON [reflection]
+2026-10-19 10:03:57,156 - DEBUG - → improve_translation
+2026-10-19 10:03:57,156 - DEBUG - LLM Request [proofread]: Qwen36-35B, 10132 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:04:00,671 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:04:00,671 - DEBUG -   message.content: type=str, len=503, is_none=False
+2026-10-19 10:04:00,671 - DEBUG - LLM Response [translate]: 503 chars, 5837 tokens
+2026-10-19 10:04:00,672 - INFO - [synopsis] Dictionary candidates reported: 1
+2026-10-19 10:04:00,672 - DEBUG - → remove_tags
+2026-10-19 10:04:00,672 - DEBUG - No wrapper tags found, returning full text
+2026-10-19 10:04:00,673 - DEBUG - [gender] synopsis gender of 'Kuno' ignored: the dictionary has he
+2026-10-19 10:04:37,675 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:04:37,675 - DEBUG -   message.content: type=str, len=9942, is_none=False
+2026-10-19 10:04:37,675 - DEBUG - LLM Response [proofread]: 9942 chars, 6707 tokens
+2026-10-19 10:04:37,676 - DEBUG - Extracted translation from JSON [improve_translation]
+2026-10-19 10:04:37,681 - DEBUG - → final_edit
+2026-10-19 10:04:37,681 - DEBUG - LLM Request [proofread]: Qwen36-35B, 10014 chars, temp=0.10, sys_not_promt=False, json_mode=True
+2026-10-19 10:05:17,180 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:05:17,180 - DEBUG -   message.content: type=str, len=9744, is_none=False
+2026-10-19 10:05:17,180 - DEBUG - LLM Response [proofread]: 9744 chars, 6535 tokens
+2026-10-19 10:05:17,181 - DEBUG - Extracted translation from JSON [final_edit]
+2026-10-19 10:05:17,187 - DEBUG - → gender_fix
+2026-10-19 10:05:17,422 - DEBUG - [FINAL] 9839 → 9807 chars (×1.00, expected ×1.03) ✓ OK
+2026-10-19 10:05:17,422 - INFO - Translation successful (tokens: 35,976, total: 114,019)
+2026-10-19 10:05:17,422 - DEBUG - [chunk_4] 9839 → 9807 chars (×1.00, expected ×1.01) ✓ OK
+2026-10-19 10:05:17,423 - DEBUG - → reflection
+2026-10-19 10:05:17,424 - DEBUG - LLM Request [proofread]: Qwen36-35B, 19375 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:05:17,428 - DEBUG - Checkpoint saved: /ai/sunny-narrator/books/eternal-moment.pg_pl.checkpoint.json
+  Lexical matches: ['Kuno', 'Machine', 'Wessex', 'vomitories']
+Found matching words: {'Kuno', 'vomitories', 'Central Committee', 'Machine', 'Wessex'}
+Progress: 6/27 (22.2%)2026-10-19 10:05:18,382 - DEBUG - Chunk 0-5 (GPU): 8/43 vocab terms matched
+2026-10-19 10:05:18,382 - DEBUG - translate_chunk: vocab_dict=8 terms, vocab_entries=8, outline_len=446
+2026-10-19 10:05:18,382 - DEBUG - → initial_translation
+2026-10-19 10:05:18,400 - DEBUG - LLM Request [translate]: Gemma4-26B, 9718 chars, temp=0.05, sys_not_promt=False, json_mode=True
+2026-10-19 10:05:29,867 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:05:29,867 - DEBUG -   message.content: type=str, len=1000, is_none=False
+2026-10-19 10:05:29,867 - DEBUG - LLM Response [proofread]: 1000 chars, 5979 tokens
+2026-10-19 10:05:29,868 - DEBUG - Extracted 6 suggestions from JSON [reflection]
+2026-10-19 10:05:29,872 - DEBUG - → improve_translation
+2026-10-19 10:05:29,872 - DEBUG - LLM Request [proofread]: Qwen36-35B, 10185 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:06:07,945 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:06:07,945 - DEBUG -   message.content: type=str, len=9586, is_none=False
+2026-10-19 10:06:07,945 - DEBUG - LLM Response [proofread]: 9586 chars, 6440 tokens
+2026-10-19 10:06:07,946 - DEBUG - Extracted translation from JSON [improve_translation]
+2026-10-19 10:06:07,951 - DEBUG - → final_edit
+2026-10-19 10:06:07,951 - DEBUG - LLM Request [proofread]: Qwen36-35B, 9627 chars, temp=0.10, sys_not_promt=False, json_mode=True
+2026-10-19 10:06:27,553 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:06:27,553 - DEBUG -   message.content: type=str, len=7980, is_none=False
+2026-10-19 10:06:27,553 - DEBUG - LLM Response [translate]: 7980 chars, 5279 tokens
+2026-10-19 10:06:27,554 - DEBUG - Extracted translation from JSON [initial_translation]
+2026-10-19 10:06:27,577 - DEBUG - → generate_synopsis
+2026-10-19 10:06:27,577 - DEBUG - LLM Request [translate]: Gemma4-26B, 18351 chars, temp=0.15, sys_not_promt=False, json_mode=False
+2026-10-19 10:06:38,148 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:06:38,148 - DEBUG -   message.content: type=str, len=571, is_none=False
+2026-10-19 10:06:38,149 - DEBUG - LLM Response [translate]: 571 chars, 5270 tokens
+2026-10-19 10:06:38,165 - INFO - [synopsis] Dictionary candidates reported: 3
+2026-10-19 10:06:38,165 - DEBUG - → remove_tags
+2026-10-19 10:06:38,165 - DEBUG - No wrapper tags found, returning full text
+2026-10-19 10:06:38,166 - DEBUG - [gender] synopsis gender of 'Vashti' ignored: the dictionary has she
+2026-10-19 10:06:38,166 - DEBUG - [gender] synopsis gender of 'Kuno' ignored: the dictionary has he
+2026-10-19 10:06:38,168 - INFO - Dictionary: added Mending Apparatus = Aparat Naprawczy, TERM
+2026-10-19 10:06:38,168 - DEBUG - [VocabularyManager] Extracted 25 characters, synced with registry
+2026-10-19 10:06:46,506 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:06:46,506 - DEBUG -   message.content: type=str, len=9580, is_none=False
+2026-10-19 10:06:46,506 - DEBUG - LLM Response [proofread]: 9580 chars, 6215 tokens
+2026-10-19 10:06:46,507 - DEBUG - Extracted translation from JSON [final_edit]
+2026-10-19 10:06:46,513 - DEBUG - → gender_fix
+2026-10-19 10:06:46,696 - DEBUG - [FINAL] 9445 → 9595 chars (×1.02, expected ×1.01) ✓ OK
+2026-10-19 10:06:46,697 - INFO - Translation successful (tokens: 30,148, total: 144,167)
+2026-10-19 10:06:46,697 - DEBUG - [chunk_5] 9445 → 9595 chars (×1.02, expected ×1.02) ✓ OK
+2026-10-19 10:06:46,697 - DEBUG - → reflection
+2026-10-19 10:06:46,698 - DEBUG - LLM Request [proofread]: Qwen36-35B, 17171 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:06:46,702 - DEBUG - Checkpoint saved: /ai/sunny-narrator/books/eternal-moment.pg_pl.checkpoint.json
+  Lexical matches: ['Central Committee', 'Kuno', 'Machine', 'Rose', 'Vashti', 'Wessex', 'dell', 'vomitories']
+Found matching words: {'Vashti', 'Kuno', 'vomitories', 'Rose', 'dell', 'Central Committee', 'Machine', 'Wessex'}
+Progress: 7/27 (25.9%)2026-10-19 10:06:47,879 - DEBUG - Chunk 0-6 (GPU): 9/44 vocab terms matched
+2026-10-19 10:06:47,879 - DEBUG - translate_chunk: vocab_dict=9 terms, vocab_entries=9, outline_len=455
+2026-10-19 10:06:47,879 - DEBUG - → initial_translation
+2026-10-19 10:06:47,962 - DEBUG - LLM Request [translate]: Gemma4-26B, 11212 chars, temp=0.05, sys_not_promt=False, json_mode=True
+2026-10-19 10:07:01,073 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:07:01,073 - DEBUG -   message.content: type=str, len=1496, is_none=False
+2026-10-19 10:07:01,074 - DEBUG - LLM Response [proofread]: 1496 chars, 5713 tokens
+2026-10-19 10:07:01,074 - DEBUG - Extracted 10 suggestions from JSON [reflection]
+2026-10-19 10:07:01,078 - DEBUG - → improve_translation
+2026-10-19 10:07:01,078 - DEBUG - LLM Request [proofread]: Qwen36-35B, 8882 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:07:34,400 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:07:34,427 - DEBUG -   message.content: type=str, len=7966, is_none=False
+2026-10-19 10:07:34,428 - DEBUG - LLM Response [proofread]: 7966 chars, 5709 tokens
+2026-10-19 10:07:34,432 - DEBUG - Extracted translation from JSON [improve_translation]
+2026-10-19 10:07:34,441 - DEBUG - → final_edit
+2026-10-19 10:07:34,443 - DEBUG - LLM Request [proofread]: Qwen36-35B, 8038 chars, temp=0.10, sys_not_promt=False, json_mode=True
+2026-10-19 10:08:07,368 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:08:07,369 - DEBUG -   message.content: type=str, len=7968, is_none=False
+2026-10-19 10:08:07,369 - DEBUG - LLM Response [proofread]: 7968 chars, 5392 tokens
+2026-10-19 10:08:07,370 - DEBUG - Extracted translation from JSON [final_edit]
+2026-10-19 10:08:07,374 - DEBUG - → gender_fix
+2026-10-19 10:08:07,564 - DEBUG - [FINAL] 8613 → 8007 chars (×0.93, expected ×1.02) ✓ OK
+2026-10-19 10:08:07,564 - INFO - Translation successful (tokens: 27,363, total: 171,530)
+2026-10-19 10:08:07,564 - DEBUG - [chunk_6] 8613 → 8007 chars (×0.93, expected ×1.01) ✓ OK
+2026-10-19 10:08:07,566 - DEBUG - Checkpoint saved: /ai/sunny-narrator/books/eternal-moment.pg_pl.checkpoint.json
+  Lexical matches: ['Central Committee', 'Committee of the Mending Apparatus', 'French Revolution', 'Kuno', 'Machine', 'Mending Apparatus', 'Rose', 'Vashti', 'cinematophote']
+Found matching words: {'Vashti', 'Kuno', 'French Revolution', 'Rose', 'Central Committee', 'Committee of the Mending Apparatus', 'Machine', 'Mending Apparatus', 'cinematophote'}
+Progress: 8/27 (29.6%)2026-10-19 10:08:08,202 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:08:08,202 - DEBUG -   message.content: type=str, len=10068, is_none=False
+2026-10-19 10:08:08,202 - DEBUG - LLM Response [translate]: 10068 chars, 5930 tokens
+2026-10-19 10:08:08,203 - DEBUG - Extracted translation from JSON [initial_translation]
+2026-10-19 10:08:08,231 - DEBUG - → generate_synopsis
+2026-10-19 10:08:08,231 - DEBUG - LLM Request [translate]: Gemma4-26B, 21916 chars, temp=0.15, sys_not_promt=False, json_mode=False
+2026-10-19 10:08:19,469 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:08:19,469 - DEBUG -   message.content: type=str, len=596, is_none=False
+2026-10-19 10:08:19,469 - DEBUG - LLM Response [translate]: 596 chars, 5890 tokens
+2026-10-19 10:08:19,489 - INFO - [synopsis] Dictionary candidates reported: 3
+2026-10-19 10:08:19,489 - DEBUG - → remove_tags
+2026-10-19 10:08:19,489 - DEBUG - No wrapper tags found, returning full text
+2026-10-19 10:08:19,490 - DEBUG - [gender] synopsis gender of 'Vashti' ignored: the dictionary has she
+2026-10-19 10:08:19,490 - DEBUG - [gender] synopsis gender of 'Kuno' ignored: the dictionary has he
+2026-10-19 10:08:19,490 - DEBUG - → reflection
+2026-10-19 10:08:19,491 - DEBUG - LLM Request [proofread]: Qwen36-35B, 20781 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:08:20,552 - DEBUG - Chunk 0-7 (GPU): 8/44 vocab terms matched
+2026-10-19 10:08:20,552 - DEBUG - translate_chunk: vocab_dict=8 terms, vocab_entries=8, outline_len=489
+2026-10-19 10:08:20,552 - DEBUG - → initial_translation
+2026-10-19 10:08:20,558 - DEBUG - LLM Request [translate]: Gemma4-26B, 11190 chars, temp=0.05, sys_not_promt=False, json_mode=True
+2026-10-19 10:09:42,377 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:09:42,377 - DEBUG -   message.content: type=str, len=10225, is_none=False
+2026-10-19 10:09:42,378 - DEBUG - LLM Response [translate]: 10225 chars, 6054 tokens
+2026-10-19 10:09:42,379 - DEBUG - Extracted translation from JSON [initial_translation]
+2026-10-19 10:09:42,407 - DEBUG - → generate_synopsis
+2026-10-19 10:09:42,407 - DEBUG - LLM Request [translate]: Gemma4-26B, 21701 chars, temp=0.15, sys_not_promt=False, json_mode=False
+2026-10-19 10:09:53,742 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:09:53,742 - DEBUG -   message.content: type=str, len=551, is_none=False
+2026-10-19 10:09:53,742 - DEBUG - LLM Response [translate]: 551 chars, 5932 tokens
+2026-10-19 10:09:53,743 - INFO - [synopsis] Dictionary candidates reported: 2
+2026-10-19 10:09:53,743 - DEBUG - → remove_tags
+2026-10-19 10:09:53,743 - DEBUG - No wrapper tags found, returning full text
+2026-10-19 10:09:53,743 - DEBUG - [gender] synopsis gender of 'Vashti' ignored: the dictionary has she
+2026-10-19 10:09:53,743 - DEBUG - [gender] synopsis gender of 'Kuno' ignored: the dictionary has he
+2026-10-19 10:11:32,841 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:11:32,848 - DEBUG -   message.content: type=str, len=32966, is_none=False
+2026-10-19 10:11:32,849 - DEBUG - LLM Response [proofread]: 32966 chars, 18374 tokens
+2026-10-19 10:11:32,851 - ERROR - RETRY: truncated answer (finish_reason='length') [reflection] (tokens: 18,374)
+2026-10-19 10:11:32,853 - DEBUG - → split_text_smartly
+2026-10-19 10:11:32,863 - WARNING - Chunk failed at depth 0 (TruncatedResponseError: LLM response was truncated (finish_reason='length'). Usually the model looped on this input; the chunk will be split.); splitting in two
+2026-10-19 10:11:32,863 - ERROR - RECHUNK #1 at depth 0: 0.0% length difference
+2026-10-19 10:11:32,865 - DEBUG - translate_chunk: vocab_dict=9 terms, vocab_entries=9, outline_len=455
+2026-10-19 10:11:32,866 - DEBUG - → initial_translation
+2026-10-19 10:11:32,881 - DEBUG - LLM Request [translate]: Gemma4-26B, 6115 chars, temp=0.05, sys_not_promt=False, json_mode=True
+2026-10-19 10:12:13,014 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:12:13,015 - DEBUG -   message.content: type=str, len=5048, is_none=False
+2026-10-19 10:12:13,015 - DEBUG - LLM Response [translate]: 5048 chars, 3104 tokens
+2026-10-19 10:12:13,015 - DEBUG - Extracted translation from JSON [initial_translation]
+2026-10-19 10:12:13,032 - DEBUG - → generate_synopsis
+2026-10-19 10:12:13,032 - DEBUG - LLM Request [translate]: Gemma4-26B, 12124 chars, temp=0.15, sys_not_promt=False, json_mode=False
+2026-10-19 10:12:20,263 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:12:20,267 - DEBUG -   message.content: type=str, len=509, is_none=False
+2026-10-19 10:12:20,267 - DEBUG - LLM Response [translate]: 509 chars, 3279 tokens
+2026-10-19 10:12:20,267 - INFO - [synopsis] Dictionary candidates reported: 2
+2026-10-19 10:12:20,268 - DEBUG - → remove_tags
+2026-10-19 10:12:20,268 - DEBUG - No wrapper tags found, returning full text
+2026-10-19 10:12:20,271 - DEBUG - → reflection
+2026-10-19 10:12:20,271 - DEBUG - LLM Request [proofread]: Qwen36-35B, 10642 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:12:30,877 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:12:30,880 - DEBUG -   message.content: type=str, len=1187, is_none=False
+2026-10-19 10:12:30,880 - DEBUG - LLM Response [proofread]: 1187 chars, 3430 tokens
+2026-10-19 10:12:30,880 - DEBUG - Extracted 8 suggestions from JSON [reflection]
+2026-10-19 10:12:30,889 - DEBUG - → improve_translation
+2026-10-19 10:12:30,892 - DEBUG - LLM Request [proofread]: Qwen36-35B, 5627 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:12:49,954 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:12:49,958 - DEBUG -   message.content: type=str, len=5033, is_none=False
+2026-10-19 10:12:49,958 - DEBUG - LLM Response [proofread]: 5033 chars, 3404 tokens
+2026-10-19 10:12:49,960 - DEBUG - Extracted translation from JSON [improve_translation]
+2026-10-19 10:12:49,971 - DEBUG - → final_edit
+2026-10-19 10:12:49,973 - DEBUG - LLM Request [proofread]: Qwen36-35B, 5105 chars, temp=0.10, sys_not_promt=False, json_mode=True
+2026-10-19 10:13:09,267 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:13:09,267 - DEBUG -   message.content: type=str, len=5037, is_none=False
+2026-10-19 10:13:09,267 - DEBUG - LLM Response [proofread]: 5037 chars, 3195 tokens
+2026-10-19 10:13:09,268 - DEBUG - Extracted translation from JSON [final_edit]
+2026-10-19 10:13:09,271 - DEBUG - → gender_fix
+2026-10-19 10:13:09,385 - DEBUG - [FINAL] 5079 → 5010 chars (×0.99, expected ×1.01) ✓ OK
+2026-10-19 10:13:09,385 - INFO - Translation successful (tokens: 16,412, total: 187,942)
+2026-10-19 10:13:09,385 - DEBUG - translate_chunk: vocab_dict=9 terms, vocab_entries=9, outline_len=455
+2026-10-19 10:13:09,385 - DEBUG - → initial_translation
+2026-10-19 10:13:09,389 - DEBUG - LLM Request [translate]: Gemma4-26B, 6082 chars, temp=0.05, sys_not_promt=False, json_mode=True
+2026-10-19 10:13:47,277 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:13:47,277 - DEBUG -   message.content: type=str, len=4945, is_none=False
+2026-10-19 10:13:47,277 - DEBUG - LLM Response [translate]: 4945 chars, 3322 tokens
+2026-10-19 10:13:47,278 - DEBUG - Extracted translation from JSON [initial_translation]
+2026-10-19 10:13:47,292 - DEBUG - → generate_synopsis
+2026-10-19 10:13:47,292 - DEBUG - LLM Request [translate]: Gemma4-26B, 11870 chars, temp=0.15, sys_not_promt=False, json_mode=False
+2026-10-19 10:13:55,362 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:13:55,362 - DEBUG -   message.content: type=str, len=534, is_none=False
+2026-10-19 10:13:55,362 - DEBUG - LLM Response [translate]: 534 chars, 3388 tokens
+2026-10-19 10:13:55,363 - INFO - [synopsis] Dictionary candidates reported: 2
+2026-10-19 10:13:55,363 - DEBUG - → remove_tags
+2026-10-19 10:13:55,363 - DEBUG - No wrapper tags found, returning full text
+2026-10-19 10:13:55,364 - DEBUG - → reflection
+2026-10-19 10:13:55,364 - DEBUG - LLM Request [proofread]: Qwen36-35B, 10534 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:14:25,090 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:14:25,090 - DEBUG -   message.content: type=str, len=4233, is_none=False
+2026-10-19 10:14:25,091 - DEBUG - LLM Response [proofread]: 4233 chars, 4613 tokens
+2026-10-19 10:14:25,091 - DEBUG - Extracted 19 suggestions from JSON [reflection]
+2026-10-19 10:14:25,104 - DEBUG - → improve_translation
+2026-10-19 10:14:25,104 - DEBUG - LLM Request [proofread]: Qwen36-35B, 8577 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:14:46,514 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:14:46,514 - DEBUG -   message.content: type=str, len=4954, is_none=False
+2026-10-19 10:14:46,514 - DEBUG - LLM Response [proofread]: 4954 chars, 4537 tokens
+2026-10-19 10:14:46,515 - DEBUG - Extracted translation from JSON [improve_translation]
+2026-10-19 10:14:46,517 - DEBUG - → final_edit
+2026-10-19 10:14:46,517 - DEBUG - LLM Request [proofread]: Qwen36-35B, 5026 chars, temp=0.10, sys_not_promt=False, json_mode=True
+2026-10-19 10:15:06,548 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:15:06,548 - DEBUG -   message.content: type=str, len=4954, is_none=False
+2026-10-19 10:15:06,548 - DEBUG - LLM Response [proofread]: 4954 chars, 3349 tokens
+2026-10-19 10:15:06,548 - DEBUG - Extracted translation from JSON [final_edit]
+2026-10-19 10:15:06,572 - DEBUG - → gender_fix
+2026-10-19 10:15:06,697 - DEBUG - [FINAL] 4943 → 5030 chars (×1.02, expected ×1.00) ✓ OK
+2026-10-19 10:15:06,697 - INFO - Translation successful (tokens: 19,209, total: 207,151)
+2026-10-19 10:15:06,703 - DEBUG - [chunk_7] 10022 → 10042 chars (×1.00, expected ×1.01) ✓ OK
+2026-10-19 10:15:06,703 - DEBUG - → reflection
+2026-10-19 10:15:06,704 - DEBUG - LLM Request [proofread]: Qwen36-35B, 20447 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:15:06,707 - DEBUG - Checkpoint saved: /ai/sunny-narrator/books/eternal-moment.pg_pl.checkpoint.json
+  Lexical matches: ['Central Committee', 'Committee of the Mending Apparatus', 'French Revolution', 'Kuno', 'Machine', 'Mending Apparatus', 'Vashti', 'Wessex']
+Found matching words: {'Vashti', 'Kuno', 'French Revolution', 'Central Committee', 'Committee of the Mending Apparatus', 'Machine', 'Mending Apparatus', 'Wessex'}
+Progress: 9/27 (33.3%)2026-10-19 10:15:06,887 - DEBUG - Chunk 0-8 (GPU): 4/44 vocab terms matched
+2026-10-19 10:15:06,887 - DEBUG - translate_chunk: vocab_dict=4 terms, vocab_entries=4, outline_len=472
+2026-10-19 10:15:06,887 - DEBUG - → initial_translation
+2026-10-19 10:15:06,888 - DEBUG - LLM Request [translate]: Gemma4-26B, 1875 chars, temp=0.05, sys_not_promt=False, json_mode=True
+2026-10-19 10:15:15,933 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:15:15,933 - DEBUG -   message.content: type=str, len=1092, is_none=False
+2026-10-19 10:15:15,933 - DEBUG - LLM Response [translate]: 1092 chars, 1043 tokens
+2026-10-19 10:15:15,933 - DEBUG - Extracted translation from JSON [initial_translation]
+2026-10-19 10:15:15,936 - DEBUG - → generate_synopsis
+2026-10-19 10:15:15,936 - DEBUG - LLM Request [translate]: Gemma4-26B, 3952 chars, temp=0.15, sys_not_promt=False, json_mode=False
+2026-10-19 10:15:20,327 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:15:20,327 - DEBUG -   message.content: type=str, len=480, is_none=False
+2026-10-19 10:15:20,327 - DEBUG - LLM Response [translate]: 480 chars, 1248 tokens
+2026-10-19 10:15:20,327 - INFO - [synopsis] Dictionary candidates reported: 2
+2026-10-19 10:15:20,327 - DEBUG - → remove_tags
+2026-10-19 10:15:20,327 - DEBUG - No wrapper tags found, returning full text
+2026-10-19 10:15:20,328 - DEBUG - [gender] synopsis gender of 'Kuno' ignored: the dictionary has he
+2026-10-19 10:15:20,332 - INFO - Dictionary: added Ælfrid = Ælfrid, PERSON
+2026-10-19 10:15:20,332 - DEBUG - [VocabularyManager] Extracted 26 characters, synced with registry
+2026-10-19 10:15:25,180 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:15:25,180 - DEBUG -   message.content: type=str, len=1861, is_none=False
+2026-10-19 10:15:25,180 - DEBUG - LLM Response [proofread]: 1861 chars, 6496 tokens
+2026-10-19 10:15:25,181 - DEBUG - Extracted 10 suggestions from JSON [reflection]
+2026-10-19 10:15:25,187 - DEBUG - → improve_translation
+2026-10-19 10:15:25,187 - DEBUG - LLM Request [proofread]: Qwen36-35B, 10932 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:16:04,951 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:16:04,951 - DEBUG -   message.content: type=str, len=9768, is_none=False
+2026-10-19 10:16:04,951 - DEBUG - LLM Response [proofread]: 9768 chars, 6848 tokens
+2026-10-19 10:16:04,952 - DEBUG - Extracted translation from JSON [improve_translation]
+2026-10-19 10:16:04,958 - DEBUG - → final_edit
+2026-10-19 10:16:04,958 - DEBUG - LLM Request [proofread]: Qwen36-35B, 9840 chars, temp=0.10, sys_not_promt=False, json_mode=True
+2026-10-19 10:16:44,650 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:16:44,650 - DEBUG -   message.content: type=str, len=9681, is_none=False
+2026-10-19 10:16:44,650 - DEBUG - LLM Response [proofread]: 9681 chars, 6410 tokens
+2026-10-19 10:16:44,651 - DEBUG - Extracted translation from JSON [final_edit]
+2026-10-19 10:16:44,656 - DEBUG - → gender_fix
+2026-10-19 10:16:44,874 - DEBUG - [FINAL] 10046 → 9728 chars (×0.97, expected ×1.01) ✓ OK
+2026-10-19 10:16:44,874 - INFO - Translation successful (tokens: 31,740, total: 238,891)
+2026-10-19 10:16:44,875 - DEBUG - [chunk_8] 10046 → 9728 chars (×0.97, expected ×1.00) ✓ OK
+2026-10-19 10:16:44,875 - DEBUG - → reflection
+2026-10-19 10:16:44,875 - DEBUG - LLM Request [proofread]: Qwen36-35B, 2435 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:16:44,880 - DEBUG - Checkpoint saved: /ai/sunny-narrator/books/eternal-moment.pg_pl.checkpoint.json
+  Lexical matches: ['Kuno', 'Machine', 'Wessex', 'vomitories']
+Found matching words: {'Machine', 'Kuno', 'vomitories', 'Wessex'}
+Progress: 10/27 (37.0%)2026-10-19 10:16:46,065 - DEBUG - Chunk 0-9 (GPU): 4/45 vocab terms matched
+2026-10-19 10:16:46,065 - DEBUG - translate_chunk: vocab_dict=4 terms, vocab_entries=4, outline_len=401
+2026-10-19 10:16:46,065 - DEBUG - → initial_translation
+2026-10-19 10:16:46,122 - DEBUG - LLM Request [translate]: Gemma4-26B, 10786 chars, temp=0.05, sys_not_promt=False, json_mode=True
+2026-10-19 10:16:49,333 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:16:49,333 - DEBUG -   message.content: type=str, len=434, is_none=False
+2026-10-19 10:16:49,333 - DEBUG - LLM Response [proofread]: 434 chars, 1075 tokens
+2026-10-19 10:16:49,333 - DEBUG - Extracted 3 suggestions from JSON [reflection]
+2026-10-19 10:16:49,335 - DEBUG - → improve_translation
+2026-10-19 10:16:49,335 - DEBUG - LLM Request [proofread]: Qwen36-35B, 1374 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:16:54,523 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:16:54,523 - DEBUG -   message.content: type=str, len=1093, is_none=False
+2026-10-19 10:16:54,523 - DEBUG - LLM Response [proofread]: 1093 chars, 966 tokens
+2026-10-19 10:16:54,524 - DEBUG - Extracted translation from JSON [improve_translation]
+2026-10-19 10:16:54,524 - DEBUG - → final_edit
+2026-10-19 10:16:54,525 - DEBUG - LLM Request [proofread]: Qwen36-35B, 1134 chars, temp=0.10, sys_not_promt=False, json_mode=True
+2026-10-19 10:16:59,777 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:16:59,777 - DEBUG -   message.content: type=str, len=1045, is_none=False
+2026-10-19 10:16:59,777 - DEBUG - LLM Response [proofread]: 1045 chars, 835 tokens
+2026-10-19 10:16:59,777 - DEBUG - Extracted translation from JSON [final_edit]
+2026-10-19 10:16:59,778 - DEBUG - → gender_fix
+2026-10-19 10:16:59,833 - DEBUG - [FINAL] 1083 → 1052 chars (×0.97, expected ×1.00) ✓ OK
+2026-10-19 10:16:59,834 - INFO - Translation successful (tokens: 5,167, total: 244,058)
+2026-10-19 10:16:59,834 - DEBUG - [chunk_9] 1083 → 1052 chars (×0.97, expected ×1.00) ✓ OK
+2026-10-19 10:16:59,835 - DEBUG - Checkpoint saved: /ai/sunny-narrator/books/eternal-moment.pg_pl.checkpoint.json
+  Lexical matches: ['Harold', 'Janet', 'Michael', 'Micky']
+Found matching words: {'Harold', 'Michael', 'Janet', 'Micky'}
+Progress: 11/27 (40.7%)2026-10-19 10:18:07,743 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:18:07,743 - DEBUG -   message.content: type=str, len=9984, is_none=False
+2026-10-19 10:18:07,743 - DEBUG - LLM Response [translate]: 9984 chars, 5848 tokens
+2026-10-19 10:18:07,744 - DEBUG - Extracted translation from JSON [initial_translation]
+2026-10-19 10:18:07,782 - DEBUG - → generate_synopsis
+2026-10-19 10:18:07,782 - DEBUG - LLM Request [translate]: Gemma4-26B, 21659 chars, temp=0.15, sys_not_promt=False, json_mode=False
+2026-10-19 10:18:19,357 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:18:19,357 - DEBUG -   message.content: type=str, len=625, is_none=False
+2026-10-19 10:18:19,357 - DEBUG - LLM Response [translate]: 625 chars, 6002 tokens
+2026-10-19 10:18:19,358 - INFO - [synopsis] Dictionary candidates reported: 4
+2026-10-19 10:18:19,358 - DEBUG - → remove_tags
+2026-10-19 10:18:19,358 - DEBUG - No wrapper tags found, returning full text
+2026-10-19 10:18:19,359 - DEBUG - [gender] synopsis gender of 'Micky' ignored: the dictionary has he
+2026-10-19 10:18:19,359 - DEBUG - [gender] synopsis gender of 'Harold' ignored: the dictionary has he
+2026-10-19 10:18:19,359 - DEBUG - [gender] synopsis gender of 'Michael' ignored: the dictionary has he
+2026-10-19 10:18:19,359 - DEBUG - → reflection
+2026-10-19 10:18:19,360 - DEBUG - LLM Request [proofread]: Qwen36-35B, 20318 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:18:20,427 - DEBUG - Chunk 0-10 (GPU): 5/45 vocab terms matched
+2026-10-19 10:18:20,428 - DEBUG - translate_chunk: vocab_dict=5 terms, vocab_entries=5, outline_len=503
+2026-10-19 10:18:20,428 - DEBUG - → initial_translation
+2026-10-19 10:18:20,471 - DEBUG - LLM Request [translate]: Gemma4-26B, 10858 chars, temp=0.05, sys_not_promt=False, json_mode=True
+2026-10-19 10:19:23,632 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:19:23,632 - DEBUG -   message.content: type=str, len=8978, is_none=False
+2026-10-19 10:19:23,632 - DEBUG - LLM Response [proofread]: 8978 chars, 8746 tokens
+2026-10-19 10:19:23,634 - DEBUG - Extracted 46 suggestions from JSON [reflection]
+2026-10-19 10:19:23,680 - DEBUG - → improve_translation
+2026-10-19 10:19:23,680 - DEBUG - LLM Request [proofread]: Qwen36-35B, 17023 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:19:46,624 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:19:46,625 - DEBUG -   message.content: type=str, len=10564, is_none=False
+2026-10-19 10:19:46,625 - DEBUG - LLM Response [translate]: 10564 chars, 6005 tokens
+2026-10-19 10:19:46,626 - DEBUG - Extracted translation from JSON [initial_translation]
+2026-10-19 10:19:46,654 - DEBUG - → generate_synopsis
+2026-10-19 10:19:46,654 - DEBUG - LLM Request [translate]: Gemma4-26B, 21808 chars, temp=0.15, sys_not_promt=False, json_mode=False
+2026-10-19 10:19:58,273 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:19:58,273 - DEBUG -   message.content: type=str, len=619, is_none=False
+2026-10-19 10:19:58,273 - DEBUG - LLM Response [translate]: 619 chars, 6011 tokens
+2026-10-19 10:19:58,274 - INFO - [synopsis] Dictionary candidates reported: 5
+2026-10-19 10:19:58,274 - DEBUG - → remove_tags
+2026-10-19 10:19:58,274 - DEBUG - No wrapper tags found, returning full text
+2026-10-19 10:19:58,275 - DEBUG - [gender] synopsis gender of 'Michael' ignored: the dictionary has he
+2026-10-19 10:19:58,275 - DEBUG - [gender] synopsis gender of 'Henry' ignored: the dictionary has he
+2026-10-19 10:19:58,275 - DEBUG - [gender] synopsis gender of 'Adam' ignored: the dictionary has he
+2026-10-19 10:19:58,275 - INFO - [gender] Janet = she: from the synopsis (2 chunks agree)
+2026-10-19 10:19:58,275 - DEBUG - [VocabularyManager] Extracted 26 characters, synced with registry
+2026-10-19 10:20:06,031 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:20:06,031 - DEBUG -   message.content: type=str, len=9837, is_none=False
+2026-10-19 10:20:06,031 - DEBUG - LLM Response [proofread]: 9837 chars, 8660 tokens
+2026-10-19 10:20:06,032 - DEBUG - Extracted translation from JSON [improve_translation]
+2026-10-19 10:20:06,037 - DEBUG - → final_edit
+2026-10-19 10:20:06,037 - DEBUG - LLM Request [proofread]: Qwen36-35B, 9967 chars, temp=0.10, sys_not_promt=False, json_mode=True
+2026-10-19 10:20:45,381 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:20:45,382 - DEBUG -   message.content: type=str, len=9829, is_none=False
+2026-10-19 10:20:45,382 - DEBUG - LLM Response [proofread]: 9829 chars, 6367 tokens
+2026-10-19 10:20:45,384 - DEBUG - Extracted translation from JSON [final_edit]
+2026-10-19 10:20:45,390 - DEBUG - → gender_fix
+2026-10-19 10:20:45,604 - DEBUG - [FINAL] 9925 → 9827 chars (×0.99, expected ×1.00) ✓ OK
+2026-10-19 10:20:45,604 - INFO - Translation successful (tokens: 35,623, total: 279,681)
+2026-10-19 10:20:45,605 - DEBUG - [chunk_10] 9925 → 9827 chars (×0.99, expected ×0.99) ✓ OK
+2026-10-19 10:20:45,605 - DEBUG - → reflection
+2026-10-19 10:20:45,606 - DEBUG - LLM Request [proofread]: Qwen36-35B, 20610 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:20:45,612 - DEBUG - Checkpoint saved: /ai/sunny-narrator/books/eternal-moment.pg_pl.checkpoint.json
+  Lexical matches: ['Adam', 'Catherine', 'Henry', 'Janet', 'Michael']
+Found matching words: {'Janet', 'Henry', 'Michael', 'Catherine', 'Adam'}
+Progress: 12/27 (44.4%)2026-10-19 10:20:46,643 - DEBUG - Chunk 0-11 (GPU): 6/45 vocab terms matched
+2026-10-19 10:20:46,644 - DEBUG - translate_chunk: vocab_dict=6 terms, vocab_entries=6, outline_len=472
+2026-10-19 10:20:46,644 - DEBUG - → initial_translation
+2026-10-19 10:20:46,648 - DEBUG - LLM Request [translate]: Gemma4-26B, 10505 chars, temp=0.05, sys_not_promt=False, json_mode=True
+2026-10-19 10:21:04,366 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:21:04,366 - DEBUG -   message.content: type=str, len=1903, is_none=False
+2026-10-19 10:21:04,366 - DEBUG - LLM Response [proofread]: 1903 chars, 6552 tokens
+2026-10-19 10:21:04,367 - DEBUG - Extracted 13 suggestions from JSON [reflection]
+2026-10-19 10:21:04,371 - DEBUG - → improve_translation
+2026-10-19 10:21:04,371 - DEBUG - LLM Request [proofread]: Qwen36-35B, 11946 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:21:46,166 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:21:46,168 - DEBUG -   message.content: type=str, len=10276, is_none=False
+2026-10-19 10:21:46,168 - DEBUG - LLM Response [proofread]: 10276 chars, 7192 tokens
+2026-10-19 10:21:46,177 - DEBUG - Extracted translation from JSON [improve_translation]
+2026-10-19 10:21:46,187 - DEBUG - → final_edit
+2026-10-19 10:21:46,189 - DEBUG - LLM Request [proofread]: Qwen36-35B, 10405 chars, temp=0.10, sys_not_promt=False, json_mode=True
+2026-10-19 10:22:06,529 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:22:06,529 - DEBUG -   message.content: type=str, len=9542, is_none=False
+2026-10-19 10:22:06,530 - DEBUG - LLM Response [translate]: 9542 chars, 5770 tokens
+2026-10-19 10:22:06,531 - DEBUG - Extracted translation from JSON [initial_translation]
+2026-10-19 10:22:06,559 - DEBUG - → generate_synopsis
+2026-10-19 10:22:06,560 - DEBUG - LLM Request [translate]: Gemma4-26B, 20790 chars, temp=0.15, sys_not_promt=False, json_mode=False
+2026-10-19 10:22:18,687 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:22:18,688 - DEBUG -   message.content: type=str, len=617, is_none=False
+2026-10-19 10:22:18,688 - DEBUG - LLM Response [translate]: 617 chars, 5878 tokens
+2026-10-19 10:22:18,688 - INFO - [synopsis] Dictionary candidates reported: 6
+2026-10-19 10:22:18,689 - DEBUG - → remove_tags
+2026-10-19 10:22:18,689 - DEBUG - No wrapper tags found, returning full text
+2026-10-19 10:22:18,689 - DEBUG - [gender] synopsis gender of 'Michael' ignored: the dictionary has he
+2026-10-19 10:22:18,689 - DEBUG - [gender] synopsis gender of 'Janet' ignored: the dictionary has she
+2026-10-19 10:22:18,689 - DEBUG - [gender] synopsis gender of 'Henry' ignored: the dictionary has he
+2026-10-19 10:22:18,689 - DEBUG - [gender] synopsis gender of 'Adam' ignored: the dictionary has he
+2026-10-19 10:22:18,689 - DEBUG - [gender] synopsis gender of 'Micky' ignored: the dictionary has he
+2026-10-19 10:22:18,690 - INFO - [gender] Catherine = she: from the synopsis (2 chunks agree)
+2026-10-19 10:22:18,690 - DEBUG - [VocabularyManager] Extracted 26 characters, synced with registry
+2026-10-19 10:22:27,317 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:22:27,317 - DEBUG -   message.content: type=str, len=10117, is_none=False
+2026-10-19 10:22:27,317 - DEBUG - LLM Response [proofread]: 10117 chars, 6568 tokens
+2026-10-19 10:22:27,319 - DEBUG - Extracted translation from JSON [final_edit]
+2026-10-19 10:22:27,325 - DEBUG - → gender_fix
+2026-10-19 10:22:27,544 - DEBUG - [FINAL] 9812 → 10109 chars (×1.03, expected ×0.99) ✓ OK
+2026-10-19 10:22:27,544 - INFO - Translation successful (tokens: 32,328, total: 312,009)
+2026-10-19 10:22:27,544 - DEBUG - [chunk_11] 9812 → 10109 chars (×1.03, expected ×1.00) ✓ OK
+2026-10-19 10:22:27,545 - DEBUG - → reflection
+2026-10-19 10:22:27,545 - DEBUG - LLM Request [proofread]: Qwen36-35B, 19551 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:22:27,549 - DEBUG - Checkpoint saved: /ai/sunny-narrator/books/eternal-moment.pg_pl.checkpoint.json
+  Lexical matches: ['Adam', 'Catherine', 'Henry', 'Janet', 'Michael', 'Micky']
+Found matching words: {'Janet', 'Henry', 'Michael', 'Catherine', 'Micky', 'Adam'}
+Progress: 13/27 (48.1%)2026-10-19 10:22:28,234 - DEBUG - Chunk 0-12 (GPU): 1/45 vocab terms matched
+2026-10-19 10:22:28,235 - DEBUG - translate_chunk: vocab_dict=1 terms, vocab_entries=1, outline_len=451
+2026-10-19 10:22:28,235 - DEBUG - → initial_translation
+2026-10-19 10:22:28,236 - DEBUG - LLM Request [translate]: Gemma4-26B, 6834 chars, temp=0.05, sys_not_promt=False, json_mode=True
+2026-10-19 10:22:36,451 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:22:36,452 - DEBUG -   message.content: type=str, len=502, is_none=False
+2026-10-19 10:22:36,452 - DEBUG - LLM Response [proofread]: 502 chars, 5872 tokens
+2026-10-19 10:22:36,454 - DEBUG - Extracted 3 suggestions from JSON [reflection]
+2026-10-19 10:22:36,460 - DEBUG - → improve_translation
+2026-10-19 10:22:36,462 - DEBUG - LLM Request [proofread]: Qwen36-35B, 10131 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:23:15,090 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:23:15,092 - DEBUG -   message.content: type=str, len=9563, is_none=False
+2026-10-19 10:23:15,092 - DEBUG - LLM Response [proofread]: 9563 chars, 6482 tokens
+2026-10-19 10:23:15,095 - DEBUG - Extracted translation from JSON [improve_translation]
+2026-10-19 10:23:15,102 - DEBUG - → final_edit
+2026-10-19 10:23:15,106 - DEBUG - LLM Request [proofread]: Qwen36-35B, 9754 chars, temp=0.10, sys_not_promt=False, json_mode=True
+2026-10-19 10:23:20,917 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:23:20,918 - DEBUG -   message.content: type=str, len=6288, is_none=False
+2026-10-19 10:23:20,918 - DEBUG - LLM Response [translate]: 6288 chars, 3983 tokens
+2026-10-19 10:23:20,918 - DEBUG - Extracted translation from JSON [initial_translation]
+2026-10-19 10:23:20,935 - DEBUG - → generate_synopsis
+2026-10-19 10:23:20,935 - DEBUG - LLM Request [translate]: Gemma4-26B, 13915 chars, temp=0.15, sys_not_promt=False, json_mode=False
+2026-10-19 10:23:29,554 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:23:29,554 - DEBUG -   message.content: type=str, len=488, is_none=False
+2026-10-19 10:23:29,555 - DEBUG - LLM Response [translate]: 488 chars, 4112 tokens
+2026-10-19 10:23:29,555 - INFO - [synopsis] Dictionary candidates reported: 1
+2026-10-19 10:23:29,555 - DEBUG - → remove_tags
+2026-10-19 10:23:29,555 - DEBUG - No wrapper tags found, returning full text
+2026-10-19 10:23:29,556 - DEBUG - [gender] synopsis gender of 'Micky' ignored: the dictionary has he
+2026-10-19 10:23:53,530 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:23:53,537 - DEBUG -   message.content: type=str, len=9562, is_none=False
+2026-10-19 10:23:53,537 - DEBUG - LLM Response [proofread]: 9562 chars, 6331 tokens
+2026-10-19 10:23:53,547 - DEBUG - Extracted translation from JSON [final_edit]
+2026-10-19 10:23:53,556 - DEBUG - → gender_fix
+2026-10-19 10:23:54,079 - DEBUG - [FINAL] 9423 → 9583 chars (×1.02, expected ×1.00) ✓ OK
+2026-10-19 10:23:54,079 - INFO - Translation successful (tokens: 30,333, total: 342,342)
+2026-10-19 10:23:54,080 - DEBUG - [chunk_12] 9423 → 9583 chars (×1.02, expected ×1.01) ✓ OK
+2026-10-19 10:23:54,086 - DEBUG - → reflection
+2026-10-19 10:23:54,086 - DEBUG - LLM Request [proofread]: Qwen36-35B, 12613 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:23:54,097 - DEBUG - Checkpoint saved: /ai/sunny-narrator/books/eternal-moment.pg_pl.checkpoint.json
+  Lexical matches: ['Micky']
+Found matching words: {'Micky'}
+Progress: 14/27 (51.9%)2026-10-19 10:23:55,290 - DEBUG - Chunk 0-13 (GPU): 2/45 vocab terms matched
+2026-10-19 10:23:55,293 - DEBUG - translate_chunk: vocab_dict=2 terms, vocab_entries=2, outline_len=429
+2026-10-19 10:23:55,293 - DEBUG - → initial_translation
+2026-10-19 10:23:55,311 - DEBUG - LLM Request [translate]: Gemma4-26B, 9988 chars, temp=0.05, sys_not_promt=False, json_mode=True
+2026-10-19 10:24:35,140 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:24:35,141 - DEBUG -   message.content: type=str, len=6438, is_none=False
+2026-10-19 10:24:35,141 - DEBUG - LLM Response [proofread]: 6438 chars, 6092 tokens
+2026-10-19 10:24:35,142 - DEBUG - Extracted 17 suggestions from JSON [reflection]
+2026-10-19 10:24:35,147 - DEBUG - → improve_translation
+2026-10-19 10:24:35,147 - DEBUG - LLM Request [proofread]: Qwen36-35B, 9886 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:25:02,700 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:25:02,700 - DEBUG -   message.content: type=str, len=6271, is_none=False
+2026-10-19 10:25:02,700 - DEBUG - LLM Response [proofread]: 6271 chars, 5632 tokens
+2026-10-19 10:25:02,701 - DEBUG - Extracted translation from JSON [improve_translation]
+2026-10-19 10:25:02,704 - DEBUG - → final_edit
+2026-10-19 10:25:02,705 - DEBUG - LLM Request [proofread]: Qwen36-35B, 6313 chars, temp=0.10, sys_not_promt=False, json_mode=True
+2026-10-19 10:25:12,332 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:25:12,332 - DEBUG -   message.content: type=str, len=9124, is_none=False
+2026-10-19 10:25:12,332 - DEBUG - LLM Response [translate]: 9124 chars, 5570 tokens
+2026-10-19 10:25:12,333 - DEBUG - Extracted translation from JSON [initial_translation]
+2026-10-19 10:25:12,359 - DEBUG - → generate_synopsis
+2026-10-19 10:25:12,359 - DEBUG - LLM Request [translate]: Gemma4-26B, 19752 chars, temp=0.15, sys_not_promt=False, json_mode=False
+2026-10-19 10:25:23,198 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:25:23,198 - DEBUG -   message.content: type=str, len=480, is_none=False
+2026-10-19 10:25:23,198 - DEBUG - LLM Response [translate]: 480 chars, 5537 tokens
+2026-10-19 10:25:23,199 - INFO - [synopsis] Dictionary candidates reported: 2
+2026-10-19 10:25:23,199 - DEBUG - → remove_tags
+2026-10-19 10:25:23,199 - DEBUG - No wrapper tags found, returning full text
+2026-10-19 10:25:23,200 - DEBUG - [gender] synopsis gender of 'Andrews' ignored: the dictionary has he
+2026-10-19 10:25:23,200 - DEBUG - [gender] synopsis gender of 'Turk' ignored: the dictionary has he
+2026-10-19 10:25:28,114 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:25:28,114 - DEBUG -   message.content: type=str, len=6119, is_none=False
+2026-10-19 10:25:28,114 - DEBUG - LLM Response [proofread]: 6119 chars, 4290 tokens
+2026-10-19 10:25:28,115 - DEBUG - Extracted translation from JSON [final_edit]
+2026-10-19 10:25:28,118 - DEBUG - → gender_fix
+2026-10-19 10:25:28,263 - DEBUG - [FINAL] 6017 → 6112 chars (×1.02, expected ×1.01) ✓ OK
+2026-10-19 10:25:28,263 - INFO - Translation successful (tokens: 24,109, total: 366,451)
+2026-10-19 10:25:28,263 - DEBUG - [chunk_13] 6017 → 6112 chars (×1.02, expected ×1.02) ✓ OK
+2026-10-19 10:25:28,263 - DEBUG - → reflection
+2026-10-19 10:25:28,264 - DEBUG - LLM Request [proofread]: Qwen36-35B, 18623 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:25:28,268 - DEBUG - Checkpoint saved: /ai/sunny-narrator/books/eternal-moment.pg_pl.checkpoint.json
+  Lexical matches: ['Andrews', 'Turk']
+Found matching words: {'Andrews', 'Turk'}
+Progress: 15/27 (55.6%)2026-10-19 10:25:29,383 - DEBUG - Chunk 0-14 (GPU): 9/45 vocab terms matched
+2026-10-19 10:25:29,384 - DEBUG - translate_chunk: vocab_dict=9 terms, vocab_entries=9, outline_len=400
+2026-10-19 10:25:29,384 - DEBUG - → initial_translation
+2026-10-19 10:25:29,487 - DEBUG - LLM Request [translate]: Gemma4-26B, 11231 chars, temp=0.05, sys_not_promt=False, json_mode=True
+2026-10-19 10:25:42,264 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:25:42,264 - DEBUG -   message.content: type=str, len=1278, is_none=False
+2026-10-19 10:25:42,264 - DEBUG - LLM Response [proofread]: 1278 chars, 5851 tokens
+2026-10-19 10:25:42,265 - DEBUG - Extracted 7 suggestions from JSON [reflection]
+2026-10-19 10:25:42,266 - DEBUG - → improve_translation
+2026-10-19 10:25:42,267 - DEBUG - LLM Request [proofread]: Qwen36-35B, 10231 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:26:18,802 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:26:18,802 - DEBUG -   message.content: type=str, len=9138, is_none=False
+2026-10-19 10:26:18,802 - DEBUG - LLM Response [proofread]: 9138 chars, 6291 tokens
+2026-10-19 10:26:18,804 - DEBUG - Extracted translation from JSON [improve_translation]
+2026-10-19 10:26:18,813 - DEBUG - → final_edit
+2026-10-19 10:26:18,813 - DEBUG - LLM Request [proofread]: Qwen36-35B, 9209 chars, temp=0.10, sys_not_promt=False, json_mode=True
+2026-10-19 10:26:53,096 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:26:53,097 - DEBUG -   message.content: type=str, len=10214, is_none=False
+2026-10-19 10:26:53,097 - DEBUG - LLM Response [translate]: 10214 chars, 6256 tokens
+2026-10-19 10:26:53,098 - DEBUG - Extracted translation from JSON [initial_translation]
+2026-10-19 10:26:53,125 - DEBUG - → generate_synopsis
+2026-10-19 10:26:53,126 - DEBUG - LLM Request [translate]: Gemma4-26B, 21946 chars, temp=0.15, sys_not_promt=False, json_mode=False
+2026-10-19 10:26:55,066 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:26:55,066 - DEBUG -   message.content: type=str, len=9138, is_none=False
+2026-10-19 10:26:55,066 - DEBUG - LLM Response [proofread]: 9138 chars, 5929 tokens
+2026-10-19 10:26:55,068 - DEBUG - Extracted translation from JSON [final_edit]
+2026-10-19 10:26:55,073 - DEBUG - → gender_fix
+2026-10-19 10:26:55,276 - DEBUG - [FINAL] 9016 → 9176 chars (×1.02, expected ×1.02) ✓ OK
+2026-10-19 10:26:55,276 - INFO - Translation successful (tokens: 29,178, total: 395,629)
+2026-10-19 10:26:55,276 - DEBUG - [chunk_14] 9016 → 9176 chars (×1.02, expected ×1.02) ✓ OK
+2026-10-19 10:26:55,278 - DEBUG - Checkpoint saved: /ai/sunny-narrator/books/eternal-moment.pg_pl.checkpoint.json
+  Lexical matches: ['Beethoven', 'Dolores and Violet', 'Ellen', 'Enid', 'Mildred', 'Miss Haddon', 'Napoleon', 'Rose']
+Found matching words: {'Mildred', 'Miss Haddon', 'Enid', 'French Revolution', 'Rose', 'Dolores and Violet', 'Beethoven', 'Napoleon', 'Ellen'}
+Progress: 16/27 (59.3%)2026-10-19 10:27:05,259 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:27:05,259 - DEBUG -   message.content: type=str, len=706, is_none=False
+2026-10-19 10:27:05,259 - DEBUG - LLM Response [translate]: 706 chars, 6206 tokens
+2026-10-19 10:27:05,260 - INFO - [synopsis] Dictionary candidates reported: 11
+2026-10-19 10:27:05,260 - DEBUG - → remove_tags
+2026-10-19 10:27:05,260 - DEBUG - No wrapper tags found, returning full text
+2026-10-19 10:27:05,261 - DEBUG - [gender] synopsis gender of 'Miss Haddon' ignored: the dictionary has she
+2026-10-19 10:27:05,261 - DEBUG - [gender] synopsis gender of 'Beethoven' ignored: the dictionary has he
+2026-10-19 10:27:05,261 - DEBUG - [gender] synopsis gender of 'Napoleon' ignored: the dictionary has he
+2026-10-19 10:27:05,263 - INFO - Dictionary: added Jane = Jane, PERSON
+2026-10-19 10:27:05,266 - INFO - Dictionary: added Violet = Violet, PERSON
+2026-10-19 10:27:05,268 - INFO - Dictionary: added Dolores = Dolores, PERSON
+2026-10-19 10:27:05,270 - INFO - Dictionary: added Margaret = Margaret, PERSON
+2026-10-19 10:27:05,271 - DEBUG - [VocabularyManager] Extracted 30 characters, synced with registry
+2026-10-19 10:27:05,271 - DEBUG - → reflection
+2026-10-19 10:27:05,277 - DEBUG - LLM Request [proofread]: Qwen36-35B, 20998 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:27:05,758 - DEBUG - Chunk 0-15 (GPU): 9/49 vocab terms matched
+2026-10-19 10:27:05,758 - DEBUG - translate_chunk: vocab_dict=9 terms, vocab_entries=9, outline_len=412
+2026-10-19 10:27:05,758 - DEBUG - → initial_translation
+2026-10-19 10:27:05,775 - DEBUG - LLM Request [translate]: Gemma4-26B, 5422 chars, temp=0.05, sys_not_promt=False, json_mode=True
+2026-10-19 10:27:31,897 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:27:31,898 - DEBUG -   message.content: type=str, len=3109, is_none=False
+2026-10-19 10:27:31,901 - DEBUG - LLM Response [proofread]: 3109 chars, 7383 tokens
+2026-10-19 10:27:31,903 - DEBUG - Extracted 15 suggestions from JSON [reflection]
+2026-10-19 10:27:31,916 - DEBUG - → improve_translation
+2026-10-19 10:27:31,917 - DEBUG - LLM Request [proofread]: Qwen36-35B, 12574 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:27:42,279 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:27:42,279 - DEBUG -   message.content: type=str, len=4681, is_none=False
+2026-10-19 10:27:42,280 - DEBUG - LLM Response [translate]: 4681 chars, 3034 tokens
+2026-10-19 10:27:42,280 - DEBUG - Extracted translation from JSON [initial_translation]
+2026-10-19 10:27:42,292 - DEBUG - → generate_synopsis
+2026-10-19 10:27:42,292 - DEBUG - LLM Request [translate]: Gemma4-26B, 10904 chars, temp=0.15, sys_not_promt=False, json_mode=False
+2026-10-19 10:27:51,068 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:27:51,068 - DEBUG -   message.content: type=str, len=766, is_none=False
+2026-10-19 10:27:51,068 - DEBUG - LLM Response [translate]: 766 chars, 3201 tokens
+2026-10-19 10:27:51,068 - INFO - [synopsis] Dictionary candidates reported: 11
+2026-10-19 10:27:51,068 - DEBUG - → remove_tags
+2026-10-19 10:27:51,068 - DEBUG - No wrapper tags found, returning full text
+2026-10-19 10:27:51,069 - DEBUG - [gender] synopsis gender of 'Beethoven' ignored: the dictionary has he
+2026-10-19 10:27:51,069 - DEBUG - [gender] synopsis gender of 'Napoleon' ignored: the dictionary has he
+2026-10-19 10:27:51,069 - INFO - [gender] Rose = she: from the synopsis (2 chunks agree)
+2026-10-19 10:27:51,069 - INFO - [gender] Enid = she: from the synopsis (2 chunks agree)
+2026-10-19 10:27:51,070 - INFO - [gender] Jane = she: from the synopsis (2 chunks agree)
+2026-10-19 10:27:51,070 - INFO - [gender] Ellen = she: from the synopsis (2 chunks agree)
+2026-10-19 10:27:51,070 - INFO - [gender] Violet = she: from the synopsis (2 chunks agree)
+2026-10-19 10:27:51,070 - INFO - [gender] Mildred = she: from the synopsis (2 chunks agree)
+2026-10-19 10:27:51,070 - INFO - [gender] Dolores = she: from the synopsis (2 chunks agree)
+2026-10-19 10:27:51,072 - INFO - Dictionary: added Raphael = Rafał, PERSON
+2026-10-19 10:27:51,074 - INFO - Dictionary: added Mephistopheles = Mefistofeles, PERSON
+2026-10-19 10:27:51,075 - DEBUG - [VocabularyManager] Extracted 32 characters, synced with registry
+2026-10-19 10:28:14,516 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:28:14,517 - DEBUG -   message.content: type=str, len=10210, is_none=False
+2026-10-19 10:28:14,517 - DEBUG - LLM Response [proofread]: 10210 chars, 7604 tokens
+2026-10-19 10:28:14,518 - DEBUG - Extracted translation from JSON [improve_translation]
+2026-10-19 10:28:14,524 - DEBUG - → final_edit
+2026-10-19 10:28:14,524 - DEBUG - LLM Request [proofread]: Qwen36-35B, 10443 chars, temp=0.10, sys_not_promt=False, json_mode=True
+2026-10-19 10:28:55,114 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:28:55,114 - DEBUG -   message.content: type=str, len=9981, is_none=False
+2026-10-19 10:28:55,114 - DEBUG - LLM Response [proofread]: 9981 chars, 6740 tokens
+2026-10-19 10:28:55,116 - DEBUG - Extracted translation from JSON [final_edit]
+2026-10-19 10:28:55,122 - DEBUG - → gender_fix
+2026-10-19 10:28:55,379 - DEBUG - [FINAL] 10018 → 9988 chars (×1.00, expected ×1.02) ✓ OK
+2026-10-19 10:28:55,379 - INFO - Translation successful (tokens: 34,189, total: 429,818)
+2026-10-19 10:28:55,379 - DEBUG - [chunk_15] 10018 → 9988 chars (×1.00, expected ×1.02) ✓ OK
+2026-10-19 10:28:55,379 - DEBUG - → reflection
+2026-10-19 10:28:55,380 - DEBUG - LLM Request [proofread]: Qwen36-35B, 9781 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:28:55,385 - DEBUG - Checkpoint saved: /ai/sunny-narrator/books/eternal-moment.pg_pl.checkpoint.json
+  Lexical matches: ['Beethoven', 'Dolores and Violet', 'Ellen', 'Enid', 'Jane', 'Mildred', 'Miss Haddon', 'Napoleon', 'Rose']
+Found matching words: {'Mildred', 'Miss Haddon', 'Enid', 'Rose', 'Dolores and Violet', 'Beethoven', 'Napoleon', 'Ellen', 'Jane'}
+Progress: 17/27 (63.0%)2026-10-19 10:28:56,652 - DEBUG - Chunk 0-16 (GPU): 4/51 vocab terms matched
+2026-10-19 10:28:56,653 - DEBUG - translate_chunk: vocab_dict=4 terms, vocab_entries=4, outline_len=474
+2026-10-19 10:28:56,653 - DEBUG - → initial_translation
+2026-10-19 10:28:56,669 - DEBUG - LLM Request [translate]: Gemma4-26B, 10571 chars, temp=0.05, sys_not_promt=False, json_mode=True
+2026-10-19 10:29:06,870 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:29:06,870 - DEBUG -   message.content: type=str, len=1238, is_none=False
+2026-10-19 10:29:06,870 - DEBUG - LLM Response [proofread]: 1238 chars, 3438 tokens
+2026-10-19 10:29:06,871 - DEBUG - Extracted 8 suggestions from JSON [reflection]
+2026-10-19 10:29:06,874 - DEBUG - → improve_translation
+2026-10-19 10:29:06,874 - DEBUG - LLM Request [proofread]: Qwen36-35B, 5675 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:29:25,539 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:29:25,539 - DEBUG -   message.content: type=str, len=4640, is_none=False
+2026-10-19 10:29:25,539 - DEBUG - LLM Response [proofread]: 4640 chars, 3465 tokens
+2026-10-19 10:29:25,540 - DEBUG - Extracted translation from JSON [improve_translation]
+2026-10-19 10:29:25,543 - DEBUG - → final_edit
+2026-10-19 10:29:25,543 - DEBUG - LLM Request [proofread]: Qwen36-35B, 4902 chars, temp=0.10, sys_not_promt=False, json_mode=True
+2026-10-19 10:29:43,720 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:29:43,720 - DEBUG -   message.content: type=str, len=4540, is_none=False
+2026-10-19 10:29:43,720 - DEBUG - LLM Response [proofread]: 4540 chars, 3133 tokens
+2026-10-19 10:29:43,721 - DEBUG - Extracted translation from JSON [final_edit]
+2026-10-19 10:29:43,723 - DEBUG - → gender_fix
+2026-10-19 10:29:43,841 - DEBUG - [FINAL] 4386 → 4530 chars (×1.03, expected ×1.02) ✓ OK
+2026-10-19 10:29:43,841 - INFO - Translation successful (tokens: 16,271, total: 446,089)
+2026-10-19 10:29:43,841 - DEBUG - [chunk_16] 4386 → 4530 chars (×1.03, expected ×1.02) ✓ OK
+2026-10-19 10:29:43,844 - DEBUG - Checkpoint saved: /ai/sunny-narrator/books/eternal-moment.pg_pl.checkpoint.json
+  Lexical matches: ['English', 'Giuseppe', 'Rose', 'Siren']
+Found matching words: {'Rose', 'Siren', 'Giuseppe', 'English'}
+Progress: 18/27 (66.7%)2026-10-19 10:30:23,174 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:30:23,174 - DEBUG -   message.content: type=str, len=10437, is_none=False
+2026-10-19 10:30:23,174 - DEBUG - LLM Response [translate]: 10437 chars, 6246 tokens
+2026-10-19 10:30:23,175 - DEBUG - Extracted translation from JSON [initial_translation]
+2026-10-19 10:30:23,222 - DEBUG - → generate_synopsis
+2026-10-19 10:30:23,222 - DEBUG - LLM Request [translate]: Gemma4-26B, 20801 chars, temp=0.15, sys_not_promt=False, json_mode=False
+2026-10-19 10:30:33,767 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:30:33,767 - DEBUG -   message.content: type=str, len=484, is_none=False
+2026-10-19 10:30:33,768 - DEBUG - LLM Response [translate]: 484 chars, 5905 tokens
+2026-10-19 10:30:33,768 - INFO - [synopsis] Dictionary candidates reported: 1
+2026-10-19 10:30:33,768 - DEBUG - → remove_tags
+2026-10-19 10:30:33,769 - DEBUG - No wrapper tags found, returning full text
+2026-10-19 10:30:33,769 - DEBUG - → reflection
+2026-10-19 10:30:33,775 - DEBUG - LLM Request [proofread]: Qwen36-35B, 19767 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:30:34,557 - DEBUG - Chunk 0-17 (GPU): 2/51 vocab terms matched
+2026-10-19 10:30:34,558 - DEBUG - translate_chunk: vocab_dict=2 terms, vocab_entries=2, outline_len=419
+2026-10-19 10:30:34,558 - DEBUG - → initial_translation
+2026-10-19 10:30:34,559 - DEBUG - LLM Request [translate]: Gemma4-26B, 7974 chars, temp=0.05, sys_not_promt=False, json_mode=True
+2026-10-19 10:30:48,700 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:30:48,700 - DEBUG -   message.content: type=str, len=1373, is_none=False
+2026-10-19 10:30:48,700 - DEBUG - LLM Response [proofread]: 1373 chars, 6400 tokens
+2026-10-19 10:30:48,700 - DEBUG - Extracted 7 suggestions from JSON [reflection]
+2026-10-19 10:30:48,703 - DEBUG - → improve_translation
+2026-10-19 10:30:48,703 - DEBUG - LLM Request [proofread]: Qwen36-35B, 10635 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:31:29,797 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:31:29,797 - DEBUG -   message.content: type=str, len=9739, is_none=False
+2026-10-19 10:31:29,797 - DEBUG - LLM Response [proofread]: 9739 chars, 6950 tokens
+2026-10-19 10:31:29,798 - DEBUG - Extracted translation from JSON [improve_translation]
+2026-10-19 10:31:29,803 - DEBUG - → final_edit
+2026-10-19 10:31:29,803 - DEBUG - LLM Request [proofread]: Qwen36-35B, 9782 chars, temp=0.10, sys_not_promt=False, json_mode=True
+2026-10-19 10:31:36,296 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:31:36,296 - DEBUG -   message.content: type=str, len=7306, is_none=False
+2026-10-19 10:31:36,296 - DEBUG - LLM Response [translate]: 7306 chars, 4570 tokens
+2026-10-19 10:31:36,297 - DEBUG - Extracted translation from JSON [initial_translation]
+2026-10-19 10:31:36,318 - DEBUG - → generate_synopsis
+2026-10-19 10:31:36,318 - DEBUG - LLM Request [translate]: Gemma4-26B, 16003 chars, temp=0.15, sys_not_promt=False, json_mode=False
+2026-10-19 10:31:46,134 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:31:46,134 - DEBUG -   message.content: type=str, len=522, is_none=False
+2026-10-19 10:31:46,134 - DEBUG - LLM Response [translate]: 522 chars, 4621 tokens
+2026-10-19 10:31:46,135 - INFO - [synopsis] Dictionary candidates reported: 2
+2026-10-19 10:31:46,135 - DEBUG - → remove_tags
+2026-10-19 10:31:46,135 - DEBUG - No wrapper tags found, returning full text
+2026-10-19 10:31:46,138 - INFO - Dictionary: added Maria = Maria, PERSON
+2026-10-19 10:31:46,138 - INFO - [gender] Giuseppe = he: from the synopsis (2 chunks agree)
+2026-10-19 10:31:46,138 - DEBUG - [VocabularyManager] Extracted 33 characters, synced with registry
+2026-10-19 10:32:10,177 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:32:10,178 - DEBUG -   message.content: type=str, len=9735, is_none=False
+2026-10-19 10:32:10,178 - DEBUG - LLM Response [proofread]: 9735 chars, 6646 tokens
+2026-10-19 10:32:10,179 - DEBUG - Extracted translation from JSON [final_edit]
+2026-10-19 10:32:10,184 - DEBUG - → gender_fix
+2026-10-19 10:32:10,382 - DEBUG - [FINAL] 9551 → 9686 chars (×1.01, expected ×1.02) ✓ OK
+2026-10-19 10:32:10,382 - INFO - Translation successful (tokens: 32,147, total: 478,236)
+2026-10-19 10:32:10,382 - DEBUG - [chunk_17] 9551 → 9686 chars (×1.01, expected ×1.02) ✓ OK
+2026-10-19 10:32:10,382 - DEBUG - → reflection
+2026-10-19 10:32:10,383 - DEBUG - LLM Request [proofread]: Qwen36-35B, 14825 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:32:10,387 - DEBUG - Checkpoint saved: /ai/sunny-narrator/books/eternal-moment.pg_pl.checkpoint.json
+  Lexical matches: ['Giuseppe', 'Siren']
+Found matching words: {'Siren', 'Giuseppe'}
+Progress: 19/27 (70.4%)2026-10-19 10:32:11,912 - DEBUG - Chunk 0-18 (GPU): 5/52 vocab terms matched
+2026-10-19 10:32:11,912 - DEBUG - translate_chunk: vocab_dict=5 terms, vocab_entries=5, outline_len=437
+2026-10-19 10:32:11,912 - DEBUG - → initial_translation
+2026-10-19 10:32:11,985 - DEBUG - LLM Request [translate]: Gemma4-26B, 11162 chars, temp=0.05, sys_not_promt=False, json_mode=True
+2026-10-19 10:33:15,238 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:33:15,238 - DEBUG -   message.content: type=str, len=9986, is_none=False
+2026-10-19 10:33:15,238 - DEBUG - LLM Response [proofread]: 9986 chars, 7965 tokens
+2026-10-19 10:33:15,239 - DEBUG - Extracted 45 suggestions from JSON [reflection]
+2026-10-19 10:33:15,251 - DEBUG - → improve_translation
+2026-10-19 10:33:15,251 - DEBUG - LLM Request [proofread]: Qwen36-35B, 15126 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:33:41,545 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:33:41,547 - DEBUG -   message.content: type=str, len=10547, is_none=False
+2026-10-19 10:33:41,547 - DEBUG - LLM Response [translate]: 10547 chars, 6569 tokens
+2026-10-19 10:33:41,549 - DEBUG - Extracted translation from JSON [initial_translation]
+2026-10-19 10:33:41,583 - DEBUG - → generate_synopsis
+2026-10-19 10:33:41,584 - DEBUG - LLM Request [translate]: Gemma4-26B, 22038 chars, temp=0.15, sys_not_promt=False, json_mode=False
+2026-10-19 10:33:47,221 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:33:47,223 - DEBUG -   message.content: type=str, len=7110, is_none=False
+2026-10-19 10:33:47,223 - DEBUG - LLM Response [proofread]: 7110 chars, 7487 tokens
+2026-10-19 10:33:47,224 - DEBUG - Extracted translation from JSON [improve_translation]
+2026-10-19 10:33:47,228 - DEBUG - → final_edit
+2026-10-19 10:33:47,229 - DEBUG - LLM Request [proofread]: Qwen36-35B, 7155 chars, temp=0.10, sys_not_promt=False, json_mode=True
+2026-10-19 10:33:54,255 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:33:54,255 - DEBUG -   message.content: type=str, len=589, is_none=False
+2026-10-19 10:33:54,255 - DEBUG - LLM Response [translate]: 589 chars, 6368 tokens
+2026-10-19 10:33:54,256 - INFO - [synopsis] Dictionary candidates reported: 3
+2026-10-19 10:33:54,256 - DEBUG - → remove_tags
+2026-10-19 10:33:54,256 - DEBUG - No wrapper tags found, returning full text
+2026-10-19 10:33:54,257 - DEBUG - [gender] synopsis gender of 'Miss Raby' ignored: the dictionary has she
+2026-10-19 10:34:15,984 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:34:15,985 - DEBUG -   message.content: type=str, len=7111, is_none=False
+2026-10-19 10:34:15,985 - DEBUG - LLM Response [proofread]: 7111 chars, 4690 tokens
+2026-10-19 10:34:15,986 - DEBUG - Extracted translation from JSON [final_edit]
+2026-10-19 10:34:15,990 - DEBUG - → gender_fix
+2026-10-19 10:34:16,170 - DEBUG - [FINAL] 7153 → 7141 chars (×1.00, expected ×1.02) ✓ OK
+2026-10-19 10:34:16,171 - INFO - Translation successful (tokens: 29,333, total: 507,569)
+2026-10-19 10:34:16,171 - DEBUG - [chunk_18] 7153 → 7141 chars (×1.00, expected ×1.01) ✓ OK
+2026-10-19 10:34:16,171 - DEBUG - → reflection
+2026-10-19 10:34:16,172 - DEBUG - LLM Request [proofread]: Qwen36-35B, 21224 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:34:16,180 - DEBUG - Checkpoint saved: /ai/sunny-narrator/books/eternal-moment.pg_pl.checkpoint.json
+  Lexical matches: ['*Biscione*', 'Elizabeth', 'Leyland', 'Miss Raby', 'Vorta']
+Found matching words: {'Elizabeth', 'Leyland', 'Miss Raby', '*Biscione*', 'Vorta'}
+Progress: 20/27 (74.1%)2026-10-19 10:34:17,229 - DEBUG - Chunk 0-19 (GPU): 7/52 vocab terms matched
+2026-10-19 10:34:17,230 - DEBUG - translate_chunk: vocab_dict=7 terms, vocab_entries=7, outline_len=471
+2026-10-19 10:34:17,230 - DEBUG - → initial_translation
+2026-10-19 10:34:17,249 - DEBUG - LLM Request [translate]: Gemma4-26B, 11009 chars, temp=0.05, sys_not_promt=False, json_mode=True
+2026-10-19 10:35:39,579 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:35:39,579 - DEBUG -   message.content: type=str, len=9831, is_none=False
+2026-10-19 10:35:39,579 - DEBUG - LLM Response [translate]: 9831 chars, 5959 tokens
+2026-10-19 10:35:39,581 - DEBUG - Extracted translation from JSON [initial_translation]
+2026-10-19 10:35:39,617 - DEBUG - → generate_synopsis
+2026-10-19 10:35:39,617 - DEBUG - LLM Request [translate]: Gemma4-26B, 21579 chars, temp=0.15, sys_not_promt=False, json_mode=False
+2026-10-19 10:35:51,456 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:35:51,457 - DEBUG -   message.content: type=str, len=668, is_none=False
+2026-10-19 10:35:51,457 - DEBUG - LLM Response [translate]: 668 chars, 6029 tokens
+2026-10-19 10:35:51,458 - INFO - [synopsis] Dictionary candidates reported: 6
+2026-10-19 10:35:51,458 - DEBUG - → remove_tags
+2026-10-19 10:35:51,458 - DEBUG - No wrapper tags found, returning full text
+2026-10-19 10:35:51,458 - DEBUG - [gender] synopsis gender of 'Miss Raby' ignored: the dictionary has she
+2026-10-19 10:35:51,459 - DEBUG - [gender] synopsis gender of 'Signora Cantù' ignored: the dictionary has she
+2026-10-19 10:35:51,461 - INFO - Dictionary: added Nelly = Nelly, PERSON
+2026-10-19 10:35:51,461 - INFO - [gender] Leyland = he: from the synopsis (2 chunks agree)
+2026-10-19 10:35:51,461 - INFO - [gender] Elizabeth = she: from the synopsis (2 chunks agree)
+2026-10-19 10:35:51,463 - INFO - Dictionary: added Signor Cantù = Signor Cantù, PERSON
+2026-10-19 10:35:51,464 - DEBUG - [VocabularyManager] Extracted 35 characters, synced with registry
+2026-10-19 10:35:51,717 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:35:51,718 - DEBUG -   message.content: type=str, len=13935, is_none=False
+2026-10-19 10:35:51,718 - DEBUG - LLM Response [proofread]: 13935 chars, 11234 tokens
+2026-10-19 10:35:51,720 - DEBUG - Extracted 75 suggestions from JSON [reflection]
+2026-10-19 10:35:51,745 - DEBUG - → improve_translation
+2026-10-19 10:35:51,745 - DEBUG - LLM Request [proofread]: Qwen36-35B, 20972 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:36:40,885 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:36:40,885 - DEBUG -   message.content: type=str, len=10519, is_none=False
+2026-10-19 10:36:40,885 - DEBUG - LLM Response [proofread]: 10519 chars, 10560 tokens
+2026-10-19 10:36:40,887 - DEBUG - Extracted translation from JSON [improve_translation]
+2026-10-19 10:36:40,892 - DEBUG - → final_edit
+2026-10-19 10:36:40,893 - DEBUG - LLM Request [proofread]: Qwen36-35B, 10630 chars, temp=0.10, sys_not_promt=False, json_mode=True
+2026-10-19 10:37:26,405 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:37:26,419 - DEBUG -   message.content: type=str, len=10514, is_none=False
+2026-10-19 10:37:26,420 - DEBUG - LLM Response [proofread]: 10514 chars, 7195 tokens
+2026-10-19 10:37:26,435 - DEBUG - Extracted translation from JSON [final_edit]
+2026-10-19 10:37:26,453 - DEBUG - → gender_fix
+2026-10-19 10:37:27,252 - DEBUG - [FINAL] 10013 → 10423 chars (×1.04, expected ×1.01) ✓ OK
+2026-10-19 10:37:27,253 - INFO - Translation successful (tokens: 41,926, total: 549,495)
+2026-10-19 10:37:27,255 - DEBUG - [chunk_19] 10013 → 10423 chars (×1.04, expected ×1.02) ✓ OK
+2026-10-19 10:37:27,259 - DEBUG - → reflection
+2026-10-19 10:37:27,263 - DEBUG - LLM Request [proofread]: Qwen36-35B, 20369 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:37:27,276 - DEBUG - Checkpoint saved: /ai/sunny-narrator/books/eternal-moment.pg_pl.checkpoint.json
+  Lexical matches: ['*Biscione*', 'Elizabeth', 'English', 'Leyland', 'Miss Raby', 'Signora Cantù', 'Vorta']
+Found matching words: {'Elizabeth', 'Signora Cantù', 'English', 'Leyland', 'Miss Raby', '*Biscione*', 'Vorta'}
+Progress: 21/27 (77.8%)2026-10-19 10:37:28,627 - DEBUG - Chunk 0-20 (GPU): 8/54 vocab terms matched
+2026-10-19 10:37:28,627 - DEBUG - translate_chunk: vocab_dict=8 terms, vocab_entries=8, outline_len=461
+2026-10-19 10:37:28,628 - DEBUG - → initial_translation
+2026-10-19 10:37:28,652 - DEBUG - LLM Request [translate]: Gemma4-26B, 11094 chars, temp=0.05, sys_not_promt=False, json_mode=True
+2026-10-19 10:37:59,738 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:37:59,738 - DEBUG -   message.content: type=str, len=4468, is_none=False
+2026-10-19 10:37:59,738 - DEBUG - LLM Response [proofread]: 4468 chars, 7325 tokens
+2026-10-19 10:37:59,739 - DEBUG - Extracted 17 suggestions from JSON [reflection]
+2026-10-19 10:37:59,748 - DEBUG - → improve_translation
+2026-10-19 10:37:59,748 - DEBUG - LLM Request [proofread]: Qwen36-35B, 13418 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:38:41,286 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:38:41,286 - DEBUG -   message.content: type=str, len=9802, is_none=False
+2026-10-19 10:38:41,286 - DEBUG - LLM Response [proofread]: 9802 chars, 7600 tokens
+2026-10-19 10:38:41,288 - DEBUG - Extracted translation from JSON [improve_translation]
+2026-10-19 10:38:41,293 - DEBUG - → final_edit
+2026-10-19 10:38:41,294 - DEBUG - LLM Request [proofread]: Qwen36-35B, 9951 chars, temp=0.10, sys_not_promt=False, json_mode=True
+2026-10-19 10:38:48,855 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:38:48,855 - DEBUG -   message.content: type=str, len=9819, is_none=False
+2026-10-19 10:38:48,855 - DEBUG - LLM Response [translate]: 9819 chars, 5784 tokens
+2026-10-19 10:38:48,856 - DEBUG - Extracted translation from JSON [initial_translation]
+2026-10-19 10:38:48,883 - DEBUG - → generate_synopsis
+2026-10-19 10:38:48,884 - DEBUG - LLM Request [translate]: Gemma4-26B, 21771 chars, temp=0.15, sys_not_promt=False, json_mode=False
+2026-10-19 10:39:01,188 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:39:01,188 - DEBUG -   message.content: type=str, len=729, is_none=False
+2026-10-19 10:39:01,188 - DEBUG - LLM Response [translate]: 729 chars, 5972 tokens
+2026-10-19 10:39:01,189 - INFO - [synopsis] Dictionary candidates reported: 6
+2026-10-19 10:39:01,189 - DEBUG - → remove_tags
+2026-10-19 10:39:01,189 - DEBUG - No wrapper tags found, returning full text
+2026-10-19 10:39:01,190 - DEBUG - [gender] synopsis gender of 'Miss Raby' ignored: the dictionary has she
+2026-10-19 10:39:01,190 - DEBUG - [gender] synopsis gender of 'Leyland' ignored: the dictionary has he
+2026-10-19 10:39:01,190 - DEBUG - [gender] synopsis gender of 'Elizabeth' ignored: the dictionary has she
+2026-10-19 10:39:01,190 - DEBUG - [gender] synopsis gender of 'Signora Cantù' ignored: the dictionary has she
+2026-10-19 10:39:01,190 - INFO - [gender] Signor Cantù = he: from the synopsis (2 chunks agree)
+2026-10-19 10:39:01,193 - INFO - Dictionary: added Bartolommeo Cantù = Bartolommeo Cantù, PERSON
+2026-10-19 10:39:01,193 - DEBUG - [VocabularyManager] Extracted 36 characters, synced with registry
+2026-10-19 10:39:22,675 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:39:22,675 - DEBUG -   message.content: type=str, len=9799, is_none=False
+2026-10-19 10:39:22,675 - DEBUG - LLM Response [proofread]: 9799 chars, 6464 tokens
+2026-10-19 10:39:22,676 - DEBUG - Extracted translation from JSON [final_edit]
+2026-10-19 10:39:22,682 - DEBUG - → gender_fix
+2026-10-19 10:39:22,891 - DEBUG - [FINAL] 9895 → 9902 chars (×1.00, expected ×1.02) ✓ OK
+2026-10-19 10:39:22,892 - INFO - Translation successful (tokens: 33,377, total: 582,872)
+2026-10-19 10:39:22,892 - DEBUG - [chunk_20] 9895 → 9902 chars (×1.00, expected ×1.01) ✓ OK
+2026-10-19 10:39:22,892 - DEBUG - → reflection
+2026-10-19 10:39:22,893 - DEBUG - LLM Request [proofread]: Qwen36-35B, 20425 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:39:22,899 - DEBUG - Checkpoint saved: /ai/sunny-narrator/books/eternal-moment.pg_pl.checkpoint.json
+  Lexical matches: ['*Biscione*', 'Elizabeth', 'English', 'Leyland', 'Miss Raby', 'Signor Cantù', 'Signora Cantù', 'Vorta']
+Found matching words: {'Elizabeth', 'Signora Cantù', 'English', 'Leyland', 'Miss Raby', '*Biscione*', 'Vorta', 'Signor Cantù'}
+Progress: 22/27 (81.5%)2026-10-19 10:39:24,234 - DEBUG - Chunk 0-21 (GPU): 6/55 vocab terms matched
+2026-10-19 10:39:24,234 - DEBUG - translate_chunk: vocab_dict=6 terms, vocab_entries=6, outline_len=465
+2026-10-19 10:39:24,234 - DEBUG - → initial_translation
+2026-10-19 10:39:24,238 - DEBUG - LLM Request [translate]: Gemma4-26B, 10886 chars, temp=0.05, sys_not_promt=False, json_mode=True
+2026-10-19 10:39:31,298 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:39:31,298 - DEBUG -   message.content: type=str, len=345, is_none=False
+2026-10-19 10:39:31,298 - DEBUG - LLM Response [proofread]: 345 chars, 5814 tokens
+2026-10-19 10:39:31,299 - DEBUG - Extracted 2 suggestions from JSON [reflection]
+2026-10-19 10:39:31,299 - DEBUG - → improve_translation
+2026-10-19 10:39:31,300 - DEBUG - LLM Request [proofread]: Qwen36-35B, 10130 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:40:09,198 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:40:09,201 - DEBUG -   message.content: type=str, len=9834, is_none=False
+2026-10-19 10:40:09,202 - DEBUG - LLM Response [proofread]: 9834 chars, 6340 tokens
+2026-10-19 10:40:09,206 - DEBUG - Extracted translation from JSON [improve_translation]
+2026-10-19 10:40:09,219 - DEBUG - → final_edit
+2026-10-19 10:40:09,221 - DEBUG - LLM Request [proofread]: Qwen36-35B, 10018 chars, temp=0.10, sys_not_promt=False, json_mode=True
+2026-10-19 10:40:46,290 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:40:46,304 - DEBUG -   message.content: type=str, len=10085, is_none=False
+2026-10-19 10:40:46,306 - DEBUG - LLM Response [translate]: 10085 chars, 5953 tokens
+2026-10-19 10:40:46,319 - DEBUG - Extracted translation from JSON [initial_translation]
+2026-10-19 10:40:46,369 - DEBUG - → generate_synopsis
+2026-10-19 10:40:46,372 - DEBUG - LLM Request [translate]: Gemma4-26B, 21390 chars, temp=0.15, sys_not_promt=False, json_mode=False
+2026-10-19 10:40:47,217 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:40:47,217 - DEBUG -   message.content: type=str, len=9835, is_none=False
+2026-10-19 10:40:47,217 - DEBUG - LLM Response [proofread]: 9835 chars, 6277 tokens
+2026-10-19 10:40:47,219 - DEBUG - Extracted translation from JSON [final_edit]
+2026-10-19 10:40:47,230 - DEBUG - → gender_fix
+2026-10-19 10:40:47,429 - DEBUG - [FINAL] 9991 → 9885 chars (×0.99, expected ×1.01) ✓ OK
+2026-10-19 10:40:47,429 - INFO - Translation successful (tokens: 30,187, total: 613,059)
+2026-10-19 10:40:47,429 - DEBUG - [chunk_21] 9991 → 9885 chars (×0.99, expected ×1.01) ✓ OK
+2026-10-19 10:40:47,433 - DEBUG - Checkpoint saved: /ai/sunny-narrator/books/eternal-moment.pg_pl.checkpoint.json
+  Lexical matches: ['*Biscione*', 'English', 'Leyland', 'Miss Raby', 'Signora Cantù', 'Vorta']
+Found matching words: {'Signora Cantù', 'English', 'Leyland', 'Miss Raby', '*Biscione*', 'Vorta'}
+Progress: 23/27 (85.2%)2026-10-19 10:40:57,389 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:40:57,389 - DEBUG -   message.content: type=str, len=540, is_none=False
+2026-10-19 10:40:57,389 - DEBUG - LLM Response [translate]: 540 chars, 5936 tokens
+2026-10-19 10:40:57,390 - INFO - [synopsis] Dictionary candidates reported: 3
+2026-10-19 10:40:57,390 - DEBUG - → remove_tags
+2026-10-19 10:40:57,390 - DEBUG - No wrapper tags found, returning full text
+2026-10-19 10:40:57,391 - DEBUG - [gender] synopsis gender of 'Signora Cantù' ignored: the dictionary has she
+2026-10-19 10:40:57,391 - DEBUG - [gender] synopsis gender of 'Miss Raby' ignored: the dictionary has she
+2026-10-19 10:40:57,391 - DEBUG - [gender] synopsis gender of 'Leyland' ignored: the dictionary has he
+2026-10-19 10:40:57,391 - DEBUG - → reflection
+2026-10-19 10:40:57,397 - DEBUG - LLM Request [proofread]: Qwen36-35B, 20093 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:40:58,456 - DEBUG - Chunk 0-22 (GPU): 7/55 vocab terms matched
+2026-10-19 10:40:58,456 - DEBUG - translate_chunk: vocab_dict=7 terms, vocab_entries=7, outline_len=413
+2026-10-19 10:40:58,456 - DEBUG - → initial_translation
+2026-10-19 10:40:58,475 - DEBUG - LLM Request [translate]: Gemma4-26B, 11117 chars, temp=0.05, sys_not_promt=False, json_mode=True
+2026-10-19 10:41:13,987 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:41:13,987 - DEBUG -   message.content: type=str, len=1716, is_none=False
+2026-10-19 10:41:13,987 - DEBUG - LLM Response [proofread]: 1716 chars, 6352 tokens
+2026-10-19 10:41:13,987 - DEBUG - Extracted 11 suggestions from JSON [reflection]
+2026-10-19 10:41:13,992 - DEBUG - → improve_translation
+2026-10-19 10:41:13,992 - DEBUG - LLM Request [proofread]: Qwen36-35B, 10791 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:41:53,291 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:41:53,292 - DEBUG -   message.content: type=str, len=9744, is_none=False
+2026-10-19 10:41:53,292 - DEBUG - LLM Response [proofread]: 9744 chars, 6714 tokens
+2026-10-19 10:41:53,293 - DEBUG - Extracted translation from JSON [improve_translation]
+2026-10-19 10:41:53,298 - DEBUG - → final_edit
+2026-10-19 10:41:53,298 - DEBUG - LLM Request [proofread]: Qwen36-35B, 9860 chars, temp=0.10, sys_not_promt=False, json_mode=True
+2026-10-19 10:42:19,117 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:42:19,117 - DEBUG -   message.content: type=str, len=9726, is_none=False
+2026-10-19 10:42:19,118 - DEBUG - LLM Response [translate]: 9726 chars, 5893 tokens
+2026-10-19 10:42:19,119 - DEBUG - Extracted translation from JSON [initial_translation]
+2026-10-19 10:42:19,147 - DEBUG - → generate_synopsis
+2026-10-19 10:42:19,147 - DEBUG - LLM Request [translate]: Gemma4-26B, 21638 chars, temp=0.15, sys_not_promt=False, json_mode=False
+2026-10-19 10:42:30,338 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:42:30,338 - DEBUG -   message.content: type=str, len=538, is_none=False
+2026-10-19 10:42:30,338 - DEBUG - LLM Response [translate]: 538 chars, 5961 tokens
+2026-10-19 10:42:30,340 - INFO - [synopsis] Dictionary candidates reported: 4
+2026-10-19 10:42:30,340 - DEBUG - → remove_tags
+2026-10-19 10:42:30,340 - DEBUG - No wrapper tags found, returning full text
+2026-10-19 10:42:30,341 - DEBUG - [gender] synopsis gender of 'Miss Raby' ignored: the dictionary has she
+2026-10-19 10:42:30,341 - DEBUG - [gender] synopsis gender of 'Elizabeth' ignored: the dictionary has she
+2026-10-19 10:42:30,341 - DEBUG - [gender] synopsis gender of 'Leyland' ignored: the dictionary has he
+2026-10-19 10:42:32,012 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:42:32,012 - DEBUG -   message.content: type=str, len=9621, is_none=False
+2026-10-19 10:42:32,013 - DEBUG - LLM Response [proofread]: 9621 chars, 6327 tokens
+2026-10-19 10:42:32,014 - DEBUG - Extracted translation from JSON [final_edit]
+2026-10-19 10:42:32,019 - DEBUG - → gender_fix
+2026-10-19 10:42:32,209 - DEBUG - [FINAL] 9850 → 9688 chars (×0.98, expected ×1.01) ✓ OK
+2026-10-19 10:42:32,209 - INFO - Translation successful (tokens: 31,282, total: 644,341)
+2026-10-19 10:42:32,210 - DEBUG - [chunk_22] 9850 → 9688 chars (×0.98, expected ×1.01) ✓ OK
+2026-10-19 10:42:32,210 - DEBUG - → reflection
+2026-10-19 10:42:32,211 - DEBUG - LLM Request [proofread]: Qwen36-35B, 20376 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:42:32,216 - DEBUG - Checkpoint saved: /ai/sunny-narrator/books/eternal-moment.pg_pl.checkpoint.json
+  Lexical matches: ['*Biscione*', 'Elizabeth', 'Feo', 'Leyland', 'Miss Raby', 'Signora Cantù', 'Vorta']
+Found matching words: {'Elizabeth', 'Feo', 'Signora Cantù', 'Leyland', 'Miss Raby', '*Biscione*', 'Vorta'}
+Progress: 24/27 (88.9%)2026-10-19 10:42:33,260 - DEBUG - Chunk 0-23 (GPU): 6/55 vocab terms matched
+2026-10-19 10:42:33,260 - DEBUG - translate_chunk: vocab_dict=6 terms, vocab_entries=6, outline_len=405
+2026-10-19 10:42:33,260 - DEBUG - → initial_translation
+2026-10-19 10:42:33,264 - DEBUG - LLM Request [translate]: Gemma4-26B, 10984 chars, temp=0.05, sys_not_promt=False, json_mode=True
+2026-10-19 10:43:20,803 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:43:20,803 - DEBUG -   message.content: type=str, len=6707, is_none=False
+2026-10-19 10:43:20,803 - DEBUG - LLM Response [proofread]: 6707 chars, 8108 tokens
+2026-10-19 10:43:20,804 - DEBUG - Extracted 32 suggestions from JSON [reflection]
+2026-10-19 10:43:20,819 - DEBUG - → improve_translation
+2026-10-19 10:43:20,819 - DEBUG - LLM Request [proofread]: Qwen36-35B, 14989 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:44:00,057 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:44:00,058 - DEBUG -   message.content: type=str, len=10211, is_none=False
+2026-10-19 10:44:00,058 - DEBUG - LLM Response [translate]: 10211 chars, 6266 tokens
+2026-10-19 10:44:00,059 - DEBUG - Extracted translation from JSON [initial_translation]
+2026-10-19 10:44:00,087 - DEBUG - → generate_synopsis
+2026-10-19 10:44:00,087 - DEBUG - LLM Request [translate]: Gemma4-26B, 21677 chars, temp=0.15, sys_not_promt=False, json_mode=False
+2026-10-19 10:44:02,996 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:44:02,996 - DEBUG -   message.content: type=str, len=9696, is_none=False
+2026-10-19 10:44:02,996 - DEBUG - LLM Response [proofread]: 9696 chars, 8114 tokens
+2026-10-19 10:44:02,997 - DEBUG - Extracted translation from JSON [improve_translation]
+2026-10-19 10:44:03,003 - DEBUG - → final_edit
+2026-10-19 10:44:03,003 - DEBUG - LLM Request [proofread]: Qwen36-35B, 9845 chars, temp=0.10, sys_not_promt=False, json_mode=True
+2026-10-19 10:44:12,114 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:44:12,114 - DEBUG -   message.content: type=str, len=580, is_none=False
+2026-10-19 10:44:12,114 - DEBUG - LLM Response [translate]: 580 chars, 6184 tokens
+2026-10-19 10:44:12,115 - INFO - [synopsis] Dictionary candidates reported: 3
+2026-10-19 10:44:12,115 - DEBUG - → remove_tags
+2026-10-19 10:44:12,115 - DEBUG - No wrapper tags found, returning full text
+2026-10-19 10:44:12,115 - DEBUG - [gender] synopsis gender of 'Miss Raby' ignored: the dictionary has she
+2026-10-19 10:44:12,116 - DEBUG - [gender] synopsis gender of 'Leyland' ignored: the dictionary has he
+2026-10-19 10:44:12,116 - INFO - [gender] Feo = he: from the synopsis (2 chunks agree)
+2026-10-19 10:44:12,116 - DEBUG - [VocabularyManager] Extracted 36 characters, synced with registry
+2026-10-19 10:44:42,618 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:44:42,618 - DEBUG -   message.content: type=str, len=9694, is_none=False
+2026-10-19 10:44:42,618 - DEBUG - LLM Response [proofread]: 9694 chars, 6371 tokens
+2026-10-19 10:44:42,619 - DEBUG - Extracted translation from JSON [final_edit]
+2026-10-19 10:44:42,624 - DEBUG - → gender_fix
+2026-10-19 10:44:42,847 - DEBUG - [FINAL] 10051 → 9715 chars (×0.97, expected ×1.01) ✓ OK
+2026-10-19 10:44:42,847 - INFO - Translation successful (tokens: 34,447, total: 678,788)
+2026-10-19 10:44:42,847 - DEBUG - [chunk_23] 10051 → 9715 chars (×0.97, expected ×1.00) ✓ OK
+2026-10-19 10:44:42,848 - DEBUG - → reflection
+2026-10-19 10:44:42,849 - DEBUG - LLM Request [proofread]: Qwen36-35B, 20756 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:44:42,855 - DEBUG - Checkpoint saved: /ai/sunny-narrator/books/eternal-moment.pg_pl.checkpoint.json
+  Lexical matches: ['*Biscione*', 'Feo', 'Leyland', 'Miss Raby', 'Vorta']
+Found matching words: {'Feo', 'French Revolution', 'Leyland', 'Miss Raby', '*Biscione*', 'Vorta'}
+Progress: 25/27 (92.6%)2026-10-19 10:44:43,573 - DEBUG - Chunk 0-24 (GPU): 7/55 vocab terms matched
+2026-10-19 10:44:43,574 - DEBUG - translate_chunk: vocab_dict=7 terms, vocab_entries=7, outline_len=474
+2026-10-19 10:44:43,574 - DEBUG - → initial_translation
+2026-10-19 10:44:43,578 - DEBUG - LLM Request [translate]: Gemma4-26B, 7934 chars, temp=0.05, sys_not_promt=False, json_mode=True
+2026-10-19 10:45:37,819 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:45:37,819 - DEBUG -   message.content: type=str, len=7040, is_none=False
+2026-10-19 10:45:37,819 - DEBUG - LLM Response [translate]: 7040 chars, 4246 tokens
+2026-10-19 10:45:37,820 - DEBUG - Extracted translation from JSON [initial_translation]
+2026-10-19 10:45:37,847 - DEBUG - → generate_synopsis
+2026-10-19 10:45:37,847 - DEBUG - LLM Request [translate]: Gemma4-26B, 15694 chars, temp=0.15, sys_not_promt=False, json_mode=False
+2026-10-19 10:45:47,020 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:45:47,020 - DEBUG -   message.content: type=str, len=559, is_none=False
+2026-10-19 10:45:47,020 - DEBUG - LLM Response [translate]: 559 chars, 4336 tokens
+2026-10-19 10:45:47,021 - INFO - [synopsis] Dictionary candidates reported: 3
+2026-10-19 10:45:47,021 - DEBUG - → remove_tags
+2026-10-19 10:45:47,021 - DEBUG - No wrapper tags found, returning full text
+2026-10-19 10:45:47,022 - DEBUG - [gender] synopsis gender of 'Miss Raby' ignored: the dictionary has she
+2026-10-19 10:45:47,022 - DEBUG - [gender] synopsis gender of 'Leyland' ignored: the dictionary has he
+2026-10-19 10:45:47,022 - DEBUG - [gender] synopsis gender of 'Feo' ignored: the dictionary has he
+2026-10-19 10:45:48,930 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:45:48,930 - DEBUG -   message.content: type=str, len=8820, is_none=False
+2026-10-19 10:45:48,930 - DEBUG - LLM Response [proofread]: 8820 chars, 9231 tokens
+2026-10-19 10:45:48,932 - DEBUG - Extracted 44 suggestions from JSON [reflection]
+2026-10-19 10:45:48,948 - DEBUG - → improve_translation
+2026-10-19 10:45:48,948 - DEBUG - LLM Request [proofread]: Qwen36-35B, 16485 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:46:34,759 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:46:34,759 - DEBUG -   message.content: type=str, len=10131, is_none=False
+2026-10-19 10:46:34,759 - DEBUG - LLM Response [proofread]: 10131 chars, 9018 tokens
+2026-10-19 10:46:34,760 - DEBUG - Extracted translation from JSON [improve_translation]
+2026-10-19 10:46:34,765 - DEBUG - → final_edit
+2026-10-19 10:46:34,766 - DEBUG - LLM Request [proofread]: Qwen36-35B, 10235 chars, temp=0.10, sys_not_promt=False, json_mode=True
+2026-10-19 10:47:16,972 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:47:16,972 - DEBUG -   message.content: type=str, len=10133, is_none=False
+2026-10-19 10:47:16,972 - DEBUG - LLM Response [proofread]: 10133 chars, 6904 tokens
+2026-10-19 10:47:16,974 - DEBUG - Extracted translation from JSON [final_edit]
+2026-10-19 10:47:16,986 - DEBUG - → gender_fix
+2026-10-19 10:47:17,198 - WARNING - [gender] Feo (he): Obserwowała — Obserwowała Feo.
+2026-10-19 10:47:17,198 - DEBUG - LLM Request [proofread]: Qwen36-35B, 408 chars, temp=0.05, sys_not_promt=False, json_mode=False
+2026-10-19 10:47:18,382 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:47:18,382 - DEBUG -   message.content: type=str, len=18, is_none=False
+2026-10-19 10:47:18,382 - DEBUG - LLM Response [proofread]: 18 chars, 157 tokens
+2026-10-19 10:47:18,434 - INFO - [gender] fixed 1 of 1 gender error(s)
+2026-10-19 10:47:18,435 - DEBUG - [FINAL] 9875 → 10039 chars (×1.02, expected ×1.00) ✓ OK
+2026-10-19 10:47:18,435 - INFO - Translation successful (tokens: 37,760, total: 716,548)
+2026-10-19 10:47:18,440 - DEBUG - [chunk_24] 9875 → 10039 chars (×1.02, expected ×1.01) ✓ OK
+2026-10-19 10:47:18,440 - DEBUG - → reflection
+2026-10-19 10:47:18,441 - DEBUG - LLM Request [proofread]: Qwen36-35B, 14366 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:47:18,447 - DEBUG - Checkpoint saved: /ai/sunny-narrator/books/eternal-moment.pg_pl.checkpoint.json
+  Lexical matches: ['Feo', 'Leyland', 'Miss Raby', 'Rose', 'U.S.', 'United States', 'eBook']
+Found matching words: {'Feo', 'Leyland', 'Rose', 'Miss Raby', 'eBook', 'United States', 'U.S.'}
+Progress: 26/27 (96.3%)2026-10-19 10:47:19,231 - DEBUG - Chunk 0-25 (GPU): 4/55 vocab terms matched
+2026-10-19 10:47:19,231 - DEBUG - translate_chunk: vocab_dict=4 terms, vocab_entries=4, outline_len=453
+2026-10-19 10:47:19,232 - DEBUG - → initial_translation
+2026-10-19 10:47:19,249 - DEBUG - LLM Request [translate]: Gemma4-26B, 9291 chars, temp=0.05, sys_not_promt=False, json_mode=True
+2026-10-19 10:47:29,666 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:47:29,666 - DEBUG -   message.content: type=str, len=1196, is_none=False
+2026-10-19 10:47:29,667 - DEBUG - LLM Response [proofread]: 1196 chars, 4571 tokens
+2026-10-19 10:47:29,667 - DEBUG - Extracted 8 suggestions from JSON [reflection]
+2026-10-19 10:47:29,671 - DEBUG - → improve_translation
+2026-10-19 10:47:29,672 - DEBUG - LLM Request [proofread]: Qwen36-35B, 7463 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:47:57,510 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:47:57,510 - DEBUG -   message.content: type=str, len=7047, is_none=False
+2026-10-19 10:47:57,511 - DEBUG - LLM Response [proofread]: 7047 chars, 4732 tokens
+2026-10-19 10:47:57,512 - DEBUG - Extracted translation from JSON [improve_translation]
+2026-10-19 10:47:57,515 - DEBUG - → final_edit
+2026-10-19 10:47:57,516 - DEBUG - LLM Request [proofread]: Qwen36-35B, 7180 chars, temp=0.10, sys_not_promt=False, json_mode=True
+2026-10-19 10:48:14,242 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:48:14,242 - DEBUG -   message.content: type=str, len=9294, is_none=False
+2026-10-19 10:48:14,242 - DEBUG - LLM Response [translate]: 9294 chars, 4740 tokens
+2026-10-19 10:48:14,243 - DEBUG - Extracted translation from JSON [initial_translation]
+2026-10-19 10:48:14,292 - DEBUG - → generate_synopsis
+2026-10-19 10:48:14,292 - DEBUG - LLM Request [translate]: Gemma4-26B, 19511 chars, temp=0.15, sys_not_promt=False, json_mode=False
+2026-10-19 10:48:24,086 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:48:24,086 - DEBUG -   message.content: type=str, len=576, is_none=False
+2026-10-19 10:48:24,086 - DEBUG - LLM Response [translate]: 576 chars, 4930 tokens
+2026-10-19 10:48:24,087 - DEBUG - → remove_tags
+2026-10-19 10:48:24,087 - DEBUG - No wrapper tags found, returning full text
+2026-10-19 10:48:24,880 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:48:24,880 - DEBUG -   message.content: type=str, len=6979, is_none=False
+2026-10-19 10:48:24,881 - DEBUG - LLM Response [proofread]: 6979 chars, 4578 tokens
+2026-10-19 10:48:24,881 - DEBUG - Extracted translation from JSON [final_edit]
+2026-10-19 10:48:24,886 - DEBUG - → gender_fix
+2026-10-19 10:48:25,018 - DEBUG - [FINAL] 6823 → 6969 chars (×1.02, expected ×1.01) ✓ OK
+2026-10-19 10:48:25,018 - INFO - Translation successful (tokens: 22,463, total: 739,011)
+2026-10-19 10:48:25,019 - DEBUG - [chunk_25] 6823 → 6969 chars (×1.02, expected ×1.01) ✓ OK
+2026-10-19 10:48:25,019 - DEBUG - → reflection
+2026-10-19 10:48:25,020 - DEBUG - LLM Request [proofread]: Qwen36-35B, 17981 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:48:25,026 - DEBUG - Checkpoint saved: /ai/sunny-narrator/books/eternal-moment.pg_pl.checkpoint.json
+  Lexical matches: ['Project Gutenberg Literary Archive Foundation', 'U.S.', 'United States', 'eBook']
+Found matching words: {'eBook', 'U.S.', 'Project Gutenberg Literary Archive Foundation', 'United States'}
+Progress: 27/27 (100.0%)2026-10-19 10:48:25,875 - DEBUG - Chunk 0-26 (GPU): 6/55 vocab terms matched
+2026-10-19 10:48:25,875 - DEBUG - translate_chunk: vocab_dict=6 terms, vocab_entries=6, outline_len=536
+2026-10-19 10:48:25,875 - DEBUG - → initial_translation
+2026-10-19 10:48:25,879 - DEBUG - LLM Request [translate]: Gemma4-26B, 9531 chars, temp=0.05, sys_not_promt=False, json_mode=True
+2026-10-19 10:49:09,106 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:49:09,106 - DEBUG -   message.content: type=str, len=7378, is_none=False
+2026-10-19 10:49:09,106 - DEBUG - LLM Response [proofread]: 7378 chars, 6770 tokens
+2026-10-19 10:49:09,107 - DEBUG - Extracted 23 suggestions from JSON [reflection]
+2026-10-19 10:49:09,123 - DEBUG - → improve_translation
+2026-10-19 10:49:09,123 - DEBUG - LLM Request [proofread]: Qwen36-35B, 15047 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:49:29,378 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:49:29,381 - DEBUG -   message.content: type=str, len=9555, is_none=False
+2026-10-19 10:49:29,382 - DEBUG - LLM Response [translate]: 9555 chars, 4963 tokens
+2026-10-19 10:49:29,383 - DEBUG - Extracted translation from JSON [initial_translation]
+2026-10-19 10:49:29,412 - DEBUG - → generate_synopsis
+2026-10-19 10:49:29,413 - DEBUG - LLM Request [translate]: Gemma4-26B, 20014 chars, temp=0.15, sys_not_promt=False, json_mode=False
+2026-10-19 10:49:38,747 - DEBUG - LLM Raw Response [translate]: choices=1, model=/ai/models/gemma4/gemma-4-26B-A4B-it-UD-Q5_K_XL.gguf
+2026-10-19 10:49:38,747 - DEBUG -   message.content: type=str, len=527, is_none=False
+2026-10-19 10:49:38,747 - DEBUG - LLM Response [translate]: 527 chars, 5142 tokens
+2026-10-19 10:49:38,748 - INFO - [synopsis] Dictionary candidates reported: 1
+2026-10-19 10:49:38,748 - DEBUG - → remove_tags
+2026-10-19 10:49:38,748 - DEBUG - No wrapper tags found, returning full text
+2026-10-19 10:49:38,752 - INFO - Dictionary: 'Michael S. Hart' not added, already covered by ['Michael']
+2026-10-19 10:49:42,350 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:49:42,350 - DEBUG -   message.content: type=str, len=9143, is_none=False
+2026-10-19 10:49:42,351 - DEBUG - LLM Response [proofread]: 9143 chars, 6830 tokens
+2026-10-19 10:49:42,352 - DEBUG - Extracted translation from JSON [improve_translation]
+2026-10-19 10:49:42,357 - DEBUG - → final_edit
+2026-10-19 10:49:42,357 - DEBUG - LLM Request [proofread]: Qwen36-35B, 9159 chars, temp=0.10, sys_not_promt=False, json_mode=True
+2026-10-19 10:50:13,970 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:50:13,971 - DEBUG -   message.content: type=str, len=9178, is_none=False
+2026-10-19 10:50:13,971 - DEBUG - LLM Response [proofread]: 9178 chars, 5073 tokens
+2026-10-19 10:50:13,972 - DEBUG - Extracted translation from JSON [final_edit]
+2026-10-19 10:50:13,977 - DEBUG - → gender_fix
+2026-10-19 10:50:13,977 - DEBUG - [FINAL] 8362 → 9211 chars (×1.10, expected ×1.01) ✓ OK
+2026-10-19 10:50:13,977 - INFO - Translation successful (tokens: 28,343, total: 767,354)
+2026-10-19 10:50:13,977 - DEBUG - [chunk_26] 8362 → 9211 chars (×1.10, expected ×1.01) ✓ OK
+2026-10-19 10:50:13,977 - DEBUG - → reflection
+2026-10-19 10:50:13,978 - DEBUG - LLM Request [proofread]: Qwen36-35B, 18441 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:50:13,984 - DEBUG - Checkpoint saved: /ai/sunny-narrator/books/eternal-moment.pg_pl.checkpoint.json
+2026-10-19 10:50:28,942 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:50:28,942 - DEBUG -   message.content: type=str, len=1319, is_none=False
+2026-10-19 10:50:28,942 - DEBUG - LLM Response [proofread]: 1319 chars, 5240 tokens
+2026-10-19 10:50:28,942 - DEBUG - Extracted 7 suggestions from JSON [reflection]
+2026-10-19 10:50:28,946 - DEBUG - → improve_translation
+2026-10-19 10:50:28,946 - DEBUG - LLM Request [proofread]: Qwen36-35B, 10561 chars, temp=0.20, sys_not_promt=False, json_mode=True
+2026-10-19 10:51:04,208 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:51:04,214 - DEBUG -   message.content: type=str, len=9504, is_none=False
+2026-10-19 10:51:04,214 - DEBUG - LLM Response [proofread]: 9504 chars, 6067 tokens
+2026-10-19 10:51:04,220 - DEBUG - Extracted translation from JSON [improve_translation]
+2026-10-19 10:51:04,233 - DEBUG - → final_edit
+2026-10-19 10:51:04,237 - DEBUG - LLM Request [proofread]: Qwen36-35B, 9547 chars, temp=0.10, sys_not_promt=False, json_mode=True
+2026-10-19 10:51:39,738 - DEBUG - LLM Raw Response [proofread]: choices=1, model=/ai/models/qw36/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-Q4_K_M.gguf
+2026-10-19 10:51:39,742 - DEBUG -   message.content: type=str, len=9540, is_none=False
+2026-10-19 10:51:39,742 - DEBUG - LLM Response [proofread]: 9540 chars, 5709 tokens
+2026-10-19 10:51:39,744 - DEBUG - Extracted translation from JSON [final_edit]
+2026-10-19 10:51:39,752 - DEBUG - → gender_fix
+2026-10-19 10:51:39,996 - DEBUG - [FINAL] 8531 → 9546 chars (×1.12, expected ×1.01) ✓ OK
+2026-10-19 10:51:39,996 - INFO - Translation successful (tokens: 27,121, total: 794,475)
+2026-10-19 10:51:39,997 - DEBUG - [chunk_27] 8531 → 9546 chars (×1.12, expected ×1.02) ✓ OK
+2026-10-19 10:51:40,006 - DEBUG - Checkpoint saved: /ai/sunny-narrator/books/eternal-moment.pg_pl.checkpoint.json
+2026-10-19 10:51:40,015 - INFO - Translation complete: 233306 chars
+2026-10-19 10:51:40,027 - INFO - Step 4/5: Building EPUB output...
+2026-10-19 10:51:40,177 - INFO - Embedding 2 image(s), cover: yes
+2026-10-19 10:51:40,177 - INFO - Converting Markdown to HTML...
+2026-10-19 10:51:40,179 - INFO - Converting Markdown to HTML: batch 1/2 (197,740 chars)...
+2026-10-19 10:51:40,179 - INFO - Running: pandoc /tmp/calibre_output_g6vwzyxz/pandoc_batch_0.md -f markdown -t html --wrap=none -o /tmp/calibre_output_g6vwzyxz/pandoc_batch_0.html
+2026-10-19 10:51:41,167 - INFO - Converting Markdown to HTML: batch 2/2 (35,771 chars)...
+2026-10-19 10:51:41,167 - INFO - Running: pandoc /tmp/calibre_output_g6vwzyxz/pandoc_batch_1.md -f markdown -t html --wrap=none -o /tmp/calibre_output_g6vwzyxz/pandoc_batch_1.html
+2026-10-19 10:51:41,328 - INFO - Converting HTML to EPUB...
+2026-10-19 10:51:41,328 - INFO - Running: ebook-convert /tmp/calibre_output_g6vwzyxz/output.html /ai/sunny-narrator/books/The_eternal_moment__and_other_stories_pl.epub --title Wieczna chwila i inne opowiadania --authors E. M. Forster --language pl --cover /tmp/calibre_output_g6vwzyxz/cover.jpg --book-producer Sunny Narrator: https://github.com/NW15D/sunny-narrator --comments Sunny Narrator: https://github.com/NW15D/sunny-narrator --level1-toc //*[name()='h1'] --level2-toc //*[name()='h2'] --level3-toc //*[name()='h3'] --chapter //*[name()='h1' or name()='h2'] --max-toc-links 0 --toc-threshold 0
+2026-10-19 10:51:42,990 - INFO - Verified 1 image(s) embedded in output.
+2026-10-19 10:51:42,990 - INFO - Output created: /ai/sunny-narrator/books/The_eternal_moment__and_other_stories_pl.epub
+2026-10-19 10:51:42,991 - INFO - Step 5/5: Validating output file...
+2026-10-19 10:51:42,992 - INFO - EPUB validation: Validation PASS: /ai/sunny-narrator/books/The_eternal_moment__and_other_stories_pl.epub (119080 bytes, epub) — 0 error(s), 0 warning(s)
+2026-10-19 10:51:42,992 - INFO -   ✓ Validation PASS: /ai/sunny-narrator/books/The_eternal_moment__and_other_stories_pl.epub (119080 bytes, epub) — 0 error(s), 0 warning(s)
+2026-10-19 10:51:42,992 - INFO - Pipeline complete: /ai/sunny-narrator/books/The_eternal_moment__and_other_stories_pl.epub
+2026-10-19 10:51:42,992 - INFO - ============================================================
+2026-10-19 10:51:42,992 - INFO - TRANSLATION METRICS REPORT
+2026-10-19 10:51:42,993 - INFO - ============================================================
+2026-10-19 10:51:42,993 - INFO - Successful translations: 28
+2026-10-19 10:51:42,993 - INFO - Failed translations: 0
+2026-10-19 10:51:42,993 - INFO - Total tokens: 794,475
+2026-10-19 10:51:42,993 - INFO - Retry tokens: 18,374 (2.3%)
+2026-10-19 10:51:42,993 - INFO - Rechunk events: 1
+2026-10-19 10:51:42,993 - INFO - Language mismatch retries: 0
+2026-10-19 10:51:42,993 - INFO - Words in two alphabets: 0
+2026-10-19 10:51:42,993 - INFO - Gender errors: 1 found, 1 fixed
+2026-10-19 10:51:42,993 - INFO - The translation disagrees with the dictionary (check these genders in the .dic):
+2026-10-19 10:51:42,993 - INFO -   Feo: the .dic says he, 1 sentence(s) of the translation do not
+2026-10-19 10:51:42,993 - INFO - Genders filled in from the synopsis (15): Kuno = he, Janet = she, Catherine = she, Rose = she, Enid = she, Jane = she, Ellen = she, Violet = she, Mildred = she, Dolores = she, Giuseppe = he, Leyland = he, Elizabeth = she, Signor Cantù = he, Feo = he
+2026-10-19 10:51:42,993 - INFO - ============================================================
+2026-10-19 10:51:42,993 - INFO - Elapsed time: 3303.5s
+2026-10-19 10:51:42,993 - INFO - Output file: /ai/sunny-narrator/books/The_eternal_moment__and_other_stories_pl.epub
+  Lexical matches: ['Machine', 'Michael', 'Project Gutenberg Literary Archive Foundation', 'U.S.', 'United States', 'eBook']
+Found matching words: {'Project Gutenberg Literary Archive Foundation', 'Michael', 'eBook', 'United States', 'U.S.', 'Machine'}
+
+
+✓ Pipeline complete: /ai/sunny-narrator/books/The_eternal_moment__and_other_stories_pl.epub
+
+--- Statistics ---
+Source: 230,923 chars
+Target: 233,254 chars
+Length diff: +1.0%
+------------------
+

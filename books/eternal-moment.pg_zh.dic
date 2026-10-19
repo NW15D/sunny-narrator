@@ -1,0 +1,47 @@
+# Vocabulary for eternal-moment.pg
+# Format: source = target, category, gender, notes
+# Generated automatically by NER
+# Categories and genders come from the book (NER labels, pronouns); an empty
+# gender: the book does not show it clearly - set it or let the synopsis
+# fill it in. The translation follows the gender here (the GENDER stage).
+
+
+# --- Translated Terms (Format: source = target, category, gender, notes) ---
+Project Gutenberg Literary Archive Foundation = 古腾堡文学档案基金会,ORG,,
+Committee of the Mending Apparatus = 修补装置委员会,ORG,,
+Dolores and Violet = 多洛雷斯与紫罗兰,TERM,,
+French Revolution = 法国大革命,TERM,,
+United States = 美国,LOC,,
+Signora Cantù = 坎图夫人,PERSON,she,
+Miss Haddon = 哈登小姐,PERSON,she,
+*Biscione* = 比斯科内,ORG,,
+Catherine = 凯瑟琳,PERSON,,
+Beethoven = 贝多芬,PERSON,he,
+Elizabeth = 伊丽莎白,PERSON,,
+Miss Raby = 雷比小姐,PERSON,she,
+Napoleon = 拿破仑,PERSON,he,
+Giuseppe = 朱塞佩,PERSON,,
+Machine = 机器,ORG,,
+Michael = 迈克尔,PERSON,he,
+Andrews = 安德鲁斯,PERSON,he,
+Mildred = 米尔德丽德,PERSON,,
+English = 英语,TERM,,
+Leyland = 利兰,PERSON,,
+Vashti = 瓦什蒂,PERSON,she,
+Wessex = 威塞克斯,LOC,,
+Harold = 哈罗德,PERSON,he,
+eBook = 电子书,TERM,,
+Micky = 米奇,PERSON,he,
+Janet = 珍妮特,PERSON,,
+Henry = 亨利,PERSON,he,
+Ellen = 艾伦,PERSON,,
+Siren = 塞壬,PERSON,,
+Vorta = 沃塔,ORG,,
+Kuno = 库诺,PERSON,,
+dell = 戴尔,TERM,,
+Adam = 亚当,PERSON,he,
+Turk = 土耳其人,PERSON,he,
+Rose = 罗斯,PERSON,,
+Enid = 伊妮德,ORG,,
+U.S. = 美国,LOC,,
+Feo = 费奥,PERSON,,

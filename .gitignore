@@ -184,3 +184,7 @@ books/*
 !books/forster-short-fiction.se.epub
 !books/eternal-moment.pg_*.dic
 !books/forster-short-fiction.se_*.dic
+# the real translations of the demo book with their run logs (docs/LANGUAGES.md)
+!books/samples/
+!books/samples/**
+books/samples/**/*.checkpoint.json
