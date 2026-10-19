@@ -106,3 +106,8 @@ def test_fenced_code_is_left_alone():
 def test_a_lone_hash_line_is_not_counted_as_a_heading():
     from src.calibre_pipeline import count_markdown_headings
     assert count_markdown_headings("#\nsome text\n# A\n```\n# code\n```") == ["# A"]
+
+
+def test_a_bare_hash_line_is_not_a_heading_for_the_blank_line_rule():
+    from src.markdown_utils import normalize_markdown_headings
+    assert normalize_markdown_headings("text\n#\nmore") == "text\n#\nmore"

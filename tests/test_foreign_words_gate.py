@@ -123,3 +123,8 @@ def test_note_foreign_words_reports_to_the_metrics(monkeypatch):
     assert fake.calls == [("improve_translation", ["dazhe"])]
     utils._note_foreign_words("\u041e\u043d \u043f\u043e\u0435\u0445\u0430\u043b \u0434\u043e\u043c\u043e\u0439", _Ctx(), "final_edit")
     assert fake.calls == [("improve_translation", ["dazhe"])]
+
+
+@pytest.mark.parametrize("lang", ["zh-CA", "zh-ID", "ar-FR", "ko-DE"])
+def test_a_region_that_is_a_latin_language_code_does_not_make_the_target_latin(lang):
+    assert sg.target_script(lang) is None

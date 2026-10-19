@@ -1535,7 +1535,6 @@ class TranslationPipeline:
                 metrics.log_retry(retry_tokens, "Empty after remove_tags retry [improve]")
 
         _note_mixed_words(text, context, "improve_translation")
-        _note_foreign_words(text, context, "improve_translation")
         return TranslationResult(
             stage=TranslationStage.IMPROVE,
             llm_role=LLMRole.PROOFREAD,

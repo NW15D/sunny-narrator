@@ -102,6 +102,9 @@ def default_country(target_lang: str) -> str:
 COUNTRY_MATTERS = frozenset({'es', 'pt', 'en', 'fr', 'de', 'zh', 'ar'})
 
 
+_country_warned = False
+
+
 def country_matters(target_lang: str) -> bool:
     lang = (target_lang or '').strip().lower()
     return LANG_CODE_MAP.get(lang, lang).split('-')[0] in COUNTRY_MATTERS
@@ -253,7 +256,9 @@ class Config:
         self.dict_autofix = _parse_bool_env('DICT_AUTOFIX', 'true')
         self.dict_force = _parse_bool_env('DICT_FORCE', 'true')  # --force
         self.country = os.getenv('COUNTRY') or default_country(self.target_lang)
-        if not os.getenv('COUNTRY') and country_matters(self.target_lang):
+        global _country_warned
+        if not os.getenv('COUNTRY') and country_matters(self.target_lang) and not _country_warned:
+            _country_warned = True   # every module builds its own Config()
             logger.warning(
                 f"COUNTRY is not set: translating {self.target_lang} for readers in "
                 f"{self.country}. The usage of {self.target_lang} differs by country - "

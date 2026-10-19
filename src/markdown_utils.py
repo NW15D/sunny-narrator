@@ -300,14 +300,15 @@ def _fix_heading_hashes(line: str) -> str:
 
 
 def _is_heading_line(line: str) -> bool:
-    """True when the line is an ATX heading (1-6 hashes, then space or end)."""
+    """True when the line is an ATX heading with text (1-6 hashes, then a space
+    or a tab): the same rule as calibre_pipeline.count_markdown_headings."""
     n = 0
     while n < len(line) and line[n] == '#':
         n += 1
     if n == 0 or n > 6:
         return False
     rest = line[n:]
-    return rest == '' or rest[0] in ' \t'
+    return rest.strip() != '' and rest[0] in ' \t'
 
 
 def normalize_markdown_headings(text: str) -> str:

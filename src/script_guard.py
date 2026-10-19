@@ -64,16 +64,14 @@ def target_script(target_lang: str) -> Optional[str]:
     explicit = _script_subtag(target_lang) or _script_subtag(code)
     if explicit:
         return explicit
-    parts = [code] + code.split('-')
-    for part in parts:
-        if not part:
-            continue
-        if part in CYRILLIC_LANGS:
-            return 'CYRILLIC'
-        if part == 'el':
-            return 'GREEK'
-        if lexicon.is_latin_script(part):
-            return 'LATIN'
+    # the primary language subtag only: in 'zh-CA' the region 'ca' is not a language
+    primary = code.split('-')[0]
+    if primary in CYRILLIC_LANGS:
+        return 'CYRILLIC'
+    if primary == 'el':
+        return 'GREEK'
+    if lexicon.is_latin_script(primary):
+        return 'LATIN'
     return None
 
 
