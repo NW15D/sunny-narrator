@@ -311,7 +311,13 @@ def test_without_fresh_reuses_a_fresh_dump(tmp_path, monkeypatch):
     with open(dump_path, 'w', encoding='utf-8') as f:
         f.write("stale translation")
     with open(meta_path, 'w', encoding='utf-8') as f:
-        json.dump({"metadata": {"title": "Book"}, "translation_stats": {}}, f)
+        # DEF-C4: a reusable dump records the input's size+sha256; it is only
+        # reused when they still match.
+        import hashlib as _hl
+        content = input_path.read_bytes()
+        json.dump({"metadata": {"title": "Book"}, "translation_stats": {},
+                   "input": {"size": len(content),
+                             "sha256": _hl.sha256(content).hexdigest()}}, f)
     newer = os.path.getmtime(str(input_path)) + 10
     os.utime(dump_path, (newer, newer))
 
@@ -323,3 +329,44 @@ def test_without_fresh_reuses_a_fresh_dump(tmp_path, monkeypatch):
     assert translate_mock.call_count == 0
     # build_output must have received the reused dump's content verbatim.
     assert build_output_mock.call_args.args[0] == "stale translation"
+
+
+# ---------------------------------------------------------------------------
+# 7. DEF-C4: dump reuse checks the input's content, not just its mtime
+# ---------------------------------------------------------------------------
+
+def test_replaced_input_with_same_mtime_breaks_dump_reuse(tmp_path, monkeypatch):
+    """The dump fast path must compare the input's identity (size+sha256).
+
+    Replacing the file while keeping its mtime — exactly what cp -p, rsync -t
+    or unzip -X do — must cost a real translation, never silently reuse the
+    translation of the previous edition."""
+    input_path = tmp_path / "book.epub"
+    input_path.write_bytes(b"the first edition")
+
+    # Run 1: translate; build_output "crashes", so the dump survives.
+    def _crashing_build_output(*a, **kw):
+        raise RuntimeError("boom")
+
+    translate_mock, _ = _install_mocks(monkeypatch)
+    monkeypatch.setattr(cp, 'build_output', MagicMock(side_effect=_crashing_build_output))
+    with pytest.raises(RuntimeError):
+        cp.run_pipeline(str(input_path), output_format="epub", target_lang="russian")
+    assert translate_mock.call_count == 1
+
+    # The input is replaced with different content of the SAME size, and its
+    # mtime is restored to the old value (rsync -t / cp -p style). The dump
+    # stays newer than the input, so only the content check can catch this.
+    old_stat = os.stat(str(input_path))
+    input_path.write_bytes(b"the fifth edition")
+    os.utime(str(input_path), (old_stat.st_atime, old_stat.st_mtime))
+
+    _install_mocks(monkeypatch)
+    translate_mock_2 = cp.translate_chunks
+
+    cp.run_pipeline(str(input_path), output_format="epub", target_lang="russian",
+                    skip_validation=True)
+
+    assert translate_mock_2.call_count == 1, (
+        "a replaced input (same size, same mtime, different sha256) must "
+        "discard the dump and translate again, not reuse the old translation")

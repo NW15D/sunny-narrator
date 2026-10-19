@@ -106,6 +106,9 @@ class TranslationEngine:
         self._tfile_committed = 0
         # Dictionary entries of the interrupted run (restore_from_checkpoint)
         self.pending_session_terms = []
+        # DEF-C5: set when a checkpoint save fails; the run continues, but
+        # the lost resume protection must show up in the summary.
+        self.checkpoint_broken = False
 
         # Statistics counters
         self.stats = {
@@ -629,9 +632,15 @@ class TranslationEngine:
             os.replace(temp_file, checkpoint_file)
             logger.debug(f"Checkpoint saved: {checkpoint_file}")
         except Exception as e:
+            self.checkpoint_broken = True
             logger.error(f"Failed to save checkpoint: {e}")
             if os.path.exists(temp_file):
-                os.remove(temp_file)
+                try:
+                    os.remove(temp_file)
+                except OSError as cleanup_error:
+                    # A failing cleanup must not turn a swallowed save error
+                    # into an unexpected exception (DEF-C5).
+                    logger.warning(f"Could not remove checkpoint temp file {temp_file}: {cleanup_error}")
 
     def restore_from_checkpoint(self, checkpoint: dict):
         """
@@ -1020,6 +1029,13 @@ def main(fresh: bool = False):
         )
     except Exception as e:
         logger.error(f"Failed to print translation report: {e}")
+
+    # DEF-C5: a failed checkpoint save is surfaced, not swallowed — resume
+    # protection was silently lost for this run (policy hc-001: warn, keep going).
+    if getattr(engine, "checkpoint_broken", False):
+        print("\n⚠ Warning: checkpoint saves failed during this run — "
+              "resume protection was lost (see log)")
+        logger.warning("Checkpoint saves failed during this run: resume protection was lost")
 
     # Remove checkpoint after successful completion
     if os.path.exists(checkpoint_file):

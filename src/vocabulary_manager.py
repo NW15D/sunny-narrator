@@ -23,6 +23,7 @@ import re
 import tempfile
 import logging
 import fcntl
+import threading
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from pathlib import Path
@@ -360,6 +361,10 @@ class VocabularyManager:
         self.synopsis_genders: List[Tuple[str, str]] = []
         # CandidateMatcher over self.vocab, built on first use, reset by load()
         self._matcher: Optional[CandidateMatcher] = None
+        # Guards everything two parallel chunk workers touch at once: the
+        # vocabulary dict, the matched-terms cache and the gender votes
+        # (DEF-C2). An RLock: the record/merge helpers nest into each other.
+        self._lock = threading.RLock()
         
     def initialize(self, source_text: Optional[str] = None) -> Dict[str, VocabEntry]:
         """
@@ -894,7 +899,8 @@ class VocabularyManager:
                 logger.info(f"Dictionary: ordinary words not added as terms: {sorted(known)}")
                 candidates = [c for c in candidates
                               if not (c.get('category') == 'TERM' and c['source'] in known)]
-        accepted = self._merge_candidates(self._confirmed_genders(candidates))
+        with self._lock:
+            accepted = self._merge_candidates(self._confirmed_genders(candidates))
         if accepted and config.dict_auto_save and os.path.exists(self.dict_file):
             updated, added = apply_dictionary_candidates(self.dict_file, accepted, self.source_lang)
             if updated or added:
@@ -950,17 +956,19 @@ class VocabularyManager:
             logger.debug(f"synopsis gender not reported: {e}")
 
     def _count_gender_vote(self, cand: Dict[str, str]):
-        counts = self._gender_votes.setdefault(lexicon.word_key(cand['source']), {})
-        counts[cand['gender']] = counts.get(cand['gender'], 0) + 1
-        self._save_gender_votes()
+        with self._lock:
+            counts = self._gender_votes.setdefault(lexicon.word_key(cand['source']), {})
+            counts[cand['gender']] = counts.get(cand['gender'], 0) + 1
+            self._save_gender_votes()
 
     def _save_gender_votes(self):
         """Replace the votes record of session_candidates with a new one: a
         checkpoint snapshot taken earlier (list(session_candidates)) keeps
         the votes as of its own chunk."""
-        self.session_candidates[:] = [c for c in self.session_candidates if 'gender_votes' not in c]
-        self.session_candidates.append(
-            {'gender_votes': {key: dict(counts) for key, counts in self._gender_votes.items()}})
+        with self._lock:
+            self.session_candidates[:] = [c for c in self.session_candidates if 'gender_votes' not in c]
+            self.session_candidates.append(
+                {'gender_votes': {key: dict(counts) for key, counts in self._gender_votes.items()}})
 
     def restore_session_candidates(self, candidates: Optional[List[Dict[str, str]]]):
         """Put the candidates of an interrupted run (from its checkpoint)
@@ -969,49 +977,51 @@ class VocabularyManager:
         there already, without it they never go."""
         if not candidates:
             return
-        for record in candidates:
-            for key, counts in record.get('gender_votes', {}).items():
-                self._gender_votes[key] = dict(counts)
-        if self._gender_votes:
-            self._save_gender_votes()
-        self._merge_candidates([c for c in candidates if 'gender_votes' not in c])
+        with self._lock:
+            for record in candidates:
+                for key, counts in record.get('gender_votes', {}).items():
+                    self._gender_votes[key] = dict(counts)
+            if self._gender_votes:
+                self._save_gender_votes()
+            self._merge_candidates([c for c in candidates if 'gender_votes' not in c])
 
     def _merge_candidates(self, candidates: List[Dict[str, str]]) -> List[Dict[str, str]]:
         """Apply the candidates to self.vocab by the rules of
         apply_dictionary_candidates; return the ones that changed it."""
-        if self._matcher is None:
-            self._matcher = CandidateMatcher(self.source_lang)
-            for key, entry in self.vocab.items():
-                self._matcher.add(entry.source, entry.target, key)
+        with self._lock:
+            if self._matcher is None:
+                self._matcher = CandidateMatcher(self.source_lang)
+                for key, entry in self.vocab.items():
+                    self._matcher.add(entry.source, entry.target, key)
 
-        def add(cand):
-            key = cand['source'].replace(' ', '_').lower()
-            self.vocab[key] = VocabEntry(source=cand['source'], target=cand['target'],
-                                         category=cand.get('category', 'PERSON'),
-                                         gender=cand.get('gender', ''))
-            if cand.get('gender'):
-                self._note_synopsis_gender(cand['source'], cand['gender'])
-            return key
+            def add(cand):
+                key = cand['source'].replace(' ', '_').lower()
+                self.vocab[key] = VocabEntry(source=cand['source'], target=cand['target'],
+                                             category=cand.get('category', 'PERSON'),
+                                             gender=cand.get('gender', ''))
+                if cand.get('gender'):
+                    self._note_synopsis_gender(cand['source'], cand['gender'])
+                return key
 
-        def set_gender(key, gender):
-            entry = self.vocab.get(key)
-            if entry is None or entry.gender or not gender:
-                return False
-            entry.gender = gender
-            self._note_synopsis_gender(entry.source, gender)
-            logger.info(f"[gender] {entry.source} = {gender}: from the synopsis "
-                        f"({self.GENDER_VOTES} chunks agree)")
-            if entry.category in _PROMOTED_TO_PERSON:
-                entry.category = 'PERSON'
-            return True
+            def set_gender(key, gender):
+                entry = self.vocab.get(key)
+                if entry is None or entry.gender or not gender:
+                    return False
+                entry.gender = gender
+                self._note_synopsis_gender(entry.source, gender)
+                logger.info(f"[gender] {entry.source} = {gender}: from the synopsis "
+                            f"({self.GENDER_VOTES} chunks agree)")
+                if entry.category in _PROMOTED_TO_PERSON:
+                    entry.category = 'PERSON'
+                return True
 
-        added, updated = _merge_into(self._matcher, candidates, add, set_gender)
-        accepted = added + updated
-        if accepted:
-            self.session_candidates.extend(accepted)
-            self.matched_terms_cache.clear()
-            self._extract_characters()
-        return accepted
+            added, updated = _merge_into(self._matcher, candidates, add, set_gender)
+            accepted = added + updated
+            if accepted:
+                self.session_candidates.extend(accepted)
+                self.matched_terms_cache.clear()
+                self._extract_characters()
+            return accepted
 
     def get_vocab_for_chunk(self, chunk_text: str, s_idx: int, c_idx: int) -> List[VocabEntry]:
         """
@@ -1031,14 +1041,20 @@ class VocabularyManager:
             List of matched VocabEntry objects
         """
         cache_key = (s_idx, c_idx)
-        
-        if cache_key in self.matched_terms_cache:
-            matched_keys = self.matched_terms_cache[cache_key]
-            return [self.vocab[k] for k in matched_keys if k in self.vocab]
-        
-        key_by_source = {(entry.source or key.replace('_', ' ')): key for key, entry in self.vocab.items()}
 
-        if not config.ner_opt or not ner_module:
+        # DEF-C2: another worker thread may be merging its candidates into
+        # self.vocab right now. Take a consistent snapshot of the vocabulary
+        # and the cache under the lock, run the (potentially slow) matching
+        # outside it, then publish the result under the lock again.
+        with self._lock:
+            if cache_key in self.matched_terms_cache:
+                matched_keys = self.matched_terms_cache[cache_key]
+                return [self.vocab[k] for k in matched_keys if k in self.vocab]
+
+            key_by_source = {(entry.source or key.replace('_', ' ')): key for key, entry in self.vocab.items()}
+            ner_format = self._vocab_to_ner_format() if (config.ner_opt and ner_module) else None
+
+        if ner_format is None:
             # No spaCy: lexical match only (surface forms + Snowball stems,
             # substring for CJK) — see lexicon.find_terms
             matched = lexicon.find_terms(chunk_text, key_by_source, self.source_lang)
@@ -1048,7 +1064,7 @@ class VocabularyManager:
             use_gpu = ner_module.gpu_available()
             match_fn = (ner_module.find_matching_words_with_cosine_similarity if use_gpu
                         else ner_module.find_matching_words_with_cosine_similarity_cpu)
-            matched = match_fn(chunk_text, self._vocab_to_ner_format(), self.source_lang)
+            matched = match_fn(chunk_text, ner_format, self.source_lang)
             mode = "GPU" if use_gpu else "CPU"
 
         # Higher-priority entries first (lexicon.term_rank: more words, then
@@ -1057,11 +1073,11 @@ class VocabularyManager:
         matched = sorted((t for t in matched if t in key_by_source),
                          key=lexicon.term_rank, reverse=True)
         matched_keys = [key_by_source[term] for term in matched]
-        self.matched_terms_cache[cache_key] = matched_keys
 
-        if config.debug:
-            logger.debug(f"Chunk {s_idx}-{c_idx} ({mode}): {len(matched_keys)}/{len(self.vocab)} vocab terms matched")
-
+        with self._lock:
+            self.matched_terms_cache[cache_key] = matched_keys
+            if config.debug:
+                logger.debug(f"Chunk {s_idx}-{c_idx} ({mode}): {len(matched_keys)}/{len(self.vocab)} vocab terms matched")
         return [self.vocab[k] for k in matched_keys]
     
     def _vocab_to_ner_format(self) -> Dict:

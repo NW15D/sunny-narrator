@@ -80,9 +80,15 @@ class CheckpointManager:
     def save(self, chunk_id: int, section_idx: int, chunk_idx: int,
              stats: dict, total_source_len: int, total_target_len: int,
              synopsis_history: dict, book_path: str, start_time_iso: str,
-             extra: dict | None = None, fingerprint: str | None = None) -> None:
+             extra: dict | None = None, fingerprint: str | None = None) -> bool:
         """
         Save translation progress to checkpoint file (atomic write).
+
+        Returns True when the checkpoint was persisted. A failure (ENOSPC,
+        permissions, serialization) is logged and returns False instead of
+        raising, so callers can surface a broken checkpoint in their summary
+        while the run continues (DEF-C5: it used to be swallowed silently,
+        losing all resume protection without a signal).
 
         Args:
             chunk_id: Last processed chunk global ID.
@@ -125,10 +131,17 @@ class CheckpointManager:
                 json.dump(checkpoint, f, indent=2, ensure_ascii=False)
             os.replace(temp_file, self.checkpoint_path)
             logger.debug(f"Checkpoint saved: {self.checkpoint_path}")
+            return True
         except Exception as e:
             logger.error(f"Failed to save checkpoint: {e}")
             if os.path.exists(temp_file):
-                os.remove(temp_file)
+                try:
+                    os.remove(temp_file)
+                except OSError as cleanup_error:
+                    # A failing cleanup must not turn a swallowed save error
+                    # into an unexpected exception (DEF-C5).
+                    logger.warning(f"Could not remove checkpoint temp file {temp_file}: {cleanup_error}")
+            return False
 
     def load(self, expected_fingerprint: str | None = None) -> dict | None:
         """

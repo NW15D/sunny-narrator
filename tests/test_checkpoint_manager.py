@@ -248,3 +248,27 @@ def test_load_after_corruption_recovery_cycle():
 if __name__ == '__main__':
     import pytest
     sys.exit(pytest.main([__file__, '-v']))
+
+
+# ---------- save() contract: bool result + cleanup failures (DEF-C5) ---------
+
+def test_save_returns_true_on_success_false_on_failure():
+    """DEF-C5: save() reports whether the checkpoint was persisted, so the
+    callers can surface a broken checkpoint instead of swallowing it."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        mgr, path = make_manager(tmpdir)
+        assert mgr.save(**sample_kwargs()) is True
+        assert os.path.exists(path)
+
+        with patch('os.replace', side_effect=OSError("Disk full")) as _:
+            assert mgr.save(**sample_kwargs(chunk_id=99)) is False
+
+
+def test_save_survives_cleanup_oserror():
+    """A failing os.remove() in the failure path must not turn a swallowed
+    save error into an unexpected exception: save() still returns False."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        mgr, path = make_manager(tmpdir)
+        with patch('os.replace', side_effect=OSError("Disk full")), \
+             patch('os.remove', side_effect=OSError("cleanup failed")):
+            assert mgr.save(**sample_kwargs()) is False

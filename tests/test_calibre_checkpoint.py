@@ -67,3 +67,76 @@ def test_no_checkpoint_behavior_unchanged(tmp_path, monkeypatch):
     out = cp.translate_chunks('AAA\n\nBBB')
     assert calls == ['AAA', 'BBB']
     assert out == 'TR:AAA\n\nTR:BBB'
+
+
+# --- DEF-C3: fingerprint must cover country / fast_mode (and style) ----------
+
+def test_resume_discards_checkpoint_when_country_changes(tmp_path, monkeypatch):
+    """A checkpoint recorded under one COUNTRY must not be spliced onto a run
+    under another: the cultural-context prompts differ, and the first half of
+    the book would come out under conditions the user did not ask for."""
+    calls = []
+    _install(monkeypatch, calls, crash_after=2)
+
+    ckpt = str(tmp_path / 'book.checkpoint.json')
+    text = 'AAA\n\nBBB\n\nCCC\n\nDDD'
+
+    with pytest.raises(KeyboardInterrupt):
+        cp.translate_chunks(text, checkpoint_file=ckpt, country='Turkey')
+    assert calls == ['AAA', 'BBB']
+
+    calls.clear()  # what run 2 actually translates
+    _install(monkeypatch, calls, crash_after=None)
+    cp.translate_chunks(text, checkpoint_file=ckpt, country='Russia')
+    assert calls == ['AAA', 'BBB', 'CCC', 'DDD'], (
+        'a checkpoint from a different country must be discarded, not resumed; '
+        f'run 2 translated only {calls}')
+
+
+def test_resume_discards_checkpoint_when_fast_mode_changes(tmp_path, monkeypatch):
+    """Half the book translated with reflection and half in fast mode is the
+    same class of splicing the fingerprint exists to prevent."""
+    calls = []
+    _install(monkeypatch, calls, crash_after=2)
+
+    ckpt = str(tmp_path / 'book.checkpoint.json')
+    text = 'AAA\n\nBBB\n\nCCC\n\nDDD'
+
+    with pytest.raises(KeyboardInterrupt):
+        cp.translate_chunks(text, checkpoint_file=ckpt)
+    assert calls == ['AAA', 'BBB']
+
+    calls.clear()  # what run 2 actually translates
+    _install(monkeypatch, calls, crash_after=None)
+    cp.translate_chunks(text, checkpoint_file=ckpt, fast_mode=True)
+    assert calls == ['AAA', 'BBB', 'CCC', 'DDD'], (
+        'toggling fast_mode must discard the checkpoint, not resume across it; '
+        f'run 2 translated only {calls}')
+
+
+# --- DEF-C5: a checkpoint save failure is a loud flag, not silence -----------
+
+def test_save_failure_marks_checkpoint_broken_and_run_continues(tmp_path, monkeypatch):
+    """Owner's decision (hc-001): on a checkpoint save failure the run
+    continues, but the failure must surface — stats.checkpoint_broken=True —
+    instead of silently losing all resume protection (ENOSPC, permissions)."""
+    calls = []
+    _install(monkeypatch, calls)
+
+    real_save = cp.CheckpointManager.save
+
+    def flaky_save(self, chunk_id, *args, **kwargs):
+        if chunk_id >= 1:  # e.g. the disk filled halfway through the book
+            return False
+        return real_save(self, chunk_id, *args, **kwargs)
+
+    monkeypatch.setattr(cp.CheckpointManager, 'save', flaky_save)
+
+    ckpt = str(tmp_path / 'book.checkpoint.json')
+    stats = cp.TranslationStats()
+    out = cp.translate_chunks('AAA\n\nBBB\n\nCCC', checkpoint_file=ckpt, stats_out=stats)
+
+    assert out == 'TR:AAA\n\nTR:BBB\n\nTR:CCC', 'the book must still be built'
+    assert calls == ['AAA', 'BBB', 'CCC']
+    assert stats.checkpoint_broken is True, (
+        'save failures must be visible in the summary instead of swallowed')

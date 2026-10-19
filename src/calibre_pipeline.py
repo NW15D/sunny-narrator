@@ -22,6 +22,7 @@ __all__ = [
     'validate_output',
 ]
 
+import hashlib
 import json
 import os
 import re
@@ -167,6 +168,7 @@ class TranslationStats:
     total_target_len: int = 0
     total_chunks: int = 0
     failed_chunks: int = 0   # always 0 now: a failed chunk stops the run; read from old dumps
+    checkpoint_broken: bool = False  # a save failed: resume protection was lost (DEF-C5)
 
 
 @dataclass
@@ -1021,6 +1023,9 @@ def translate_chunks(
     
     translated_parts = []
     outline_text = ""  # Context for next chunk
+    # DEF-C5: set when a checkpoint save fails; the run continues, but the
+    # degraded resume protection must show up in the summary, not vanish.
+    checkpoint_broken = False
 
     # D5: checkpoint/resume support (per-chunk persistence)
     checkpoint_mgr = CheckpointManager(checkpoint_file) if checkpoint_file else None
@@ -1036,6 +1041,13 @@ def translate_chunks(
         max_chunk_size=max_chunk_size,
         source_lang=source_lang,
         target_lang=target_lang,
+        # RESUME-C3: everything that changes the prompts has to change the
+        # digest too, or a run under different conditions silently resumes
+        # onto the chunks of another mode (country/fast_mode were the holes;
+        # style is cheap to include for the day it is passed through).
+        country=country,
+        fast_mode=fast_mode,
+        style=style,
     )
     session_terms = []  # dictionary entries found by an interrupted run
     if checkpoint_mgr is not None:
@@ -1170,7 +1182,7 @@ def translate_chunks(
             sequencer.mark(COMMITTED, i)
 
     def commit_chunk(i, chunk, translation, candidates, drafted):
-        nonlocal total_source_len, total_target_len
+        nonlocal total_source_len, total_target_len, checkpoint_broken
         # translate_chunk has already split a failing chunk in two (down to
         # MAX_DEPTH) and process_chunk retried it: what is left cannot be
         # translated. The run stops, the book is not built with a hole of
@@ -1225,7 +1237,7 @@ def translate_chunks(
         if checkpoint_mgr is not None:
             saved_outline, saved_terms = draft_state.pop(i, (
                 outline_text, vocab_manager.session_candidates if vocab_manager is not None else []))
-            checkpoint_mgr.save(
+            saved_ok = checkpoint_mgr.save(
                 chunk_id=i,
                 section_idx=0,
                 chunk_idx=i,
@@ -1243,6 +1255,13 @@ def translate_chunks(
                     'session_terms': saved_terms,
                 },
             )
+            if not saved_ok:
+                if not checkpoint_broken:
+                    logger.warning(
+                        f"Checkpoint save failed after chunk {i + 1}/{total_chunks}: "
+                        f"the run continues, but a crash from here on resumes from the "
+                        f"last saved chunk — resume protection is degraded (see the log above)")
+                checkpoint_broken = True
 
     if not parallel:
         for i, chunk in enumerate(chunks):
@@ -1276,6 +1295,7 @@ def translate_chunks(
         stats_out.total_source_len = total_source_len
         stats_out.total_target_len = total_target_len
         stats_out.total_chunks = total_chunks
+        stats_out.checkpoint_broken = checkpoint_broken
 
     # Reassemble translated text
     translated_text = '\n\n'.join(translated_parts)
@@ -2104,12 +2124,34 @@ def _atomic_write_text(path: str, content: str) -> None:
     os.replace(tmp_path, path)
 
 
+def _input_identity(path: str) -> Optional[dict]:
+    """Size + sha256 of an input file: the identity a translated-Markdown
+    dump is made from (DEF-C4).
+
+    run_pipeline's fast resume path used to trust the dump's mtime alone;
+    replacing the input while keeping its mtime (cp -p, rsync -t, unzip -X)
+    silently produced the translation of the PREVIOUS content. Only a
+    content digest can catch that. Returns None when the file cannot be
+    read — e.g. so the caller never treats an unknown input as a match.
+    """
+    try:
+        digest = hashlib.sha256()
+        with open(path, 'rb') as f:
+            for block in iter(lambda: f.read(1024 * 1024), b''):
+                digest.update(block)
+        return {'size': os.path.getsize(path), 'sha256': digest.hexdigest()}
+    except OSError as e:
+        logger.warning(f"Could not fingerprint input file {path}: {e}")
+        return None
+
+
 def _dump_translation(
     translated_dump_path: str,
     meta_dump_path: str,
     translated_md: str,
     metadata: dict,
     stats: 'TranslationStats',
+    input_identity: Optional[dict] = None,
 ) -> None:
     """Persist a finished translation to disk before build_output runs.
 
@@ -2123,6 +2165,9 @@ def _dump_translation(
     _atomic_write_text(translated_dump_path, translated_md)
     payload = {
         'metadata': metadata,
+        # What this translation was made from: the reuse path compares
+        # size+sha256 before skipping steps 1-3 (DEF-C4).
+        'input': input_identity,
         'translation_stats': {
             'total_source_len': stats.total_source_len,
             'total_target_len': stats.total_target_len,
@@ -2275,6 +2320,7 @@ def run_pipeline(
     # re-translating the whole book through the LLM again.
     translated_md = None
     metadata = None
+    input_identity = _input_identity(input_path)
     if not fresh and os.path.exists(translated_dump_path) and os.path.exists(meta_dump_path):
         try:
             if os.path.getmtime(translated_dump_path) >= os.path.getmtime(input_path):
@@ -2282,18 +2328,33 @@ def run_pipeline(
                     translated_md = f.read()
                 with open(meta_dump_path, 'r', encoding='utf-8') as f:
                     dump_payload = json.load(f)
-                metadata = dump_payload.get('metadata', {}) or {}
-                dumped_stats = dump_payload.get('translation_stats') or {}
-                if stats_out is not None:
-                    stats_out.total_source_len = dumped_stats.get('total_source_len', 0)
-                    stats_out.total_target_len = dumped_stats.get('total_target_len', 0)
-                    stats_out.total_chunks = dumped_stats.get('total_chunks', 0)
-                    stats_out.failed_chunks = dumped_stats.get('failed_chunks', 0)
-                logger.info(
-                    f"Steps 1-3 skipped: reusing translated Markdown from "
-                    f"{translated_dump_path} (newer than {input_path}). "
-                    f"Pass fresh=True (--fresh) to force a full re-translation."
-                )
+                if input_identity is None or dump_payload.get('input') != input_identity:
+                    # The mtime of a replaced input can be preserved (cp -p,
+                    # rsync -t, unzip -X), so it cannot prove the dump belongs
+                    # to this file — only size+sha256 can (DEF-C4). A dump
+                    # from before this check (no 'input' recorded) is not
+                    # provably safe either and is discarded too, on purpose.
+                    logger.info(
+                        f"Translated dump {translated_dump_path} does not match "
+                        f"{input_path} (size/sha256 changed or unknown); "
+                        f"translating from scratch."
+                    )
+                    translated_md = None
+                    metadata = None
+                else:
+                    metadata = dump_payload.get('metadata', {}) or {}
+                    dumped_stats = dump_payload.get('translation_stats') or {}
+                    if stats_out is not None:
+                        stats_out.total_source_len = dumped_stats.get('total_source_len', 0)
+                        stats_out.total_target_len = dumped_stats.get('total_target_len', 0)
+                        stats_out.total_chunks = dumped_stats.get('total_chunks', 0)
+                        stats_out.failed_chunks = dumped_stats.get('failed_chunks', 0)
+                    logger.info(
+                        f"Steps 1-3 skipped: reusing translated Markdown from "
+                        f"{translated_dump_path} (newer than {input_path}, "
+                        f"size+sha256 match). "
+                        f"Pass fresh=True (--fresh) to force a full re-translation."
+                    )
             else:
                 logger.info(
                     f"Translated dump {translated_dump_path} is older than "
@@ -2386,12 +2447,20 @@ def run_pipeline(
             stats_out.total_target_len = translate_stats.total_target_len
             stats_out.total_chunks = translate_stats.total_chunks
             stats_out.failed_chunks = translate_stats.failed_chunks
+            stats_out.checkpoint_broken = translate_stats.checkpoint_broken
+
+        if translate_stats.checkpoint_broken:
+            logger.warning(
+                "Checkpoint saves failed during translation: the run continued "
+                "(per hc-001 policy), but resume protection was lost for this run.")
+            print("\n⚠ Warning: checkpoint saves failed during translation — "
+                  "resume protection was lost (translation itself completed; see log)")
 
         # Persist the finished translation before attempting to build the
         # output file — see _dump_translation's docstring.
         try:
             _dump_translation(translated_dump_path, meta_dump_path, translated_md,
-                             metadata, translate_stats)
+                             metadata, translate_stats, input_identity)
         except Exception as e:
             logger.warning(f"Failed to write translated-Markdown dump (non-fatal): {e}")
 
