@@ -32,7 +32,12 @@ def test_budget_uses_the_calibrated_tokens_per_char(calibration):
     calibration.record('translate', 100, "я" * 1000)  # another role does not count
     text = "Он открыл дверь и вошёл в комнату. " * 50
     assert calibration.tokens_per_char('proofread') == pytest.approx(0.6)
-    assert utils.reflection_token_budget(text) == _expected(text, 0.6)
+    # The budget clamps at MAX_TOKENS_PER_CHUNK, and the clamp is deliberate
+    # (b7a969d/a04ef95: a looping REFLECTION answer is cut sooner). The cap is
+    # 2 x MAX_LEN_CHUNK, and MAX_LEN_CHUNK comes from the checkout's .env, so
+    # do not pin 6900: compare against the cap this checkout applies.
+    assert utils.reflection_token_budget(text) == min(utils.MAX_TOKENS_PER_CHUNK,
+                                                      _expected(text, 0.6))
 
 
 def test_short_answers_do_not_calibrate(calibration):

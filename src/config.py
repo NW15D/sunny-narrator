@@ -1,9 +1,24 @@
 import os
 import logging
 from pathlib import Path
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 
 logger = logging.getLogger(__name__)
+
+
+def _fill_env_from_project_file() -> None:
+    """Read the project .env once, at import time: a real environment variable
+    wins (the file only fills the names that are not set). Config() itself must
+    not touch os.environ - it used to call load_dotenv() on every
+    construction, so a name deleted from os.environ came back from the file
+    (the .env-dependent test failures) and every one of the Config() sites
+    repainted the process environment."""
+    for name, value in dotenv_values(Path(__file__).resolve().parent.parent / ".env").items():
+        if value is not None:
+            os.environ.setdefault(name, value)
+
+
+_fill_env_from_project_file()
 
 
 def _parse_bool_env(name, default='false'):
@@ -133,10 +148,11 @@ class Config:
 
     def __init__(self, env_path: str = None):
         if env_path:
+            # An explicit file keeps its historical contract (load_dotenv:
+            # fills only the names the environment does not set). The project
+            # .env is read once, at import - constructing a Config must not
+            # mutate the environment.
             load_dotenv(env_path)
-        else:
-            config_dir = Path(__file__).resolve().parent.parent
-            load_dotenv(config_dir / ".env")
 
         # Translation API (translate model)
         self.api_key_translate = os.getenv('API_KEY_TRANSLATE', os.getenv('API_KEY', ''))

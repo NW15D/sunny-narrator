@@ -8,6 +8,8 @@ import os
 import sys
 from types import SimpleNamespace
 
+import spacy.util
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from src import lexicon, ner
@@ -59,6 +61,10 @@ def test_ner_model_for_a_language_without_a_spacy_pipeline(monkeypatch):
     monkeypatch.delenv("NERMODEL", raising=False)
     assert Config().nermodel == "xx_ent_wiki_sm"
     monkeypatch.setenv("SOURCE_LANG", "english")
+    # The default of a language with a spaCy family is the largest model
+    # installed (the mapped *_lg when none is, downloaded on first use): pin
+    # the installed set so the test does not depend on the dev machine.
+    monkeypatch.setattr(spacy.util, 'is_package', lambda name: name == 'en_core_web_lg')
     assert Config().nermodel == "en_core_web_lg"
     assert ner._normalize_label("PER") == "PERSON"
 
