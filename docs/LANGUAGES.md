@@ -21,7 +21,63 @@ and the target-specific checks. This page lists what has been verified and how.
 |---|---|
 | English → Russian | Real translations (book series with a series dictionary) |
 | Korean → Russian | Real translations |
-| English → Turkish | Automated: all five stages of a chunk with a faked LLM (`tests/test_target_turkish.py`) |
+| English → French, Spanish, Polish, Portuguese, Russian, Turkish | Real translations: one book, six targets, metrics [below](#real-translations-english--six-languages) |
+| English → Chinese | Real translation, in progress |
+| English → Turkish | Real translation (above); also automated: all five stages of a chunk with a faked LLM (`tests/test_target_turkish.py`) |
+
+## Real translations: English → six languages
+
+One book, `books/eternal-moment.pg.epub` (E. M. Forster, *The Eternal Moment and
+Other Stories*, 230,923 source characters, 27 chunks of at most
+`MAX_LEN_CHUNK=10000`), translated through the Calibre pipeline into six
+languages with the same dictionary of 38 terms (24 PERSON, 6 ORG, 5 TERM,
+3 LOC; one `<book>_<lang>.dic` per language, the genders of 14-15 characters
+are filled in from the synopsis). All five stages, JSON mode, local llama.cpp
+servers: translate — Gemma 4
+26B-A4B (UD-Q5_K_XL), proofread — Qwen 3.6 35B-A3B (Q4_K_M, MTP). One run per
+language, one after another, on one machine.
+
+| Target | Chunks translated¹ | Rechunk events | Tokens | Retry tokens | Time | Target size | Size vs source | Gender errors found / fixed | Words in two alphabets (final) |
+|---|---|---|---|---|---|---|---|---|---|
+| French | 28 | 1 | 740,683 | 0 (0.0%) | 47.3 min | 262,132 | +13.5% | 0 / 0 | 0 |
+| Spanish | 28 | 1 | 682,946 | 0 (0.0%) | 42.4 min | 246,441 | +6.7% | 0 / 0 | 0 |
+| Polish | 28 | 1 | 794,475 | 18,374 (2.3%) | 55.1 min | 233,254 | +1.0% | 1 / 1 | 0 |
+| Portuguese | 30 | 3 | 676,648 | 46,137 (6.4%) | 50.6 min | 242,573 | +5.0% | 0 / 0 | 0 |
+| Russian | 32 | 5 | 720,163 | 17,632 (2.4%) | 52.9 min | 231,173 | +0.1% | 0 / 0 | 0² |
+| Turkish | 31 | 4 | 771,882 | 12,015 (1.5%) | 63.7 min | 228,267 | −1.2% | 0 / 0 | 0 |
+| Chinese | in progress (15 of 27 chunks at the last log line) | | | | | | | | |
+
+¹ The 27 chunks plus the halves of the chunks that were split and translated
+again. No chunk failed in any run (`Failed translations: 0`), so none stayed
+untranslated.
+² Three chunks had words in two alphabets in the INITIAL and IMPROVE stages
+(17 words, `nкоторое`, `nОн`, …: a stray Latin `n` before the word); the
+editor was told which words and the final texts have none.
+
+**What caused the rechunk events** (a chunk is split in two and each half
+translated again; 15 events in all, none left a hole):
+
+- the REFLECTION answer was cut off at `max_tokens` (the model looped on the
+  input): Polish 1, Portuguese 3, Russian 1, Turkish 1 — the retry tokens
+  above;
+- the length of the FINAL text was off the learned ratio by more than
+  `LENGTH_CHECK_THRESHOLD`: French 1 (−15.8%), Russian 4 (+16% to +23%),
+  Turkish 3 (the edited chunk came back at ×0.21 and ×0.25 of the source
+  twice, then −19.8%), Spanish 1 (a 9,812-character chunk came back as 4,482,
+  −57%).
+
+**How the length ratio differs by language** (target characters / source
+characters over the book): French 1.14, Spanish 1.07, Portuguese 1.05, Polish
+1.01, Russian 1.00, Turkish 0.99 — the ratio is learned per book, so the same
+`LENGTH_CHECK_THRESHOLD` fits all of them.
+
+**Dictionary:** every run logs the terms matched in each chunk
+(`Lexical matches`, 27 chunks per run) and loads the 38-term dictionary at the
+start; the dictionary check warns that 11 characters have no gender in the
+`.dic`, 14-15 of them are then filled in from the synopsis by two agreeing
+chunks.
+
+More directions (Spanish → English, Spanish → Russian) will be added here.
 
 ## Source languages (dictionary)
 
@@ -52,7 +108,8 @@ by hand and add the inflected forms you need.
 | Language | What is checked | Level |
 |---|---|---|
 | Russian | the whole pipeline; output file names, covers, metadata | Real translations, automated |
-| Turkish | five stages with a faked LLM; capitals `iksir` → `İksir` in substitution; country `Türkiye` by default; untranslated-chunk detection for a Latin-script target; prompts | Automated |
+| French, Spanish, Polish, Portuguese | the whole Calibre pipeline on a real book; the gender check of the target (fr, es, pl, pt) | Real translations |
+| Turkish | a real book through the whole pipeline; five stages with a faked LLM; capitals `iksir` → `İksir` in substitution; country `Türkiye` by default; untranslated-chunk detection for a Latin-script target; prompts | Real translations, automated |
 | German | language marker in output file and cover names; country `Deutschland` by default | Automated |
 | Chinese | the EPUB "translation may have failed" check does not fire on translated Chinese text | Automated |
 
