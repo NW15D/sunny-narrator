@@ -20,7 +20,7 @@ Both pipelines (FB2/TXT and EPUB/DOCX/PDF) use the same code:
 | Variable | Default | Meaning |
 |---|---|---|
 | `NER` | `true` | Build a missing dictionary with NER; `false` — an empty template (`--build-dict` runs NER anyway) |
-| `NERMODEL` | by `SOURCE_LANG` | The spaCy model of the source language: `en_core_web_lg`, `ru_core_news_lg`, `ko_core_news_lg`, `ja_core_news_lg`, `zh_core_web_lg`, … (`Config.lang_model_map`); a language without its own pipeline gets `xx_ent_wiki_sm` |
+| `NERMODEL` | by `SOURCE_LANG` | The spaCy model of the source language (empty: the largest installed of `*_lg`, `*_md`, `*_sm`; none installed: `*_lg` is downloaded, a smaller one when that fails): `en_core_web_lg`, `ru_core_news_lg`, `ko_core_news_lg`, `ja_core_news_lg`, `zh_core_web_lg`, … (`Config.lang_model_map`); a language without its own pipeline gets `xx_ent_wiki_sm` |
 | `SPACY_AUTO_DOWNLOAD` | `true` | A missing model is downloaded on first use |
 | `DICTIONARY` | — | An explicit `.dic` instead of `<book>_<lang>.dic` next to the book (see [DICTIONARY_FORMAT.md](DICTIONARY_FORMAT.md)) |
 | `DICT_FREQUENT_WORDS` | `false` | Also put frequent ordinary words into a new dictionary |

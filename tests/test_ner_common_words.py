@@ -2,7 +2,7 @@
 import pytest
 
 from src import ner
-from src.ner import clean_for_ner, is_common_word_entity
+from src.ner import clean_for_ner, is_common_word_entity, is_ordinary_word_term, starts_sentence
 
 
 class Tok:
@@ -28,22 +28,17 @@ def test_dialogue_dash_and_emphasis_are_not_part_of_a_name():
 @pytest.mark.parametrize('word,pos', [('Recordó', 'VERB'), ('Jamás', 'ADV'), ('Seguro', 'ADJ'),
                                       ('Debemos', 'AUX'), ('Alguien', 'PRON')])
 def test_verbs_adverbs_and_the_like_are_not_names(word, pos):
-    assert is_common_word_entity(Ent(Tok(word, pos)), {})
+    assert is_common_word_entity(Ent(Tok(word, pos)))
 
 
 def test_name_and_multiword_entity_stay():
-    assert not is_common_word_entity(Ent(Tok('Jules', 'PROPN')), {})
-    assert not is_common_word_entity(Ent(Tok('Mar', 'NOUN'), Tok('Bolzai', 'PROPN')), {'mar': 9})
-
-
-def test_word_often_written_in_lowercase_is_ordinary():
-    assert is_common_word_entity(Ent(Tok('Cubo', 'NOUN')), {'cubo': 3})
-    assert not is_common_word_entity(Ent(Tok('Cubo', 'NOUN')), {'cubo': 2})
+    assert not is_common_word_entity(Ent(Tok('Jules', 'PROPN')))
+    assert not is_common_word_entity(Ent(Tok('Mar', 'NOUN'), Tok('Bolzai', 'PROPN')))
 
 
 def test_caseless_scripts_are_left_alone():
-    assert not is_common_word_entity(Ent(Tok('李明', 'ADJ')), {})
-    assert not is_common_word_entity(Ent(Tok('철수', 'NUM')), {})
+    assert not is_common_word_entity(Ent(Tok('李明', 'ADJ')))
+    assert not is_common_word_entity(Ent(Tok('철수', 'NUM')))
 
 
 # (model, language, a dialogue with dash, a sentence-initial verb, a question,
@@ -76,6 +71,47 @@ def test_real_models_drop_verbs_and_dash_noise(monkeypatch, code):
 
 
 def test_question_and_lowercase_word_are_not_names():
-    assert is_common_word_entity(Ent(Tok('¿Por'), Tok('qué?')), {})
-    assert is_common_word_entity(Ent(Tok('jamás', 'PROPN')), {})
-    assert not is_common_word_entity(Ent(Tok('iPhone', 'PROPN')), {})
+    assert is_common_word_entity(Ent(Tok('¿Por'), Tok('qué?')))
+    assert is_common_word_entity(Ent(Tok('jamás', 'PROPN')))
+    assert not is_common_word_entity(Ent(Tok('iPhone', 'PROPN')))
+
+
+# --- the whole book: a name stands in the middle of a sentence ------------------
+
+def test_a_word_that_only_opens_sentences_and_is_also_written_lowercase_is_ordinary():
+    lower = {'recordó': 12, 'seguro': 30}
+    assert is_ordinary_word_term('Recordó', [20, 0], lower)
+    assert is_ordinary_word_term('Seguro', [6, 0], lower)
+    assert not is_ordinary_word_term('Jules', [143, 120], lower)
+
+
+def test_english_names_that_are_words_stay():
+    lower = {'rose': 40, 'will': 900, 'mark': 25}
+    for name in ('Rose', 'Will', 'Mark'):
+        assert not is_ordinary_word_term(name, [80, 50], lower), name
+
+
+def test_a_word_the_model_has_a_vector_for_goes_if_it_mostly_opens_sentences():
+    assert is_ordinary_word_term('Capítulo', [9, 0], {}, known={'Capítulo'})
+    assert not is_ordinary_word_term('Capítulo', [9, 0], {}, known=set())  # *_sm: no vectors
+    assert not is_ordinary_word_term('Jules', [100, 80], {}, known={'Jules'})  # a name with a vector
+
+
+def test_many_word_entity_is_never_judged_by_the_book():
+    assert not is_ordinary_word_term('Mar de Bolzai', [9, 0], {'mar de bolzai': 5}, known={'Mar de Bolzai'})
+
+
+def test_where_an_entity_stands():
+    class Doc(list):
+        pass
+    toks = [Tok('Hola', ''), Tok('.', ''), Tok('Mel', ''), Tok('dijo', ''), Tok('Mel', '')]
+    for t in toks:
+        t.is_space = False
+    doc = Doc(toks)
+
+    class Span:
+        def __init__(self, start):
+            self.start, self.doc = start, doc
+    assert starts_sentence(Span(0)) and starts_sentence(Span(2))
+    assert not starts_sentence(Span(4))
+    assert not starts_sentence(Ent(Tok('Mel')))  # not a span of a document: in the middle

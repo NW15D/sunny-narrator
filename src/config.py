@@ -110,7 +110,27 @@ def country_matters(target_lang: str) -> bool:
     return LANG_CODE_MAP.get(lang, lang).split('-')[0] in COUNTRY_MATTERS
 
 
+_MODEL_SIZES = ('lg', 'md', 'sm')
+
+
+def model_size_chain(name: str) -> list:
+    """The spaCy pipeline `name` and the smaller ones of the same family, largest
+    first: es_core_news_lg -> [..._lg, ..._md, ..._sm]. A name without a size
+    (or an unknown one) stands alone."""
+    stem, _, size = name.rpartition('_')
+    if size not in _MODEL_SIZES:
+        return [name]
+    return [f'{stem}_{s}' for s in _MODEL_SIZES[_MODEL_SIZES.index(size):]]
+
+
 class Config:
+    @staticmethod
+    def _largest_installed_model(name: str) -> str:
+        """The first installed pipeline of model_size_chain(name), `name` itself
+        when none is."""
+        from spacy.util import is_package
+        return next((m for m in model_size_chain(name) if is_package(m)), name)
+
     def __init__(self, env_path: str = None):
         if env_path:
             load_dotenv(env_path)
@@ -268,7 +288,12 @@ class Config:
         # A language without its own spaCy pipeline (Turkish, Hungarian,
         # Arabic, ...) gets the multilingual NER model, not the English one
         default_model = self.lang_model_map.get(self.source_lang.lower(), 'xx_ent_wiki_sm')
-        self.nermodel = os.getenv('NERMODEL') or default_model  # empty = by SOURCE_LANG
+        # NERMODEL is the user's choice and is kept as written; the default is the
+        # largest model that is installed: *_lg, else *_md, else *_sm (none
+        # installed: *_lg, which ner.ensure_model downloads, or a smaller one
+        # when that fails)
+        self.nermodel_explicit = bool(os.getenv('NERMODEL'))
+        self.nermodel = os.getenv('NERMODEL') or self._largest_installed_model(default_model)  # empty = by SOURCE_LANG
         self.fast_trans = os.getenv('FAST_TRANS', 'false').lower() in ['true', '1', 'on', 'yes']
         # GENDER_CHECK: the GENDER stage after the last text stage (both modes,
         # FAST_TRANS too): "fix" - a sentence where a dictionary character's

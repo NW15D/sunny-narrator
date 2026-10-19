@@ -84,13 +84,18 @@ def _ner_disabled_pipes(lang=None):
 _DIALOGUE_DASH_RE = re.compile(r'(?<!-)-{2,3}(?!-)')
 # Parts of speech of a word that is never a name: a sentence-initial verb or
 # adverb ("Recordó", "Necesito", "Jamás") is capitalized only by its position.
-# Marks that only a sentence has: an entity with one is a cut-out of a sentence.
-_SENTENCE_MARKS = '¿¡?!'
 _CLAUSE_POS = {'VERB', 'AUX', 'ADV', 'PRON', 'INTJ', 'CCONJ', 'SCONJ'}
 _COMMON_WORD_POS = {'VERB', 'AUX', 'ADV', 'DET', 'PRON', 'ADP', 'CCONJ', 'SCONJ', 'INTJ', 'NUM', 'ADJ'}
-# A capitalized single word that the book also writes in lowercase this often
-# is an ordinary word at a sentence start ("Cubo", "Asunto", "El sol").
-_LOWERCASE_MENTIONS = 3
+# Marks that only a sentence has: an entity with one is a cut-out of a sentence.
+_SENTENCE_MARKS = '¿¡?!'
+# What stands before the first word of a sentence or of a line of dialogue.
+_SENTENCE_OPENERS = {'.', '!', '?', '…', ':', '—', '–', '-', '«', '“', '"', '¿', '¡', '(', '[', '*'}
+# A one-word entity that stands in the middle of a sentence at least this share of its
+# mentions is a name: "dijo Mel". A common word is capitalized at the start of a
+# sentence only, and the book writes it in lowercase elsewhere ("recordó").
+_MIN_MIDSENTENCE_SHARE = 0.1
+_MIN_MIDSENTENCE_SHARE_KNOWN = 0.5  # the same for a word the model has a vector for
+_LOWERCASE_MENTIONS = 2
 
 
 def clean_for_ner(text):
@@ -106,14 +111,29 @@ def lowercase_counts(doc):
     return Counter(token.text for token in doc if token.is_lower)
 
 
-def is_common_word_entity(ent, lower_counts):
-    """Whether a one-word entity is an ordinary word, not a name: its part of
-    speech is a verb, adverb, adjective, determiner... (languages whose model
-    has no tagger give an empty pos_ and keep the entity), or the book writes
-    the same word in lowercase _LOWERCASE_MENTIONS times or more. The
-    capitalization alone decides nothing in Spanish, French or Portuguese
-    dialogue, where every line begins after a dash. A many-word entity goes
-    when it starts or ends with a verb, adverb or pronoun (_CLAUSE_POS)."""
+def starts_sentence(ent):
+    """Whether the entity opens a sentence or a line of dialogue (the document
+    start, a line break, a sentence end, a dash, an opening quote). An object
+    that is not a span of a document counts as standing in the middle."""
+    try:
+        if ent.start == 0:
+            return True
+        before = ent.doc[ent.start - 1]
+    except (AttributeError, IndexError, TypeError):
+        return False
+    return before.is_space or before.text in _SENTENCE_OPENERS
+
+
+def is_common_word_entity(ent):
+    """Whether an entity of one mention is an ordinary word, not a name: it has a
+    mark of a sentence ("¿Por qué?"), its part of speech is a verb, adverb,
+    pronoun, adjective, determiner... (languages whose model has no tagger give
+    an empty pos_ and keep the entity), or it is one lowercase word. A
+    many-word entity goes when it starts or ends with a verb, adverb or
+    pronoun (_CLAUSE_POS). Scripts without case (zh, ja, ko, th) are left alone.
+    The capitalization alone decides nothing in Spanish, French or Portuguese
+    dialogue, where every line begins after a dash: see
+    is_ordinary_word_term for the whole book."""
     if not hasattr(type(ent), '__iter__'):
         return False
     if any(c in ent.text for c in _SENTENCE_MARKS):
@@ -129,10 +149,24 @@ def is_common_word_entity(ent, lower_counts):
     if token.text.islower():
         return True  # a name of a language with case starts with a capital ("jamás", "sofá", "html")
     if not token.text.istitle() and not token.text.isupper():
-        return False  # no case (zh, ja, ko, th) or a mixed-case name (iPhone): the rules below need capitals
-    if getattr(token, 'pos_', '') in _COMMON_WORD_POS:
+        return False  # no case (zh, ja, ko, th) or a mixed-case name (iPhone)
+    return getattr(token, 'pos_', '') in _COMMON_WORD_POS
+
+
+def is_ordinary_word_term(term, mentions, lower_counts, known=()):
+    """Whether a one-word entity found in the whole book is an ordinary word.
+    `mentions` = [all, in the middle of a sentence] of its mentions;
+    `lower_counts` = the lowercase words of the book; `known` = the terms the
+    model has a word vector for (ordinary words; empty for *_sm).
+    A name stands in the middle of a sentence ("dijo Mel"), a word that opens
+    sentences only is ordinary when the book also writes it in lowercase, or
+    when the model knows it. English "Rose" or "Will" stay: "said Will"."""
+    if len(term.split()) != 1 or not mentions[0]:
+        return False
+    share = mentions[1] / mentions[0]
+    if lower_counts.get(term.lower(), 0) >= _LOWERCASE_MENTIONS and share < _MIN_MIDSENTENCE_SHARE:
         return True
-    return lower_counts.get(token.text.lower(), 0) >= _LOWERCASE_MENTIONS
+    return term in known and share < _MIN_MIDSENTENCE_SHARE_KNOWN
 
 
 def _without_leading_articles(ent) -> str:
@@ -212,26 +246,48 @@ def _get_nlp(model_name, max_length=200000):
             _nlp_cache[model_name].max_length = max_length
     return _nlp_cache[model_name]
 
+def _model_chain(name: str) -> list:
+    from src.config import model_size_chain
+    return model_size_chain(name)
+
+
+def _install_model(name: str):
+    """The pipeline of `name` that is available: the largest installed one of
+    its size chain (lg, md, sm), else the first the chain lets download
+    (SPACY_AUTO_DOWNLOAD); None when there is none. A failed download is
+    logged, not raised - spacy.cli.download exits the interpreter on it."""
+    import importlib
+    from spacy.util import is_package
+    chain = _model_chain(name)
+    for candidate in chain:
+        if is_package(candidate):
+            return candidate
+    if not config.spacy_auto_download:
+        return None
+    for candidate in chain:
+        logger.info(f"spaCy model {candidate} is not installed: downloading it (first use)")
+        try:
+            spacy.cli.download(candidate)
+        except (Exception, SystemExit) as e:
+            logger.warning(f"spaCy model {candidate} could not be downloaded: {e}")
+            continue
+        importlib.invalidate_caches()
+        if is_package(candidate):
+            return candidate
+    return None
+
+
 def ensure_model(name: str) -> bool:
     """Whether the spaCy pipeline `name` is installed, downloading it first
     when it is not (SPACY_AUTO_DOWNLOAD, on by default): the dictionary check
     and the gender check of a fresh install run before any chunk would fetch
     the model. A failed download (offline, a name spaCy does not publish) is
     logged, not raised - spacy.cli.download exits the interpreter on it."""
-    import importlib
-    from spacy.util import is_package
-    if is_package(name):
-        return True
-    if not config.spacy_auto_download:
-        return False
-    logger.info(f"spaCy model {name} is not installed: downloading it (first use)")
-    try:
-        spacy.cli.download(name)
-    except (Exception, SystemExit) as e:
-        logger.warning(f"spaCy model {name} could not be downloaded: {e}")
-        return False
-    importlib.invalidate_caches()
-    return is_package(name)
+    chosen = _install_model(name)
+    if chosen and chosen != name and name == config.nermodel and not getattr(config, 'nermodel_explicit', False):
+        logger.info(f"spaCy model {name} is not available: using {chosen}")
+        config.nermodel = chosen
+    return chosen is not None
 
 
 def load_spacy_model(model_name):
@@ -247,10 +303,12 @@ def load_spacy_model(model_name):
     except OSError:
         if config.debug:
             print(f"Model {model_name} not found. Downloading...")
-        spacy.cli.download(model_name)
+        chosen = _install_model(model_name)  # the next smaller size when it cannot be had
+        if chosen is None:
+            raise
         if config.debug:
-            print(f"Model {model_name} downloaded. Loading...")
-        return spacy.load(model_name)
+            print(f"Model {chosen} is ready. Loading...")
+        return spacy.load(chosen)
 
 def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_word_length=5,
                include_words=None, lang=None):
@@ -317,21 +375,26 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
             print(f"Split text into {len(text_chunks)} chunks of {chunk_size} chars each")
 
         ents = []
+        mentions = {}              # one-word entity -> [all mentions, in the middle of a sentence]
+        lower_counts = Counter()   # the lowercase words of the whole book
 
         for i, chunk in enumerate(text_chunks):
             try:
                 # We only need NER here, so we can disable parser and lemmatizer to save time and avoid warnings
                 doc = nlp(clean_for_ner(chunk), disable=_ner_disabled_pipes(lang))
-                lower_counts = lowercase_counts(doc)
+                lower_counts.update(lowercase_counts(doc))
                 # No vector_norm filter here: languages with sparse word-vector
                 # coverage (e.g. Korean, where particles attach to the entity
                 # surface form) would have every entity's vector_norm come out
                 # at 0, silently dropping the entire NER result.
-                ents.extend([
-                    (entity_text(ent), _normalize_label(ent.label_))
-                    for ent in doc.ents
-                    if ent.label_ in NER_CATEGORIES and not is_common_word_entity(ent, lower_counts)
-                ])
+                for ent in doc.ents:
+                    if ent.label_ not in NER_CATEGORIES or is_common_word_entity(ent):
+                        continue
+                    term = entity_text(ent)
+                    ents.append((term, _normalize_label(ent.label_)))
+                    stat = mentions.setdefault(term, [0, 0])
+                    stat[0] += 1
+                    stat[1] += not starts_sentence(ent)
 
                 if config.debug:
                     print(f"Chunk {i+1}/{len(text_chunks)}: Found {len(doc.ents)} entities (total: {len(ents)})")
@@ -344,6 +407,14 @@ def make_vocab(text, stop_words=None, min_count_ner=5, min_count_word=10, min_wo
                 if config.debug:
                     print(f"Error processing chunk {i+1}: {e}")
                 continue
+
+        # Ordinary words that only open sentences (and, with a model that has word
+        # vectors, are in its vocabulary): "Capítulo", "Informe", "Seguro"
+        known = known_words([t for t in mentions if len(t.split()) == 1])
+        ordinary = {t for t, m in mentions.items() if is_ordinary_word_term(t, m, lower_counts, known)}
+        if ordinary:
+            logger.info(f"Dictionary: ordinary words not taken from NER: {sorted(ordinary)[:40]}")
+            ents = [(term, label) for term, label in ents if term not in ordinary]
 
         # One entry per entity: its forms ("Анна"/"Анну") grouped by the
         # lemmas of all its tokens, the category most of its mentions got,
