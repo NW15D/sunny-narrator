@@ -10,7 +10,6 @@ image stays an inline <img> inside a <p> without a figcaption.
 """
 import re
 import shutil
-from unittest.mock import patch
 
 import pytest
 

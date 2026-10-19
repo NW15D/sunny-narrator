@@ -115,7 +115,7 @@ def find_mixed_words(text: str, target_lang: str, dictionary_targets: Iterable[s
             if is_mixed(m.group(), script) and lexicon.normalize(m.group()) not in protected]
 
 
-# --- F4/F5 v1: transliterations are reported, not blocked --------------------
+# --- transliterations are reported, not blocked -------------------------------
 #
 # A stage may leave whole words of the other alphabet in the translation
 # ("dazhe", "desyatki", "tela" in a Russian one; Cyrillic words in a Latin
@@ -126,24 +126,26 @@ def find_mixed_words(text: str, target_lang: str, dictionary_targets: Iterable[s
 # find_foreign_words itself; the rest is BASIC_FOREIGN_WORDS plus all-caps
 # abbreviations of up to MAX_ABBREV_LEN letters ("NASA").
 
+# Not "a": a lone Latin "a" in a Russian text is the usual slip for the
+# conjunction "а", not a foreign word.
 BASIC_FOREIGN_WORDS = frozenset({
     'magnum', 'opus',      # "magnum opus"
-    'mano', 'a',           # "mano a mano"
 })
 
+MIN_ABBREV_LEN = 2   # a lone capital ("A") is a slip, not an abbreviation
 MAX_ABBREV_LEN = 5
 
 
 def is_whitelisted_foreign_word(word: str) -> bool:
     """A whole word of the other alphabet the translation keeps on purpose:
     a word of BASIC_FOREIGN_WORDS or an all-caps abbreviation of up to
-    MAX_ABBREV_LEN letters ("NASA"). The basic list is applied in either
-    direction - a Cyrillic word never equals a Latin entry."""
+    MAX_ABBREV_LEN letters ("NASA"; at least MIN_ABBREV_LEN). The basic list
+    is applied in either direction - a Cyrillic word never equals a Latin entry."""
     if not word:
         return False
     if word.lower() in BASIC_FOREIGN_WORDS:
         return True
-    return len(word) <= MAX_ABBREV_LEN and word.upper() == word
+    return MIN_ABBREV_LEN <= len(word) <= MAX_ABBREV_LEN and word.upper() == word
 
 
 def find_unexpected_foreign_words(text: str, target_lang: str,
@@ -151,7 +153,7 @@ def find_unexpected_foreign_words(text: str, target_lang: str,
     """find_foreign_words minus what the translation keeps on purpose: the
     transliterations a stage invents ("dazhe", "desyatki" - in the target's
     slip alphabet, whatever target_script says it is) stay, "magnum opus",
-    "mano a mano" and all-caps abbreviations ("NASA") do not. v1 of the
-    F4/F5 gate: the caller logs and counts, it never blocks."""
+    and all-caps abbreviations ("NASA") do not. The caller logs and
+    counts, it never blocks."""
     return [w for w in find_foreign_words(text, target_lang, dictionary_targets)
             if not is_whitelisted_foreign_word(w)]

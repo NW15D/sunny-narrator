@@ -271,6 +271,9 @@ class Config:
         self.myfile = os.getenv('FILE', 'books/ExampleBook.fb2')
         if not os.path.isabs(self.myfile):
              self.myfile = str(Path(os.getcwd()) / self.myfile)
+        # MIXED_WORDS_WARN: a final_edit output with more words in two alphabets
+        # than this is logged as a WARNING (script_guard); 0 = every one.
+        self.mixed_words_warn = _parse_numeric_env('MIXED_WORDS_WARN', 10, cast=int)
              
         # DEBUG defaulted to off
         self.debug = os.getenv('DEBUG', 'off').lower() in ['true', '1', 't', 'on']

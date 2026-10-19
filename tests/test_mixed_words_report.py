@@ -1,7 +1,7 @@
 """
-F4/F5 v1 report: the run's metrics carry the foreign words of the stages
+Report: the run's metrics carry the foreign words of the stages
 and the largest count of mixed-alphabet words after final_edit; a count
-above MIXED_WORDS_FINAL_EDIT_WARN (default 10) logs a WARNING. The gate
+above MIXED_WORDS_WARN (default 10) logs a WARNING. The gate
 is report-only: nothing here blocks or retries a translation.
 """
 import os
@@ -64,8 +64,8 @@ def test_mixed_words_after_final_edit_reach_the_report(monkeypatch):
 
 def test_final_edit_count_at_the_threshold_is_not_a_warning(monkeypatch):
     metrics, rec = _fresh(monkeypatch)
-    assert utils.MIXED_WORDS_FINAL_EDIT_WARN == 10
-    metrics.log_mixed_words_final(utils.MIXED_WORDS_FINAL_EDIT_WARN)
+    assert utils.config.mixed_words_warn == 10
+    metrics.log_mixed_words_final(utils.config.mixed_words_warn)
     assert metrics.mixed_words_final == 10
     assert not [t for lvl, t in rec.lines if lvl == 'warning']
 

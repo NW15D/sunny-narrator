@@ -41,8 +41,10 @@ _WORD_AFTER = rf'(?![^\W{_UNSPACED_RANGES}])'
 _APOSTROPHES = "'’‘ʼ`"
 _APOSTROPHE_TABLE = str.maketrans({c: "'" for c in _APOSTROPHES})
 
-# "Arcadia's Moon": a single-word term standing right before the 's of a
-# possessive is left to the model («Аркадия's Moon» would be a hybrid).
+# "Arcadia's Moon": a single-word term standing right before the 's of an
+# English possessive is left to the model («Аркадия's Moon» would be a hybrid).
+# Only the English 's: other source languages have no such suffix after an
+# apostrophe that leaves the stem a word (Turkish "Ali'nin" is left alone).
 # \b after "s" covers "'s " as well as "'s," and a phrase-final "'s".
 # A multi-word entry containing the phrase is not affected and still wins.
 _POSSESSIVE_AFTER = rf"(?![{_APOSTROPHES}]s\b)"

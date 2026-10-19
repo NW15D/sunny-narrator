@@ -288,11 +288,13 @@ def split_markdown_structured(text: str, target_size: int = 6000) -> List[str]:
 
 
 def _fix_heading_hashes(line: str) -> str:
-    """Insert a space after leading hashes when one is missing ('#Head')."""
+    """Insert a space after leading hashes when a letter follows them
+    ('#Head'); '#1' or '#!' are not headings."""
     n = 0
     while n < len(line) and line[n] == '#':
         n += 1
-    if 1 <= n <= 6 and n < len(line) and line[n] not in ' \t' and line[n] != '#':
+    # only before a letter: "#1 bestseller", "#!/bin/sh" stay as they are
+    if 1 <= n <= 6 and n < len(line) and line[n].isalpha():
         return line[:n] + ' ' + line[n:]
     return line
 
@@ -318,11 +320,13 @@ def normalize_markdown_headings(text: str) -> str:
     up empty. This function fixes both cases:
 
     (a) a space is inserted after leading hashes when the next character
-        is neither whitespace nor another hash;
+        is a letter (of any script);
     (b) a heading line with no blank line before it gets one inserted.
 
-    '#' characters that are not at the start of a line, and '###' inside
-    running text, are left untouched. The function is idempotent:
+    '#' characters that are not at the start of a line, lines inside fenced
+    code blocks (``` or ~~~) and '#1', '#!' are left untouched. A line that
+    starts with a '#hashtag' is read as a heading: Markdown cannot tell them
+    apart. The function is idempotent:
     f(f(x)) == f(x).
 
     Purely structural and alphabet-agnostic: no language-specific patterns
@@ -341,7 +345,16 @@ def normalize_markdown_headings(text: str) -> str:
 
     lines = text.split('\n')
     out = []
+    fence = ''
     for line in lines:
+        marker = line.lstrip()[:3]
+        if marker in ('```', '~~~'):
+            fence = '' if fence == marker else (fence or marker)
+            out.append(line)
+            continue
+        if fence:
+            out.append(line)
+            continue
         line = _fix_heading_hashes(line)
         if out and out[-1] != '' and _is_heading_line(line):
             out.append('')

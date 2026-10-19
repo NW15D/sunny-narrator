@@ -846,14 +846,14 @@ def _restore_markdown_html(text: str, html_bits: list[str]) -> str:
     return text
 
 
-# F6: a heading is a line starting with 1-6 '#' followed by whitespace.
-# Matching is syntax-only and language-agnostic on purpose (decision b):
-# no word lists, no language-specific keywords.
-_RE_MD_HEADING_LINE = re.compile(r'^#{1,6}\s.*$', re.MULTILINE)
+# A heading is a line starting with 1-6 '#' followed by a space or a tab (not
+# a line break: a lone '#' line is not a heading). Syntax only, no word lists,
+# so it is the same for every language.
+_RE_MD_HEADING_LINE = re.compile(r'^#{1,6}[ \t].*$', re.MULTILINE)
 
 
 def count_markdown_headings(text: str) -> list[str]:
-    """Return the Markdown heading lines (levels 1-6) found in *text*.
+    """Return the Markdown heading lines (levels 1-6) found in *text*, outside fenced code blocks.
 
     Headings are recognised purely by Markdown syntax (a line starting with
     1-6 '#' characters followed by whitespace) after running the text
@@ -865,11 +865,19 @@ def count_markdown_headings(text: str) -> list[str]:
     if not text:
         return []
     normalized = markdown_utils.normalize_markdown_headings(text)
-    return [match.group(0).rstrip() for match in _RE_MD_HEADING_LINE.finditer(normalized)]
+    headings = []
+    fence = ''
+    for line in normalized.split('\n'):
+        marker = line.lstrip()[:3]
+        if marker in ('```', '~~~'):
+            fence = '' if fence == marker else (fence or marker)
+        elif not fence and _RE_MD_HEADING_LINE.match(line):
+            headings.append(line.rstrip())
+    return headings
 
 
 def check_heading_parity(source_text: str, translated_text: str) -> tuple[list[str], list[str]]:
-    """Compare Markdown heading structure of source vs translation (F6).
+    """Compare Markdown heading structure of source vs translation.
 
     Heading texts change language while translating, so headings are matched
     by per-level counts (h1..h6) instead. A deficit in the translation means
@@ -1271,7 +1279,7 @@ def translate_chunks(
     # Final sanitize pass before return
     translated_text = sanitize_surrogates(translated_text)
 
-    # F6: heading count-guard — the last point where both the source
+    # Heading count-guard - the last point where both the source
     # markdown and the fully assembled translation are in scope. Headings
     # (counted per level, language-agnostic) that a chunk lost would
     # silently vanish from the epub TOC downstream; warn, never block.
@@ -1358,7 +1366,7 @@ def _markdown_to_html_file(
             f"Converting Markdown to HTML: batch {i + 1}/{len(batches)} "
             f"({len(batch):,} chars)..."
         )
-        # F1: plain 'markdown' enables the implicit_figures extension: a lone
+        # Plain 'markdown' enables the implicit_figures extension: a lone
         # '![alt](img)' paragraph becomes a <figure> with a visible
         # <figcaption> ("Paragraph break image") - ~181 such captions leaked
         # into the book. Use the extension-restricted format instead, which
@@ -1540,7 +1548,7 @@ def build_output(
             html_path = os.path.join(temp_dir, "output.html")
             conversion_input_path = html_path
             using_markdown_fallback = False
-            # F2: normalize LLM heading glitches ('#Head', headings glued to
+            # Normalize LLM heading glitches ('#Head', headings glued to
             # the previous paragraph) before pandoc or the ebook-convert
             # fallback below consume full_markdown. Pandoc needs the blank
             # line / space to recognise a heading, otherwise toc.ncx is empty.
@@ -1653,7 +1661,7 @@ def build_output(
                 except Exception as e:
                     logger.warning(f"Could not verify embedded images in {output_path}: {e}")
 
-            # F6: post-build TOC check (non-blocking). A valid EPUB can still
+            # Post-build TOC check (non-blocking). A valid EPUB can still
             # ship with an empty toc.ncx or generic "Unknown" chapter titles;
             # surface that as warnings rather than a silent no-navigation book.
             if output_format == 'epub':
@@ -1720,7 +1728,7 @@ def _generate_title_page(metadata: dict) -> str:
 # ---------------------------------------------------------------------------
 
 def check_epub_toc(output_path: str) -> list[str]:
-    """Sanity-check the navigation/TOC of a built EPUB (F6, non-blocking).
+    """Sanity-check the navigation/TOC of a built EPUB (non-blocking).
 
     EPUB output is a zip; inspect it without extra dependencies:
     - find *.ncx and nav*.xhtml navigation documents;

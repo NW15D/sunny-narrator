@@ -89,3 +89,20 @@ class TestAlphabetAgnostic:
         out = normalize_markdown_headings(text)
         assert '\n\n#' in out
         assert normalize_markdown_headings(out) == out
+
+
+def test_hashes_before_a_digit_or_a_sign_are_not_headings():
+    from src.markdown_utils import normalize_markdown_headings
+    text = "text\n#1 bestseller\n#!/bin/sh"
+    assert normalize_markdown_headings(text) == text
+
+
+def test_fenced_code_is_left_alone():
+    from src.markdown_utils import normalize_markdown_headings
+    text = "text\n\n```\n#Comment\n# another\n```\n\n#Real"
+    assert normalize_markdown_headings(text) == "text\n\n```\n#Comment\n# another\n```\n\n# Real"
+
+
+def test_a_lone_hash_line_is_not_counted_as_a_heading():
+    from src.calibre_pipeline import count_markdown_headings
+    assert count_markdown_headings("#\nsome text\n# A\n```\n# code\n```") == ["# A"]

@@ -170,17 +170,17 @@ class TranslationMetrics:
 
     def log_mixed_words_final(self, count: int):
         """The largest count of words in two alphabets a final_edit output
-        had; above MIXED_WORDS_FINAL_EDIT_WARN it is a WARNING (final_edit
-        is the last text stage, GENDER and the EPUB follow)."""
+        had in one chunk; above config.mixed_words_warn it is a WARNING
+        (final_edit is the last text stage, GENDER and the EPUB follow)."""
         with self._lock:
             self.mixed_words_final = max(self.mixed_words_final, count)
-        if count > MIXED_WORDS_FINAL_EDIT_WARN:
+        if count > config.mixed_words_warn:
             logger.warning(f"Words in two alphabets after final_edit: {count} "
-                           f"(threshold {MIXED_WORDS_FINAL_EDIT_WARN})")
+                           f"(threshold {config.mixed_words_warn})")
 
     def log_foreign_words(self, words: list, stage: str = ""):
         """Whole words of the other alphabet a stage's output kept ("dazhe",
-        "desyatki"): WARNING and the run's report (F4/F5 v1 - reported and
+        "desyatki"): WARNING and the run's report (reported and
         counted, not fixed; no blocking gate, no retry)."""
         with self._lock:
             self.foreign_words += len(words)
@@ -299,7 +299,7 @@ class TranslationMetrics:
         logger.info(f"Rechunk events: {report['rechunk_count']}")
         logger.info(f"Language mismatch retries: {report['language_mismatch_retries']}")
         logger.info(f"Words in two alphabets: {report['mixed_words']}")
-        logger.info(f"Words in two alphabets after final_edit: {report['mixed_words_final']}")
+        logger.info(f"Most words in two alphabets in one chunk after final_edit: {report['mixed_words_final']}")
         logger.info(f"Foreign words (other alphabet): {report['foreign_words']}")
         logger.info(f"Gender errors: {report['gender_issues']} found, {report['gender_fixed']} fixed")
         if self.gender_by_name:
@@ -1057,7 +1057,7 @@ def _unexpected_foreign_words(text: str, context: TranslationContext) -> List[st
 
 def _note_foreign_words(text: str, context: TranslationContext, stage: str):
     """Whole words of the other alphabet a stage's output left ("dazhe",
-    "desyatki", "tela"): WARNING and the run's report (F4/F5 v1 - reported
+    "desyatki", "tela"): WARNING and the run's report (reported
     and counted, not fixed; no blocking gate, no retry)."""
     words = list(dict.fromkeys(_unexpected_foreign_words(text, context)))
     if words:
@@ -1076,7 +1076,6 @@ def _mixed_words_note(text: str, context: TranslationContext) -> str:
             f"letters of {context.target_lang} only: " + ", ".join(words))
 
 
-MIXED_WORDS_FINAL_EDIT_WARN = 10   # mixed words after final_edit: WARN above this (F4/F5)
 
 _MAX_GENDER_FIXES = 12   # sentences per GENDER call
 # A sentence across a paragraph break, a hard line break or the lines of a

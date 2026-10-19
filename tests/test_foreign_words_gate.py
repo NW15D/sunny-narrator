@@ -1,5 +1,5 @@
 """
-F4/F5 v1 gate for transliterations and foreign words.
+Gate for transliterations and foreign words.
 
 The improve stage may leave whole words of the other alphabet in the
 translation ("dazhe", "desyatki", "tela", "telo-nositely" in a Russian
@@ -8,7 +8,7 @@ comes from target_lang (ru -> Cyrillic, en -> Latin; variants like
 'pt-BR' or 'sr-Latn' included), never from a fixed pair.
 find_unexpected_foreign_words finds them while the words a translation
 keeps on purpose stay: the run's vocabulary, the basic list ("magnum
-opus", "mano a mano") and all-caps abbreviations of up to MAX_ABBREV_LEN
+opus") and all-caps abbreviations of up to MAX_ABBREV_LEN
 letters ("NASA"). Mixed-alphabet
 words ("d\u043e\u043c\u0438\u043d\u0438\u043e\u043d\u043e\u0432") are the subject of
 find_mixed_words. v1 warns and counts; it never blocks or retries a
@@ -47,8 +47,13 @@ def test_vocabulary_words_are_not_flagged():
 
 
 def test_the_basic_latin_list_is_not_flagged():
-    text = "\u042d\u0442\u043e \u0435\u0433\u043e magnum opus, \u0430 \u0438\u0445 \u0432\u0441\u0442\u0440\u0435\u0447\u0430 \u2014 mano a mano."
+    text = "Это его magnum opus."
     assert sg.find_unexpected_foreign_words(text, 'ru') == []
+
+
+def test_a_lone_latin_letter_is_a_slip_not_a_foreign_word():
+    # "a" for the Russian conjunction "а", "A" for "А"
+    assert sg.find_unexpected_foreign_words("Он ушёл, a она осталась. A потом", 'ru') == ['a', 'A']
 
 
 def test_all_caps_abbreviations_up_to_five_letters_are_not_flagged():
