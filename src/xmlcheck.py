@@ -48,7 +48,7 @@ def validate_fb2(xml_string: str) -> list:
             return [f"Schema file not found at: {schema_path}"]
 
         # Parse XML string
-        parser = etree.XMLParser(recover=False)
+        parser = etree.XMLParser(recover=False, resolve_entities=False, no_network=True, huge_tree=True)
         doc = etree.fromstring(xml_string.encode('utf-8'), parser)
         
         # Validate against schema
