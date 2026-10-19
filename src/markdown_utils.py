@@ -287,6 +287,68 @@ def split_markdown_structured(text: str, target_size: int = 6000) -> List[str]:
     return merge_blocks_to_chunks(blocks, target_size)
 
 
+def _fix_heading_hashes(line: str) -> str:
+    """Insert a space after leading hashes when one is missing ('#Head')."""
+    n = 0
+    while n < len(line) and line[n] == '#':
+        n += 1
+    if 1 <= n <= 6 and n < len(line) and line[n] not in ' \t' and line[n] != '#':
+        return line[:n] + ' ' + line[n:]
+    return line
+
+
+def _is_heading_line(line: str) -> bool:
+    """True when the line is an ATX heading (1-6 hashes, then space or end)."""
+    n = 0
+    while n < len(line) and line[n] == '#':
+        n += 1
+    if n == 0 or n > 6:
+        return False
+    rest = line[n:]
+    return rest == '' or rest[0] in ' \t'
+
+
+def normalize_markdown_headings(text: str) -> str:
+    """
+    Normalize markdown headings so pandoc always recognises them.
+
+    LLM output occasionally contains headings glued to the previous
+    paragraph or missing the space after the hashes ('#Chapter 2').
+    Pandoc then treats the '#' as literal visible text, and toc.ncx ends
+    up empty. This function fixes both cases:
+
+    (a) a space is inserted after leading hashes when the next character
+        is neither whitespace nor another hash;
+    (b) a heading line with no blank line before it gets one inserted.
+
+    '#' characters that are not at the start of a line, and '###' inside
+    running text, are left untouched. The function is idempotent:
+    f(f(x)) == f(x).
+
+    Purely structural and alphabet-agnostic: no language-specific patterns
+    (no matching on 'Глава'/'Chapter' etc.), so it works for Cyrillic,
+    Latin, CJK, Arabic and any other script. It needs no source_lang /
+    target_lang input for the same reason.
+
+    Args:
+        text: Markdown source.
+
+    Returns:
+        Normalized markdown text.
+    """
+    if not text:
+        return text
+
+    lines = text.split('\n')
+    out = []
+    for line in lines:
+        line = _fix_heading_hashes(line)
+        if out and out[-1] != '' and _is_heading_line(line):
+            out.append('')
+        out.append(line)
+    return '\n'.join(out)
+
+
 def sanitize_surrogates(text: str) -> str:
     """
     Remove surrogate code points (U+D800-U+DFFF) from a string.

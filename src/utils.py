@@ -150,6 +150,8 @@ class TranslationMetrics:
         self.successful_translations = 0
         self.failed_translations = 0
         self.mixed_words = 0
+        self.mixed_words_final = 0
+        self.foreign_words = 0
         self.gender_issues = 0
         self.gender_fixed = 0
         self.gender_by_name = collections.Counter()  # (name, dictionary gender) -> errors
@@ -165,6 +167,24 @@ class TranslationMetrics:
         with self._lock:
             self.mixed_words += len(words)
         logger.warning(f"Words in two alphabets: {', '.join(words)}")
+
+    def log_mixed_words_final(self, count: int):
+        """The largest count of words in two alphabets a final_edit output
+        had; above MIXED_WORDS_FINAL_EDIT_WARN it is a WARNING (final_edit
+        is the last text stage, GENDER and the EPUB follow)."""
+        with self._lock:
+            self.mixed_words_final = max(self.mixed_words_final, count)
+        if count > MIXED_WORDS_FINAL_EDIT_WARN:
+            logger.warning(f"Words in two alphabets after final_edit: {count} "
+                           f"(threshold {MIXED_WORDS_FINAL_EDIT_WARN})")
+
+    def log_foreign_words(self, words: list, stage: str = ""):
+        """Whole words of the other alphabet a stage's output kept ("dazhe",
+        "desyatki"): WARNING and the run's report (F4/F5 v1 - reported and
+        counted, not fixed; no blocking gate, no retry)."""
+        with self._lock:
+            self.foreign_words += len(words)
+        logger.warning(f"[{stage}] foreign words (other alphabet): {', '.join(words)}")
 
     def log_gender(self, issues: list, fixed: int):
         """Gender errors the GENDER stage found (gender_check.GenderIssue)
@@ -258,6 +278,8 @@ class TranslationMetrics:
             "rechunk_count": self.rechunk_count,
             "language_mismatch_retries": self.language_mismatch_retries,
             "mixed_words": self.mixed_words,
+            "mixed_words_final": self.mixed_words_final,
+            "foreign_words": self.foreign_words,
             "gender_issues": self.gender_issues,
             "gender_fixed": self.gender_fixed,
             "gender_suspects": {name: gender for name, gender, *_ in self.gender_suspects()},
@@ -277,6 +299,8 @@ class TranslationMetrics:
         logger.info(f"Rechunk events: {report['rechunk_count']}")
         logger.info(f"Language mismatch retries: {report['language_mismatch_retries']}")
         logger.info(f"Words in two alphabets: {report['mixed_words']}")
+        logger.info(f"Words in two alphabets after final_edit: {report['mixed_words_final']}")
+        logger.info(f"Foreign words (other alphabet): {report['foreign_words']}")
         logger.info(f"Gender errors: {report['gender_issues']} found, {report['gender_fixed']} fixed")
         if self.gender_by_name:
             logger.info("The translation disagrees with the dictionary (check these genders in the .dic):")
@@ -1019,6 +1043,27 @@ def _note_mixed_words(text: str, context: TranslationContext, stage: str):
         logger.info(f"[{stage}] words in two alphabets: {', '.join(words)}")
 
 
+@functools.lru_cache(maxsize=8)
+def _cached_unexpected_foreign_words(text: str, target_lang: str, targets: tuple) -> tuple:
+    return tuple(script_guard.find_unexpected_foreign_words(text, target_lang, targets))
+
+
+def _unexpected_foreign_words(text: str, context: TranslationContext) -> List[str]:
+    """find_unexpected_foreign_words of a stage text, cached like the mixed
+    one (an improve output is often the final_edit input too)."""
+    return list(_cached_unexpected_foreign_words(
+        text or "", context.target_lang, tuple(_dictionary_targets(context))))
+
+
+def _note_foreign_words(text: str, context: TranslationContext, stage: str):
+    """Whole words of the other alphabet a stage's output left ("dazhe",
+    "desyatki", "tela"): WARNING and the run's report (F4/F5 v1 - reported
+    and counted, not fixed; no blocking gate, no retry)."""
+    words = list(dict.fromkeys(_unexpected_foreign_words(text, context)))
+    if words:
+        metrics.log_foreign_words(words, stage)
+
+
 def _mixed_words_note(text: str, context: TranslationContext) -> str:
     """The editor's instruction for the words a stage left in two alphabets
     ("dоминионов"); empty when there are none. The words are found by code,
@@ -1030,6 +1075,8 @@ def _mixed_words_note(text: str, context: TranslationContext) -> str:
     return ("Each of these words mixes letters of two alphabets: write it with the "
             f"letters of {context.target_lang} only: " + ", ".join(words))
 
+
+MIXED_WORDS_FINAL_EDIT_WARN = 10   # mixed words after final_edit: WARN above this (F4/F5)
 
 _MAX_GENDER_FIXES = 12   # sentences per GENDER call
 # A sentence across a paragraph break, a hard line break or the lines of a
@@ -1489,6 +1536,7 @@ class TranslationPipeline:
                 metrics.log_retry(retry_tokens, "Empty after remove_tags retry [improve]")
 
         _note_mixed_words(text, context, "improve_translation")
+        _note_foreign_words(text, context, "improve_translation")
         return TranslationResult(
             stage=TranslationStage.IMPROVE,
             llm_role=LLMRole.PROOFREAD,
@@ -1572,6 +1620,8 @@ class TranslationPipeline:
                 metrics.log_retry(retry_tokens, "Empty after remove_tags retry [final]")
 
         _note_mixed_words(text, context, "final_edit")
+        metrics.log_mixed_words_final(len(_mixed_words(text, context)))
+        _note_foreign_words(text, context, "final_edit")
         return TranslationResult(
             stage=TranslationStage.FINAL,
             llm_role=LLMRole.PROOFREAD,

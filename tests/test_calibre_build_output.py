@@ -73,7 +73,8 @@ def test_pandoc_invoked_file_to_file_with_timeout(tmp_path):
     assert len(pandoc_calls) == 1
     cmd, timeout = pandoc_calls[0]
     assert '-o' in cmd
-    assert '-f' in cmd and 'markdown' in cmd
+    # F1: extension-restricted format disables implicit_figures (figcaption leak)
+    assert '-f' in cmd and cmd[cmd.index('-f') + 1] == 'markdown-implicit_figures'
     assert '-t' in cmd and 'html' in cmd
     # The book text itself never appears as a bare command-line argument —
     # it's written to a file first (that file's *path* is one of the args).

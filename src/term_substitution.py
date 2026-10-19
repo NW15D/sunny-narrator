@@ -17,7 +17,9 @@ Rules, in line with lexicon.resolve_terms:
   capitals (a proper name) matches as written or in ALL CAPS, so "Will" is
   not replaced in "will".
 - Inflected forms ("Hatters") are not replaced: the model gets them through
-  the glossary lines of the prompt.
+  the glossary lines of the prompt. A single-word term in the possessive
+  ("Arcadia's Moon") is left to the model as well; to substitute the whole
+  phrase, add "Arcadia's Moon" itself to the glossary.
 """
 import html
 import re
@@ -39,6 +41,12 @@ _WORD_AFTER = rf'(?![^\W{_UNSPACED_RANGES}])'
 _APOSTROPHES = "'’‘ʼ`"
 _APOSTROPHE_TABLE = str.maketrans({c: "'" for c in _APOSTROPHES})
 
+# "Arcadia's Moon": a single-word term standing right before the 's of a
+# possessive is left to the model («Аркадия's Moon» would be a hybrid).
+# \b after "s" covers "'s " as well as "'s," and a phrase-final "'s".
+# A multi-word entry containing the phrase is not affected and still wins.
+_POSSESSIVE_AFTER = rf"(?![{_APOSTROPHES}]s\b)"
+
 
 def _char_pattern(ch: str) -> str:
     if ch in _APOSTROPHES:
@@ -59,7 +67,8 @@ def _term_pattern(source: str, xml: bool = False) -> "re.Pattern[str]":
         # lookarounds instead of \b: terms may start or end with a non-word
         # character. In FB2 "amp" must not match inside the entity &amp; or &#38;
         before = rf'{_WORD_BEFORE}(?<!&)(?<!&#)' if xml else _WORD_BEFORE
-        body = rf'{before}{body}{_WORD_AFTER}'
+        after = _WORD_AFTER if len(words) > 1 else _WORD_AFTER + _POSSESSIVE_AFTER
+        body = rf'{before}{body}{after}'
     return re.compile(body, re.IGNORECASE)
 
 

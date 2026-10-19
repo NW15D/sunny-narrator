@@ -31,6 +31,7 @@ import tempfile
 import time
 import xml.etree.ElementTree as ET
 import zipfile
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
@@ -147,6 +148,14 @@ _PANDOC_MD_FORMAT = (
 # --comments (credit_comment) and the title page.
 _TRANSLATOR_CREDIT = CREDIT_LINE
 
+# tc-011 (decision e): default share of failed translation chunks above which
+# translate_chunks() logs an error and records the breach in the run stats —
+# never blocking, the book is still assembled with the original text in the
+# failed places. MAX_FAILED_CHUNK_RATIO still configures this; a missing or
+# zero config value falls back to this default (the old C11 behavior treated
+# 0.0 as "abort on any failure"; superseded by the tc-011 decision).
+_DEFAULT_MAX_FAILED_CHUNK_RATIO = 0.1
+
 @dataclass
 class TranslationStats:
     """Aggregate counters from a translate_chunks() run.
@@ -162,6 +171,14 @@ class TranslationStats:
     total_target_len: int = 0
     total_chunks: int = 0
     failed_chunks: int = 0
+    # tc-011: which chunks failed (1-based numbers), their original sizes in
+    # chars, and the threshold status — so callers/reports can act on the
+    # failures without re-parsing logs.
+    failed_chunk_ids: List[int] = field(default_factory=list)
+    failed_chunk_sizes: List[int] = field(default_factory=list)
+    failed_ratio: float = 0.0
+    max_failed_ratio: float = 0.0
+    threshold_exceeded: bool = False
 
 
 @dataclass
@@ -840,6 +857,70 @@ def _restore_markdown_html(text: str, html_bits: list[str]) -> str:
     return text
 
 
+# F6: a heading is a line starting with 1-6 '#' followed by whitespace.
+# Matching is syntax-only and language-agnostic on purpose (decision b):
+# no word lists, no language-specific keywords.
+_RE_MD_HEADING_LINE = re.compile(r'^#{1,6}\s.*$', re.MULTILINE)
+
+
+def count_markdown_headings(text: str) -> list[str]:
+    """Return the Markdown heading lines (levels 1-6) found in *text*.
+
+    Headings are recognised purely by Markdown syntax (a line starting with
+    1-6 '#' characters followed by whitespace) after running the text
+    through markdown_utils.normalize_markdown_headings() — the same
+    normalization pandoc and Calibre see at build time, so LLM glitches like
+    '#Heading' are counted as the headings they will become. No language
+    heuristics: identical behaviour for Cyrillic, CJK or Latin books.
+    """
+    if not text:
+        return []
+    normalized = markdown_utils.normalize_markdown_headings(text)
+    return [match.group(0).rstrip() for match in _RE_MD_HEADING_LINE.finditer(normalized)]
+
+
+def check_heading_parity(source_text: str, translated_text: str) -> tuple[list[str], list[str]]:
+    """Compare Markdown heading structure of source vs translation (F6).
+
+    Heading texts change language while translating, so headings are matched
+    by per-level counts (h1..h6) instead. A deficit in the translation means
+    chapters that a later epub TOC will miss — the failure mode this guard
+    exists for. When counts differ, a logger.warning lists the suspicious
+    lines: source lines (lost) and translation lines (added), up to 10 each.
+
+    Non-blocking: returns (lost, added), never raises, never stops a build.
+    """
+    _init_logger()
+    source_headings = count_markdown_headings(source_text)
+    translated_headings = count_markdown_headings(translated_text)
+
+    def _level(heading: str) -> int:
+        return len(heading) - len(heading.lstrip('#'))
+
+    source_counts = Counter(_level(h) for h in source_headings)
+    translated_counts = Counter(_level(h) for h in translated_headings)
+
+    lost: list[str] = []
+    added: list[str] = []
+    for level in sorted(set(source_counts) | set(translated_counts)):
+        delta = source_counts.get(level, 0) - translated_counts.get(level, 0)
+        if delta > 0:
+            candidates = [h for h in source_headings if _level(h) == level]
+            unmatched = [h for h in candidates if h not in set(translated_headings)]
+            lost.extend((unmatched or candidates)[:delta])
+        elif delta < 0:
+            candidates = [h for h in translated_headings if _level(h) == level]
+            unmatched = [h for h in candidates if h not in set(source_headings)]
+            added.extend((unmatched or candidates)[:-delta])
+
+    if lost or added:
+        logger.warning(
+            f"Heading mismatch after translation: {len(lost)} heading(s) lost, "
+            f"{len(added)} added. Lost: {lost[:10]}; Added: {added[:10]}"
+        )
+    return lost, added
+
+
 def translate_chunks(
     markdown_text: str,
     max_chunk_size: int = 6000,
@@ -940,6 +1021,7 @@ def translate_chunks(
     translated_parts = []
     outline_text = ""  # Context for next chunk
     failed_chunks = 0  # Track chunks that failed translation
+    failed_chunks_info: list = []  # tc-011: (1-based chunk number, original chars)
 
     # D5: checkpoint/resume support (per-chunk persistence)
     checkpoint_mgr = CheckpointManager(checkpoint_file) if checkpoint_file else None
@@ -1085,7 +1167,7 @@ def translate_chunks(
                 sequencer.mark(COMMITTED, i)
 
     def commit_chunk(i, chunk, translation, candidates, drafted):
-        nonlocal failed_chunks, total_source_len, total_target_len
+        nonlocal failed_chunks, failed_chunks_info, total_source_len, total_target_len
         chunk_failed = False  # H3: failed chunks must not advance the checkpoint
         if translation is not None:
             # Validate translation length
@@ -1108,12 +1190,14 @@ def translate_chunks(
                 print(f"Empty translation for chunk {i + 1}, keeping original")
                 translation = chunk
                 failed_chunks += 1
+                failed_chunks_info.append((i + 1, len(chunk)))
                 chunk_failed = True
         else:
             # All retries exhausted
             logger.error(f"All retries exhausted for chunk {i + 1}, keeping original")
             translation = chunk
             failed_chunks += 1
+            failed_chunks_info.append((i + 1, len(chunk)))
             chunk_failed = True
 
         if candidates and not chunk_failed and not drafted and vocab_manager is not None:
@@ -1184,16 +1268,30 @@ def translate_chunks(
 
     print()  # New line after progress
     
-    # Report failures
+    # Report failures (tc-011, decision e): never silent, never blocking.
+    fail_ratio = (failed_chunks / total_chunks) if total_chunks else 0.0
+    max_failed_ratio = getattr(config, 'max_failed_chunk_ratio', None)
+    if max_failed_ratio is None or float(max_failed_ratio) <= 0:
+        max_failed_ratio = _DEFAULT_MAX_FAILED_CHUNK_RATIO
+    max_failed_ratio = float(max_failed_ratio)
+    threshold_exceeded = failed_chunks > 0 and fail_ratio > max_failed_ratio
     if failed_chunks > 0:
-        fail_pct = failed_chunks / total_chunks * 100
-        logger.warning(f"⚠️ {failed_chunks}/{total_chunks} chunks failed to translate ({fail_pct:.1f}%)")
-        # C11: by default ANY untranslated chunk is a failure; threshold is configurable
-        max_failed_ratio = float(getattr(config, 'max_failed_chunk_ratio', 0.0))
-        if failed_chunks / total_chunks > max_failed_ratio:
-            raise RuntimeError(
-                f"Translation failed: {failed_chunks}/{total_chunks} chunks ({fail_pct:.1f}%) untranslated. "
-                f"Threshold: {max_failed_ratio:.0%}. Fix LLM output or raise max_failed_chunk_ratio."
+        fail_pct = fail_ratio * 100
+        # Name number + original size of every failed chunk: those fragments
+        # ship as the untranslated original, so they must be locatable.
+        details = ', '.join(f"chunk {num} ({size:,} chars)"
+                            for num, size in failed_chunks_info)
+        logger.warning(
+            f"⚠️ {failed_chunks}/{total_chunks} chunks failed to translate "
+            f"({fail_pct:.1f}%) — original kept for: {details}"
+        )
+        if threshold_exceeded:
+            # Recorded in the run report, but NON-blocking: the book is still
+            # assembled with the original text in the failed places.
+            logger.error(
+                f"⚠️ {failed_chunks}/{total_chunks} chunks ({fail_pct:.1f}%) untranslated "
+                f"exceeds threshold {max_failed_ratio:.0%}; assembling the book with "
+                f"the original text in those places."
             )
     
     # All chunks done: drop the checkpoint so the next run starts fresh,
@@ -1208,12 +1306,23 @@ def translate_chunks(
         stats_out.total_target_len = total_target_len
         stats_out.total_chunks = total_chunks
         stats_out.failed_chunks = failed_chunks
+        stats_out.failed_chunk_ids = [num for num, _ in failed_chunks_info]
+        stats_out.failed_chunk_sizes = [size for _, size in failed_chunks_info]
+        stats_out.failed_ratio = fail_ratio
+        stats_out.max_failed_ratio = max_failed_ratio
+        stats_out.threshold_exceeded = threshold_exceeded
 
     # Reassemble translated text
     translated_text = '\n\n'.join(translated_parts)
 
     # Final sanitize pass before return
     translated_text = sanitize_surrogates(translated_text)
+
+    # F6: heading count-guard — the last point where both the source
+    # markdown and the fully assembled translation are in scope. Headings
+    # (counted per level, language-agnostic) that a chunk lost would
+    # silently vanish from the epub TOC downstream; warn, never block.
+    check_heading_parity(markdown_text, translated_text)
 
     if logger:
         logger.info(f"Translation complete: {len(translated_text)} chars")
@@ -1264,6 +1373,8 @@ def _markdown_to_html_file(
             to feeding markdown directly to ebook-convert rather than leave
             a partially-written html_path in place.
     """
+    _init_logger()  # direct callers must not depend on build_output having run
+
     if not PANDOC_AVAILABLE:
         raise FileNotFoundError(
             "pypandoc is not installed. "
@@ -1294,7 +1405,12 @@ def _markdown_to_html_file(
             f"Converting Markdown to HTML: batch {i + 1}/{len(batches)} "
             f"({len(batch):,} chars)..."
         )
-        cmd = [pandoc_exe, batch_md_path, '-f', 'markdown', '-t', 'html', '--wrap=none', '-o', batch_html_path]
+        # F1: plain 'markdown' enables the implicit_figures extension: a lone
+        # '![alt](img)' paragraph becomes a <figure> with a visible
+        # <figcaption> ("Paragraph break image") - ~181 such captions leaked
+        # into the book. Use the extension-restricted format instead, which
+        # emits an inline <img> inside a <p> and no figcaption.
+        cmd = [pandoc_exe, batch_md_path, '-f', 'markdown-implicit_figures', '-t', 'html', '--wrap=none', '-o', batch_html_path]
         try:
             _run_command(cmd, timeout=timeout)
         except subprocess.CalledProcessError as e:
@@ -1471,6 +1587,11 @@ def build_output(
             html_path = os.path.join(temp_dir, "output.html")
             conversion_input_path = html_path
             using_markdown_fallback = False
+            # F2: normalize LLM heading glitches ('#Head', headings glued to
+            # the previous paragraph) before pandoc or the ebook-convert
+            # fallback below consume full_markdown. Pandoc needs the blank
+            # line / space to recognise a heading, otherwise toc.ncx is empty.
+            full_markdown = markdown_utils.normalize_markdown_headings(full_markdown)
 
             try:
                 logger.info("Converting Markdown to HTML...")
@@ -1579,6 +1700,13 @@ def build_output(
                 except Exception as e:
                     logger.warning(f"Could not verify embedded images in {output_path}: {e}")
 
+            # F6: post-build TOC check (non-blocking). A valid EPUB can still
+            # ship with an empty toc.ncx or generic "Unknown" chapter titles;
+            # surface that as warnings rather than a silent no-navigation book.
+            if output_format == 'epub':
+                for problem in check_epub_toc(output_path):
+                    logger.warning(f"EPUB TOC check: {problem}")
+
             logger.info(f"Output created: {output_path}")
             return output_path
 
@@ -1637,6 +1765,73 @@ def _generate_title_page(metadata: dict) -> str:
 # ---------------------------------------------------------------------------
 # Output file validation
 # ---------------------------------------------------------------------------
+
+def check_epub_toc(output_path: str) -> list[str]:
+    """Sanity-check the navigation/TOC of a built EPUB (F6, non-blocking).
+
+    EPUB output is a zip; inspect it without extra dependencies:
+    - find *.ncx and nav*.xhtml navigation documents;
+    - fewer than 2 navPoint entries in the ncx (or fewer than 2 <a> links
+      in an EPUB3 nav document) means the book shipped with no usable TOC —
+      the failure mode behind missing navigation and generic titles;
+    - the placeholder '<title>Unknown</title>' anywhere inside text
+      documents signals chapters Calibre could not identify.
+
+    Returns a list of human-readable problems; empty list means fine.
+    Never raises for odd-but-readable files (returns a problem instead).
+    """
+    problems: list[str] = []
+    try:
+        with zipfile.ZipFile(output_path, 'r') as zf:
+            names = zf.namelist()
+            text_names = [
+                n for n in names
+                if n.lower().endswith(('.xhtml', '.html', '.htm', '.ncx'))
+            ]
+            nav_names = [
+                n for n in text_names
+                if os.path.basename(n).lower().startswith('nav')
+            ]
+            ncx_names = [n for n in text_names if n.lower().endswith('.ncx')]
+
+            for n in text_names:
+                try:
+                    data = zf.read(n).decode('utf-8', errors='replace')
+                except Exception:
+                    continue
+                if '<title>Unknown</title>' in data:
+                    problems.append(
+                        f"'{os.path.basename(n)}' contains '<title>Unknown</title>'"
+                    )
+
+            if ncx_names:
+                navpoints = 0
+                for n in ncx_names:
+                    data = zf.read(n).decode('utf-8', errors='replace')
+                    navpoints += len(re.findall(r'<navPoint[\s>]', data))
+                if navpoints < 2:
+                    problems.append(
+                        f"TOC has {navpoints} navPoint(s) (< 2): "
+                        f"navigation is empty or near-empty"
+                    )
+            elif nav_names:
+                links = 0
+                for n in nav_names:
+                    data = zf.read(n).decode('utf-8', errors='replace')
+                    links += len(re.findall(r'<a\s', data))
+                if links < 2:
+                    problems.append(
+                        f"EPUB3 nav document has {links} link(s) (< 2): "
+                        f"navigation is empty or near-empty"
+                    )
+            else:
+                problems.append("no navigation document (toc.ncx / nav*.xhtml) found")
+    except Exception as e:
+        # BadZipFile and friends: a post-build check that cannot read the
+        # file must never fail the build it inspects — report and move on.
+        problems.append(f"could not inspect EPUB for TOC: {e}")
+    return problems
+
 
 def validate_epub(output_path: str) -> ValidationReport:
     """
@@ -1968,6 +2163,11 @@ def _dump_translation(
             'total_target_len': stats.total_target_len,
             'total_chunks': stats.total_chunks,
             'failed_chunks': stats.failed_chunks,
+            # tc-011: persisted so a resumed build run reports the same failures
+            'failed_chunk_ids': list(stats.failed_chunk_ids),
+            'failed_ratio': stats.failed_ratio,
+            'max_failed_ratio': stats.max_failed_ratio,
+            'threshold_exceeded': stats.threshold_exceeded,
         },
     }
     _atomic_write_text(meta_dump_path, json.dumps(payload, ensure_ascii=False, indent=2))
@@ -2129,6 +2329,10 @@ def run_pipeline(
                     stats_out.total_target_len = dumped_stats.get('total_target_len', 0)
                     stats_out.total_chunks = dumped_stats.get('total_chunks', 0)
                     stats_out.failed_chunks = dumped_stats.get('failed_chunks', 0)
+                    stats_out.failed_chunk_ids = list(dumped_stats.get('failed_chunk_ids', []))
+                    stats_out.failed_ratio = dumped_stats.get('failed_ratio', 0.0)
+                    stats_out.max_failed_ratio = dumped_stats.get('max_failed_ratio', 0.0)
+                    stats_out.threshold_exceeded = bool(dumped_stats.get('threshold_exceeded', False))
                 logger.info(
                     f"Steps 1-3 skipped: reusing translated Markdown from "
                     f"{translated_dump_path} (newer than {input_path}). "
@@ -2226,6 +2430,11 @@ def run_pipeline(
             stats_out.total_target_len = translate_stats.total_target_len
             stats_out.total_chunks = translate_stats.total_chunks
             stats_out.failed_chunks = translate_stats.failed_chunks
+            stats_out.failed_chunk_ids = list(translate_stats.failed_chunk_ids)
+            stats_out.failed_chunk_sizes = list(translate_stats.failed_chunk_sizes)
+            stats_out.failed_ratio = translate_stats.failed_ratio
+            stats_out.max_failed_ratio = translate_stats.max_failed_ratio
+            stats_out.threshold_exceeded = translate_stats.threshold_exceeded
 
         # Persist the finished translation before attempting to build the
         # output file — see _dump_translation's docstring.

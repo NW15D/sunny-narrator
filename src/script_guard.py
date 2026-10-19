@@ -41,16 +41,39 @@ def _script(ch: str) -> str:
     return ''
 
 
+_SUBTAG_SCRIPTS = {'latn': 'LATIN', 'cyrl': 'CYRILLIC', 'grek': 'GREEK'}
+
+
+def _script_subtag(lang: str) -> Optional[str]:
+    """'LATIN'/'CYRILLIC'/'GREEK' when the language tag names the script
+    explicitly (a BCP-47 subtag: 'sr-Latn', 'az-Cyrl'), else None."""
+    parts = (lang or '').strip().lower().replace('_', '-').split('-')
+    for part in reversed(parts):
+        if part in _SUBTAG_SCRIPTS:
+            return _SUBTAG_SCRIPTS[part]
+    return None
+
+
 def target_script(target_lang: str) -> Optional[str]:
     """'CYRILLIC', 'GREEK' or 'LATIN' for a target language whose words
-    are checked; None for the others."""
+    are checked; None for the others. The script comes from target_lang:
+    its language code (ru, en, ...), an explicit BCP-47 script subtag
+    ('sr-Latn') or the language list of lexicon; never from a fixed pair.
+    A region part ('pt-BR', 'zh-CN') does not hide the language."""
     code = lexicon.lang_code(target_lang)
-    if code in CYRILLIC_LANGS:
-        return 'CYRILLIC'
-    if code == 'el':
-        return 'GREEK'
-    if lexicon.is_latin_script(code):
-        return 'LATIN'
+    explicit = _script_subtag(target_lang) or _script_subtag(code)
+    if explicit:
+        return explicit
+    parts = [code] + code.split('-')
+    for part in parts:
+        if not part:
+            continue
+        if part in CYRILLIC_LANGS:
+            return 'CYRILLIC'
+        if part == 'el':
+            return 'GREEK'
+        if lexicon.is_latin_script(part):
+            return 'LATIN'
     return None
 
 
@@ -90,3 +113,45 @@ def find_mixed_words(text: str, target_lang: str, dictionary_targets: Iterable[s
     return [m.group() for start, end in lexicon.text_spans(text)
             for m in _WORD_RE.finditer(text, start, end)
             if is_mixed(m.group(), script) and lexicon.normalize(m.group()) not in protected]
+
+
+# --- F4/F5 v1: transliterations are reported, not blocked --------------------
+#
+# A stage may leave whole words of the other alphabet in the translation
+# ("dazhe", "desyatki", "tela" in a Russian one; Cyrillic words in a Latin
+# target). Which alphabet is "the other" comes from target_lang alone
+# (target_script: ru -> Cyrillic, en -> Latin; variants like 'pt-BR' or
+# 'sr-Latn' included), never from a fixed pair. Some foreign words stay on
+# purpose: the words of the dictionary translations are skipped by
+# find_foreign_words itself; the rest is BASIC_FOREIGN_WORDS plus all-caps
+# abbreviations of up to MAX_ABBREV_LEN letters ("NASA").
+
+BASIC_FOREIGN_WORDS = frozenset({
+    'magnum', 'opus',      # "magnum opus"
+    'mano', 'a',           # "mano a mano"
+})
+
+MAX_ABBREV_LEN = 5
+
+
+def is_whitelisted_foreign_word(word: str) -> bool:
+    """A whole word of the other alphabet the translation keeps on purpose:
+    a word of BASIC_FOREIGN_WORDS or an all-caps abbreviation of up to
+    MAX_ABBREV_LEN letters ("NASA"). The basic list is applied in either
+    direction - a Cyrillic word never equals a Latin entry."""
+    if not word:
+        return False
+    if word.lower() in BASIC_FOREIGN_WORDS:
+        return True
+    return len(word) <= MAX_ABBREV_LEN and word.upper() == word
+
+
+def find_unexpected_foreign_words(text: str, target_lang: str,
+                                  dictionary_targets: Iterable[str] = ()) -> List[str]:
+    """find_foreign_words minus what the translation keeps on purpose: the
+    transliterations a stage invents ("dazhe", "desyatki" - in the target's
+    slip alphabet, whatever target_script says it is) stay, "magnum opus",
+    "mano a mano" and all-caps abbreviations ("NASA") do not. v1 of the
+    F4/F5 gate: the caller logs and counts, it never blocks."""
+    return [w for w in find_foreign_words(text, target_lang, dictionary_targets)
+            if not is_whitelisted_foreign_word(w)]
