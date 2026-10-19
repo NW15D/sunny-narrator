@@ -167,7 +167,7 @@ class TranslationStats:
     total_source_len: int = 0
     total_target_len: int = 0
     total_chunks: int = 0
-    failed_chunks: int = 0
+    failed_chunks: int = 0   # always 0 now: a failed chunk stops the run; read from old dumps
 
 
 @dataclass
@@ -897,17 +897,19 @@ def check_heading_parity(source_text: str, translated_text: str) -> tuple[list[s
     source_counts = Counter(_level(h) for h in source_headings)
     translated_counts = Counter(_level(h) for h in translated_headings)
 
+    source_set = set(source_headings)
+    translated_set = set(translated_headings)
     lost: list[str] = []
     added: list[str] = []
     for level in sorted(set(source_counts) | set(translated_counts)):
         delta = source_counts.get(level, 0) - translated_counts.get(level, 0)
         if delta > 0:
             candidates = [h for h in source_headings if _level(h) == level]
-            unmatched = [h for h in candidates if h not in set(translated_headings)]
+            unmatched = [h for h in candidates if h not in translated_set]
             lost.extend((unmatched or candidates)[:delta])
         elif delta < 0:
             candidates = [h for h in translated_headings if _level(h) == level]
-            unmatched = [h for h in candidates if h not in set(source_headings)]
+            unmatched = [h for h in candidates if h not in source_set]
             added.extend((unmatched or candidates)[:-delta])
 
     if lost or added:
@@ -1017,7 +1019,6 @@ def translate_chunks(
     
     translated_parts = []
     outline_text = ""  # Context for next chunk
-    failed_chunks = 0  # Track chunks that failed translation
 
     # D5: checkpoint/resume support (per-chunk persistence)
     checkpoint_mgr = CheckpointManager(checkpoint_file) if checkpoint_file else None
@@ -1042,7 +1043,6 @@ def translate_chunks(
             extra = saved.get("extra", {}) or {}
             translated_parts = list(extra.get("translated_parts", []))
             outline_text = extra.get("outline_text", "")
-            failed_chunks = int(extra.get("failed_chunks", 0))
             session_terms = list(extra.get("session_terms", []))
             total_source_len = saved.get("lengths", {}).get("total_source_len", 0)
             total_target_len = saved.get("lengths", {}).get("total_target_len", 0)
@@ -1082,7 +1082,7 @@ def translate_chunks(
     draft_state = {}
 
     def process_chunk(i, chunk):
-        nonlocal outline_text, failed_chunks, total_source_len, total_target_len
+        nonlocal outline_text, total_source_len, total_target_len
 
         # Sanitize surrogates before translation
         chunk = sanitize_surrogates(chunk)
@@ -1158,9 +1158,14 @@ def translate_chunks(
             sequencer.wait(COMMITTED, i - 1)
         try:
             commit_chunk(i, chunk, translation, candidates, drafted)
-        finally:
+        except BaseException:
+            # The next chunk must not commit (and checkpoint) past this one:
+            # the book would lose it silently. Abort instead of marking.
             if parallel:
-                sequencer.mark(COMMITTED, i)
+                sequencer.abort()
+            raise
+        if parallel:
+            sequencer.mark(COMMITTED, i)
 
     def commit_chunk(i, chunk, translation, candidates, drafted):
         nonlocal total_source_len, total_target_len
@@ -1222,8 +1227,7 @@ def translate_chunks(
                 chunk_id=i,
                 section_idx=0,
                 chunk_idx=i,
-                stats={'successful': len(translated_parts) - failed_chunks,
-                       'failed': failed_chunks},
+                stats={'successful': len(translated_parts), 'failed': 0},
                 total_source_len=total_source_len,
                 total_target_len=total_target_len,
                 synopsis_history={},
@@ -1233,7 +1237,6 @@ def translate_chunks(
                 extra={
                     'translated_parts': translated_parts,
                     'outline_text': saved_outline,
-                    'failed_chunks': failed_chunks,
                     # with DICT_AUTO_SAVE off they live only in memory
                     'session_terms': saved_terms,
                 },
@@ -1271,7 +1274,6 @@ def translate_chunks(
         stats_out.total_source_len = total_source_len
         stats_out.total_target_len = total_target_len
         stats_out.total_chunks = total_chunks
-        stats_out.failed_chunks = failed_chunks
 
     # Reassemble translated text
     translated_text = '\n\n'.join(translated_parts)

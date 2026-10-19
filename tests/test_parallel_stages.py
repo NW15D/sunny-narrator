@@ -202,3 +202,33 @@ def test_classic_pipeline_same_book_and_contexts(tmp_path, monkeypatch):
     assert par[2]['synopsis_history'] == seq[2]['synopsis_history']
     assert par[2]['last_chunk'] == 5
     assert '<p>done 5</p>' in par[0] or 'done 5' in par[0]
+
+
+def test_a_failed_commit_does_not_release_the_next_chunk(tmp_path):
+    """The next chunk must not commit (or checkpoint) past a chunk that stopped
+    the run: the book would lose the failed one silently."""
+    import json
+    import os
+    import pytest
+    import src.calibre_pipeline as cp
+
+    chunks = ["Chunk one text, long enough.", "Chunk two text, long enough.", "Chunk three text."]
+    checkpoint = str(tmp_path / "book.checkpoint.json")
+
+    def fake_translate(**kw):
+        if kw['source_text'] == chunks[0]:
+            return None, ""   # chunk 1 cannot be translated
+        return "tr " + kw['source_text'], "syn"
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(cp, '_split_into_chunks_md', lambda text, size: list(chunks))
+        mp.setattr(cp, 'translate_chunk', fake_translate)
+        mp.setattr(cp.time, 'sleep', lambda s: None)
+        mp.setattr(cp.config, 'parallel_stages', 2)
+        mp.setattr(cp, 'validate_translation_length', lambda *a, **kw: (True, 0.0, False))
+        with pytest.raises(cp.ChunkTranslationError):
+            cp.translate_chunks("ignored", book_path=str(tmp_path / "book.epub"),
+                                checkpoint_file=checkpoint, remove_on_success=False)
+    if os.path.exists(checkpoint):
+        saved = json.load(open(checkpoint, encoding="utf-8"))
+        assert saved['extra']['translated_parts'] == []
