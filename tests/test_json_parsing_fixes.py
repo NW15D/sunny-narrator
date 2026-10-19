@@ -99,3 +99,19 @@ def test_strip_markdown_fences_no_fence():
 if __name__ == "__main__":
     import pytest
     sys.exit(pytest.main([__file__, "-v"]))
+
+
+def test_echoed_placeholder_does_not_replace_translation():
+    """Gemma ends the answer with the input's '"translation": "..."': the
+    last duplicate key used to win and the whole chunk became '...'."""
+    text = '{"translation": "Он ушёл.", "translation": "..."}'
+    assert parse_json_response(text) == ("Он ушёл.", True)
+    text = '{"translation": "...", "translation": "Он ушёл."}'
+    assert parse_json_response(text) == ("Он ушёл.", True)
+
+
+def test_repeated_translation_keeps_the_last():
+    """IMPROVE and FINAL get the old text in "translation": an answer that
+    echoes it first must not lose the edit to the longer echo."""
+    text = '{"translation": "Он ушёл. И не вернулся.", "translation": "Он ушёл."}'
+    assert parse_json_response(text) == ("Он ушёл.", True)

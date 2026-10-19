@@ -25,3 +25,13 @@ def _no_model_downloads(monkeypatch):
     # tests skip without their models instead of fetching hundreds of MB.
     import src.ner as ner
     monkeypatch.setattr(ner.config, 'spacy_auto_download', False)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_gender_tally():
+    # The run's tally of gendered sentences (GENDER stage) is global state.
+    from src.utils import metrics
+    for tally in (metrics.gender_agree, metrics.gender_against, metrics.gender_of,
+                  metrics.gender_warned):
+        tally.clear()
+    yield

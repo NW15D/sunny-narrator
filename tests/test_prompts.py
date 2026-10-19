@@ -218,3 +218,26 @@ def test_json_reflection_reaches_improve_as_clean_pairs(monkeypatch):
         {"find": "перевод", "replace": "текст", "reason": "стиль"}]
     monkeypatch.setattr(u.llm_service, 'complete', lambda **kw: ('{"fixes": []}', 1))
     assert pipeline.reflection(ctx, "перевод").text == ""
+
+
+def test_editor_is_told_about_words_in_two_alphabets(monkeypatch):
+    seen = []
+
+    def fake_complete(**kw):
+        seen.append(kw['user_prompt'])
+        return '{"translation": "ТР"}', 1
+
+    monkeypatch.setattr(u.llm_service, 'complete', fake_complete)
+    ctx = u.TranslationContext(source_text="src", source_lang="english", target_lang="russian",
+                               country="Россия")
+    pipeline = u.TranslationPipeline()
+    for json_mode in (True, False):
+        monkeypatch.setattr(u.config, 'json_mode', json_mode)
+        seen.clear()
+        pipeline.final_edit(ctx, "Он открыл dверь и tихо вышел.")
+        pipeline.final_edit(ctx, "Он открыл дверь.")
+        assert "dверь, tихо" in seen[0] and "russian" in seen[0], json_mode
+        assert "alphabets" not in seen[1], json_mode
+    monkeypatch.setattr(u.config, 'json_mode', True)
+    pipeline.final_edit(ctx, "Он открыл dверь.")
+    assert "fix_letters" in json.loads(seen[-1])

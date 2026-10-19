@@ -65,8 +65,12 @@ those sentences go to the LLM, in one short call per chunk.
   another model on the same local server) | `translate` | `proofread`.
 - Languages with something to check: Slavic (verb gender), French, Spanish,
   Portuguese, Italian, Catalan, Romanian, Greek (participles, adjectives).
-- The stage enforces the dictionary: a wrong gender in the `.dic` is enforced
-  throughout the book. A failure of the stage keeps the translation as it is.
+- The stage enforces the dictionary. A character the translation writes in
+  the other gender in half of its gendered sentences or more (at least three,
+  counted over the accepted chunks) probably has a wrong gender in the `.dic`:
+  it is named in the log and in the final report, and the stage keeps
+  enforcing the `.dic` - fix the gender there. A failure of the stage keeps
+  the translation as it is.
 
 ### SYNOPSIS
 

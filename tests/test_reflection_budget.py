@@ -94,3 +94,36 @@ def test_presence_penalty_is_sent_for_each_role_and_reflection(monkeypatch):
     utils.llm_service.complete(role=utils.LLMRole.PROOFREAD, system_prompt='s', user_prompt='u',
                                stage=utils.TranslationStage.REFLECTION)
     assert sent == [0.0, 0.3, 1.5]
+
+
+def test_truncated_call_is_logged_before_it_fails(monkeypatch):
+    """A call cut off by max_tokens (the model looped) is the one to study:
+    it must reach llm_calls_*.log, not only raise."""
+    logged = []
+
+    class Choice:
+        finish_reason = 'length'
+
+        class message:
+            content = 'зациклился зациклился'
+
+    class Usage:
+        total_tokens, prompt_tokens, completion_tokens = 9000, 1000, 8000
+
+    class Response:
+        choices = [Choice]
+        usage = Usage
+        model = 'm'
+
+    retry_before = utils.metrics.retry_tokens
+    monkeypatch.setattr(utils.config, 'llm_logging_enabled', True)
+    monkeypatch.setattr(utils, 'log_llm_call', lambda **kw: logged.append(kw))
+    monkeypatch.setattr(utils.llm_service._proofread_client.chat.completions, 'create',
+                        lambda **kw: Response)
+    with pytest.raises(utils.TruncatedResponseError):
+        utils.llm_service.complete(role=utils.LLMRole.PROOFREAD, system_prompt='s', user_prompt='u',
+                                   stage=utils.TranslationStage.IMPROVE)
+    assert [c['stage'] for c in logged] == ['improve:length']
+    assert logged[0]['response'] == 'зациклился зациклился'
+    assert logged[0]['tokens_output'] == 8000
+    assert utils.metrics.retry_tokens - retry_before == 9000, "the tokens spent for nothing are counted"

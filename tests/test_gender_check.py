@@ -506,3 +506,78 @@ def test_a_fix_that_also_mends_another_character_is_taken():
     issue = gc.GenderIssue("Вашти", "she", ["сказал"], 0, 0)
     old = "Вашти сказал, а Куно пришла."
     assert u._gender_fix_ok(old, "Вашти сказала, а Куно пришёл.", [issue], context)
+
+
+# --- the .dic is the truth; a probably wrong gender is reported (2026-10-19) ---
+
+@needs["ru"]
+def test_the_dictionary_gender_is_enforced_even_against_the_translation(monkeypatch, caplog):
+    """The translation writes Куно (he in the .dic) as she in most sentences:
+    GENDER still fixes by the .dic, and the log names the character once."""
+    u.metrics.gender_against["Куно"] = 6
+    u.metrics.gender_agree["Куно"] = 2
+    u.metrics.gender_of["Куно"] = "he"
+    text, calls = _run(monkeypatch, {u.TranslationStage.INITIAL: "<ttext>Куно кивнула.</ttext>",
+                                     u.TranslationStage.GENDER: "1. Куно кивнул."},
+                       fast_mode=True)
+    assert text == "Куно кивнул."
+    assert "Куно: the .dic says he, the translation says the other in 7 of 9 sentences" in caplog.text
+    assert u.metrics.get_report()["gender_suspects"] == {"Куно": "he"}
+    caplog.clear()
+    _run(monkeypatch, {u.TranslationStage.INITIAL: "<ttext>Куно кивнула.</ttext>",
+                       u.TranslationStage.GENDER: "1. Куно кивнул."}, fast_mode=True)
+    assert "the .dic says he" not in caplog.text, "named once per run"
+
+
+@needs["ru"]
+def test_the_first_sentence_is_fixed_and_not_reported(monkeypatch):
+    text, _ = _run(monkeypatch, {u.TranslationStage.INITIAL: DRAFT,
+                                 u.TranslationStage.GENDER: "1. Вашти сказала, что устала."},
+                   fast_mode=True)
+    assert text == "Вашти сказала, что устала. Куно кивнул."
+    assert u.metrics.gender_suspects() == [], "one sentence is no evidence"
+    assert u.metrics.gender_against["Вашти"] == 1
+
+
+@needs["ru"]
+def test_a_split_chunk_counts_only_its_accepted_halves(monkeypatch):
+    """The first, thrown-away translation of a split chunk is not counted."""
+    lengths = iter([(False, 90.0, True)])
+    monkeypatch.setattr(u, 'validate_translation_length',
+                        lambda *a, **kw: next(lengths, (True, 0.0, False)))
+    calls = []
+
+    def fake_complete(role, system_prompt, user_prompt, max_tokens=0, stage=None, **kw):
+        calls.append(stage)
+        return ("1. Вашти сказала." if stage == u.TranslationStage.GENDER
+                else "<ttext>Вашти сказал.</ttext>"), 10
+
+    monkeypatch.setattr(u.config, 'json_mode', False)
+    monkeypatch.setattr(u.config, 'gender_check', 'fix')
+    monkeypatch.setattr(u.llm_service, 'complete', fake_complete)
+    u.translate_chunk(source_lang="english", target_lang="russian",
+                      source_text="Vashti said.\n\nVashti said.", outline_text="", vocab_dict={},
+                      vocab_entries=[VASHTI], style="text", fast_mode=True)
+    assert calls.count(u.TranslationStage.GENDER) == 3
+    assert u.metrics.gender_against["Вашти"] == 2
+
+
+@needs["ru"]
+def test_agreeing_sentences_are_counted():
+    vashti = VocabEntry(source="Vashti", target="Вашти", gender="she")
+    issues, agreeing = gc.analyze("Вашти сказала, что устала. Вашти пошла домой. Вашти сказал.",
+                                  [vashti], "russian")
+    assert [i.words for i in issues] == [["сказал"]]
+    assert agreeing == {"Вашти": 2}
+
+
+def test_the_report_names_the_suspects_by_the_final_counts(caplog):
+    """Not sticky: a character whose share fell under the threshold later in
+    the run is no longer reported."""
+    u.metrics.gender_of.update({"Андино": "he", "Теренс": "he"})
+    u.metrics.gender_against.update({"Андино": 23, "Теренс": 2})
+    u.metrics.gender_agree.update({"Андино": 3, "Теренс": 40})
+    with caplog.at_level("WARNING"):
+        u.metrics.print_report()
+    assert "Андино: the .dic says he; the other gender in 23 of 26 sentence(s)" in caplog.text
+    assert "Теренс" not in caplog.text

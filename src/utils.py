@@ -120,6 +120,15 @@ def _access_error(error: Exception, role: 'LLMRole', model: str, base_url) -> LL
                           f"model {model} at {base_url}): {error}" + (f"; {hint}" if hint else ""))
 
 
+# The .dic is the truth: GENDER always enforces it. A character the translation
+# (made from the source, where the gender is plain) writes in the other gender
+# in this share of its gendered sentences or more, out of at least
+# GENDER_MIN_SENTENCES, is named in the log and the report: its .dic gender is
+# probably wrong, and the stage then rewrites correct sentences.
+GENDER_MIN_SENTENCES = 3
+GENDER_SUSPECT_SHARE = 0.5
+
+
 class TranslationMetrics:
     """
     Track translation quality metrics and token usage.
@@ -145,6 +154,10 @@ class TranslationMetrics:
         self.gender_fixed = 0
         self.gender_by_name = collections.Counter()  # (name, dictionary gender) -> errors
         self.synopsis_genders = []                   # (source, gender) filled from the synopsis
+        self.gender_agree = collections.Counter()    # name -> sentences with the .dic gender
+        self.gender_against = collections.Counter()  # name -> sentences with the other one
+        self.gender_of = {}                          # name -> its .dic gender
+        self.gender_warned = set()                   # names already named in the log
 
     def log_mixed_words(self, words: list):
         """Words of the final translation written in two alphabets ("dошло"):
@@ -162,6 +175,39 @@ class TranslationMetrics:
             self.gender_fixed += fixed
             for issue in issues:
                 self.gender_by_name[(issue.name, issue.gender)] += 1
+
+    def observe_gender(self, issues: list, agreeing: dict):
+        """Add the gendered sentences of an accepted chunk (before GENDER
+        fixed them) to the run's tally; the first time a character's .dic
+        gender looks wrong (gender_suspects), say so. Only diagnostics: the
+        .dic stays the truth and GENDER enforces it."""
+        against = collections.Counter(i.name for i in issues)
+        with self._lock:
+            for issue in issues:
+                self.gender_of[issue.name] = issue.gender
+            for name in set(against) | set(agreeing):
+                self.gender_agree[name] += agreeing.get(name, 0)
+                self.gender_against[name] += against.get(name, 0)
+            newly = [s for s in self._suspects() if s[0] not in self.gender_warned]
+            self.gender_warned.update(name for name, *_ in newly)
+        for name, gender, n, total in newly:
+            logger.warning(f"[gender] {name}: the .dic says {gender}, the translation says the other "
+                           f"in {n} of {total} sentences; GENDER enforces the .dic - if it is wrong, "
+                           f"fix it there")
+
+    def _suspects(self) -> list:
+        """(name, .dic gender, sentences in the other gender, gendered
+        sentences) of the characters whose .dic gender is probably wrong."""
+        out = []
+        for name, n in self.gender_against.items():
+            total = n + self.gender_agree[name]
+            if total >= GENDER_MIN_SENTENCES and n / total >= GENDER_SUSPECT_SHARE:
+                out.append((name, self.gender_of.get(name, ''), n, total))
+        return sorted(out, key=lambda s: -s[2])
+
+    def gender_suspects(self) -> list:
+        with self._lock:
+            return self._suspects()
 
     def log_synopsis_gender(self, source: str, gender: str):
         """A character's empty gender filled in from the synopsis."""
@@ -214,6 +260,7 @@ class TranslationMetrics:
             "mixed_words": self.mixed_words,
             "gender_issues": self.gender_issues,
             "gender_fixed": self.gender_fixed,
+            "gender_suspects": {name: gender for name, gender, *_ in self.gender_suspects()},
         }
         
     def print_report(self):
@@ -235,6 +282,13 @@ class TranslationMetrics:
             logger.info("The translation disagrees with the dictionary (check these genders in the .dic):")
             for (name, gender), n in self.gender_by_name.most_common(15):
                 logger.info(f"  {name}: the .dic says {gender}, {n} sentence(s) of the translation do not")
+        suspects = self.gender_suspects()
+        if suspects:
+            logger.warning("The gender in the .dic is probably wrong (the translation says the other in "
+                           "most sentences; GENDER enforced the .dic):")
+            for name, gender, n, total in suspects:
+                logger.warning(f"  {name}: the .dic says {gender}; the other gender in {n} of "
+                               f"{total} sentence(s)")
         if self.synopsis_genders:
             logger.info(f"Genders filled in from the synopsis ({len(self.synopsis_genders)}): "
                         + ", ".join(f"{s} = {g}" for s, g in self.synopsis_genders))
@@ -826,14 +880,8 @@ class LLMService:
                 logger.debug(f"Error logging response: {e}")
         
         _choice = response.choices[0]
-        # C12: truncated response must fail loudly, not produce partial translation
-        if getattr(_choice, 'finish_reason', None) == 'length':
-            raise TruncatedResponseError(
-                "LLM response was truncated (finish_reason='length'). "
-                "Usually the model looped on this input; the chunk will be split."
-            )
         result = _choice.message.content
-        
+
         # Extract token usage from response
         tokens_used = 0
         tokens_input = 0
@@ -847,22 +895,14 @@ class LLMService:
         else:
             if config.debug:
                 logger.debug(f"LLM Response [{role.value}]: {len(result) if result else 0} chars")
-        
-        # Tokens per character for the REFLECTION budget; with thinking on
-        # completion_tokens also count the reasoning
-        if (extra_body.get("chat_template_kwargs") or {}).get("enable_thinking") is False:
-            token_calibration.record(role.value, tokens_output, result or "")
 
-        # Log LLM call if not a retry (avoid duplicate logs)
-        if retry_count == 0 and config.llm_logging_enabled:
-            duration_ms = int((time.time() - call_start_time) * 1000)
-            stage_name = stage.value if stage else "unknown"
+        def log_call(stage_name: str):
             log_llm_call(
                 stage=stage_name,
                 role=role.value,
                 model=model,
                 temperature=temp,
-                duration_ms=duration_ms,
+                duration_ms=int((time.time() - call_start_time) * 1000),
                 tokens_input=tokens_input,
                 tokens_output=tokens_output,
                 tokens_total=tokens_used,
@@ -870,6 +910,29 @@ class LLMService:
                 prompt_user=log_user_prompt,
                 response=result or ""
             )
+
+        stage_name = stage.value if stage else "unknown"
+        # C12: truncated response must fail loudly, not produce partial translation
+        if getattr(_choice, 'finish_reason', None) == 'length':
+            # the call that looped is the one to study, retry or not; its
+            # tokens are spent for nothing (the chunk is split)
+            if config.llm_logging_enabled:
+                log_call(f"{stage_name}:length")
+            if tokens_used:
+                metrics.log_retry(tokens_used, f"truncated answer (finish_reason='length') [{stage_name}]")
+            raise TruncatedResponseError(
+                "LLM response was truncated (finish_reason='length'). "
+                "Usually the model looped on this input; the chunk will be split."
+            )
+
+        # Tokens per character for the REFLECTION budget; with thinking on
+        # completion_tokens also count the reasoning
+        if (extra_body.get("chat_template_kwargs") or {}).get("enable_thinking") is False:
+            token_calibration.record(role.value, tokens_output, result or "")
+
+        # Log LLM call if not a retry (avoid duplicate logs)
+        if retry_count == 0 and config.llm_logging_enabled:
+            log_call(stage_name)
         
         # Check for empty response and retry (unless allow_empty is True)
         # Log warning if tokens > 0 but result is empty (indicates LLM issue)
@@ -936,13 +999,36 @@ def _dictionary_targets(context: TranslationContext) -> List[str]:
     return [t for t in targets + list((context.vocab_dict or {}).values()) if t]
 
 
+@functools.lru_cache(maxsize=8)
+def _cached_mixed_words(text: str, target_lang: str, targets: tuple) -> tuple:
+    return tuple(script_guard.find_mixed_words(text, target_lang, targets))
+
+
+def _mixed_words(text: str, context: TranslationContext) -> List[str]:
+    """find_mixed_words of a stage text: the end of one stage, the input of
+    the next and the accepted chunk are often the same text, scanned once."""
+    return list(_cached_mixed_words(text or "", context.target_lang, tuple(_dictionary_targets(context))))
+
+
 def _note_mixed_words(text: str, context: TranslationContext, stage: str):
     """Words of a stage's output written in two alphabets, for the log: the
     stage that brought one in points to its cause (INFO; the metric counts
     the accepted translation of the chunk only, translate_chunk)."""
-    words = script_guard.find_mixed_words(text, context.target_lang, _dictionary_targets(context))
+    words = _mixed_words(text, context)
     if words:
         logger.info(f"[{stage}] words in two alphabets: {', '.join(words)}")
+
+
+def _mixed_words_note(text: str, context: TranslationContext) -> str:
+    """The editor's instruction for the words a stage left in two alphabets
+    ("dоминионов"); empty when there are none. The words are found by code,
+    the fix is the LLM's (no replacement table): the system prompts stay
+    within their budget and the note is sent only when needed."""
+    words = list(dict.fromkeys(_mixed_words(text, context)))
+    if not words:
+        return ""
+    return ("Each of these words mixes letters of two alphabets: write it with the "
+            f"letters of {context.target_lang} only: " + ", ".join(words))
 
 
 _MAX_GENDER_FIXES = 12   # sentences per GENDER call
@@ -1418,11 +1504,15 @@ class TranslationPipeline:
         """
         # JSON mode: prepare structured JSON input
         json_mode = config.json_mode
+        mixed_note = _mixed_words_note(translation, context)
         if json_mode:
-            json_input = json.dumps({
+            payload = {
                 "translation": translation,
                 "characters": characters_for_json(context)
-            }, ensure_ascii=False)
+            }
+            if mixed_note:
+                payload["fix_letters"] = mixed_note
+            json_input = json.dumps(payload, ensure_ascii=False)
             
             user_prompt = config.get_prompt(
                 "editor_json", "user_text",
@@ -1440,6 +1530,8 @@ class TranslationPipeline:
                 translation=translation,
                 characters=characters_for_prompt(context)
             )
+            if mixed_note:
+                user_prompt += "\n" + mixed_note
             system_prompt = config.get_prompt("editor", "system",
                 target_lang=context.target_lang,
                 country=context.country
@@ -1519,10 +1611,13 @@ class TranslationPipeline:
 
         if config.gender_check == 'off' or not translation:
             return result(translation)
-        issues = gender_check.find_gender_issues(translation, context.vocab_entries,
-                                                 context.target_lang)
+        issues, agreeing = gender_check.analyze(translation, context.vocab_entries,
+                                                context.target_lang)
+        # counted by translate_chunk once the chunk is accepted: a split
+        # chunk's thrown-away translation must not reach the metrics
+        observed = {"issues": issues, "agreeing": agreeing}
         if not issues:
-            return result(translation, issues=0)
+            return result(translation, issues=0, observed=observed)
         for issue in issues:
             logger.warning(f"[gender] {issue.name} ({issue.gender}): {', '.join(issue.words)} — "
                            f"{' '.join(translation[issue.start:issue.end].split())[:200]}")
@@ -1532,8 +1627,7 @@ class TranslationPipeline:
         spans = [span for span in sorted(by_sentence)
                  if not _BLOCK_BREAK_RE.search(translation[span[0]:span[1]])][:_MAX_GENDER_FIXES]
         if config.gender_check == 'warn' or not spans:
-            metrics.log_gender(issues, 0)
-            return result(translation, issues=len(issues))
+            return result(translation, issues=len(issues), observed=observed)
 
         # one line per sentence: its soft line breaks become spaces, other
         # whitespace (a no-break space before "!" in French) stays
@@ -1575,10 +1669,9 @@ class TranslationPipeline:
                     fixed_issues += len(by_sentence[(a, b)])
                     break
                 logger.info(f"[gender] fix of sentence {n} rejected: {new[:200]}")
-        metrics.log_gender(issues, fixed_issues)
         if fixed_issues:
             logger.info(f"[gender] fixed {fixed_issues} of {len(issues)} gender error(s)")
-        return result(text, tokens, issues=len(issues), fixed=fixed_issues)
+        return result(text, tokens, issues=len(issues), fixed=fixed_issues, observed=observed)
 
     def execute(self, source_lang: str, target_lang: str, source_text: str,
                 outline_text: str, vocab_dict: dict, vocab_entries: list = None,
@@ -1967,12 +2060,15 @@ def translate_chunk(source_lang: str, target_lang: str, source_text: str,
 
     # Words in two alphabets of the accepted translation (a split chunk is
     # counted by its halves, not by the translation thrown away)
-    mixed = script_guard.find_mixed_words(
-        state.final_translation, target_lang,
-        _dictionary_targets(TranslationContext(source_lang, target_lang, "", vocab_dict=vocab_dict or {},
-                                               vocab_entries=vocab_entries or [])))
+    mixed = _mixed_words(state.final_translation, TranslationContext(
+        source_lang, target_lang, "", vocab_dict=vocab_dict or {}, vocab_entries=vocab_entries or []))
     if mixed:
         metrics.log_mixed_words(mixed)
+    for result in getattr(state, 'stage_results', []):
+        observed = result.metadata.get("observed") if result.stage == TranslationStage.GENDER else None
+        if observed:
+            metrics.log_gender(observed["issues"], result.metadata.get("fixed", 0))
+            metrics.observe_gender(observed["issues"], observed["agreeing"])
 
     return state.final_translation, state.synopsis
 
@@ -2247,6 +2343,24 @@ def _fix_pairs(reflection) -> list:
     return list(reflection or [])
 
 
+_PLACEHOLDER_TRANSLATIONS = {'', '...', '\u2026'}
+
+
+def _merge_duplicate_keys(pairs: list) -> dict:
+    """json.loads keeps the last of two equal keys. A model that copies the
+    prompt's output template ends its answer with '"translation": "..."', and the
+    placeholder then replaced the whole translation. A repeated
+    "translation" keeps the last value that is not a placeholder: the last
+    one is the answer (IMPROVE and FINAL may echo their input first)."""
+    data = {}
+    for key, value in pairs:
+        if (key == 'translation' and key in data and isinstance(value, str)
+                and value.strip() in _PLACEHOLDER_TRANSLATIONS):
+            continue
+        data[key] = value
+    return data
+
+
 def parse_json_response(text: str) -> tuple:
     """
     Parse JSON response from LLM.
@@ -2269,7 +2383,7 @@ def parse_json_response(text: str) -> tuple:
         return text.strip(), False  # No JSON found, return as-is
     
     try:
-        data = json.loads(json_str)
+        data = json.loads(json_str, object_pairs_hook=_merge_duplicate_keys)
         
         # Check for translation (INITIAL, IMPROVE, EDITOR stages)
         if 'translation' in data:

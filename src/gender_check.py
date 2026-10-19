@@ -100,6 +100,7 @@ _FEATURE = {'he': 'Masc', 'she': 'Fem'}
 # Only the opposite gender is an error: a neuter predicate next to a name is
 # an impersonal sentence the parser misread ("Майклу было двадцать два")
 _OPPOSITE = {'he': 'Fem', 'she': 'Masc'}
+_OTHER = {'he': 'she', 'she': 'he'}
 
 # Past-tense verbs agree with the subject in gender
 _VERB_AGREES = {'ru', 'uk', 'be', 'bg', 'sr', 'mk', 'pl', 'cs', 'sk', 'hr', 'sl', 'lt', 'lv',
@@ -402,27 +403,41 @@ def find_gender_issues(text: str, vocab_entries: Iterable[Any], target_lang: str
     subject and a predicate word has the other gender. One issue per
     character and sentence.
     """
+    return analyze(text, vocab_entries, target_lang)[0]
+
+
+def analyze(text: str, vocab_entries: Iterable[Any], target_lang: str) -> Tuple[List[GenderIssue], Dict[str, int]]:
+    """find_gender_issues and, per character, the number of sentences where
+    the predicate has the dictionary's gender: the issues alone cannot say a
+    wrong error from a wrong dictionary gender (the translation, made from
+    the source, disagrees with the .dic in most sentences of the character)."""
     code = lexicon.lang_code(target_lang)
     if not text or code not in _ADJ_AGREES:
-        return []
+        return [], {}
     heads = _name_heads(vocab_entries, code)
     if not heads:
-        return []
+        return [], {}
     nlp = _target_nlp(code)
     if nlp is None:
-        return []
+        return [], {}
     masked = _masked(text)
     spans = _blocks(text, masked)
     with _NLP_LOCK:
         docs = list(nlp.pipe([masked[a:b] for a, b in spans]))
     issues: Dict[tuple, GenderIssue] = {}
+    agreeing: Dict[tuple, bool] = {}
     for (base, _), doc in zip(spans, docs):
-        _find_in_block(doc, base, heads, code, issues)
-    return list(issues.values())
+        _find_in_block(doc, base, heads, code, issues, agreeing)
+    counts: Dict[str, int] = {}
+    for name, start in agreeing:
+        if (name, start) not in issues:
+            counts[name] = counts.get(name, 0) + 1
+    return list(issues.values()), counts
 
 
-def _find_in_block(doc, base: int, heads: dict, code: str, issues: dict):
-    """The issues of one parsed block (offsets shifted by `base`) into `issues`."""
+def _find_in_block(doc, base: int, heads: dict, code: str, issues: dict, agreeing: dict):
+    """The issues of one parsed block (offsets shifted by `base`) into `issues`;
+    the sentences whose predicate has the dictionary's gender into `agreeing`."""
     for tok in doc:
         if tok.text[:1].islower():
             continue  # a name is capitalized; Hebrew, Arabic, Hindi have no case
@@ -445,7 +460,7 @@ def _find_in_block(doc, base: int, heads: dict, code: str, issues: dict):
         if 'Plur' in subj.morph.get('Number'):
             continue
         opposite = _OPPOSITE[gender]
-        wrong = []
+        wrong, right = [], False
         for pred in _predicates(subj.head, subj):
             if _other_subject(pred, subj, opposite) or _separated(subj, pred):
                 continue
@@ -453,11 +468,17 @@ def _find_in_block(doc, base: int, heads: dict, code: str, issues: dict):
                 if (opposite in word.morph.get('Gender') and 'Plur' not in word.morph.get('Number')
                         and _agrees_here(word, code, gender)):
                     wrong.append(word.text)
-        if wrong:
+                elif (_FEATURE[gender] in word.morph.get('Gender') and 'Plur' not in word.morph.get('Number')
+                        and _agrees_here(word, code, _OTHER[gender])):
+                    right = True
+        if wrong or right:
             # the sentence without the blanked markup around it ("<p>")
             words = [t for t in tok.sent if not t.is_space]
             start, end = base + words[0].idx, base + words[-1].idx + len(words[-1].text)
             key = (name, start)
+        if right:
+            agreeing[key] = True
+        if wrong:
             if key not in issues:
                 issues[key] = GenderIssue(name, gender, [], start, end)
             issues[key].words += [w for w in wrong if w not in issues[key].words]

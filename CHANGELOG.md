@@ -2,6 +2,17 @@
 
 All notable changes to Sunny Narrator.
 
+## Unreleased
+
+### Fixed
+- INITIAL lost the whole chunk when Gemma ended a real answer with the output template of the prompt, `"translation": "..."`: `json.loads` keeps the last of two equal keys, so the translation became `...` (11 of 704 INITIAL answers of four books; REFLECTION and FINAL then worked on `...` and the chunk was split). A repeated `translation` now keeps its last value that is not a placeholder (`utils._merge_duplicate_keys`).
+- A call cut off by `max_tokens` is written to `llm_calls_*.log` (stage `<stage>:length`) before the chunk is split, and its tokens count as retry tokens; before, it was neither logged nor counted.
+
+### Changed
+- The editor (FINAL) is told which words of its text mix two alphabets (`dверь`): the code finds them, the model writes them in one alphabet (`fix_letters` in the JSON input, a line in the text mode; the system prompts are unchanged).
+- A probably wrong gender in the `.dic` is named: GENDER still enforces the `.dic`, but a character the translation writes in the other gender in half of its gendered sentences or more (at least three, counted over the accepted chunks of the run) is named once in the log and, on its own lines, in the final report, in the `FAST_TRANS` mode too. In four books 69 of 105 gender findings were three characters whose `.dic` gender contradicted the source (`gender_check.analyze`, `TranslationMetrics.observe_gender`).
+- The gender metrics count the accepted translation of a chunk only, not the attempts a split threw away.
+
 ## v2.10.0
 
 ### Breaking

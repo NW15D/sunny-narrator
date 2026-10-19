@@ -79,7 +79,7 @@ prompts. Input objects, as the code builds them:
 | INITIAL | `source`, `source_lang`, `target_lang`, `country`, `vocabulary`, `characters`, `synopsis` | `{"translation": "…"}` |
 | REFLECTION | `source`, `translation`, `source_lang`, `target_lang`, `country`, `vocabulary`, `characters` | `{"fixes": [{"find": "…", "replace": "…", "reason": "…"}]}` |
 | IMPROVE | `translation`, `fixes`, `characters` | `{"translation": "…"}` |
-| FINAL_EDIT | `translation`, `characters` | `{"translation": "…"}` |
+| FINAL_EDIT | `translation`, `characters`; `fix_letters` when the text has words in two alphabets | `{"translation": "…"}` |
 
 In text mode REFLECTION writes one fix per line, `«wrong» → «right» — reason`,
 or exactly `NO CHANGES`.
@@ -87,7 +87,10 @@ or exactly `NO CHANGES`.
 An answer is parsed as JSON first; a JSON answer that never closes (the
 provider cut it off) fails the stage and the chunk is split, as for any
 truncated answer. A closed but invalid one is read by a fallback that decodes
-its escapes; plain text and `<ttext>` wrappers are accepted too.
+its escapes; plain text and `<ttext>` wrappers are accepted too. A repeated
+`"translation"` key keeps its last value that is not a placeholder: Gemma
+sometimes ends a real answer with the `{"translation": "..."}` template of the
+prompt.
 
 ## System prompt merging (`S_PROMT_*`)
 
