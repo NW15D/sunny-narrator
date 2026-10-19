@@ -1,0 +1,33 @@
+# Vocabulary for veed_ko
+# Format: source = target, category, gender, notes
+# Generated automatically by NER
+# Categories and genders come from the book (NER labels, pronouns); an empty
+# gender: the book does not show it clearly - set it or let the synopsis
+# fill it in. The translation follows the gender here (the GENDER stage).
+
+
+# --- Translated Terms (Format: source = target, category, gender, notes) ---
+리트바르 마굴 = Litbar Magul,PERSON,,
+로자임 왕국 = Kingdom of Rozaim,PERSON,,
+세라보그 성 = Castle Serabog,PERSON,,
+로열 로드 = Royal Road,PERSON,,
+로드리아스 = Rodrias,PERSON,,
+허수아비 = Scarecrow,PERSON,,
+코볼트들 = Cobolds,PERSON,,
+베르사 = Versa,LOC,,
+자하브 = Zahab,PERSON,,
+손재주 = Sonjaeju,PERSON,,
+로뮤나 = Romuna,PERSON,,
+수르카 = Surka,PERSON,,
+안현도 = An Hyeondo,PERSON,,
+이리엔 = Irien,PERSON,,
+차은희 = Cha Eun-hee,PERSON,,
+정벌대 = Punitive Force,PERSON,,
+고블린 = Goblin,PERSON,,
+이현 = Lee Hyun,PERSON,,
+위드 = With,PERSON,,
+자네 = Jane,PERSON,,
+페일 = Fail,PERSON,,
+여우 = Fox,PERSON,,
+서윤 = Seo Yoon,PERSON,,
+베커 = Beker,PERSON,,

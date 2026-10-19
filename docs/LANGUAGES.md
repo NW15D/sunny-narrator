@@ -21,6 +21,7 @@ and the target-specific checks. This page lists what has been verified and how.
 |---|---|
 | English → Russian | Real translations (book series with a series dictionary) |
 | Korean → Russian | Real translations |
+| Korean → English | Real translation: a web novel, 20 chapters, metrics [below](#real-translation-korean--english) |
 | English → French, Spanish, Polish, Portuguese, Russian, Turkish, Chinese | Real translations: one book, seven targets, metrics [below](#real-translations-english--seven-languages) |
 | English → Turkish | Real translation (above); also automated: all five stages of a chunk with a faked LLM (`tests/test_target_turkish.py`) |
 
@@ -83,6 +84,45 @@ translates at once), and in `books/samples/eternal-moment.pg/` the seven
 translated EPUBs `The_eternal_moment__and_other_stories_<lang>.epub`, the
 full log of every run `eternal-moment.pg_<lang>.log` (the source of the numbers
 above) and the dictionary check `eternal-moment.pg.dictcheck.*`.
+
+## Real translation: Korean → English
+
+A web novel of 20 chapters in a TXT file (134,172 source characters), the
+classic pipeline (TXT → FB2 → EPUB): 20 chunks of 3,001 to 9,750 characters,
+`ko_core_news_lg` for the dictionary, a dictionary of 24 terms made by NER
+(`app.py --build-dict`; names transliterated, 23 characters, 1 place). All five
+stages, JSON mode, the same local llama.cpp servers as above: translate —
+Gemma 4 26B-A4B, proofread — Qwen 3.6 35B-A3B. One run.
+
+| Chunks translated¹ | Rechunk events | Tokens | Retry tokens | Time | Target size | Size vs source | Gender errors found / fixed | Words in two alphabets (final) |
+|---|---|---|---|---|---|---|---|---|
+| 21 | 1 | 790,082 | 31,306 (3.8%) | 50.0 min | 262,801 | +95.9% | 0 / 0² | 0 |
+
+¹ 19 chunks plus the two halves of the chunk that was split. No chunk failed (`Failed translations: 0`).
+² English has no predicate gender, so only the `<characters>` block of the
+prompts works: 15 of the 23 characters had no gender in the `.dic` and were
+filled in from the synopsis by two agreeing chunks.
+
+**The rechunk event:** the REFLECTION answer of one chunk was cut off at
+`max_tokens` (31,306 tokens, the model looped on the input); the chunk was split
+in two and both halves went through all stages.
+
+**Length ratio:** English text is 1.96 times longer than the Korean source (the
+learned ratio absorbs it, no length-check failure).
+
+**Dictionary:** the dictionary check found no category or gender it was sure
+about (22 characters without pronouns in the book, 1 category in doubt, 1 term
+not found in the book); the NER dictionary labels every name PERSON, review
+it before a real translation.
+
+**Chapter titles** are translated by the model chunk by chunk and are not
+consistent (`Chapter 7: Moonlight Sculptor (7)`, `Moonlight Sculptor (8)`,
+`The Legendary Moonlight Sculptor (13)`).
+
+**The files of this run** are in `books/samples/veed.ko/`: the source
+`veed_ko.txt`, the translated EPUB `veed_ko_en_1341-1910.epub`, the dictionary `veed_ko_en.dic`, its check
+`veed_ko.dictcheck.*` and the full log `veed_ko.log` (the source of the numbers
+above).
 
 More directions (Spanish → English, Spanish → Russian) will be added here.
 

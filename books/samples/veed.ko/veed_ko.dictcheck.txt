@@ -1,0 +1,32 @@
+Dictionary /ai/sunny-narrator/books/veed_ko_en.dic against /ai/sunny-narrator/books/veed_ko.txt
+
+## category: not sure (not changed) (1)
+리트바르 마굴 = Litbar Magul, PERSON: NER LOC in 3 of 3 tagged mentions (3 in all)
+
+## gender not sure (not set) (22)
+리트바르 마굴 = Litbar Magul: no pronouns
+로자임 왕국 = Kingdom of Rozaim: no pronouns
+세라보그 성 = Castle Serabog: no pronouns
+로열 로드 = Royal Road: she ×2
+로드리아스 = Rodrias: he ×1
+허수아비 = Scarecrow: no pronouns
+코볼트들 = Cobolds: no pronouns
+자하브 = Zahab: he ×3
+손재주 = Sonjaeju: no pronouns
+로뮤나 = Romuna: no pronouns
+수르카 = Surka: no pronouns
+이리엔 = Irien: no pronouns
+차은희 = Cha Eun-hee: no pronouns
+정벌대 = Punitive Force: no pronouns
+고블린 = Goblin: no pronouns
+이현 = Lee Hyun: no pronouns
+위드 = With: no pronouns
+자네 = Jane: no pronouns
+페일 = Fail: no pronouns
+여우 = Fox: no pronouns
+서윤 = Seo Yoon: she ×1
+베커 = Beker: no pronouns
+
+## not found in the book (1)
+안현도 = An Hyeondo
+
