@@ -2281,7 +2281,7 @@ def run_pipeline(
             not given, one is derived from input_path + target_lang next to
             the source file (deterministic, no timestamp — same naming
             convention as app.py:build_resume_paths for the classic
-            pipeline; see CLAUDE.md's output-file-naming section).
+            pipeline).
         fresh: If True, ignore any existing checkpoint and translated-Markdown
             dump and translate the book from scratch.
         stats_out: Optional TranslationStats instance filled in-place with
