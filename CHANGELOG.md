@@ -2,6 +2,38 @@
 
 All notable changes to Sunny Narrator.
 
+## v2.12.0
+
+The full-review release: every module went through an audit (9 research + 8 review passes), and all confirmed defects — 6 critical, 24 major, 40+ minor — were fixed with regression tests.
+
+### Security
+- `xmlcheck`: the XML parser is hardened — entity resolution disabled (XXE), `no_network`, `huge_tree` for large binaries (DEF-C6). The same hardening (`huge_tree`) is applied to the parsers in `xml_utils` and `epub_repair`.
+
+### Changed
+- `NOTHINK2` legacy fallback removed; `NOTHINK_TRANSLATE` is the canonical variable (owner decision).
+- `.env` files are read with `dotenv_values` without mutating the process environment (DEF-C1).
+- `epub_repair.validate_epub` renamed to `validate_epub_structure` — the name collided with `calibre_pipeline.validate_epub`, which returns a different type (N34).
+- HTML → FB2 conversion (`convert_html_to_fb2_section`, stage 1): `ul`/`ol` items become paragraphs with markers, `blockquote` becomes `<cite>`, `hr` becomes `<empty-line/>`, bare text in `div`/`body` is preserved instead of lost; unrecognised block tags (`table`, `figure`, …) are dropped with a single aggregated warning per document listing each dropped tag and that its text content is lost. Full table support and nested lists — stage 2.
+- TXT: heading heuristics for CJK/KO chapter markers are stricter — length limit, word-boundary requirement after `第N章/話/回`, `제N화`, `N화`, and separator promotion (`====`) only for short non-sentence lines (N42).
+- `xmlcheck` general validation errors now name the exception type and log the traceback (N38).
+- The credit of a previous run is cut out of the OPF description only when it is the trailing annotation paragraph; a matching paragraph in the middle of a real description survives (N41).
+- The ISBN lookup scans all `dc:identifier` entries with `urn:isbn` priority, accepting ISBN-10/13 with or without hyphens (N12). FB2 input is rejected by the calibre pipeline with a clear `ValueError` instead of silent misprocessing (N11).
+- `<p>`-tag detection handles attributes and case, and does not count `<pre>` (e496fc5); `html_to_paragraphs` unescapes unconditionally, fixing double-escaped `&lt;p&gt;` artifacts (N4).
+- The xmlns strip on reassembled FB2 body fragments removes all `xmlns` declarations, not just the first (N36).
+
+### Fixed
+- **Pipeline criticals (F1):** `VocabularyManager` mutations are protected by an RLock for parallel chunks (DEF-C2); the checkpoint fingerprint includes `country`/`fast_mode`/`style`, so stale checkpoints from a different configuration are discarded (DEF-C3); input identity (size + SHA-256) guards the reuse of `translated.md` — a different book at the same path is retranslated (DEF-C4); checkpoint save failures surface as a `checkpoint_broken` warning in the run summary and processing continues instead of dying silently (DEF-C5).
+- **Concurrency and robustness (F2):** the tiktoken encoding cache is lock-protected and an OpenAI `BadRequestError` fails fast instead of retrying forever (M1/M2); unknown encodings fall back to `cl100k_base` (N1); `llm_logger` writes whole JSON lines atomically under a lock (M5); vocabulary cleanup uses `mkstemp` temp files and counts skipped lines (M7/M8); `dict_convert` parses model payloads robustly — `json.loads` first, then a slice fallback, with a warning instead of a silent `{}` (M10); an empty `choices` list raises a clear `ValueError` (N6).
+- **NER (M12–M17):** chunk-level NER failures log a warning with a counter instead of passing silently; the entity cache key includes the model name `(model, phrase)`; cache access is under an RLock; mention detection respects word boundaries (with a CJK-substring exception) and merges overlapping mentions.
+- **FB2/EPUB/TXT (M20–M24):** an unreadable OPF surfaces as an error instead of an empty metadata dict (M20); FB2 comment masking preserves text length so offsets in the original stay valid, and a second `<body>` warns (M21); replacement characters (U+FFFD) are counted and warned about (M22); repair comments are restored verbatim, byte-identical (M24); the TXT pipeline fills `genre` and `document-info` (M23).
+- **Metrics and dictionaries (F3):** `TranslationMetrics` report reads take a consistent snapshot under the lock (N5); checkpoint dumps snapshot the term list per chunk instead of referencing the live one (N8); dictionary-update failures beyond `OSError` are logged and the run continues (N9); dropped dictionary candidates log a warning (N2).
+
+### Tests
+- Regression tests for every fix batch: `test_fx_f3a.py` (17 cases), `test_fx_f3b.py` (11), vocabulary concurrency, xmlcheck hardening, review fixes — the full suite is 1125 passed / 76 skipped.
+
+### Docs
+- Windows 10/11 setup through WSL2: OpenRouter (en, pt, tr, cn), ProxyAPI (ru).
+
 ## v2.11.0
 
 ### Changed

@@ -5,8 +5,8 @@ name: Docker
 # EPUB/DOCX/PDF tests run for real — and pushes them to GHCR only after the
 # tests pass. Pull requests build and test without pushing.
 #
-# Tags: the GPU image keeps the plain tags (main, 2.11.0, sha-…), the CPU image
-# gets the same ones with a "-cpu" suffix (main-cpu, 2.11.0-cpu, sha-…-cpu).
+# Tags: the GPU image keeps the plain tags (main, 2.12.0, sha-…), the CPU image
+# gets the same ones with a "-cpu" suffix (main-cpu, 2.12.0-cpu, sha-…-cpu).
 
 on:
   push:
