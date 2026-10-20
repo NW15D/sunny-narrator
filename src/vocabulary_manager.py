@@ -275,11 +275,28 @@ def apply_dictionary_candidates(dict_file: str, candidates: List[Dict[str, str]]
     try:
         with os.fdopen(tmp_fd, 'w', encoding='utf-8') as f:
             f.write(content)
+        restore_file_mode(tmp_path, dict_file)
         os.replace(tmp_path, dict_file)
     except Exception:
         os.unlink(tmp_path)
         raise
     return updated, len(appended)
+
+
+def restore_file_mode(tmp_path: str, target: str) -> None:
+    """mkstemp creates 0600: give the temp file the mode of the file it is
+    about to replace, or the umask default for a new one, so a rewritten .dic
+    does not become private to its owner."""
+    try:
+        mode = os.stat(target).st_mode & 0o777
+    except OSError:
+        umask = os.umask(0)
+        os.umask(umask)
+        mode = 0o666 & ~umask
+    try:
+        os.chmod(tmp_path, mode)
+    except OSError:
+        pass
 
 
 class DictionaryCreatedSignal(Exception):
@@ -427,6 +444,7 @@ class VocabularyManager:
         try:
             with os.fdopen(tmp_fd, 'w', encoding='utf-8') as f:
                 f.write(content)
+            restore_file_mode(tmp_path, self.dict_file)
             os.replace(tmp_path, self.dict_file)
         except Exception:
             os.unlink(tmp_path)
@@ -533,6 +551,7 @@ class VocabularyManager:
                                                                   out_path=building_path, categories=categories)
                             total_parsed += parsed
                             logger.info(f"Chunk {idx + 1}: wrote {parsed} entries")
+                        restore_file_mode(building_path, self.dict_file)
                         os.replace(building_path, self.dict_file)
                     except BaseException:
                         self.vocab.clear()

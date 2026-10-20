@@ -143,6 +143,8 @@ def write_atomic(path: Path, text: str):
     try:
         with os.fdopen(fd, 'w', encoding='utf-8') as f:
             f.write(text)
+        from src.vocabulary_manager import restore_file_mode
+        restore_file_mode(tmp, str(path))
         os.replace(tmp, path)
     except BaseException:
         try:
